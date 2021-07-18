@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="dbg|Win32">
+      <Configuration>dbg</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="rls|Win32">
+      <Configuration>rls</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="dbg|x64">
+      <Configuration>dbg</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="rls|x64">
+      <Configuration>rls</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="yw.cpp.hpp" />
+    <ClInclude Include="yw.cpp_bit.hpp" />
+    <ClInclude Include="yw.cpp_type.hpp" />
+    <ClInclude Include="yw.csl.hpp" />
+    <ClInclude Include="yw.hpp" />
+    <ClInclude Include="yw.yw0_math.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ywlib" />
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{8BC69C36-9C45-4BD1-B8BC-D64F326C3D86}</ProjectGuid>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <UseDebugLibraries Condition="'$(Configuration)'=='dbg'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'!='dbg'">false</UseDebugLibraries>
+    <WholeProgramOptimization Condition="'$(Configuration)'=='dbg'">false</WholeProgramOptimization>
+    <WholeProgramOptimization Condition="'$(Configuration)'!='dbg'">true</WholeProgramOptimization>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <LinkIncremental Condition="'$(Configuration)'=='dbg'">true</LinkIncremental>
+    <LinkIncremental Condition="'$(Configuration)'!='dbg'">false</LinkIncremental>
+    <OutDir>$(ProjectDir).out\$(PlatformTarget)-$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir).int\$(PlatformTarget)-$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <SDLCheck>true</SDLCheck>
+      <WarningLevel>Level3</WarningLevel>
+      <ConformanceMode>true</ConformanceMode>
+      <EnableModules>true</EnableModules>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <ScanSourceForModuleDependencies>true</ScanSourceForModuleDependencies>
+      <IntrinsicFunctions Condition="'$(Configuration)'!='dbg'">true</IntrinsicFunctions>
+      <FunctionLevelLinking Condition="'$(Configuration)'!='dbg'">true</FunctionLevelLinking>
+      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='dbg|Win32'">WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'!='dbg|Win32'">WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='dbg|x64'">_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'!='dbg|x64'">NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding Condition="'$(Configuration)'!='dbg'">true</EnableCOMDATFolding>
+      <OptimizeReferences Condition="'$(Configuration)'!='dbg'">true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+</Project>

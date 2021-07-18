@@ -1,0 +1,29 @@
+{
+    "Version": "1.1",
+    "Data": {
+        "Source": "c:\\users\\yw\\ywlib\\yw.x0_string.ixx",
+        "ProvidedModule": "yw.x0:string",
+        "Includes": [
+            "c:\\users\\yw\\ywlib\\yw.hpp"
+        ],
+        "ImportedModules": [],
+        "ImportedHeaderUnits": [
+            {
+                "Header": "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\type_traits",
+                "BMI": "C:\\Users\\Yw\\Ywlib\\.int\\x64-dbg\\type_traits.ifc.dt"
+            },
+            {
+                "Header": "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\utility",
+                "BMI": "C:\\Users\\Yw\\Ywlib\\.int\\x64-dbg\\utility.ifc.dt"
+            },
+            {
+                "Header": "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\compare",
+                "BMI": "C:\\Users\\Yw\\Ywlib\\.int\\x64-dbg\\compare.ifc.dt"
+            },
+            {
+                "Header": "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\string",
+                "BMI": "C:\\Users\\Yw\\Ywlib\\.int\\x64-dbg\\string.ifc.dt"
+            }
+        ]
+    }
+}

@@ -1,0 +1,33 @@
+{
+    "Version": "1.1",
+    "Data": {
+        "Source": "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\type_traits",
+        "ProvidedModule": "",
+        "Includes": [
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\yvals_core.h",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\vcruntime.h",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\sal.h",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\concurrencysal.h",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\vadefs.h",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\xkeycheck.h",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\cstdint",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\stdint.h",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\xstddef",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\cstddef",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\stddef.h",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\corecrt.h",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\xtr1common",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\cstdlib",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\math.h",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\corecrt_math.h",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\stdlib.h",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\corecrt_malloc.h",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\corecrt_search.h",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\corecrt_wstdlib.h",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\limits.h",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\initializer_list"
+        ],
+        "ImportedModules": [],
+        "ImportedHeaderUnits": []
+    }
+}

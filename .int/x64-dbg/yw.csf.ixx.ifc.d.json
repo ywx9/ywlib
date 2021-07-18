@@ -1,0 +1,57 @@
+{
+    "Version": "1.1",
+    "Data": {
+        "Source": "c:\\users\\yw\\ywlib\\yw.csf.ixx",
+        "ProvidedModule": "yw.xc",
+        "Includes": [
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\math.h",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\corecrt_math.h",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\corecrt.h",
+            "c:\\program files\\microsoft visual studio\\2022\\preview\\vc\\tools\\msvc\\14.29.30130\\include\\vcruntime.h",
+            "c:\\program files\\microsoft visual studio\\2022\\preview\\vc\\tools\\msvc\\14.29.30130\\include\\sal.h",
+            "c:\\program files\\microsoft visual studio\\2022\\preview\\vc\\tools\\msvc\\14.29.30130\\include\\concurrencysal.h",
+            "c:\\program files\\microsoft visual studio\\2022\\preview\\vc\\tools\\msvc\\14.29.30130\\include\\vadefs.h",
+            "c:\\program files\\microsoft visual studio\\2022\\preview\\vc\\tools\\msvc\\14.29.30130\\include\\stdarg.h",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\stdio.h",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\corecrt_wstdio.h",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\corecrt_stdio_config.h",
+            "c:\\users\\yw\\ywlib\\yw.hpp"
+        ],
+        "ImportedModules": [
+            {
+                "Name": "yw.x0",
+                "BMI": "C:\\Users\\Yw\\Ywlib\\.int\\x64-dbg\\yw.x0.ixx.ifc"
+            },
+            {
+                "Name": "yw.x0:array",
+                "BMI": "C:\\Users\\Yw\\Ywlib\\.int\\x64-dbg\\yw.x0_varray.ixx.ifc"
+            },
+            {
+                "Name": "yw.x0:string",
+                "BMI": "C:\\Users\\Yw\\Ywlib\\.int\\x64-dbg\\yw.x0_string.ixx.ifc"
+            }
+        ],
+        "ImportedHeaderUnits": [
+            {
+                "Header": "c:\\program files\\microsoft visual studio\\2022\\preview\\vc\\tools\\msvc\\14.29.30130\\include\\type_traits",
+                "BMI": "C:\\Users\\Yw\\Ywlib\\.int\\x64-dbg\\type_traits_T2CRYN60RYZ26EEY.ifc"
+            },
+            {
+                "Header": "c:\\program files\\microsoft visual studio\\2022\\preview\\vc\\tools\\msvc\\14.29.30130\\include\\utility",
+                "BMI": "C:\\Users\\Yw\\Ywlib\\.int\\x64-dbg\\utility_QYWZRHM0QPEQ4Z3U.ifc"
+            },
+            {
+                "Header": "c:\\program files\\microsoft visual studio\\2022\\preview\\vc\\tools\\msvc\\14.29.30130\\include\\compare",
+                "BMI": "C:\\Users\\Yw\\Ywlib\\.int\\x64-dbg\\compare_RV5H8JFMEGUE24LI.ifc"
+            },
+            {
+                "Header": "c:\\program files\\microsoft visual studio\\2022\\preview\\vc\\tools\\msvc\\14.29.30130\\include\\string",
+                "BMI": "C:\\Users\\Yw\\Ywlib\\.int\\x64-dbg\\string_ZHN13TA8QVQ9TYSZ.ifc"
+            },
+            {
+                "Header": "c:\\program files\\microsoft visual studio\\2022\\preview\\vc\\tools\\msvc\\14.29.30130\\include\\vector",
+                "BMI": "C:\\Users\\Yw\\Ywlib\\.int\\x64-dbg\\vector_D10A5NT1DILE2ZYE.ifc"
+            }
+        ]
+    }
+}

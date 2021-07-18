@@ -1,0 +1,23 @@
+{
+    "Version": "1.1",
+    "Data": {
+        "Source": "c:\\users\\yw\\ywlib\\yw.csf.ixx",
+        "ProvidedModule": "",
+        "Includes": [
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\math.h",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\corecrt_math.h",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\corecrt.h",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\vcruntime.h",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\sal.h",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\concurrencysal.h",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\vadefs.h",
+            "c:\\program files (x86)\\microsoft visual studio\\2019\\buildtools\\vc\\tools\\msvc\\14.29.30037\\include\\stdarg.h",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\stdio.h",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\corecrt_wstdio.h",
+            "c:\\program files (x86)\\windows kits\\10\\include\\10.0.19041.0\\ucrt\\corecrt_stdio_config.h",
+            "c:\\users\\yw\\ywlib\\yw.hpp"
+        ],
+        "ImportedModules": [],
+        "ImportedHeaderUnits": []
+    }
+}
