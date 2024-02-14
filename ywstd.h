@@ -812,20 +812,29 @@ template<typename T> requires iterator<T> || range<T> using iter_rvref_t = typen
 template<typename T> requires iterator<T> || range<T>
 using iter_common_t = common_type<iter_reference_t<T>, iter_value_t<T>>;
 
-/// checks if `iter_value_t<It>` is convertible to `Uy`
-template<typename It, typename Uy> concept iterator_for = iterator<It> && convertible_to<iter_reference_t<It>, Uy>;
+/// checks if `iter_value_t<It>` is convertible to `U`
+template<typename It, typename U> concept iterator_for = iterator<It> && convertible_to<iter_reference_t<It>, U>;
 
-/// checks if `iter_value_t<It>` is the same as `Uy`
-template<typename It, typename Uy> concept iterator_of = iterator_for<It, Uy> && same_as<iter_value_t<It>, Uy>;
+/// checks if `iter_value_t<It>` is the same as `U`
+template<typename It, typename U> concept iterator_of = iterator_for<It, U> && same_as<iter_value_t<It>, U>;
 
-/// checks if `iter_value_t<Rg>` is convertible to `Uy`
-template<typename Rg, typename Uy> concept range_for = iterator_for<iterator_t<Rg>, Uy>;
+/// checks if `cnt_iterator<It> && iterator_of<It, U>`
+template<typename It, typename U> concept cnt_iterator_of = cnt_iterator<It> && iterator_of<It, U>;
 
-/// checks if `iter_value_t<Rg>` is the same as `Uy`
-template<typename Rg, typename Uy> concept range_of = iterator_of<iterator_t<Rg>, Uy>;
+/// checks if `iter_value_t<Rg>` is convertible to `U`
+template<typename Rg, typename U> concept range_for = iterator_for<iterator_t<Rg>, U>;
 
-/// checks if `cnt_range<Rg> && range_of<Rg, Uy>`
-template<typename Rg, typename Uy> concept cnt_range_of = cnt_range<Rg> && range_of<Rg, Uy>;
+/// checks if `iter_value_t<Rg>` is the same as `U`
+template<typename Rg, typename U> concept range_of = iterator_of<iterator_t<Rg>, U>;
+
+/// checks if `cnt_range<Rg> && range_of<Rg, U>`
+template<typename Rg, typename U> concept cnt_range_of = cnt_range<Rg> && range_of<Rg, U>;
+
+/// checks if `cnt_range<Rg> && sized_range<Rg>`
+template<typename Rg> concept cnt_sized_range = cnt_range<Rg> && sized_range<Rg>;
+
+/// checks if `cnt_range<Rg> && sized_range<Rg> && range_of<Rg, U>`
+template<typename Rg, typename U> concept cnt_sized_range_of = cnt_sized_range<Rg> && range_of<Rg, U>;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1344,8 +1353,8 @@ using vapply_reresult = decltype(vapply(declval<Fn>(), declval<Ts>()...));
 struct t_vassign {
   template<natt... Is, typename TpL, typename TpR>
   constexpr TpL&& operator()(sequence<Is...>, TpL&& Left, TpR&& Right) const
-    noexcept(((nt_gettable<TpL, Is> && nt_gettable<TpR, Is...>)&&...) && (nt_assignable<element_t<TpL, Is>, element_t<TpR, Is>> && ...))
-    requires(gettable<TpL, Is> && ...) && (gettable<TpR, Is> && ...) && (assignable<element_t<TpL, Is>, element_t<TpR, Is>> && ...)
+    noexcept(((nt_gettable<TpL, Is> && nt_gettable<TpR, Is>) && ...) && (nt_assignable<element_t<TpL, Is>, element_t<TpR, Is>> && ...))
+    requires((gettable<TpL, Is> && gettable<TpR, Is>) && ...) && (assignable<element_t<TpL, Is>, element_t<TpR, Is>> && ...)
   { return ((get<Is>(fwd<TpL>(Left)) = get<Is>(fwd<TpR>(Right))), ...), fwd<TpL>(Left); }
   template<typename Sq, typename TpL, typename TpR> constexpr auto operator()(Sq, TpL&& Left, TpR&& Right) const
     ywlib_wrapper((*this)(to_sequence<Sq, natt>{}, fwd<TpL>(Left), fwd<TpR>(Right)));
@@ -1502,103 +1511,206 @@ template<tuple Tp, sequence_of<natt> Sq, vapplyable<Tp, Sq> Fn> projector(Tp&&, 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// alias for `std::basic_string_view`
-template<character Ct> using string_view = std::basic_string_view<Ct>;
+/// string view structure derived from `std::basic_string_view`
+template<character Ct> struct string_view {
+  using value_type = Ct;
+  const Ct* const pointer{};
+  const natt count{};
+
+  /// constructor
+  string_view(np_t) = delete;
+  constexpr string_view() noexcept = default;
+  constexpr string_view(const Ct* s) : pointer(s), count(std::char_traits<Ct>::length(s)) {}
+  constexpr string_view(const Ct* s, natt n) noexcept : pointer(s), count(n) {}
+  template<natt N> constexpr string_view(const Ct (&s)[N]) noexcept : pointer(s), count(N - 1) {}
+  template<cnt_iterator_of<Ct> It> constexpr string_view(It i, natt n) : pointer(addressof(*i)), count(n) {}
+  template<cnt_iterator_of<Ct> It, sized_sentinel_for<It> Se> constexpr string_view(It i, Se s) : pointer(addressof(*i)), count(s - i) {}
+  template<cnt_sized_range_of<Ct> Rg> constexpr string_view(Rg&& r) : string_view(yw::begin(r), yw::end(r)) {}
+
+  /// assignment
+  constexpr string_view& operator=(const string_view& s) {
+    const_cast<const Ct*>(pointer) = s.pointer;
+    const_cast<natt&>(count) = s.count;
+    return *this;
+  }
+  constexpr string_view& operator=(string_view&& s) {
+    const_cast<const Ct*>(pointer) = s.pointer;
+    const_cast<natt&>(count) = s.count;
+    return *this;
+  }
+
+  /// checks if the string is empty
+  constexpr bool empty() const noexcept { return !count; }
+
+  /// gets the size of the string
+  constexpr natt size() const noexcept { return count; }
+
+  /// gets the pointer to the string
+  constexpr const Ct* data() const noexcept { return pointer; }
+
+  /// gets the iterator to the beginning of the string
+  constexpr const Ct* begin() const noexcept { return pointer; }
+
+  /// gets the iterator to the end of the string
+  constexpr const Ct* end() const noexcept { return pointer + count; }
+
+  /// gets the character at index `i`
+  constexpr Ct operator[](natt i) const noexcept { return pointer[i]; }
+
+  /// gets the first character
+  constexpr Ct front() const noexcept { return *pointer; }
+
+  /// gets the last character
+  constexpr Ct back() const noexcept { return pointer[count - 1]; }
+
+  /// removes the prefix of the string
+  constexpr string_view remove_prefix(natt n) const noexcept { return {pointer + n, count - n}; }
+
+  /// removes the suffix of the string
+  constexpr string_view remove_suffix(natt n) const noexcept { return {pointer, count - n}; }
+
+  /// gets the substring
+  constexpr string_view substr(natt pos, natt n = npos) const noexcept {
+    if (pos > count) throw std::out_of_range("string_view::substr");
+    return {pointer + pos, min(n, count - pos)};
+  }
+
+  /// finds the first occurrence of the character `c`
+  constexpr natt find(Ct c, natt pos = 0) const noexcept {
+    for (natt i = pos; i < count; ++i)
+      if (pointer[i] == c) return i;
+    return npos;
+  }
+
+  /// finds the first occurrence of the string `s`
+  constexpr natt find(string_view s, natt pos = 0) const noexcept {
+    if (s.count == 0) return pos;
+    if (s.count > count) return npos;
+    for (natt i = pos; i <= count - s.count; ++i)
+      if (pointer[i] == s.pointer[0] && string_view(pointer + i, s.count) == s) return i;
+    return npos;
+  }
+
+  /// finds the last occurrence of the character `c`
+  constexpr natt rfind(Ct c, natt pos = npos) const noexcept {
+    if (pos >= count) pos = count - 1;
+    for (natt i = pos; i != npos; --i)
+      if (pointer[i] == c) return i;
+    return npos;
+  }
+
+  /// finds the last occurrence of the string `s`
+  constexpr natt rfind(string_view s, natt pos = npos) const noexcept {
+    if (s.count == 0) return pos;
+    if (s.count > count) return npos;
+    if (pos > count - s.count) pos = count - s.count;
+    for (natt i = pos; i != npos; --i)
+      if (pointer[i] == s.pointer[0] && string_view(pointer + i, s.count) == s) return i;
+    return npos;
+  }
+
+  /// finds the first occurrence of any character in `s`
+  constexpr natt find_first_of(string_view s, natt pos = 0) const noexcept {
+    for (natt i = pos; i < count; ++i)
+      if (s.find(pointer[i]) != npos) return i;
+    return npos;
+  }
+
+  /// finds the first occurrence of any character not in `s`
+  constexpr natt find_first_not_of(string_view s, natt pos = 0) const noexcept {
+    for (natt i = pos; i < count; ++i)
+      if (s.find(pointer[i]) == npos) return i;
+    return npos;
+  }
+
+  /// finds the last occurrence of any character in `s`
+  constexpr natt find_last_of(string_view s, natt pos = npos) const noexcept {
+    if (pos >= count) pos = count - 1;
+    for (natt i = pos; i != npos; --i)
+      if (s.find(pointer[i]) != npos) return i;
+    return npos;
+  }
+
+  /// finds the last occurrence of any character not in `s`
+  constexpr natt find_last_not_of(string_view s, natt pos = npos) const noexcept {
+    if (pos >= count) pos = count - 1;
+    for (natt i = pos; i != npos; --i)
+      if (s.find(pointer[i]) == npos) return i;
+    return npos;
+  }
+
+  /// checks if the string starts with the character `c`
+  constexpr bool starts_with(Ct c) const noexcept { return count && pointer[0] == c; }
+
+  /// checks if the string starts with the string `s`
+  constexpr bool starts_with(string_view s) const noexcept { return count >= s.count && string_view(pointer, s.count) == s; }
+
+  /// checks if the string ends with the character `c`
+  constexpr bool ends_with(Ct c) const noexcept { return count && pointer[count - 1] == c; }
+
+  /// checks if the string ends with the string `s`
+  constexpr bool ends_with(string_view s) const noexcept { return count >= s.count && string_view(pointer + count - s.count, s.count) == s; }
+
+  /// checks if the string is null-terminated
+  constexpr bool null_terminated() const noexcept { return *end() == Ct{}; }
+
+  /// checks if the string contains the character `c`
+  constexpr bool contains(Ct c) const noexcept { return find(c) != npos; }
+
+  /// checks if the string contains the string `s`
+  constexpr bool contains(string_view s) const noexcept { return find(s) != npos; }
+
+  /// comparison
+  constexpr bool operator==(string_view s) const noexcept {
+    return count == s.count && std::char_traits<Ct>::compare(pointer, s.pointer, count) == 0;
+  }
+  constexpr auto operator<=>(string_view s) const noexcept {
+    for (natt i{}, ii{min(count, s.count)}; i < ii; ++i)
+      if (auto c = pointer[i] <=> s.pointer[i]; c != 0) return c;
+    return std::strong_ordering::equivalent;
+  }
+};
+
 using stv1 = string_view<cat1>;
 using stv2 = string_view<cat2>;
 
-// clang-format off
-
-/// static string class if `N` is not zero, otherwise dynamic string class
-template<character Ct, natt N = 0> class string {
-public:
-  Ct cpp_array[N];
-
-  /// value type
-  using value_type = Ct;
-
-  /// constructor
-  constexpr string(const Ct (&String)[N]) noexcept { std::ranges::copy(String, cpp_array); }
-  constexpr string(const Ct (&&String)[N]) noexcept { std::ranges::copy(String, cpp_array); }
-
-  /// assignment
-  constexpr string& operator=(const Ct (&String)[N]) noexcept { return std::ranges::copy(String, cpp_array), *this; }
-
-  /// conversion
-  constexpr operator std::basic_string_view<Ct>() const noexcept { return cpp_array; }
-  constexpr operator std::basic_string<Ct>() const noexcept { return std::basic_string<Ct>(cpp_array, N - 1); }
-
-  /// element access
-  constexpr Ct& operator[](natt i) { return cpp_array[i]; }
-  constexpr const Ct& operator[](natt i) const { return cpp_array[i]; }
-
-  /// gets the size of the string
-  constexpr natt size() const noexcept { return N - 1; }
-
-  /// checks if the string is empty
-  constexpr bool empty() const noexcept { return N == 1; }
-
-  /// gets the pointer to the string
-  constexpr Ct* data() noexcept { return cpp_array; }
-  constexpr const Ct* data() const noexcept { return cpp_array; }
-
-  /// gets the iterator to the beginning of the string
-  constexpr Ct* begin() noexcept { return cpp_array; }
-  constexpr const Ct* begin() const noexcept { return cpp_array; }
-
-  /// gets the iterator to the end of the string
-  constexpr Ct* end() noexcept { return cpp_array + (N - 1); }
-  constexpr const Ct* end() const noexcept { return cpp_array + (N - 1); }
-
-  /// equality comparison
-  constexpr bool operator==(const string_view<Ct>& s) const noexcept
-  { return std::ranges::equal(begin(), end(), s.begin(), s.end()); }
-
-  /// three-way comparison
-  constexpr auto operator<=>(const string_view<Ct>& s) const noexcept
-  { return std::lexicographical_compare_three_way(begin(), end(), s.begin(), s.end()); }
-
-  /// output stream
-  template<typename Tr> friend std::basic_ostream<Ct, Tr>&
-  operator<<(std::basic_ostream<Ct, Tr>& os, const string& s) { return os << s.cpp_array; }
-};
-
-// clang-format on
+/// deduction guide for `string_view`
+template<character Ct> string_view(const Ct*, natt) -> string_view<Ct>;
+template<cnt_iterator It, sentinel_for<It> Se> string_view(It, Se) -> string_view<iter_value_t<It>>;
+template<cnt_range Rg> string_view(Rg&&) -> string_view<iter_value_t<Rg>>;
 
 /// dynamic string class
-template<character Ct> class string<Ct, 0> : public std::basic_string<Ct> {
+template<character Ct> class string : public std::basic_string<Ct> {
 public:
   /// constructor
   constexpr string() noexcept = default;
-  constexpr string(const string&) = default;
-  constexpr string(string&&) noexcept = default;
-  constexpr string(const std::basic_string<Ct>& s) : std::basic_string<Ct>(s) {}
-  constexpr string(std::basic_string<Ct>&& s) noexcept : std::basic_string<Ct>(mv(s)) {}
-  constexpr string(const Ct* s) : std::basic_string<Ct>(s) {}
+  constexpr string(std::basic_string<Ct> s) noexcept : std::basic_string<Ct>(mv(s)) {}
   constexpr string(natt n, Ct c) : std::basic_string<Ct>(n, c) {}
+  constexpr string(const Ct* s) : std::basic_string<Ct>(s) {}
+  constexpr string(const Ct* s, natt n) : std::basic_string<Ct>(s, n) {}
+  template<natt N> constexpr string(const Ct (&s)[N]) : std::basic_string<Ct>(s, N) {}
   template<iterator_of<Ct> It> constexpr string(It i, It s) : std::basic_string<Ct>(mv(i), mv(s)) {}
   template<iterator_of<Ct> It, sentinel_for<It> Se> requires(!same_as<It, Se>) constexpr string(It i, Se s)
     : std::basic_string<Ct>(std::common_iterator<It, Se>(mv(i)), std::common_iterator<It, Se>(mv(s))) {}
-  template<range_of<Ct> Rg> constexpr string(Rg&& r) : string(yw::begin(r), yw::end(r)) {}
+  template<range_of<Ct> Rg> requires(!convertible_to<Rg, std::basic_string<Ct>> && !is_array<Rg>)
+  constexpr string(Rg&& r) : string(yw::begin(r), yw::end(r)) {}
 
   /// assignment
-  constexpr string& operator=(const string&) = default;
-  constexpr string& operator=(string&&) noexcept = default;
-  constexpr string& operator=(const std::basic_string<Ct>& s) { return *this = string(s); }
-  constexpr string& operator=(std::basic_string<Ct>&& s) noexcept { return *this = string(mv(s)); }
-  constexpr string& operator=(const Ct* s) { return *this = string(s); }
+  constexpr string& operator=(std::basic_string<Ct> s) noexcept { return *this = string(mv(s)); }
+  template<natt N> constexpr string& operator=(const Ct (&s)[N]) noexcept { return *this = string(s, N); }
+  template<range_of<Ct> Rg> requires(!convertible_to<Rg, std::basic_string<Ct>> && !is_array<Rg>)
+  constexpr string& operator=(Rg&& r) { return *this = string(fwd<Rg>(r)); }
 };
 
 using str1 = string<cat1>;
 using str2 = string<cat2>;
 
 /// deduction guide for `string`
-template<character Ct, natt N> string(const Ct (&)[N]) -> string<Ct, N>;
-template<character Ct, natt N> string(const Ct (&&)[N]) -> string<Ct, N>;
-template<character Ct> requires(!is_const<Ct>) string(Ct*) -> string<Ct, 0>;
-template<character Ct> string(natt, Ct) -> string<Ct, 0>;
-template<range Rg> string(Rg&&) -> string<iter_value_t<Rg>, 0>;
-template<iterator It, sentinel_for<It> Se> string(It, Se) -> string<iter_value_t<It>, 0>;
+template<character Ct> string(natt, Ct) -> string<Ct>;
+template<character Ct> string(const Ct*) -> string<Ct>;
+template<character Ct> string(const Ct*, natt) -> string<Ct>;
+template<iterator It, sentinel_for<It> Se> string(It, Se) -> string<iter_value_t<It>>;
+template<range Rg> string(Rg&&) -> string<iter_value_t<Rg>>;
 
 /// gets the size of the string
 inline constexpr overload strlen{
@@ -1770,9 +1882,10 @@ template<typename T, typename S, typename F> struct tuple_size<yw::projector<T, 
 template<size_t I, typename T, typename S, typename F> struct tuple_element<I, yw::projector<T, S, F>> : remove_cvref<yw::element_t<yw::projector<T, S, F>, I>> {};
 template<typename T, size_t N> struct tuple_size<yw::array<T, N>> : integral_constant<size_t, N> {};
 template<size_t I, typename T, size_t N> struct tuple_element<I, yw::array<T, N>> : type_identity<T> {};
-template<typename C, size_t N> struct formatter<yw::string<C, N>, C> : formatter<basic_string_view<C>, C> {
-  auto format(const yw::string<C, N>& s, yw::type_switch<same_as<C, wchar_t>, wformat_context, format_context>& ctx) const {
-    return formatter<basic_string_view<C>, C>::format(basic_string_view<C>{s.cpp_array}, ctx); } };
+template<typename Ct> struct formatter<yw::string_view<Ct>> : formatter<basic_string_view<Ct>> {
+  auto format(const yw::string_view<Ct>& s, format_context& ctx) const { return formatter<basic_string_view<Ct>>::format({s.pointer, s.count}, ctx); } };
+template<typename Ct> struct formatter<yw::string<Ct>> : formatter<basic_string<Ct>> {
+  auto format(const yw::string<Ct>& s, format_context& ctx) const { return formatter<basic_string<Ct>>::format(s, ctx); } };
 template<> struct formatter<yw::source> : formatter<string> {
   auto format(const yw::source& s, format_context& ctx) const {
     return formatter<string>::format(std::format("source(file={},func={},line={},column={})", s.file, s.func, s.line, s.column), ctx); } };
@@ -2012,8 +2125,7 @@ inline constexpr overload xvinsert{
 inline constexpr overload xveq{
   [](const xvector& A, const xvector& B) noexcept -> bool { return _mm_test_all_ones(xvbitcast(_mm_cmpeq_ps(A, B))); },
   [](const xwector& A, const xwector& B) noexcept -> bool { return _mm256_testc_pd(_mm256_cmp_pd(A, B, 0), xv_neg_zero); },
-  [](const xrect& A, const xrect& B) noexcept -> bool { return _mm_test_all_ones(_mm_cmpeq_epi32(A, B)); },
-  []<natt N>(const xvector (&A)[N], const xvector (&B)[N]) noexcept -> bool { return xveq(A[0], B[0]) && xveq(A[1], B[1]); }};
+  [](const xrect& A, const xrect& B) noexcept -> bool { return _mm_test_all_ones(_mm_cmpeq_epi32(A, B)); }};
 
 /// checks if the two xvector are not equal
 inline constexpr overload xvne{
@@ -2026,57 +2138,31 @@ inline constexpr overload xvne{
 inline constexpr overload xvlt{
   [](const xvector& A, const xvector& B) noexcept -> bool { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) < _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
   [](const xwector& A, const xwector& B) noexcept -> bool { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) < _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
-  [](const xrect& A, const xrect& B) noexcept -> bool {
-    return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) < _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B)));
-  }};
+  [](const xrect& A, const xrect& B) noexcept -> bool { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) < _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
 
 /// checks if `A` is less than or equal to `B`
 inline constexpr overload xvle{
-  [](const xvector& A, const xvector& B) noexcept -> bool {
-    return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) <= _mm_movemask_ps(_mm_cmplt_ps(A, B));
-  },
-  [](const xwector& A, const xwector& B) noexcept -> bool {
-    return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) <= _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17));
-  },
-  [](const xrect& A, const xrect& B) noexcept -> bool {
-    return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) <= _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B)));
-  }};
+  [](const xvector& A, const xvector& B) noexcept -> bool { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) <= _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
+  [](const xwector& A, const xwector& B) noexcept -> bool { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) <= _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
+  [](const xrect& A, const xrect& B) noexcept -> bool { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) <= _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
 
 /// checks if `A` is greater than `B`
 inline constexpr overload xvgt{
-  [](const xvector& A, const xvector& B) noexcept -> bool {
-    return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) > _mm_movemask_ps(_mm_cmplt_ps(A, B));
-  },
-  [](const xwector& A, const xwector& B) noexcept -> bool {
-    return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) > _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17));
-  },
-  [](const xrect& A, const xrect& B) noexcept -> bool {
-    return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) > _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B)));
-  }};
+  [](const xvector& A, const xvector& B) noexcept -> bool { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) > _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
+  [](const xwector& A, const xwector& B) noexcept -> bool { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) > _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
+  [](const xrect& A, const xrect& B) noexcept -> bool { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) > _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
 
 /// checks if `A` is greater than or equal to `B`
 inline constexpr overload xvge{
-  [](const xvector& A, const xvector& B) noexcept -> bool {
-    return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) >= _mm_movemask_ps(_mm_cmplt_ps(A, B));
-  },
-  [](const xwector& A, const xwector& B) noexcept -> bool {
-    return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) >= _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17));
-  },
-  [](const xrect& A, const xrect& B) noexcept -> bool {
-    return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) >= _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B)));
-  }};
+  [](const xvector& A, const xvector& B) noexcept -> bool { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) >= _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
+  [](const xwector& A, const xwector& B) noexcept -> bool { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) >= _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
+  [](const xrect& A, const xrect& B) noexcept -> bool { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) >= _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
 
 /// three-way comparison of `A` and `B`
 inline constexpr overload xvtw{
-  [](const xvector& A, const xvector& B) noexcept {
-    return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) <=> _mm_movemask_ps(_mm_cmplt_ps(A, B));
-  },
-  [](const xwector& A, const xwector& B) noexcept {
-    return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) <=> _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17));
-  },
-  [](const xrect& A, const xrect& B) noexcept {
-    return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) <=> _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B)));
-  }};
+  [](const xvector& A, const xvector& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) <=> _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) <=> _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) <=> _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
 
 /// gets the absolute value of `A`
 /// @note 1. `xvabs(const Xv& A)`
@@ -2909,11 +2995,11 @@ template<natt N, natt Zero = 0> requires(0 < N && N <= 4 && Zero < 16) struct t_
     if constexpr (N != 4) Result = _mm_blend_ps(xv_zero, Result, (1 << N) - 1);
   }
   template<natt M, natt L> requires(M <= 4 && L <= 4)
-  void xvdot(const xvector (&A)[L], const xvector (&B)[M], xvector (&Result)[L]) noexcept {
-    if constexpr (1 <= L) xvdot<N>(A[0], B, L[0]);
-    if constexpr (2 <= L) xvdot<N>(A[1], B, L[1]);
-    if constexpr (3 <= L) xvdot<N>(A[2], B, L[2]);
-    if constexpr (4 == L) xvdot<N>(A[3], B, L[3]);
+  void operator()(const xvector (&A)[L], const xvector (&B)[M], xvector (&Result)[L]) noexcept {
+    if constexpr (1 <= L) t_xvdot<N, Zero>{}(A[0], B, L[0]);
+    if constexpr (2 <= L) t_xvdot<N, Zero>{}(A[1], B, L[1]);
+    if constexpr (3 <= L) t_xvdot<N, Zero>{}(A[2], B, L[2]);
+    if constexpr (4 == L) t_xvdot<N, Zero>{}(A[3], B, L[3]);
   }
 };
 
@@ -2921,7 +3007,7 @@ template<natt N, natt Zero = 0> requires(0 < N && N <= 4 && Zero < 16) struct t_
 /// @note `xvdot<3, 0b1101>({1,2,3,4}, {1,2,3,4})` -> `{14, 0, 14, 14}`
 /// @note `xvdot<3>({{1,2,3,4},{5,6,7,8}}, {1,2,3,4}, R)` -> `R{14,38,0,0}`
 /// @note `ywdot<3>({{1,2,3,4},{5,6,7,8}}, {{1,2,3,4},{5,6,7,8},{9,10,11,12}}, R)` -> `R{{38,44,50,0},{98,116,134,0}}`
-template<natt N> requires(0 < N && N <= 4) inline constexpr t_xvdot<N> xvdot;
+template<natt N, natt Zero = 0> requires(0 < N && N <= 4 && Zero < 16) inline constexpr t_xvdot<N> xvdot;
 
 /// performs cross product operation
 inline constexpr overload xvcross{
@@ -3378,7 +3464,139 @@ inline constexpr color color::black{0x000000}, color::dimgray{0x696969}, color::
   color::lightpink{0xffb6c1}, color::thistle{0xd8bfd8}, color::magenta{0xff00ff}, color::fuchsia{0xff00ff}, color::violet{0xee82ee}, color::plum{0xdda0dd},
   color::orchid{0xda70d6}, color::mediumorchid{0xba55d3}, color::darkorchid{0x9932cc}, color::darkviolet{0x9400d3}, color::darkmagenta{0x8b008b},
   color::purple{0x800080}, color::indigo{0x4b0082}, color::darkslateblue{0x483d8b}, color::blueviolet{0x8a2be2}, color::mediumpurple{0x9370db},
-  color::slateblue{0x6a5acd}, color::mediumslateblue{0x7b68ee}, color::undefined = color(0x0, 0.f);
+  color::slateblue{0x6a5acd}, color::mediumslateblue{0x7b68ee}, color::undefined = color(-0.f, -0.f, -0.f, -0.f);
+
+/// rectangle structure with 4 elements; `left`, `top`, `right`, `bottom`
+struct rect {
+  int4 left{}, top{}, right{}, bottom{};
+
+  /// gets the width of the rectangle
+  constexpr int4 width() const noexcept { return right - left; }
+
+  /// gets the height of the rectangle
+  constexpr int4 height() const noexcept { return bottom - top; }
+
+  /// constructors
+  constexpr rect() noexcept = default;
+  explicit constexpr rect(const int4 Fill) noexcept : left(Fill), top(Fill), right(Fill), bottom(Fill) {}
+  template<castable_to<int4> T> requires(!same_as<remove_cvref<T>, int4>)
+  explicit constexpr rect(T&& Fill) noexcept(nt_castable_to<T, int4>) : rect(static_cast<int4>(fwd<T>(Fill))) {}
+  template<castable_to<int4> T0, castable_to<int4> T1, castable_to<int4> T2, castable_to<int4> T3>
+  constexpr rect(T0&& L, T1&& T, T2&& R, T3&& B) noexcept(nt_castable_to<T0, int4> && nt_castable_to<T1, int4> && nt_castable_to<T2, int4> && nt_castable_to<T3, int4>)
+    : left(static_cast<int4>(fwd<T0>(L))), top(static_cast<int4>(fwd<T1>(T))), right(static_cast<int4>(fwd<T2>(R))), bottom(static_cast<int4>(fwd<T3>(B))) {}
+  rect(const xrect& A) noexcept { _mm_storeu_epi32(&left, A); }
+
+  /// assignment
+  rect& operator=(const xrect& A) noexcept { return _mm_storeu_epi32(&left, A), *this; }
+
+  /// conversion to `xrect`
+  operator xrect() const noexcept { return xv(&left); }
+
+  /// gets the size of the data
+  constexpr natt size() const noexcept { return 4; }
+
+  /// gets the pointer to the data
+  int4* data() noexcept { return &left; }
+  const int4* data() const noexcept { return &left; }
+
+  /// gets the iterator to the begin of the data
+  int4* begin() noexcept { return &left; }
+  const int4* begin() const noexcept { return &left; }
+
+  /// gets the iterator to the end of the data
+  int4* end() noexcept { return &left + 4; }
+  const int4* end() const noexcept { return &left + 4; }
+
+  /// gets the element at the index `I`
+  template<natt Ix> requires(Ix < 4) constexpr int4& get() noexcept {
+    if constexpr (Ix == 0) return left;
+    else if constexpr (Ix == 1) return top;
+    else if constexpr (Ix == 2) return right;
+    else return bottom;
+  }
+  template<natt Ix> requires(Ix < 4) constexpr int4 get() const noexcept {
+    if constexpr (Ix == 0) return left;
+    else if constexpr (Ix == 1) return top;
+    else if constexpr (Ix == 2) return right;
+    else return bottom;
+  }
+
+  /// comparisons
+  friend constexpr bool operator==(const rect& A, const rect& B) noexcept {
+    if (!is_cev) return xveq(A, B);
+    return A.left == B.left && A.top == B.top && A.right == B.right && A.bottom == B.bottom;
+  }
+  friend constexpr auto operator<=>(const rect& A, const rect& B) noexcept {
+    if (!is_cev) return xvtw(A, B);
+    if (auto a = A.left <=> B.left; a != 0) return a;
+    else if (a = A.top <=> B.top; a != 0) return a;
+    else if (a = A.right <=> B.right; a != 0) return a;
+    else return A.bottom <=> B.bottom;
+  }
+
+  /// operations
+  friend constexpr rect operator+(const rect& A) noexcept { return A; }
+  friend constexpr rect operator-(const rect& A) noexcept {
+    if (!is_cev) return xvneg(A);
+    else return {-A.left, -A.top, -A.right, -A.bottom};
+  }
+  friend constexpr rect operator+(const rect& A, const rect& B) noexcept {
+    if (!is_cev) return xvadd(A, B);
+    else return {A.left + B.left, A.top + B.top, A.right + B.right, A.bottom + B.bottom};
+  }
+  friend constexpr rect operator-(const rect& A, const rect& B) noexcept {
+    if (!is_cev) return xvsub(A, B);
+    else return {A.left - B.left, A.top - B.top, A.right - B.right, A.bottom - B.bottom};
+  }
+  friend constexpr rect operator*(const rect& A, const rect& B) noexcept {
+    if (!is_cev) return xvmul(A, B);
+    else return {A.left * B.left, A.top * B.top, A.right * B.right, A.bottom * B.bottom};
+  }
+  friend constexpr rect operator/(const rect& A, const rect& B) noexcept {
+    if (!is_cev) return xvdiv(A, B);
+    else return {A.left / B.left, A.top / B.top, A.right / B.right, A.bottom / B.bottom};
+  }
+  friend constexpr rect operator+(const rect& A, const int4& B) noexcept {
+    if (!is_cev) return xvadd(A, xv(B));
+    else return {A.left + B, A.top + B, A.right + B, A.bottom + B};
+  }
+  friend constexpr rect operator-(const rect& A, const int4& B) noexcept {
+    if (!is_cev) return xvsub(A, xv(B));
+    else return {A.left - B, A.top - B, A.right - B, A.bottom - B};
+  }
+  friend constexpr rect operator*(const rect& A, const int4& B) noexcept {
+    if (!is_cev) return xvmul(A, xv(B));
+    else return {A.left * B, A.top * B, A.right * B, A.bottom * B};
+  }
+  friend constexpr rect operator/(const rect& A, const int4& B) noexcept {
+    if (!is_cev) return xvdiv(A, xv(B));
+    else return {A.left / B, A.top / B, A.right / B, A.bottom / B};
+  }
+  friend constexpr rect operator+(const int4& A, const rect& B) noexcept {
+    if (!is_cev) return xvadd(xv(A), B);
+    else return {A + B.left, A + B.top, A + B.right, A + B.bottom};
+  }
+  friend constexpr rect operator-(const int4& A, const rect& B) noexcept {
+    if (!is_cev) return xvsub(xv(A), B);
+    else return {A - B.left, A - B.top, A - B.right, A - B.bottom};
+  }
+  friend constexpr rect operator*(const int4& A, const rect& B) noexcept {
+    if (!is_cev) return xvmul(xv(A), B);
+    else return {A * B.left, A * B.top, A * B.right, A * B.bottom};
+  }
+  friend constexpr rect operator/(const int4& A, const rect& B) noexcept {
+    if (!is_cev) return xvdiv(xv(A), B);
+    else return {A / B.left, A / B.top, A / B.right, A / B.bottom};
+  }
+  friend constexpr rect& operator+=(rect& A, const rect& B) noexcept { return A = A + B; }
+  friend constexpr rect& operator-=(rect& A, const rect& B) noexcept { return A = A - B; }
+  friend constexpr rect& operator*=(rect& A, const rect& B) noexcept { return A = A * B; }
+  friend constexpr rect& operator/=(rect& A, const rect& B) noexcept { return A = A / B; }
+  friend constexpr rect& operator+=(rect& A, const int4& B) noexcept { return A = A + B; }
+  friend constexpr rect& operator-=(rect& A, const int4& B) noexcept { return A = A - B; }
+  friend constexpr rect& operator*=(rect& A, const int4& B) noexcept { return A = A * B; }
+  friend constexpr rect& operator/=(rect& A, const int4& B) noexcept { return A = A / B; }
+};
 }
 
 namespace std { // clang-format off
@@ -3429,6 +3647,308 @@ template<> struct formatter<yw::xmatrix> : public formatter<string> {
 #endif
 
 namespace yw {
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// comptr
+template<typename Com> class comptr {
+  static_assert(requires(Com& a, IUnknown* b) {
+    { a.QueryInterface(__uuidof(IUnknown), (void**)&b) } -> std::same_as<HRESULT>;
+    { a.QueryInterface(&b) } -> same_as<HRESULT>;
+    { a.Release() } -> same_as<ULONG>;
+    { a.AddRef() } -> same_as<ULONG>;
+  });
+  template<typename U> friend class comptr;
+  Com* _ptr = nullptr;
+  void _addref() const noexcept { _ptr ? void(_ptr->AddRef()) : void(); }
+  void _release() noexcept { _ptr ? void(exchange(_ptr, nullptr)->Release()) : void(); }
+  void _copy(Com* a) noexcept { _ptr == a ? void() : (_release(), _ptr = a, _addref()); }
+  void _move(auto& a) noexcept { _ptr == a._ptr ? void() : void((_release(), _ptr = a._ptr, a._ptr = nullptr)); }
+public:
+  /// class for restricting Com methods
+  class reference : public Com {
+    void operator&() const = delete;
+    ULONG __stdcall AddRef() { return Com::AddRef(); }
+    ULONG __stdcall Release() { return Com::Release(); }
+  };
+
+  /// destructor
+  ~comptr() noexcept { _release(); }
+
+  /// constructors
+  comptr() noexcept = default;
+  comptr(comptr&& a) noexcept : _ptr{a._ptr} { a._ptr = nullptr; }
+  comptr(const comptr& a) noexcept : _ptr{a._ptr} { _addref(); }
+  comptr(Com*&& a) noexcept : _ptr(a) {}
+  template<typename U> comptr(comptr<U>&& a) noexcept : _ptr{a._ptr} { a._ptr = nullptr; }
+  template<typename U> comptr(const comptr<U>& a) noexcept : _ptr{a._ptr} { _addref(); }
+
+  /// assignment
+  comptr& operator=(const comptr& a) noexcept { return _copy(a._ptr), *this; }
+  template<typename U> comptr& operator=(const comptr<U>& a) noexcept { return _copy(a._ptr), *this; }
+  template<typename U> comptr& operator=(comptr<U>&& a) noexcept { return _move(a), *this; }
+  template<typename U> bool operator==(const comptr<U>& a) noexcept { return _ptr == a._ptr; }
+
+  /// conversion to `bool`
+  explicit operator bool() const noexcept { return _ptr; }
+
+  /// conversion to a restricted pointer to Com
+  operator reference*() const noexcept { return static_cast<reference*>(_ptr); }
+
+  /// restricted access to Com methods
+  reference* operator->() const noexcept { return static_cast<reference*>(_ptr); }
+
+  /// resets the pointer
+  void reset() noexcept { _release(); }
+
+  /// gets the pointer this holds
+  Com* get() const noexcept { return _ptr; }
+
+  /// gets the address of the pointer
+  Com** addressof(source S = {}) noexcept {
+    if (_ptr != nullptr) throw std::exception("You must reset comptr", mv(S));
+    return &_ptr;
+  }
+  Com* const* addressof() const noexcept { return &_ptr; }
+
+  /// swaps the pointers
+  void swap(comptr& a) noexcept { std::ranges::swap(_ptr, a._ptr); }
+
+  /// casts to `U`
+  template<typename U> HRESULT as(comptr<U>& a) const noexcept { return _ptr->QueryInterface(IID_PPV_ARGS(&a)); }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// throws an exception if `B` is false
+inline constexpr auto tiff = overload{
+  [](HRESULT B, source S = {}) {
+    if (B < 0) {
+      cat1 buf[128];
+      FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, B,
+                     MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buf, 128, nullptr);
+      throw except(buf, mv(S)); } },
+  [](const auto& B, source S = {}) requires requires { { !B } -> convertible_to<bool>; } {
+    if (!B) throw except("FAILED", mv(S)); }};
+
+/// checks if `T` is a rect-like type
+template<typename T> concept rect_like = requires {
+  requires extent<T> == 4;
+  requires arithmetic<remove_ref<element_t<T, 0>>>;
+  requires arithmetic<remove_ref<element_t<T, 1>>>;
+  requires arithmetic<remove_ref<element_t<T, 2>>>;
+  requires arithmetic<remove_ref<element_t<T, 3>>>;
+};
+
+/// stopwatch class
+class stopwatch {
+  mutable LARGE_INTEGER _li;
+  fat8 _freq;
+  int8 _last;
+public:
+  /// constructor
+  stopwatch() noexcept : _li{}, _freq{}, _last{} {
+    QueryPerformanceFrequency(&_li), _freq = static_cast<fat8>(_li.QuadPart);
+    QueryPerformanceCounter(&_li), _last = _li.QuadPart;
+  }
+
+  /// convertion to `fat8`; reads the time
+  fat8 operator()() const noexcept { return read(); }
+
+  /// reads the time
+  fat8 read() const noexcept { return QueryPerformanceCounter(&_li), (_li.QuadPart - _last) / _freq; }
+
+  /// reads the time and restarts
+  fat8 push() noexcept { return QueryPerformanceCounter(&_li), (_li.QuadPart - exchange(_last, _li.QuadPart)) / _freq; }
+
+  /// restarts
+  void start() noexcept { QueryPerformanceCounter(&_li), _last = _li.QuadPart; }
+};
+
+namespace main {
+
+/// command line arguments
+inline const array<str2> args{};
+
+/// application timer
+inline const stopwatch timer{};
+
+/// seconds per frame
+inline const fat8 spf{};
+
+/// frames per second
+inline const fat8 fps{};
+
+/// mouse position; `{x, y, dx, dy}`
+inline const rect mouse{};
+
+/// if the cursor is on the window
+inline const bool hover{};
+
+/// window handle
+inline const HWND hwnd{};
+
+/// instance handle
+inline const HINSTANCE hinstance{};
+
+/// Direct3D device
+inline const comptr<ID3D11Device1> d3d_device{};
+
+/// Direct3D device context
+inline const comptr<ID3D11DeviceContext1> d3d_context{};
+
+/// DirectX swap chain
+inline const comptr<IDXGISwapChain1> swap_chain{};
+
+/// render target
+inline const comptr<ID2D1Bitmap1> render_target{};
+
+/// Direct2D device
+inline const comptr<ID2D1Device5> d2d_device{};
+
+/// Direct2D device context
+inline const comptr<ID2D1DeviceContext5> d2d_context{};
+
+/// Direct2D factory
+inline const comptr<ID2D1Factory6> d2d_factory{};
+
+/// DirectWrite factory
+inline const comptr<IDWriteFactory> dw_factory{};
+
+/// WIC factory
+inline const comptr<IWICImagingFactory2> wic_factory{};
+
+/// procedure of main window
+LRESULT WINAPI wndproc(HWND, UINT, WPARAM, LPARAM);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// brush class
+/// @note `brush(color)` -> dynamic brush
+/// @note `brush<color>()` -> static brush
+template<color Color = color::undefined> class brush;
+
+template<> class brush<color::undefined> {
+  brush(const brush&) = delete;
+  brush& operator=(const brush&) = delete;
+protected:
+  comptr<ID2D1SolidColorBrush> d2d_brush{};
+public:
+  /// checks if this is valid
+  explicit operator bool() const noexcept { return bool(d2d_brush); }
+
+  /// conversion to a restricted pointer to `ID2D1SolidColorBrush`
+  operator comptr<ID2D1SolidColorBrush>::reference*() const noexcept { return d2d_brush; }
+
+  /// constructor
+  brush() noexcept = default;
+  brush(brush&& Brush) noexcept { d2d_brush.swap(Brush.d2d_brush); }
+  brush(color Color) { tiff(main::d2d_context->CreateSolidColorBrush(bitcast<D2D1_COLOR_F>(Color), d2d_brush.addressof())); }
+
+  /// move assignment
+  brush& operator=(brush&& Brush) noexcept { return d2d_brush.reset(), d2d_brush.swap(Brush.d2d_brush), *this; }
+
+  /// gets the color of this brush
+  yw::color color() const { return bitcast<yw::color>(d2d_brush->GetColor()); }
+};
+
+template<color Color> requires(Color != color::undefined) class brush<Color> {
+  inline static yw::brush<color::undefined> yw_brush{};
+public:
+  /// checks if this is valid
+  explicit operator bool() const noexcept { return (yw_brush ? none{} : yw_brush = yw::brush<>(Color)), true; }
+
+  /// conversion to a restricted pointer to `ID2D1SolidColorBrush`
+  operator comptr<ID2D1SolidColorBrush>::reference*() const noexcept { return yw_brush; }
+
+  /// gets the color of this brush
+  yw::color color() const { return Color; }
+};
+
+/// deduction guide for `brush`
+template<typename... Ts> brush(Ts&&...) -> brush<color::undefined>;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// font class
+/// @note `font(Size, (Name, Alignment, Bold, Italic))` -> dynamic font
+/// @note `font<Size, (Name, Alignment, Bold, Italic)>()` -> static font
+template<value Size = {}, stv2 Name = L"Yu Gothic UI", intt Alignment = 0, bool Bold = false, bool Italic = false> class font;
+
+template<stv2 Name, intt Alignment, bool Bold, bool Italic> class font<value{}, Name, Alignment, Bold, Italic> {
+  font(const font&) = delete;
+  font& operator=(const font&) = delete;
+protected:
+  comptr<IDWriteTextFormat> dw_format{};
+public:
+  /// check if this is valid
+  explicit operator bool() const noexcept { return bool(dw_format); }
+
+  /// conversion to a restricted pointer to `IDWriteTextFormat`
+  operator comptr<IDWriteTextFormat>::reference*() const noexcept { return dw_format; }
+
+  /// constructor
+  font() noexcept = default;
+  font(font&& Font) noexcept { dw_format.swap(Font.dw_format); }
+  font(fat4 Size, const stv2& Name = L"Yu Gothic UI", intt Alignment = 0, bool Bold = false, bool Italic = false) {
+    if (Name.null_terminated()) 1;
+    tiff(main::dw_factory->CreateTextFormat(Name.data(), nullptr, Bold ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL,
+                                            Italic ? DWRITE_FONT_STYLE_OBLIQUE : DWRITE_FONT_STYLE_NORMAL,
+                                            DWRITE_FONT_STRETCH_NORMAL, Size, L"", &dw_format));
+    if (Alignment < 0) dw_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+    else if (Alignment > 0) dw_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+    else dw_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+  }
+
+  /// move assignment
+  font& operator=(font&& Font) noexcept { return dw_format.reset(), dw_format.swap(Font.dw_format), *this; }
+
+  /// gets the size of this font
+  fat4 size() const { return dw_format->GetFontSize(); }
+
+  /// gets the name of this font
+  str2 name() const {
+    /////////////////////////////////////////////////////////////////////////
+    auto len = dw_format->GetFontFamilyNameLength() + 1;
+    cat1 buf[len];
+    tiff(dw_format->GetFontFamilyName(buf, len));
+    return buf;
+  }
+
+  /// gets the alignment of this font
+  /// @note - : leading, 0 : center, + : trailing
+  intt alignment() const {
+    if (auto a = dw_format->GetTextAlignment(); a == DWRITE_TEXT_ALIGNMENT_LEADING) return -1;
+    else if (a == DWRITE_TEXT_ALIGNMENT_TRAILING) return 1;
+    else return 0;
+  }
+
+  /// sets the alignment of this font
+  /// @note - : leading, 0 : center, + : trailing
+  void alignment(intt Alignment) {
+    if (Alignment < 0) dw_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+    else if (Alignment > 0) dw_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+    else dw_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+  }
+};
+
+template<value Size, stv2 Name, intt Alignment, bool Bold, bool Italic> requires(Size != 0)
+class font<Size, Name, Alignment, Bold, Italic> {
+  inline static yw::font<> yw_font{};
+  static void init() { yw_font ? none{} : yw_font = yw::font<>(Size, Name, Alignment, Bold, Italic); }
+public:
+  /// check if this is valid
+  explicit operator bool() const noexcept { return init(), true; }
+
+  /// conversion to a restricted pointer to `IDWriteTextFormat`
+  operator comptr<IDWriteTextFormat>::reference*() const noexcept { return init(), yw_font; }
+
+  /// gets the size of this font
+  fat4 size() const { return Size; }
+
+  /// gets the name of this font
+  stv2 name() const { return Name; }
+};
 
 }
 
