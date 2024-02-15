@@ -479,16 +479,16 @@ template<typename F, typename... As> concept nt_invocable =
   invocable<F, As...> && std::is_nothrow_invocable_v<F, As...>;
 
 /// gets the result type of invoking `F` with `As`
-template<typename F, typename... As> using result_t =
+template<typename F, typename... As> using invoke_result_t =
   type_switch<is_void<std::invoke_result_t<F, As...>>, none, std::invoke_result_t<F, As...>>;
 
 /// checks if `F` is invocable with `As` and the result is convertible to `R`
 template<typename F, typename R, typename... As> concept invocable_r =
-  invocable<F, As...> && convertible_to<result_t<F, As...>, R>;
+  invocable<F, As...> && convertible_to<invoke_result_t<F, As...>, R>;
 
 /// checks if `F` is nothrow invocable with `As` and the result is nothrow convertible to `R`
 template<typename F, typename R, typename... As> concept nt_invocable_r =
-  nt_invocable<F, As...> && nt_convertible_to<result_t<F, As...>, R>;
+  nt_invocable<F, As...> && nt_convertible_to<invoke_result_t<F, As...>, R>;
 
 /// checks if `F` is a predicate; i.e. the result of invoking `F` with `As` is convertible to `bool`
 template<typename F, typename... As> concept predicate = invocable_r<F, bool, As...>;
@@ -497,7 +497,7 @@ template<typename F, typename... As> concept predicate = invocable_r<F, bool, As
 
 /// invokes `Func` with `Args`
 inline constexpr auto invoke = []<typename F, typename... As>(F&& Func, As&&... Args)
-  noexcept(nt_invocable<F, As...>) -> result_t<F, As...> requires invocable<F, As...> {
+  noexcept(nt_invocable<F, As...>) -> invoke_result_t<F, As...> requires invocable<F, As...> {
   if constexpr (is_void<std::invoke_result_t<F, As...>>) return std::invoke(fwd<F>(Func), fwd<As>(Args)...), none{};
   else return std::invoke(fwd<F>(Func), fwd<As>(Args)...);
 };
@@ -845,6 +845,9 @@ template<typename T, natt N = 0> class array {
 public:
   using value_type = T;
   T _cpp_array[N]{};
+
+  /// size of the array
+  static constexpr natt count = N;
 
   /// copies elements of `Range` to this
   template<range_for<T> Rg> constexpr array& operator=(Rg&& Range) {
@@ -1312,7 +1315,7 @@ template<typename Fn, typename Tp, typename S = make_indices_for<Tp>> concept nt
 
 /// result of applying `Fn` to `Tp`
 template<typename Fn, typename Tp, typename S = make_indices_for<Tp>> requires applyable<Fn, Tp, S>
-using apply_result = decltype(apply(S{}, declval<Fn>(), declval<Tp>()));
+using apply_result_t = decltype(apply(S{}, declval<Fn>(), declval<Tp>()));
 
 struct t_vapply {
   template<natt... Is, typename Fn, tuple... Tps>
@@ -1348,7 +1351,7 @@ template<typename Fn, typename... Ts> concept nt_vapplyable = requires {
 
 /// result of vertically applying `Fn` to `Tps`
 template<typename Fn, typename... Ts> requires vapplyable<Fn, Ts...>
-using vapply_reresult = decltype(vapply(declval<Fn>(), declval<Ts>()...));
+using vapply_result_t = decltype(vapply(declval<Fn>(), declval<Ts>()...));
 
 struct t_vassign {
   template<natt... Is, typename TpL, typename TpR>
@@ -1429,7 +1432,7 @@ template<typename T, sequence_of<natt> Sq> requires(!tuple<T>) struct projector<
   template<natt I> requires(I < count) constexpr auto get() const ywlib_wrapper(ref);
 };
 
-/// makes a virtual tuple whose size is the same as `Sq` and whose elements are `result_t<Fn, T&>`
+/// makes a virtual tuple whose size is the same as `Sq` and whose elements are `invoke_result_t<Fn, T&>`
 template<typename T, sequence_of<natt> Sq, invocable<T> Fn> requires(!tuple<T>) struct projector<T, Sq, Fn> {
   static_assert(to_sequence<Sq, natt>::count != 0);
 
@@ -1476,7 +1479,7 @@ template<tuple Tp, sequence_of<natt> Sq> struct projector<Tp, Sq, none> {
 };
 
 
-/// makes a virtual tuple whose elements at index `I` are `result_t<Fn, element_t<Tp, Sq::at<I>>>`
+/// makes a virtual tuple whose elements at index `I` are `invoke_result_t<Fn, element_t<Tp, Sq::at<I>>>`
 template<tuple Tp, sequence_of<natt> Sq, vapplyable<Tp, Sq> Fn> struct projector<Tp, Sq, Fn> {
   static_assert(to_sequence<Sq, natt>::count != 0);
 
@@ -1850,12 +1853,12 @@ public:
 /// class for calling the specified function object when itself is evaluated
 template<invocable... Fs> struct caster : public Fs... {
   template<typename T> static constexpr natt i = []<typename... Ts>(typepack<Ts...>) {
-    return inspects<same_as<Ts, T>...>; }(typepack<result_t<Fs>...>{});
+    return inspects<same_as<Ts, T>...>; }(typepack<invoke_result_t<Fs>...>{});
   template<typename T> static constexpr natt j = i<T> < sizeof...(Fs) ? i<T> : []<typename... Ts>(typepack<Ts...>) {
-    return inspects<convertible_to<Ts, T>...>; }(typepack<result_t<Fs>...>{});
+    return inspects<convertible_to<Ts, T>...>; }(typepack<invoke_result_t<Fs>...>{});
 public:
   template<typename T> requires(j<T> < sizeof...(Fs)) constexpr operator T() const
-    noexcept(nt_convertible_to<result_t<type_switch<j<T>, Fs...>>, T>)
+    noexcept(nt_convertible_to<invoke_result_t<type_switch<j<T>, Fs...>>, T>)
   { return type_switch<j<T>, Fs...>::operator()(); }
 };
 
@@ -3641,9 +3644,10 @@ template<> struct formatter<yw::xmatrix> : public formatter<string> {
 #ifdef ywlib_debug
 #define _DEBUG
 #define ywlib_enable_console
-#define ywee(Str) std::cerr << Str << std::endl
+#define ywlib_assert(Bool, Str) \
+  if (!(Bool)) std::cerr << Str << std::endl, throw yw::except(Str)
 #else
-#define ywee(Str) void()
+#define ywlib_assert(Bool, Str) void()
 #endif
 
 namespace yw {
@@ -3704,11 +3708,11 @@ public:
   Com* get() const noexcept { return _ptr; }
 
   /// gets the address of the pointer
-  Com** addressof(source S = {}) noexcept {
-    if (_ptr != nullptr) throw std::exception("You must reset comptr", mv(S));
+  Com** addressof(source S = {}) & {
+    if (_ptr != nullptr) throw except("You must reset comptr", mv(S));
     return &_ptr;
   }
-  Com* const* addressof() const noexcept { return &_ptr; }
+  Com* const* operator&() const noexcept { return &_ptr; }
 
   /// swaps the pointers
   void swap(comptr& a) noexcept { std::ranges::swap(_ptr, a._ptr); }
@@ -3766,6 +3770,9 @@ public:
 
 namespace main {
 
+/// username
+inline const str2 username{};
+
 /// command line arguments
 inline const array<str2> args{};
 
@@ -3778,11 +3785,17 @@ inline const fat8 spf{};
 /// frames per second
 inline const fat8 fps{};
 
-/// mouse position; `{x, y, dx, dy}`
+/// mouse position; `{x, y, na, na}`
 inline const rect mouse{};
 
 /// if the cursor is on the window
 inline const bool hover{};
+
+/// width of main window
+inline const nat4 width{};
+
+/// height of main window
+inline const nat4 height{};
 
 /// window handle
 inline const HWND hwnd{};
@@ -3800,7 +3813,7 @@ inline const comptr<ID3D11DeviceContext1> d3d_context{};
 inline const comptr<IDXGISwapChain1> swap_chain{};
 
 /// render target
-inline const comptr<ID2D1Bitmap1> render_target{};
+// inline const comptr<ID2D1Bitmap1> render_target{};
 
 /// Direct2D device
 inline const comptr<ID2D1Device5> d2d_device{};
@@ -3819,6 +3832,13 @@ inline const comptr<IWICImagingFactory2> wic_factory{};
 
 /// procedure of main window
 LRESULT WINAPI wndproc(HWND, UINT, WPARAM, LPARAM);
+
+/// callback function for file drag and drop
+inline void (*dropped)(array<path> Files) = nullptr;
+
+/// callback function for hacking procedure
+/// @note If this returns `true`, the default procedure will be ignored.
+inline bool (*userproc)(HWND, nat4, natt, intt) = nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -3838,7 +3858,10 @@ public:
   explicit operator bool() const noexcept { return bool(d2d_brush); }
 
   /// conversion to a restricted pointer to `ID2D1SolidColorBrush`
-  operator comptr<ID2D1SolidColorBrush>::reference*() const noexcept { return d2d_brush; }
+  operator comptr<ID2D1SolidColorBrush>::reference*() const noexcept {
+    ywlib_assert(d2d_brush, "this brush is not valid");
+    return d2d_brush;
+  }
 
   /// constructor
   brush() noexcept = default;
@@ -3849,7 +3872,10 @@ public:
   brush& operator=(brush&& Brush) noexcept { return d2d_brush.reset(), d2d_brush.swap(Brush.d2d_brush), *this; }
 
   /// gets the color of this brush
-  yw::color color() const { return bitcast<yw::color>(d2d_brush->GetColor()); }
+  yw::color color() const {
+    ywlib_assert(d2d_brush, "this brush is not valid");
+    return bitcast<yw::color>(d2d_brush->GetColor());
+  }
 };
 
 template<color Color> requires(Color != color::undefined) class brush<Color> {
@@ -3885,16 +3911,25 @@ public:
   explicit operator bool() const noexcept { return bool(dw_format); }
 
   /// conversion to a restricted pointer to `IDWriteTextFormat`
-  operator comptr<IDWriteTextFormat>::reference*() const noexcept { return dw_format; }
+  operator comptr<IDWriteTextFormat>::reference*() const noexcept {
+    ywlib_assert(dw_format, "this font is not valid");
+    return dw_format;
+  }
+
+  /// default constructor
+  font() noexcept = default;
+
+  /// move constructor
+  font(font&& Font) noexcept { dw_format.swap(Font.dw_format); }
 
   /// constructor
-  font() noexcept = default;
-  font(font&& Font) noexcept { dw_format.swap(Font.dw_format); }
-  font(fat4 Size, const stv2& Name = L"Yu Gothic UI", intt Alignment = 0, bool Bold = false, bool Italic = false) {
+  font(fat4 Size, const stv2& Name = L"Yu Gothic UI",
+       intt Alignment = 0, bool Bold = false, bool Italic = false) {
     if (Name.null_terminated()) 1;
-    tiff(main::dw_factory->CreateTextFormat(Name.data(), nullptr, Bold ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL,
-                                            Italic ? DWRITE_FONT_STYLE_OBLIQUE : DWRITE_FONT_STYLE_NORMAL,
-                                            DWRITE_FONT_STRETCH_NORMAL, Size, L"", &dw_format));
+    tiff(main::dw_factory->CreateTextFormat(
+      Name.data(), nullptr, Bold ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL,
+      Italic ? DWRITE_FONT_STYLE_OBLIQUE : DWRITE_FONT_STYLE_NORMAL,
+      DWRITE_FONT_STRETCH_NORMAL, Size, L"", &dw_format));
     if (Alignment < 0) dw_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
     else if (Alignment > 0) dw_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
     else dw_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -3904,20 +3939,23 @@ public:
   font& operator=(font&& Font) noexcept { return dw_format.reset(), dw_format.swap(Font.dw_format), *this; }
 
   /// gets the size of this font
-  fat4 size() const { return dw_format->GetFontSize(); }
+  fat4 size() const {
+    ywlib_assert(dw_format, "this font is not valid");
+    return dw_format->GetFontSize();
+  }
 
   /// gets the name of this font
   str2 name() const {
-    /////////////////////////////////////////////////////////////////////////
-    auto len = dw_format->GetFontFamilyNameLength() + 1;
-    cat1 buf[len];
-    tiff(dw_format->GetFontFamilyName(buf, len));
-    return buf;
+    ywlib_assert(dw_format, "this font is not valid");
+    str2 out(dw_format->GetFontFamilyNameLength(), 0);
+    tiff(dw_format->GetFontFamilyName(out.data(), out.size() + 1));
+    return out;
   }
 
   /// gets the alignment of this font
   /// @note - : leading, 0 : center, + : trailing
   intt alignment() const {
+    ywlib_assert(dw_format, "this font is not valid");
     if (auto a = dw_format->GetTextAlignment(); a == DWRITE_TEXT_ALIGNMENT_LEADING) return -1;
     else if (a == DWRITE_TEXT_ALIGNMENT_TRAILING) return 1;
     else return 0;
@@ -3934,8 +3972,8 @@ public:
 
 template<value Size, stv2 Name, intt Alignment, bool Bold, bool Italic> requires(Size != 0)
 class font<Size, Name, Alignment, Bold, Italic> {
-  inline static yw::font<> yw_font{};
-  static void init() { yw_font ? none{} : yw_font = yw::font<>(Size, Name, Alignment, Bold, Italic); }
+  inline static yw::font<value{}> yw_font{};
+  static void init() { yw_font ? none{} : yw_font = yw::font<value{}>(Size, Name, Alignment, Bold, Italic); }
 public:
   /// check if this is valid
   explicit operator bool() const noexcept { return init(), true; }
@@ -3944,11 +3982,782 @@ public:
   operator comptr<IDWriteTextFormat>::reference*() const noexcept { return init(), yw_font; }
 
   /// gets the size of this font
-  fat4 size() const { return Size; }
+  constexpr fat4 size() const { return Size; }
 
   /// gets the name of this font
-  stv2 name() const { return Name; }
+  constexpr stv2 name() const { return Name; }
+
+  /// gets the alignment of this font
+  /// @note - : leading, 0 : center, + : trailing
+  constexpr intt alignment() const { return Alignment; }
 };
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<typename T> class staging_buffer;
+
+/// base class for creating gpu buffers
+template<typename T> class buffer {
+protected:
+  comptr<ID3D11Buffer> d3d_buffer;
+  buffer(const buffer&) = delete;
+  buffer& operator=(const buffer&) = delete;
+  buffer(natt Count) noexcept : count(static_cast<nat4>(Count)) {}
+public:
+  using value_type = T;
+  const nat4 count{};
+
+  /// constructors
+  buffer() noexcept = default;
+  buffer(buffer&& B) noexcept : d3d_buffer{mv(B.d3d_buffer)}, count{B.count} {}
+
+  /// move assignment
+  buffer& operator=(buffer&& B) noexcept {
+    d3d_buffer = mv(B.d3d_buffer);
+    const_cast<nat4&>(count) = B.count;
+    return *this;
+  }
+
+  /// checks if this is valid
+  explicit operator bool() const noexcept { return bool(d3d_buffer); }
+
+  /// conversion to a restricted pointer to `ID3D11Buffer`
+  operator comptr<ID3D11Buffer>::reference*() const noexcept {
+    ywlib_assert(d3d_buffer, "this buffer is not valid");
+    return d3d_buffer;
+  }
+
+  /// copies the contents of `Src` to this buffer.
+  /// @note `Src` must have the same size as this buffer.
+  void from(const buffer& Src) {
+    ywlib_assert(d3d_buffer, "this buffer is not valid");
+    ywlib_assert(count == Src.count, "the size of the source buffer must be the same as this buffer");
+    main::d3d_context->CopyResource(*this, Src);
+  }
+
+  /// copies the contents to CPU.
+  array<T> to_cpu() const;
+
+  /// copies the contents to CPU by pre-allocated `staging_buffer`.
+  array<T> to_cpu(staging_buffer<T>& Staging) const;
+};
+
+/// class for creating staging buffers.
+template<typename T> class staging_buffer : public buffer<T> {
+public:
+  /// default constructor
+  staging_buffer() noexcept = default;
+
+  /// copies the contents of `Src`
+  explicit staging_buffer(const buffer<T>& Src) : staging_buffer(Src.count) { buffer<T>::from(Src); }
+
+  /// creates a staging buffer with `Count` elements
+  explicit staging_buffer(natt Count) : buffer<T>(Count) {
+    D3D11_BUFFER_DESC desc{nat4(sizeof(T) * Count), D3D11_USAGE_STAGING, 0, D3D11_CPU_ACCESS_READ};
+    tiff(main::d3d_device->CreateBuffer(&desc, nullptr, buffer<T>::d3d_buffer.addressof()));
+  }
+
+  /// Copies this contents to CPU.
+  array<T> to_cpu() const {
+    ywlib_assert(*this, "this buffer is not valid");
+    array<T> a(buffer<T>::count);
+    D3D11_MAPPED_SUBRESOURCE mapped;
+    tiff(main::d3d_context->Map(*this, 0, D3D11_MAP_READ, 0, &mapped));
+    memcpy(a.data(), mapped.pData, nat4(sizeof(T)) * buffer<T>::count);
+    main::d3d_context->Unmap(*this, 0);
+    return a;
+  }
+};
+
+template<typename T> array<T> buffer<T>::to_cpu() const {
+  ywlib_assert(*this, "this buffer is not valid");
+  return staging_buffer<T>(*this).to_cpu();
+}
+template<typename T> array<T> buffer<T>::to_cpu(staging_buffer<T>& S) const {
+  ywlib_assert(*this, "this buffer is not valid");
+  return S.from(*this), S.to_cpu();
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// class for creating constant buffers
+template<typename T> requires((sizeof(T) & 0xf) == 0) class constant_buffer : public buffer<T> {
+public:
+  /// default constructor
+  constant_buffer() noexcept = default;
+
+  /// initializes by `Value`
+  constant_buffer(const T& Value) : buffer<T>(1) {
+    static constexpr D3D11_BUFFER_DESC desc{nat4(sizeof(T)), D3D11_USAGE_DYNAMIC, D3D11_BIND_CONSTANT_BUFFER, D3D11_CPU_ACCESS_WRITE};
+    [&](D3D11_SUBRESOURCE_DATA d) { tiff(main::d3d_device->CreateBuffer(&desc, &d, buffer<T>::d3d_buffer.addressof())); }({&Value});
+  }
+
+  /// copies `Value` to this buffer
+  template<typename U> requires assignable<T&, U> || vassignable<T&, U> void from(U&& Value) {
+    ywlib_assert(*this, "this buffer is not valid");
+    if (*this) {
+      D3D11_MAPPED_SUBRESOURCE mapped;
+      tiff(main::d3d_context->Map(*this, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped));
+      if constexpr (assignable<T&, U>) *reinterpret_cast<T*>(mapped.pData) = fwd<U>(Value);
+      else vassign(*reinterpret_cast<T*>(mapped.pData), fwd<U>(Value));
+      main::d3d_context->Unmap(*this, 0);
+    } else {
+      T temp;
+      if constexpr (assignable<T&, U>) *this = constant_buffer(temp = fwd<U>(Value));
+      else vassign(temp, fwd<U>(Value)), *this = constant_buffer(temp);
+    }
+  }
+
+  /// sets the value through `Func`
+  void from(invocable<T&> auto&& Func) {
+    ywlib_assert(*this, "this buffer is not valid");
+    if (*this) {
+      D3D11_MAPPED_SUBRESOURCE mapped;
+      tiff(main::d3d_context->Map(*this, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped));
+      Func(*reinterpret_cast<T*>(mapped.pData)), main::d3d_context->Unmap(*this, 0);
+    } else [&](T temp) { Func(temp), *this = constant_buffer(temp); }({});
+  }
+
+  /// sets this buffer to the vertex shader
+  void to_vs(natt Slot = 0) const {
+    ywlib_assert(*this, "this buffer is not valid");
+    main::d3d_context->VSSetConstantBuffers(nat4(Slot), 1, &(buffer<T>::d3d_buffer));
+  }
+
+  /// sets this buffer to the geometry shader
+  void to_gs(natt Slot = 0) const {
+    ywlib_assert(*this, "this buffer is not valid");
+    main::d3d_context->GSSetConstantBuffers(nat4(Slot), 1, &(buffer<T>::d3d_buffer));
+  }
+
+  /// sets this buffer to the pixel shader
+  void to_ps(natt Slot = 0) const {
+    ywlib_assert(*this, "this buffer is not valid");
+    main::d3d_context->PSSetConstantBuffers(nat4(Slot), 1, &(buffer<T>::d3d_buffer));
+  }
+
+  /// sets this buffer to the compute shader
+  void to_cs(natt Slot = 0) const {
+    ywlib_assert(*this, "this buffer is not valid");
+    main::d3d_context->CSSetConstantBuffers(nat4(Slot), 1, &(buffer<T>::d3d_buffer));
+  }
+};
+
+/// deduction guide for `constant_buffer`
+template<typename T> constant_buffer(const T&) -> constant_buffer<T>;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// class for creating structured buffers
+template<typename T> class structured_buffer : public buffer<T> {
+protected:
+  comptr<ID3D11ShaderResourceView> d3d_srv;
+public:
+  /// default constructor
+  structured_buffer() noexcept = default;
+
+  /// copies from another buffer
+  explicit structured_buffer(const buffer<T>& Src) : structured_buffer(Src.count) { buffer<T>::from(Src); }
+
+  /// creates a structured buffer with `Count` elements
+  explicit structured_buffer(natt Count) : buffer<T>(Count) {
+    D3D11_BUFFER_DESC desc{nat4(sizeof(T) * Count), D3D11_USAGE_DEFAULT, D3D11_BIND_SHADER_RESOURCE,
+                           0, D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, sizeof(T)};
+    tiff(main::d3d_device->CreateBuffer(&desc, nullptr, buffer<T>::d3d_buffer.addressof()));
+    D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{DXGI_FORMAT_UNKNOWN, D3D11_SRV_DIMENSION_BUFFER, {}};
+    srv_desc.Buffer.NumElements = Count;
+    tiff(main::d3d_device->CreateShaderResourceView(*this, &srv_desc, d3d_srv.addressof()));
+  }
+
+  /// creates a structured buffer with `Count` elements and initializes by `Data`
+  structured_buffer(const T* Data, natt Count) : buffer<T>(Count) {
+    D3D11_BUFFER_DESC desc{nat4(sizeof(T) * Count), D3D11_USAGE_DEFAULT, D3D11_BIND_SHADER_RESOURCE,
+                           0, D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, nat4(sizeof(T))};
+    if (Data) {
+      D3D11_SUBRESOURCE_DATA data{.pSysMem = Data, .SysMemPitch = nat4(sizeof(T))};
+      tiff(main::d3d_device->CreateBuffer(&desc, &data, buffer<T>::d3d_buffer.addressof()));
+    } else tiff(main::d3d_device->CreateBuffer(&desc, nullptr, buffer<T>::d3d_buffer.addressof()));
+    D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{
+      DXGI_FORMAT_UNKNOWN, D3D11_SRV_DIMENSION_BUFFER, D3D11_BUFFER_SRV{0, nat4(Count)}};
+    tiff(main::d3d_device->CreateShaderResourceView(*this, &srv_desc, d3d_srv.addressof()));
+  }
+
+  /// copies the contents of `Data` to this buffer
+  /// @note `Data` must have the same or larger size as this buffer.
+  void from(const T* Data) {
+    ywlib_assert(*this, "this buffer is not valid");
+    main::d3d_context->UpdateSubresource(*this, 0, 0, Data, nat4(sizeof(T)), nat4(sizeof(T)) * buffer<T>::count);
+  }
+
+  /// sets this buffer to the vertex shader
+  void to_vs(nat4 Slot = 0) const {
+    ywlib_assert(*this, "this buffer is not valid");
+    main::d3d_context->VSSetShaderResources(Slot, 1, &d3d_srv);
+  }
+
+  /// sets this buffer to the geometry shader
+  void to_gs(nat4 Slot = 0) const {
+    ywlib_assert(*this, "this buffer is not valid");
+    main::d3d_context->GSSetShaderResources(Slot, 1, &d3d_srv);
+  }
+
+  /// sets this buffer to the pixel shader
+  void to_ps(nat4 Slot = 0) const {
+    ywlib_assert(*this, "this buffer is not valid");
+    main::d3d_context->PSSetShaderResources(Slot, 1, &d3d_srv);
+  }
+
+  /// sets this buffer to the compute shader
+  void to_cs(nat4 Slot = 0) const {
+    ywlib_assert(*this, "this buffer is not valid");
+    main::d3d_context->CSSetShaderResources(Slot, 1, &d3d_srv);
+  }
+};
+
+/// deduction guide for `structured_buffer`
+template<typename T> structured_buffer(const buffer<T>&) -> structured_buffer<T>;
+template<typename T> structured_buffer(const T*, natt) -> structured_buffer<T>;
+template<cnt_range R> structured_buffer(R&&) -> structured_buffer<iter_value_t<R>>;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// class for creating unordered access buffers
+template<typename T> class unordered_buffer : public buffer<T> {
+protected:
+  comptr<ID3D11UnorderedAccessView> d3d_uav;
+public:
+  /// default constructor
+  unordered_buffer() noexcept = default;
+
+  /// copies from another buffer
+  explicit unordered_buffer(const buffer<T>& Src) : unordered_buffer(Src.count) { buffer<T>::from(Src); }
+
+  /// creates an unordered access buffer with `Count` elements
+  explicit unordered_buffer(natt Count) : buffer<T>(Count) {
+    D3D11_BUFFER_DESC desc{nat4(sizeof(T) * Count), D3D11_USAGE_DEFAULT, D3D11_BIND_UNORDERED_ACCESS,
+                           0, D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, nat4(sizeof(T))};
+    tiff(main::d3d_device->CreateBuffer(&desc, nullptr, buffer<T>::d3d_buffer.addressof()));
+    tiff(main::d3d_device->CreateUnorderedAccessView(*this, nullptr, d3d_uav.addressof()));
+  }
+
+  /// creates an unordered access buffer with `Count` elements and initializes by `Data`
+  unordered_buffer(const T* Data, natt Count) : buffer<T>(Count) {
+    D3D11_BUFFER_DESC desc{nat4(sizeof(T) * Count), D3D11_USAGE_DEFAULT, D3D11_BIND_UNORDERED_ACCESS,
+                           0, D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, nat4(sizeof(T))};
+    if (Data) {
+      D3D11_SUBRESOURCE_DATA data{.pSysMem = Data, .SysMemPitch = nat4(sizeof(T))};
+      tiff(main::d3d_device->CreateBuffer(&desc, &data, buffer<T>::d3d_buffer.addressof()));
+    } else tiff(main::d3d_device->CreateBuffer(&desc, nullptr, buffer<T>::d3d_buffer.addressof()));
+    tiff(main::d3d_device->CreateUnorderedAccessView(*this, nullptr, d3d_uav.addressof()));
+  }
+
+  /// copies the contents of `Data` to this buffer
+  /// @note `Data` must have the same or larger size as this buffer.
+  void from(const T* Data) {
+    ywlib_assert(*this, "this buffer is not valid");
+    main::d3d_context->UpdateSubresource(*this, 0, 0, Data, nat4(sizeof(T)), nat4(sizeof(T)) * buffer<T>::count);
+  }
+
+  /// sets this buffer to the compute shader
+  void to_cs(nat4 Slot = 0) const {
+    ywlib_assert(*this, "this buffer is not valid");
+    main::d3d_context->CSSetUnorderedAccessViews(Slot, 1, &d3d_uav, nullptr);
+  }
+};
+
+/// deduction guide for `unordered_buffer`
+template<typename T> unordered_buffer(const buffer<T>&) -> unordered_buffer<T>;
+template<typename T> unordered_buffer(const T*, natt) -> unordered_buffer<T>;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// clang-format off
+
+/// class for rendering 3D objects
+template<specialization_of<typepack> VSResources, specialization_of<typepack> VSCBuffers,
+         specialization_of<typepack> GSResources = typepack<>, specialization_of<typepack> GSCBuffers = typepack<>,
+         specialization_of<typepack> PSResources = typepack<>, specialization_of<typepack> PSCBuffers = typepack<>>
+requires requires {
+  requires []<natt... Is>(sequence<Is...>) { return (convertible_to<typename VSResources::template at<Is>, ID3D11ShaderResourceView*> && ...); }(make_indices_for<VSResources>{});
+  requires []<natt... Is>(sequence<Is...>) { return (convertible_to<typename GSResources::template at<Is>, ID3D11ShaderResourceView*> && ...); }(make_indices_for<GSResources>{});
+  requires []<natt... Is>(sequence<Is...>) { return (convertible_to<typename PSResources::template at<Is>, ID3D11ShaderResourceView*> && ...); }(make_indices_for<PSResources>{});
+  requires []<natt... Is>(sequence<Is...>) { return (convertible_to<typename VSCBuffers::template at<Is>, ID3D11Buffer*> && ...); }(make_indices_for<VSCBuffers>{});
+  requires []<natt... Is>(sequence<Is...>) { return (convertible_to<typename GSCBuffers::template at<Is>, ID3D11Buffer*> && ...); }(make_indices_for<GSCBuffers>{});
+  requires []<natt... Is>(sequence<Is...>) { return (convertible_to<typename PSCBuffers::template at<Is>, ID3D11Buffer*> && ...); }(make_indices_for<PSCBuffers>{});
+} class renderer {
+protected:
+  comptr<ID3D11VertexShader> d3d_vs{};
+  comptr<ID3D11GeometryShader> d3d_gs{};
+  comptr<ID3D11PixelShader> d3d_ps{};
+public:
+  /// list of shader resources and textures for the vertex shader
+  using vs_resource_list = type_switch<VSResources::size == 0, none, array<ID3D11ShaderResourceView*, VSResources::size>>;
+
+  /// list of shader resources and textures for the geometry shader
+  using gs_resource_list = type_switch<GSResources::size == 0, none, array<ID3D11ShaderResourceView*, GSResources::size>>;
+
+  /// list of shader resources and textures for the pixel shader
+  using ps_resource_list = type_switch<PSResources::size == 0, none, array<ID3D11ShaderResourceView*, PSResources::size>>;
+
+  /// list of constant buffers for the vertex shader
+  using vs_cbuffer_list = type_switch<VSCBuffers::size == 0, none, array<ID3D11Buffer*, VSCBuffers::size>>;
+
+  /// list of constant buffers for the geometry shader
+  using gs_cbuffer_list = type_switch<GSCBuffers::size == 0, none, array<ID3D11Buffer*, GSCBuffers::size>>;
+
+  /// list of constant buffers for the pixel shader
+  using ps_cbuffer_list = type_switch<PSCBuffers::size == 0, none, array<ID3D11Buffer*, PSCBuffers::size>>;
+
+  /// default constructor
+  renderer() noexcept = default;
+
+  /// constructor
+  /// @note `HLSL` is a `vs_5_0` shader code which includes `vsmain` and `psmain` (optional `gsmain`) as the entry points.
+  renderer(stv1 HLSL) {
+    comptr<ID3DBlob> b, e;
+    if (0 > D3DCompile(HLSL.data(), HLSL.size(), 0, 0, 0, "vsmain", "vs_5_0", D3D10_SHADER_ENABLE_STRICTNESS,
+                       0, b.addressof(), e.addressof())) throw except((cat1*)e->GetBufferPointer());
+    tiff(main::d3d_device->CreateVertexShader(b->GetBufferPointer(), b->GetBufferSize(), 0, d3d_vs.addressof()));
+    b.reset(), e.reset();
+    if (0 > D3DCompile(HLSL.data(), HLSL.size(), 0, 0, 0, "psmain", "ps_5_0", D3D10_SHADER_ENABLE_STRICTNESS,
+                       0, b.addressof(), e.addressof())) throw except((cat1*)e->GetBufferPointer());
+    tiff(main::d3d_device->CreatePixelShader(b->GetBufferPointer(), b->GetBufferSize(), 0, d3d_ps.addressof()));
+    b.reset(), e.reset();
+    if (HLSL.find("gsmain") == npos) return;
+    if (0 > D3DCompile(HLSL.data(), HLSL.size(), 0, 0, 0, "gsmain", "gs_5_0", D3D10_SHADER_ENABLE_STRICTNESS,
+                       0, b.addressof(), e.addressof())) throw except((cat1*)e->GetBufferPointer());
+    tiff(main::d3d_device->CreateGeometryShader(b->GetBufferPointer(), b->GetBufferSize(), 0, d3d_gs.addressof()));
+  }
+
+  /// checks if this is valid
+  explicit operator bool() const noexcept { return bool(d3d_vs) && bool(d3d_ps); }
+
+  /// performs rendering
+  void operator()(natt VertexCounts,
+                  vs_resource_list VSResources, vs_cbuffer_list VSCBuffers,
+                  gs_resource_list GSResources = {}, gs_cbuffer_list GSCBuffers = {},
+                  ps_resource_list PSResources = {}, ps_cbuffer_list PSCbuffers = {}) const {
+    if constexpr (vs_resource_list.size > 0) main::d3d_context->VSSetShaderResources(0, nat4(VSResources.count), &VSResources.first);
+    if constexpr (gs_resource_list.size > 0) main::d3d_context->GSSetShaderResources(0, nat4(VSResources.count), &VSResources.first);
+    if constexpr (ps_resource_list.size > 0) main::d3d_context->PSSetShaderResources(0, nat4(VSResources.count), &VSResources.first);
+    if constexpr (vs_cbuffer_list != none) main::d3d_context->VSSetConstantBuffers(0, VSCBuffers.size, nat4(VSCBuffers.count));
+    if constexpr (gs_cbuffer_list != none) main::d3d_context->GSSetConstantBuffers(0, GSCBuffers.size, nat4(GSCBuffers.count));
+    if constexpr (ps_cbuffer_list != none) main::d3d_context->PSSetConstantBuffers(0, PSCbuffers.size, nat4(PSCbuffers.count));
+    main::d3d_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    main::d3d_context->IASetInputLayout(nullptr);
+    main::d3d_context->IASetVertexBuffers(0, 0, nullptr, nullptr, nullptr);
+    main::d3d_context->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
+    main::d3d_context->VSSetShader(d3d_vs, 0, 0);
+    main::d3d_context->GSSetShader(d3d_gs, 0, 0);
+    main::d3d_context->PSSetShader(d3d_ps, 0, 0);
+    main::d3d_context->Draw(nat4(VertexCounts), 0);
+  }
+};
+
+// clang-format on
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// class for creating 2D bitmaps
+class bitmap {
+  bitmap(bitmap&) = delete;
+  bitmap& operator=(bitmap&) = delete;
+protected:
+  comptr<ID2D1Bitmap1> d2d_bitmap;
+public:
+  /// width
+  const nat4 width{};
+
+  /// height
+  const nat4 height{};
+
+  /// default constructor
+  bitmap() noexcept = default;
+
+  /// move constructor
+  bitmap(bitmap&& Bitmap) noexcept : d2d_bitmap{mv(Bitmap.d2d_bitmap)}, width{Bitmap.width}, height{Bitmap.height} {}
+
+  /// creates a bitmap with `Width` and `Height`
+  bitmap(nat4 Width, nat4 Height) : width(Width), height(Height) {
+    auto p = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET, D2D1::PixelFormat(DXGI_FORMAT_R8G8B8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+    tiff(main::d2d_context->CreateBitmap(D2D1::SizeU(width, height), nullptr, 0, p, d2d_bitmap.addressof()));
+  }
+
+  /// creates a bitmap from an image file
+  explicit bitmap(const path& Image) {
+    comptr<IWICBitmapDecoder> decoder{};
+    tiff(main::wic_factory->CreateDecoderFromFilename(
+      Image.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, decoder.addressof()));
+    comptr<IWICBitmapFrameDecode> frame;
+    tiff(decoder->GetFrame(0, frame.addressof()));
+    tiff(frame->GetSize(const_cast<nat4*>(&width), const_cast<nat4*>(&height)));
+    WICPixelFormatGUID pixel_format, guid = GUID_WICPixelFormat32bppPRGBA;
+    comptr<IWICFormatConverter> fc;
+    tiff(frame->GetPixelFormat(&pixel_format));
+    tiff(main::wic_factory->CreateFormatConverter(fc.addressof()));
+    [&](BOOL b) { tiff(fc->CanConvert(pixel_format, guid, &b)), tiff(b); }({});
+    tiff(fc->Initialize(frame, guid, WICBitmapDitherTypeErrorDiffusion, nullptr, 0, WICBitmapPaletteTypeMedianCut));
+    tiff(main::d2d_context->CreateBitmapFromWicBitmap(fc, d2d_bitmap.addressof()));
+  }
+
+  /// move assignment
+  bitmap& operator=(bitmap&& Bitmap) noexcept {
+    d2d_bitmap = mv(Bitmap.d2d_bitmap);
+    const_cast<nat4&>(width) = Bitmap.width;
+    const_cast<nat4&>(height) = Bitmap.height;
+    return *this;
+  }
+
+  /// checks if this is valid
+  explicit operator bool() const noexcept { return bool(d2d_bitmap); }
+
+  /// conversion to a restricted pointer to `ID2D1Bitmap1`
+  operator comptr<ID2D1Bitmap1>::reference*() const noexcept {
+    ywlib_assert(d2d_bitmap, "this bitmap is not valid");
+    return d2d_bitmap;
+  }
+
+  /// saves this bitmap as a PNG file
+  void to_png(const path& Path) const {
+    if (Path.exists()) Path.remove();
+    comptr<IWICStream> stream{};
+    tiff(main::wic_factory->CreateStream(stream.addressof()));
+    tiff(stream->InitializeFromFilename(Path.c_str(), GENERIC_WRITE));
+    comptr<IWICBitmapEncoder> encoder{};
+    tiff(main::wic_factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.addressof()));
+    tiff(encoder->Initialize(stream, WICBitmapEncoderNoCache));
+    comptr<IWICBitmapFrameEncode> frame{};
+    tiff(encoder->CreateNewFrame(frame.addressof(), nullptr));
+    tiff(frame->Initialize(nullptr));
+    comptr<IWICImageEncoder> image_encoder{};
+    tiff(main::wic_factory->CreateImageEncoder(main::d2d_device, image_encoder.addressof()));
+    tiff(image_encoder->WriteFrame(d2d_bitmap, frame, nullptr));
+    frame->Commit(), encoder->Commit(), stream->Commit(STGC_DEFAULT);
+  }
+
+  /// begins drawing to this bitmap
+  void begin_draw() const { main::d2d_context->SetTarget(d2d_bitmap), main::d2d_context->BeginDraw(); }
+
+  /// begins drawing to this bitmap after filling it with `Color`
+  void begin_draw(const color& Color) const { begin_draw(), main::d2d_context->Clear(bitcast<D2D1_COLOR_F>(Color)); }
+
+  /// ends drawing to this bitmap
+  void end_draw() const { main::d2d_context->EndDraw(); }
+
+  /// draws this bitmap to another bitmap
+  void draw(rect_like auto&& Rect, const fat4 Opacity = 1.0f) const {
+    if constexpr (!same_as<remove_cvref<decltype(RECT)>, vector>) {
+      auto&& r = D2D1_RECT_F(fat4(get<0>(Rect)), fat4(get<1>(Rect)), fat4(get<2>(Rect)), fat4(get<3>(Rect)));
+      main::d2d_context->DrawBitmap(d2d_bitmap, mv(r), Opacity);
+    } else main::d2d_context->DrawBitmap(d2d_bitmap, bitcast<D2D1_RECT_F>(Rect), Opacity);
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// class for creating textures
+class texture : public bitmap {
+  void initialize() {
+    comptr<IDXGISurface> surface;
+    tiff(operator comptr<ID2D1Bitmap1>::reference*()->GetSurface(surface.addressof()));
+    tiff(surface->QueryInterface(d3d_texture.addressof()));
+    D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{
+      .Format = DXGI_FORMAT_R8G8B8A8_UNORM, .ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D, .Texture2D = {0, 1}};
+    tiff(main::d3d_device->CreateShaderResourceView(*this, &srv_desc, d3d_srv.addressof()));
+  }
+protected:
+  comptr<ID3D11Texture2D> d3d_texture;
+  comptr<ID3D11ShaderResourceView> d3d_srv;
+public:
+  /// default constructor
+  texture() noexcept = default;
+
+  /// creates a texture with `Width` and `Height`
+  texture(nat4 Width, nat4 Height) : bitmap(Width, Height) { initialize(); }
+
+  /// creates a texture from an image file
+  explicit texture(const path& Image) : bitmap(Image) { initialize(); }
+
+  /// creates a texture from a bitmap
+  explicit texture(bitmap&& Bitmap) : bitmap(mv(Bitmap)) { initialize(); }
+
+  /// checks if this is valid
+  explicit operator bool() const noexcept { return bool(d3d_texture); }
+
+  /// conversion to a restricted pointer to `ID3D11Texture2D`
+  operator comptr<ID3D11Texture2D>::reference*() const noexcept {
+    ywlib_assert(d3d_texture, "this texture is not valid");
+    return d3d_texture;
+  }
+
+  /// conversion to a restricted pointer to `ID3D11ShaderResourceView`
+  operator comptr<ID3D11ShaderResourceView>::reference*() const noexcept {
+    ywlib_assert(d3d_srv, "this texture is not valid");
+    return d3d_srv;
+  }
+
+  /// sets this texture to the vertex shader
+  void to_vs(natt Slot = 0) const {
+    ywlib_assert(*this, "this texture is not valid");
+    main::d3d_context->VSSetShaderResources(nat4(Slot), 1, &d3d_srv);
+  }
+
+  /// sets this texture to the geometry shader
+  void to_gs(natt Slot = 0) const {
+    ywlib_assert(*this, "this texture is not valid");
+    main::d3d_context->GSSetShaderResources(nat4(Slot), 1, &d3d_srv);
+  }
+
+  /// sets this texture to the pixel shader
+  void to_ps(natt Slot = 0) const {
+    ywlib_assert(*this, "this texture is not valid");
+    main::d3d_context->PSSetShaderResources(nat4(Slot), 1, &d3d_srv);
+  }
+
+  /// sets this texture to the compute shader
+  void to_cs(natt Slot = 0) const {
+    ywlib_assert(*this, "this texture is not valid");
+    main::d3d_context->CSSetShaderResources(nat4(Slot), 1, &d3d_srv);
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// class for creating 3D render targets
+class canvas : public texture {
+private:
+  void initialize() {
+    comptr<ID3D11Texture2D> temp;
+    if (const_cast<nat4&>(msaa) = msaa < 2 ? 0 : (msaa < 4 ? 2 : (msaa < 8 ? 4 : 8)); msaa) {
+      D3D11_TEXTURE2D_DESC desc{
+        width, height, 1, 1, DXGI_FORMAT_D24_UNORM_S8_UINT, {msaa, 0}, D3D11_USAGE_DEFAULT, D3D11_BIND_DEPTH_STENCIL};
+      tiff(main::d3d_device->CreateTexture2D(&desc, nullptr, temp.addressof()));
+      tiff(main::d3d_device->CreateDepthStencilView(temp, nullptr, d3d_dsv.addressof()));
+      temp.reset(), desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM, desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+      tiff(main::d3d_device->CreateTexture2D(&desc, nullptr, temp.addressof()));
+      D3D11_RENDER_TARGET_VIEW_DESC rtv_desc{DXGI_FORMAT_R8G8B8A8_UNORM, D3D11_RTV_DIMENSION_TEXTURE2DMS};
+      tiff(main::d3d_device->CreateRenderTargetView(temp, &rtv_desc, d3d_rtv.addressof()));
+    } else {
+      D3D11_TEXTURE2D_DESC desc{
+        width, height, 1, 1, DXGI_FORMAT_D24_UNORM_S8_UINT, {1, 0}, D3D11_USAGE_DEFAULT, D3D11_BIND_DEPTH_STENCIL};
+      tiff(main::d3d_device->CreateTexture2D(&desc, nullptr, temp.addressof()));
+      tiff(main::d3d_device->CreateDepthStencilView(temp, nullptr, d3d_dsv.addressof()));
+      D3D11_RENDER_TARGET_VIEW_DESC rtv_desc{DXGI_FORMAT_R8G8B8A8_UNORM, D3D11_RTV_DIMENSION_TEXTURE2D};
+      tiff(main::d3d_device->CreateRenderTargetView(*this, &rtv_desc, d3d_rtv.addressof()));
+    }
+  }
+protected:
+  comptr<ID3D11RenderTargetView> d3d_rtv;
+  comptr<ID3D11DepthStencilView> d3d_dsv;
+public:
+  /// sampling count for MSAA
+  const nat4 msaa{};
+
+  /// default constructor
+  canvas() noexcept = default;
+
+  /// move constructor
+  canvas(canvas&& Canvas) noexcept : texture(mv(Canvas)), msaa(Canvas.msaa),
+                                     d3d_rtv{mv(Canvas.d3d_rtv)}, d3d_dsv{mv(Canvas.d3d_dsv)} {}
+
+  /// creates a canvas with `Width` and `Height`
+  canvas(nat4 Width, nat4 Height, nat4 MSAA = 0) : texture(Width, Height), msaa(MSAA) { initialize(); }
+
+  /// creates a canvas from a bitmap
+  explicit canvas(texture&& Texture, nat4 MSAA = 0) : texture(mv(Texture)), msaa(MSAA) { initialize(); }
+
+  /// checks if this is valid
+  explicit operator bool() const noexcept { return bool(d3d_rtv) && bool(d3d_dsv); }
+
+  /// conversion to a restricted pointer to `ID3D11RenderTargetView`
+  operator comptr<ID3D11RenderTargetView>::reference*() const noexcept {
+    ywlib_assert(d3d_rtv, "this canvas is not valid");
+    return d3d_rtv;
+  }
+
+  /// conversion to a restricted pointer to `ID3D11DepthStencilView`
+  operator comptr<ID3D11DepthStencilView>::reference*() const noexcept {
+    ywlib_assert(d3d_dsv, "this canvas is not valid");
+    return d3d_dsv;
+  }
+
+  /// begins 3d rendering to this canvas
+  template<typename... RTV_OR_UAV> void begin_render(RTV_OR_UAV&&... Views) const
+    requires(bool(convertible_to<RTV_OR_UAV, ID3D11RenderTargetView*> ^ convertible_to<RTV_OR_UAV, ID3D11UnorderedAccessView*>) && ...) {
+    ywlib_assert(*this, "this canvas is not valid");
+    main::d3d_context->ClearDepthStencilView(d3d_dsv, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+    [](D3D11_VIEWPORT vp) { main::d3d_context->RSSetViewports(1, &vp); }({0, 0, (fat4)width, (fat4)height, 0, 1});
+    static constexpr nat4 m = nat4(counts<convertible_to<RTV_OR_UAV, ID3D11RenderTargetView*>...>), n = nat4(sizeof...(RTV_OR_UAV) - m);
+    if constexpr (n == 0) [&]<natt... Is>(array<ID3D11RenderTargetView*, m + 1> RTVs) {
+      main::d3d_context->OMSetRenderTargets(m + 1, RTVs.data(), d3d_dsv);
+    }({d3d_rtv, Views...});
+    else [&](auto&& RTVs, auto&& UAVs) {
+      main::d3d_context->OMSetRenderTargetsAndUnorderedAccessViews(m + 1, RTVs.data(), d3d_dsv, m + 1, n, UAVs.data(), nullptr);
+    }([&]<natt... Is>(sequence<Is...>) { return array<ID3D11RenderTargetView*, m + 1>{d3d_rtv, parameter_switch<Is>(Views...)...}; }(
+        cond_indices<sequence<convertible_to<RTV_OR_UAV, ID3D11RenderTargetView*>...>>{}),
+      [&]<natt... Is>(sequence<Is...>) { return array<ID3D11UnorderedAccessView*, n>{parameter_switch<Is>(Views...)...}; }(
+        cond_indices<sequence<convertible_to<RTV_OR_UAV, ID3D11UnorderedAccessView*>...>>{}));
+  };
+
+  /// begins 3d rendering to this canvas after clearing it with `Color`
+  template<typename... RTV_OR_UAV> void begin_render(const color& Color, RTV_OR_UAV&&... Views) const
+    requires(bool(convertible_to<RTV_OR_UAV, ID3D11RenderTargetView*> ^ convertible_to<RTV_OR_UAV, ID3D11UnorderedAccessView*>) && ...) {
+    ywlib_assert(*this, "this canvas is not valid");
+    main::d3d_context->ClearRenderTargetView(d3d_rtv, &Color.r);
+    begin_render(fwd<RTV_OR_UAV>(Views)...);
+  }
+
+  /// ends 3d rendering to this canvas
+  void end_render() const {
+    if (msaa) [&](comptr<ID3D11Resource> a) {
+      d3d_rtv->GetResource(a.addressof());
+      main::d3d_context->ResolveSubresource(*this, 0, a, 0, DXGI_FORMAT_R8G8B8A8_UNORM); }({});
+    main::d3d_context->OMSetRenderTargets(0, nullptr, nullptr);
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// class for creating cameras for 3D rendering
+class camera : public canvas {
+public:
+  /// view matrix
+  xmatrix view;
+
+  /// view * projection matrix
+  xmatrix view_proj;
+
+  /// offsets of camera lens form the center of body
+  vector offset{};
+
+  /// radians to rotate the camera around the x, y, z-axis
+  vector rotation{};
+
+  /// position of the camera
+  vector position{};
+
+  /// magnification factor
+  /// @note If orthographic projection is used, this is the magnification factor of the lens.
+  /// @note If perspective projection is used, this is the reciprocal tangent of the half of the field of view.
+  fat4 factor = 1.0f;
+
+  /// enables or disables orthographic projection
+  bool orthographic = false;
+
+  /// default constructor
+  camera() noexcept = default;
+
+  /// creates a camera with `Width` and `Height`
+  camera(nat4 Width, nat4 Height, nat4 MSAA = 0) : canvas(Width, Height, MSAA) {}
+
+  /// creates a camera from a canvas
+  explicit camera(canvas&& Canvas) : canvas(mv(Canvas)) {}
+
+  /// updates the matrices
+  void update() {
+    constexpr fat4 f = 1048576.0f, n = 0.25f;
+    xvview(position, rotation, offset, view);
+    if (orthographic) {
+      auto a = xv(-2.0f * factor / width, 2.0f * factor / height, 1.0f / (f - n), n / (f - n));
+      view_proj[0] = xvmul(view[0], xvpermute<0, 0, 0, 0>(a));
+      view_proj[1] = xvmul(view[1], xvpermute<1, 1, 1, 1>(a));
+      view_proj[2] = xvsub(xvmul(view[2], xvpermute<2, 2, 2, 2>(a)), xvsetzero<1, 1, 1, 0>(a));
+      view_proj[3] = view[3];
+    } else {
+      auto a = xv((-factor * height) / width, factor, f / (f - n), -f * n / (f - n));
+      view_proj[0] = xvmul(view[0], xvpermute<0, 0, 0, 0>(a));
+      view_proj[1] = xvmul(view[1], xvpermute<1, 1, 1, 1>(a));
+      view_proj[2] = xvadd(xvmul(view[2], xvpermute<2, 2, 2, 2>(a)), xvsetzero<1, 1, 1, 0>(a));
+      view_proj[3] = view[2];
+    }
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace key {
+
+/// class for handling key states
+class key {
+public:
+  /// application time when the key was pressed
+  /// @note if the ky is not pressed, this is `0`.
+  const fat8 pushed_time{};
+
+  /// callback function for key press
+  void (*down)() = nullptr;
+
+  /// callback function for key release
+  void (*up)(fat8 hold_time) = nullptr;
+
+  /// checks if the key is pressed
+  explicit operator bool() const noexcept { return pushed_time != 0; }
+};
+
+/// array of keys
+inline array<key, 256> keys{};
+
+inline key &lbutton = keys[VK_LBUTTON], &rbutton = keys[VK_RBUTTON], &mbutton = keys[VK_MBUTTON];
+inline key &xbutton1 = keys[VK_XBUTTON1], &xbutton2 = keys[VK_XBUTTON2], &win = keys[VK_LWIN], &app = keys[VK_APPS];
+inline key &back = keys[VK_BACK], &tab = keys[VK_TAB], &enter = keys[VK_RETURN], &escape = keys[VK_ESCAPE];
+inline key &shift = keys[VK_SHIFT], &control = keys[VK_CONTROL], &alt = keys[VK_MENU], &space = keys[VK_SPACE];
+inline key &pageup = keys[VK_PRIOR], &pagedown = keys[VK_NEXT], &end = keys[VK_END], &home = keys[VK_HOME];
+inline key &left = keys[VK_LEFT], &up = keys[VK_UP], &right = keys[VK_RIGHT], &down = keys[VK_DOWN];
+inline key &screenshot = keys[VK_SNAPSHOT], &insert = keys[VK_INSERT], &delete_ = keys[VK_DELETE];
+inline key &n0 = keys['0'], &n1 = keys['1'], &n2 = keys['2'], &n3 = keys['3'], &n4 = keys['4'];
+inline key &n5 = keys['5'], &n6 = keys['6'], &n7 = keys['7'], &n8 = keys['8'], &n9 = keys['9'];
+inline key &a = keys['A'], &b = keys['B'], &c = keys['C'], &d = keys['D'], &e = keys['E'], &f = keys['F'], &g = keys['G'], &h = keys['H'], &i = keys['I'];
+inline key &j = keys['J'], &k = keys['K'], &l = keys['L'], &m = keys['M'], &n = keys['N'], &o = keys['O'], &p = keys['P'], &q = keys['Q'], &r = keys['R'];
+inline key &s = keys['S'], &t = keys['T'], &u = keys['U'], &v = keys['V'], &w = keys['W'], &x = keys['X'], &y = keys['Y'], &z = keys['Z'];
+inline key &np_0 = keys[VK_NUMPAD0], &np_1 = keys[VK_NUMPAD1], &np_2 = keys[VK_NUMPAD2], &np_3 = keys[VK_NUMPAD3], &np_4 = keys[VK_NUMPAD4];
+inline key &np_5 = keys[VK_NUMPAD5], &np_6 = keys[VK_NUMPAD6], &np_7 = keys[VK_NUMPAD7], &np_8 = keys[VK_NUMPAD8], &np_9 = keys[VK_NUMPAD9];
+inline key &f1 = keys[VK_F1], &f2 = keys[VK_F2], &f3 = keys[VK_F3], &f4 = keys[VK_F4], &f5 = keys[VK_F5], &f6 = keys[VK_F6];
+inline key &f7 = keys[VK_F7], &f8 = keys[VK_F8], &f9 = keys[VK_F9], &f10 = keys[VK_F10], &f11 = keys[VK_F11], &f12 = keys[VK_F12];
+inline key &minus = keys[VK_OEM_MINUS], &plus = keys[VK_OEM_PLUS], &comma = keys[VK_OEM_COMMA], &period = keys[VK_OEM_PERIOD];
+inline key &oem00 = keys[VK_OEM_7], &oem01 = keys[VK_OEM_5], &oem10 = keys[VK_OEM_3], &oem11 = keys[VK_OEM_4];
+inline key &oem20 = keys[VK_OEM_1], &oem21 = keys[VK_OEM_6], &oem30 = keys[VK_OEM_2], &oem31 = keys[VK_OEM_102];
+}
+
+/// empty class for operating the mouse
+class mouse {
+public:
+  /// sets the position of the mouse cursor
+  mouse(int4 X, int4 Y) {
+    [&](RECT r) { GetClientRect(main::hwnd, &r), SetCursorPos(r.left + X, r.top + Y); }({});
+    main::mouse.left = X, main::mouse.top = Y;
+  }
+
+  /// x-position of the mouse cursor
+  inline static const auto& x = main::mouse.left;
+
+  /// y-position of the mouse cursor
+  inline static const auto& y = main::mouse.top;
+
+  /// checks if the mouse cursor is hovering over the window
+  inline static const bool& hover = main::hover;
+
+  /// callback function for mouse wheel
+  inline static void (*wheeled)(fat4 delta) = nullptr;
+
+  /// callback function for mouse movement
+  inline static void (*moved)(int4 dx, int4 dy) = nullptr;
+
+  /// callback function for mouse left button press
+  inline static auto& left = key::lbutton;
+
+  /// callback function for mouse right button press
+  inline static auto& right = key::rbutton;
+
+  /// callback function for mouse middle button press
+  inline static auto& middle = key::mbutton;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace main {
+
+}
+
 
 }
 
