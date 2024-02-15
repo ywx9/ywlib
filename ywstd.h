@@ -611,9 +611,12 @@ struct value {
   /// constructs from `none`; sets the value to NaN
   explicit constexpr value(none) noexcept : _cpp_double(bitcast<fat8>(0x7ff8000000000001)) {}
 
+  /// constructs from a arithmetic value
+  template<arithmetic T> constexpr value(T V) noexcept : _cpp_double(static_cast<fat8>(V)) {}
+
   /// constructs from a value that can be casted to `fat8`
-  template<castable_to<fat8> T> constexpr value(T&& V) noexcept(nt_castable_to<T, fat8>)
-    : _cpp_double(static_cast<fat8>(fwd<T>(V))) {}
+  template<castable_to<fat8> T> requires(!arithmetic<remove_cvref<T>>)
+  constexpr value(T&& V) noexcept(nt_castable_to<T, fat8>) : _cpp_double(static_cast<fat8>(fwd<T>(V))) {}
 
   /// assigns `none` to the value; sets the value to NaN
   constexpr value& operator=(none) noexcept { return _cpp_double = bitcast<fat8>(0x7ff8000000000001), *this; }
@@ -1677,6 +1680,9 @@ template<character Ct> struct string_view {
 using stv1 = string_view<cat1>;
 using stv2 = string_view<cat2>;
 
+constexpr stv1 operator""_sv(const cat1* s, natt n) noexcept { return stv1(s, n); }
+constexpr stv2 operator""_sv(const cat2* s, natt n) noexcept { return stv2(s, n); }
+
 /// deduction guide for `string_view`
 template<character Ct> string_view(const Ct*, natt) -> string_view<Ct>;
 template<cnt_iterator It, sentinel_for<It> Se> string_view(It, Se) -> string_view<iter_value_t<It>>;
@@ -1699,10 +1705,10 @@ public:
   constexpr string(Rg&& r) : string(yw::begin(r), yw::end(r)) {}
 
   /// assignment
-  constexpr string& operator=(std::basic_string<Ct> s) noexcept { return *this = string(mv(s)); }
-  template<natt N> constexpr string& operator=(const Ct (&s)[N]) noexcept { return *this = string(s, N); }
-  template<range_of<Ct> Rg> requires(!convertible_to<Rg, std::basic_string<Ct>> && !is_array<Rg>)
-  constexpr string& operator=(Rg&& r) { return *this = string(fwd<Rg>(r)); }
+  // constexpr string& operator=(std::basic_string<Ct> s) noexcept { return *this = string(mv(s)); }
+  // template<natt N> constexpr string& operator=(const Ct (&s)[N]) noexcept { return *this = string(s, N); }
+  // template<range_of<Ct> Rg> requires(!convertible_to<Rg, std::basic_string<Ct>> && !is_array<Rg>)
+  // constexpr string& operator=(Rg&& r) { return *this = string(fwd<Rg>(r)); }
 };
 
 using str1 = string<cat1>;
@@ -1766,7 +1772,7 @@ struct source {
   /// output stream
   template<typename Tr> friend std::basic_ostream<cat1, Tr>&
   operator<<(std::basic_ostream<cat1, Tr>& OS, const source& S) {
-    return OS << std::format("file={},func={},line={},column={}", S.file, S.func, S.line, S.column);
+    return OS << std::format("{} ({}, {}, {})", S.file, S.line, S.column, S.func);
   }
 };
 
@@ -1774,7 +1780,7 @@ struct source {
 class except : public std::exception {
 public:
   explicit except(const std::string& s, source _ = {}) noexcept : except(s.data(), mv(_)){};
-  explicit except(const cat1* s, source _ = {}) noexcept : std::exception(std::format("{}->{}\n", s, _).data()) {}
+  explicit except(const cat1* s, source _ = {}) noexcept;
   explicit except(const std::exception& Base, source _ = {}) noexcept : except(Base.what(), mv(_)){};
 };
 
@@ -1891,9 +1897,14 @@ template<typename Ct> struct formatter<yw::string<Ct>> : formatter<basic_string<
   auto format(const yw::string<Ct>& s, format_context& ctx) const { return formatter<basic_string<Ct>>::format(s, ctx); } };
 template<> struct formatter<yw::source> : formatter<string> {
   auto format(const yw::source& s, format_context& ctx) const {
-    return formatter<string>::format(std::format("source(file={},func={},line={},column={})", s.file, s.func, s.line, s.column), ctx); } };
+    return formatter<string>::format(std::format("{} ({}, {}, {})", s.file, s.line, s.column, s.func), ctx); } };
 template<yw::iterator It, yw::iter_unary_invocable<It> Pj> struct incrementable_traits<yw::projector<It, yw::sequence<>, Pj>> { using difference_type = yw::iter_difference_t<It>; };
 } // clang-format on
+
+inline yw::except::except(const cat1* s, source _) noexcept
+  : std::exception(std::format("{} -> {}\n", s, _).data()) {}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include <immintrin.h>
 
@@ -2036,7 +2047,7 @@ public:
   xrect operator()(const xrect& A) const noexcept requires(lt(max(X, Y, Z, W), 4)) { return xvbitcast(call(xvbitcast(A))); }
   xvector operator()(const xvector& A, const xvector& B) const noexcept requires(lt(max(X, Y, Z, W), 8)) {
     constexpr auto f = [](auto a, auto b) { return a == b || a < 0; };
-    constexpr natt xa = (f(X, 0) ? 0 : X), ya = (f(Y, 1) ? 1 : Y), za = (f(Z, 2) ? 2 : Z), wa = (f(W, 3) ? 3 : W),
+    constexpr intt xa = (f(X, 0) ? 0 : X), ya = (f(Y, 1) ? 1 : Y), za = (f(Z, 2) ? 2 : Z), wa = (f(W, 3) ? 3 : W),
                    xb = (f(X, 4) ? 4 : X), yb = (f(Y, 5) ? 5 : Y), zb = (f(Z, 6) ? 6 : Z), wb = (f(W, 7) ? 7 : W);
     if constexpr ((xa | ya | za | wa) < 4) return t_xvpermute<xa, ya, za, wa>::call(A);
     else if constexpr (4 <= (xb & yb & zb & wb)) return t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B);
@@ -2064,7 +2075,7 @@ public:
   };
   xwector operator()(const xwector& A, const xwector& B) const noexcept requires(lt(max(X, Y, Z, W), 8)) {
     constexpr auto f = [](auto a, auto b) noexcept { return a == b || a < 0; };
-    constexpr natt xa = (f(X, 0) ? 0 : X), ya = (f(Y, 1) ? 1 : Y), za = (f(Z, 2) ? 2 : Z), wa = (f(W, 3) ? 3 : W),
+    constexpr intt xa = (f(X, 0) ? 0 : X), ya = (f(Y, 1) ? 1 : Y), za = (f(Z, 2) ? 2 : Z), wa = (f(W, 3) ? 3 : W),
                    xb = (f(X, 4) ? 4 : X), yb = (f(Y, 5) ? 5 : Y), zb = (f(Z, 6) ? 6 : Z), wb = (f(W, 7) ? 7 : W);
     if constexpr (xa == 0 && ya == 1 && za == 2 && wa == 3) return A;
     else if constexpr (xb == 4 && yb == 5 && zb == 6 && wb == 7) return B;
@@ -3617,6 +3628,8 @@ template<> struct formatter<yw::xmatrix> : public formatter<string> {
 
 #ifndef ywlib_disable_windows
 
+#include <map>
+
 #define WIN32_LEAN_AND_MEAN
 #include <Shlwapi.h>
 #include <Windows.h>
@@ -3644,10 +3657,9 @@ template<> struct formatter<yw::xmatrix> : public formatter<string> {
 #ifdef ywlib_debug
 #define _DEBUG
 #define ywlib_enable_console
-#define ywlib_assert(Bool, Str) \
-  if (!(Bool)) std::cerr << Str << std::endl, throw yw::except(Str)
+#define ywlib_assert(Bool, Str) (Bool ? void() : void(std::cerr << Str << std::endl, throw yw::except(Str)))
 #else
-#define ywlib_assert(Bool, Str) void()
+#define ywlib_assert(Bool, Str) (void())
 #endif
 
 namespace yw {
@@ -3668,6 +3680,9 @@ template<typename Com> class comptr {
   void _copy(Com* a) noexcept { _ptr == a ? void() : (_release(), _ptr = a, _addref()); }
   void _move(auto& a) noexcept { _ptr == a._ptr ? void() : void((_release(), _ptr = a._ptr, a._ptr = nullptr)); }
 public:
+  /// pointer type
+  using pointer = Com*;
+
   /// class for restricting Com methods
   class reference : public Com {
     void operator&() const = delete;
@@ -3718,7 +3733,7 @@ public:
   void swap(comptr& a) noexcept { std::ranges::swap(_ptr, a._ptr); }
 
   /// casts to `U`
-  template<typename U> HRESULT as(comptr<U>& a) const noexcept { return _ptr->QueryInterface(IID_PPV_ARGS(&a)); }
+  template<typename U> HRESULT as(comptr<U>& a) const noexcept { return _ptr->QueryInterface(IID_PPV_ARGS(a.addressof())); }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -3737,10 +3752,8 @@ inline constexpr auto tiff = overload{
 /// checks if `T` is a rect-like type
 template<typename T> concept rect_like = requires {
   requires extent<T> == 4;
+  requires same_as<element_t<T, 0>, element_t<T, 1>, element_t<T, 2>, element_t<T, 3>>;
   requires arithmetic<remove_ref<element_t<T, 0>>>;
-  requires arithmetic<remove_ref<element_t<T, 1>>>;
-  requires arithmetic<remove_ref<element_t<T, 2>>>;
-  requires arithmetic<remove_ref<element_t<T, 3>>>;
 };
 
 /// stopwatch class
@@ -3780,22 +3793,16 @@ inline const array<str2> args{};
 inline const stopwatch timer{};
 
 /// seconds per frame
-inline const fat8 spf{};
+inline const fat8 spf{1};
 
 /// frames per second
-inline const fat8 fps{};
+inline const fat8 fps{1};
 
 /// mouse position; `{x, y, na, na}`
 inline const rect mouse{};
 
 /// if the cursor is on the window
-inline const bool hover{};
-
-/// width of main window
-inline const nat4 width{};
-
-/// height of main window
-inline const nat4 height{};
+inline const bool hover{true};
 
 /// window handle
 inline const HWND hwnd{};
@@ -3831,7 +3838,10 @@ inline const comptr<IDWriteFactory> dw_factory{};
 inline const comptr<IWICImagingFactory2> wic_factory{};
 
 /// procedure of main window
-LRESULT WINAPI wndproc(HWND, UINT, WPARAM, LPARAM);
+inline LRESULT WINAPI wndproc(HWND, UINT, WPARAM, LPARAM);
+
+/// resizes the main window
+void resize(natt Width, natt Height);
 
 /// callback function for file drag and drop
 inline void (*dropped)(array<path> Files) = nullptr;
@@ -3899,7 +3909,7 @@ template<typename... Ts> brush(Ts&&...) -> brush<color::undefined>;
 /// font class
 /// @note `font(Size, (Name, Alignment, Bold, Italic))` -> dynamic font
 /// @note `font<Size, (Name, Alignment, Bold, Italic)>()` -> static font
-template<value Size = {}, stv2 Name = L"Yu Gothic UI", intt Alignment = 0, bool Bold = false, bool Italic = false> class font;
+template<value Size = value{}, stv2 Name = L"Yu Gothic UI"_sv, intt Alignment = 0, bool Bold = false, bool Italic = false> class font;
 
 template<stv2 Name, intt Alignment, bool Bold, bool Italic> class font<value{}, Name, Alignment, Bold, Italic> {
   font(const font&) = delete;
@@ -4362,6 +4372,7 @@ public:
 class bitmap {
   bitmap(bitmap&) = delete;
   bitmap& operator=(bitmap&) = delete;
+  friend void main::resize(natt, natt);
 protected:
   comptr<ID2D1Bitmap1> d2d_bitmap;
 public:
@@ -4378,7 +4389,7 @@ public:
   bitmap(bitmap&& Bitmap) noexcept : d2d_bitmap{mv(Bitmap.d2d_bitmap)}, width{Bitmap.width}, height{Bitmap.height} {}
 
   /// creates a bitmap with `Width` and `Height`
-  bitmap(nat4 Width, nat4 Height) : width(Width), height(Height) {
+  bitmap(natt Width, natt Height) : width(nat4(Width)), height(nat4(Height)) {
     auto p = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET, D2D1::PixelFormat(DXGI_FORMAT_R8G8B8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
     tiff(main::d2d_context->CreateBitmap(D2D1::SizeU(width, height), nullptr, 0, p, d2d_bitmap.addressof()));
   }
@@ -4473,7 +4484,7 @@ public:
   texture() noexcept = default;
 
   /// creates a texture with `Width` and `Height`
-  texture(nat4 Width, nat4 Height) : bitmap(Width, Height) { initialize(); }
+  texture(natt Width, natt Height) : bitmap(Width, Height) { initialize(); }
 
   /// creates a texture from an image file
   explicit texture(const path& Image) : bitmap(Image) { initialize(); }
@@ -4561,10 +4572,10 @@ public:
                                      d3d_rtv{mv(Canvas.d3d_rtv)}, d3d_dsv{mv(Canvas.d3d_dsv)} {}
 
   /// creates a canvas with `Width` and `Height`
-  canvas(nat4 Width, nat4 Height, nat4 MSAA = 0) : texture(Width, Height), msaa(MSAA) { initialize(); }
+  canvas(natt Width, natt Height, natt MSAA = 0) : texture(Width, Height), msaa(nat4(MSAA)) { initialize(); }
 
   /// creates a canvas from a bitmap
-  explicit canvas(texture&& Texture, nat4 MSAA = 0) : texture(mv(Texture)), msaa(MSAA) { initialize(); }
+  explicit canvas(texture&& Texture, natt MSAA = 0) : texture(mv(Texture)), msaa(nat4(MSAA)) { initialize(); }
 
   /// checks if this is valid
   explicit operator bool() const noexcept { return bool(d3d_rtv) && bool(d3d_dsv); }
@@ -4648,7 +4659,7 @@ public:
   camera() noexcept = default;
 
   /// creates a camera with `Width` and `Height`
-  camera(nat4 Width, nat4 Height, nat4 MSAA = 0) : canvas(Width, Height, MSAA) {}
+  camera(natt Width, natt Height, natt MSAA = 0) : canvas(Width, Height, MSAA) {}
 
   /// creates a camera from a canvas
   explicit camera(canvas&& Canvas) : canvas(mv(Canvas)) {}
@@ -4724,7 +4735,7 @@ public:
   /// sets the position of the mouse cursor
   mouse(int4 X, int4 Y) {
     [&](RECT r) { GetClientRect(main::hwnd, &r), SetCursorPos(r.left + X, r.top + Y); }({});
-    main::mouse.left = X, main::mouse.top = Y;
+    const_cast<int4&>(main::mouse.left) = X, const_cast<int4&>(main::mouse.top) = Y;
   }
 
   /// x-position of the mouse cursor
@@ -4754,11 +4765,807 @@ public:
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-namespace main {
-
+/// draws a rectangle
+/// BAD CODE
+void draw_rectangle(const rect& Rect, convertible_to<ID2D1SolidColorBrush*> auto&& Brush, fat4 Opacity = 1.0f) {
+  main::d2d_context->FillRectangle(bitcast<D2D1_RECT_F>(Rect), Brush);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+namespace ui {
+
+/// creates a message box with an OK button and returns `true`
+inline constexpr overload ok{
+  [](const stv1& Text, const stv1& Caption = "OK?") {
+    if (Text.null_terminated()) {
+      if (Caption.null_terminated()) MessageBoxA(main::hwnd, Text.data(), Caption.data(), MB_OK | MB_ICONEXCLAMATION);
+      else [&](str1 c) { MessageBoxA(main::hwnd, Text.data(), c.data(), MB_OK | MB_ICONEXCLAMATION); }(Caption);
+    } else {
+      if (str1 t{Text}; Caption.null_terminated()) MessageBoxA(main::hwnd, t.data(), Caption.data(), MB_OK | MB_ICONEXCLAMATION);
+      else [&](str1 c) { MessageBoxA(main::hwnd, t.data(), c.data(), MB_OK | MB_ICONEXCLAMATION); }(Caption);
+    }
+    return true;
+  },
+  [](const stv2& Text, const stv2& Caption = L"OK?") {
+    if (Text.null_terminated()) {
+      if (Caption.null_terminated()) MessageBoxW(main::hwnd, Text.data(), Caption.data(), MB_OK | MB_ICONEXCLAMATION);
+      else [&](str2 c) { MessageBoxW(main::hwnd, Text.data(), c.data(), MB_OK | MB_ICONEXCLAMATION); }(Caption);
+    } else {
+      if (str2 t{Text}; Caption.null_terminated()) MessageBoxW(main::hwnd, t.data(), Caption.data(), MB_OK | MB_ICONEXCLAMATION);
+      else [&](str2 c) { MessageBoxW(main::hwnd, t.data(), c.data(), MB_OK | MB_ICONEXCLAMATION); }(Caption);
+    }
+    return true;
+  }};
+
+/// creates a message box with YES/NO buttons and returns `true` if YES is pressed
+inline constexpr overload yes{
+  [](const stv1& Text, const stv1& Caption = "Yes?") {
+    if (Text.null_terminated()) {
+      if (Caption.null_terminated()) return MessageBoxA(main::hwnd, Text.data(), Caption.data(), MB_YESNO | MB_ICONQUESTION) == IDYES;
+      else return [&](str1 c) { return MessageBoxA(main::hwnd, Text.data(), c.data(), MB_YESNO | MB_ICONQUESTION) == IDYES; }(Caption);
+    } else {
+      if (str1 t{Text}; Caption.null_terminated()) return MessageBoxA(main::hwnd, t.data(), Caption.data(), MB_YESNO | MB_ICONQUESTION) == IDYES;
+      else return [&](str1 c) { return MessageBoxA(main::hwnd, t.data(), c.data(), MB_YESNO | MB_ICONQUESTION) == IDYES; }(Caption);
+    }
+  },
+  [](const stv2& Text, const stv2& Caption = L"Yes?") {
+    if (Text.null_terminated()) {
+      if (Caption.null_terminated()) return MessageBoxW(main::hwnd, Text.data(), Caption.data(), MB_YESNO | MB_ICONQUESTION) == IDYES;
+      else return [&](str2 c) { return MessageBoxW(main::hwnd, Text.data(), c.data(), MB_YESNO | MB_ICONQUESTION) == IDYES; }(Caption);
+    } else {
+      if (str2 t{Text}; Caption.null_terminated()) return MessageBoxW(main::hwnd, t.data(), Caption.data(), MB_YESNO | MB_ICONQUESTION) == IDYES;
+      else return [&](str2 c) { return MessageBoxW(main::hwnd, t.data(), c.data(), MB_YESNO | MB_ICONQUESTION) == IDYES; }(Caption);
+    }
+  }};
+
+/// creates a file open dialog and returns the selected file
+inline path open_file(const path& InitialDir = {}) {
+  cat2 buf[260]{0};
+  OPENFILENAMEW ofn{DWORD(sizeof(ofn)), main::hwnd, 0, L"All Files (*.*)\0*.*\0", 0, 0, 1, buf, nat4(extent<decltype(buf)>)};
+  ofn.lpstrInitialDir = InitialDir.empty() ? nullptr : InitialDir.c_str(), ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+  return GetOpenFileNameW(&ofn) == TRUE ? path(ofn.lpstrFile) : path{};
+}
+
+/// creates a file save dialog and returns the selected file
+inline path save_file(const path& InitialDir = {}, const path& InitialFileName = {}) {
+  cat2 buf[260]{0};
+  if (!InitialFileName.empty()) std::ranges::copy(InitialFileName.filename().wstring(), buf);
+  OPENFILENAMEW ofn{DWORD(sizeof(ofn)), main::hwnd, 0, L"All Files (*.*)\0*.*\0", 0, 0, 1, buf, nat4(extent<decltype(buf)>)};
+  ofn.lpstrInitialDir = InitialDir.empty() ? nullptr : InitialDir.c_str(), ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+  return GetSaveFileNameW(&ofn) == TRUE ? path(ofn.lpstrFile) : path{};
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// base class for creating controls
+class control {
+  inline static HFONT hfont{};
+public:
+  /// maximum number of control groups
+  inline static constexpr natt max_groups = 16;
+
+  /// hides all controls in the group
+  static void hide(natt GroupNo, bool Hide = true) {
+    ywlib_assert(GroupNo < max_groups, "Control group index is out of range");
+    for (auto& g : groups[GroupNo]) g.second->hide(Hide);
+  }
+
+  /// handle of the control
+  const HWND hwnd{};
+
+  /// group number of the control
+  const natt group{npos};
+
+  /// destructor
+  ~control() noexcept {
+    if (!hwnd) return;
+    DestroyWindow(hwnd), whole_controls.erase(hwnd);
+    groups[group + 1].erase(groups[group + 1].begin() + get_index(groups[group + 1], hwnd));
+  }
+
+  /// default constructor
+  control() noexcept = default;
+
+  /// move constructor
+  control(control&& A) : hwnd(exchange(const_cast<HWND&>(A.hwnd), nullptr)), group(A.group) {
+    whole_controls[hwnd].second = this;
+    groups[group + 1][get_index(groups[group + 1], hwnd)].second = this;
+  }
+
+  /// move assignment
+  control& operator=(control&& A) {
+    if (auto& g = groups[group + 1]; hwnd)
+      DestroyWindow(hwnd), g.erase(g.begin() + get_index(g, hwnd)), whole_controls.erase(hwnd);
+    const_cast<HWND&>(hwnd) = exchange(const_cast<HWND&>(A.hwnd), nullptr), const_cast<natt&>(group) = A.group;
+    if (hwnd) whole_controls[hwnd].second = this, groups[group + 1][get_index(groups[group + 1], hwnd)].second = this;
+    return *this;
+  }
+
+  /// checks if this is valid
+  explicit operator bool() const noexcept { return hwnd; }
+
+  /// sets the focus to this
+  virtual void setfocus() const { ywlib_assert(hwnd, "This control is not valid"), SetFocus(hwnd); }
+
+  /// hids or shows this
+  virtual void hide(bool Hide = true) const {
+    ywlib_assert(hwnd, "This control is not valid");
+    ShowWindow(hwnd, Hide ? SW_HIDE : SW_SHOW);
+  }
+
+  /// sets the text to this
+  virtual void text(const str2& Text) const {
+    ywlib_assert(hwnd, "This control is not valid");
+    SetWindowTextW(hwnd, Text.data());
+  }
+
+  /// gets the text of this
+  virtual str2 text() const {
+    ywlib_assert(hwnd, "This control is not valid");
+    str2 out(GetWindowTextLengthW(hwnd), {});
+    return GetWindowTextW(hwnd, out.data(), int4(out.size() + 1)), mv(out);
+  }
+protected:
+  /// control groups
+  inline static array<array<list<HWND, control*, bool>>, max_groups + 1> groups;
+
+  /// whole controls
+  inline static std::map<HWND, list<natt, control*>> whole_controls;
+
+  /// creates a control and adds it to group[`-1 + 1`]
+  control(const cat2* Class, const str2& Text, nat4 Style, const rect& Rect, bool Inputable)
+    : hwnd(CreateWindowExW(0, Class, Text.data(), WS_VISIBLE | WS_CHILD | WS_GROUP | Style, Rect.left, Rect.top,
+                           Rect.width(), Rect.height(), main::hwnd, 0, main::hinstance, this)) {
+    if (!hfont) hfont = CreateFontW(16, 0, 0, 0, FW_NORMAL, 0, 0, 0, SHIFTJIS_CHARSET, OUT_DEFAULT_PRECIS,
+                                    CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, VARIABLE_PITCH | FF_ROMAN, L"Yu Gothic UI");
+    SendMessageW(hwnd, WM_SETFONT, (WPARAM)hfont, true), SetWindowLongPtrW(hwnd, GWLP_ID, (LONG_PTR)hwnd);
+    if (groups[0].empty()) groups[0].reserve(1024);
+    groups[0].push_back(list{hwnd, this, Inputable}), whole_controls[hwnd] = list{npos, this};
+  }
+
+  /// creates a control and adds it to groups[`GroupNo + 1`]
+  /// @note `GroupNo` must be less than `max_groups`
+  control(const cat2* Class, const str2& Text, nat4 Style, const rect& Rect, const natt GroupNo, bool Inputable)
+    : hwnd(CreateWindowExW(0, Class, Text.data(), WS_VISIBLE | WS_CHILD | WS_GROUP | Style, Rect.left, Rect.top,
+                           Rect.width(), Rect.height(), main::hwnd, 0, main::hinstance, this)) {
+    ywlib_assert(GroupNo < max_groups, "Control group index is out of range");
+    if (!hfont) hfont = CreateFontW(16, 0, 0, 0, FW_NORMAL, 0, 0, 0, SHIFTJIS_CHARSET, OUT_DEFAULT_PRECIS,
+                                    CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, VARIABLE_PITCH | FF_ROMAN, L"Yu Gothic UI");
+    SendMessageW(hwnd, WM_SETFONT, (WPARAM)hfont, true), SetWindowLongPtrW(hwnd, GWLP_ID, (LONG_PTR)hwnd);
+    if (groups[GroupNo + 1].empty()) groups[GroupNo + 1].reserve(1024);
+    groups[GroupNo + 1].push_back(list{hwnd, this, Inputable}), whole_controls[hwnd] = list{GroupNo, this};
+  }
+
+  /// gets a control group by `GroupNo`
+  static array<list<HWND, control*, bool>>& get_group(const natt GroupNo) {
+    ywlib_assert(GroupNo < max_groups, "Control group index is out of range");
+    return groups[GroupNo + 1];
+  }
+
+  /// gets the index of a control
+  static natt get_index(const array<list<HWND, control*, bool>>& Group, HWND Handle) {
+    for (natt i{}; i < Group.size(); ++i)
+      if (Group[i].first == Handle) return i;
+    return npos;
+  }
+
+  /// changes the focus to the next/prev control
+  static void focus_on_next(const array<list<HWND, control*, bool>>& Group, natt Now, bool Prev) {
+    if (Prev) {
+      for (natt j = Now - 1; j < Now; --j)
+        if (Group[j].third) return Group[j].second->setfocus(), std::cout << j << std::endl, void();
+      for (natt j = Group.size() - 1; Now < j; --j)
+        if (Group[j].third) return Group[j].second->setfocus(), std::cout << j << std::endl, void();
+    } else {
+      for (natt j = Now + 1; j < Group.size(); ++j)
+        if (Group[j].third) return Group[j].second->setfocus(), std::cout << j << std::endl, void();
+      for (natt j = 0; j < Now; ++j)
+        if (Group[j].third) return Group[j].second->setfocus(), std::cout << j << std::endl, void();
+    }
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// class for creating textbox controls
+class textbox : public control {
+protected:
+  inline static WNDPROC defproc = nullptr;
+  static LRESULT CALLBACK proc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_CHAR) {
+      if (wp == VK_RETURN) {
+        if (auto& t = *static_cast<textbox*>(whole_controls[hw].second); t.enter) return t.enter(t), 0;
+      } else if (wp == VK_TAB) {
+        auto& g = get_group(whole_controls[hw].first);
+        auto i = get_index(g, hw);
+        auto& t = *static_cast<textbox*>(g[i].second);
+        if (t.tab) t.tab(t);
+        return focus_on_next(g, i, GetKeyState(VK_SHIFT) < 0), 0;
+      } else if (wp == VK_ESCAPE) return SetFocus(main::hwnd), 0;
+    } else if (msg == WM_SETFOCUS) {
+      if (auto& t = *static_cast<textbox*>(whole_controls[hw].second); t.intofocus) return t.intofocus(t), 0;
+    } else if (msg == WM_KILLFOCUS) {
+      if (auto& t = *static_cast<textbox*>(whole_controls[hw].second); t.killfocus) return t.killfocus(t), 0;
+    }
+    return CallWindowProcW(defproc, hw, msg, wp, lp);
+  }
+public:
+  void (*enter)(const textbox& This) = nullptr;
+  void (*tab)(const textbox& This) = nullptr;
+  void (*intofocus)(const textbox& This) = nullptr;
+  void (*killfocus)(const textbox& This) = nullptr;
+  textbox() noexcept = default;
+  textbox(textbox&&) = default;
+  textbox& operator=(textbox&&) = default;
+  textbox(const rect& Rect, const str2& Init = L"", nat4 EditStyle = {})
+    : control(L"EDIT", Init, EditStyle, Rect, true) {
+    if (!defproc) defproc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc);
+    SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc);
+  }
+  textbox(const natt GroupNo, const rect& Rect, const str2& Init, nat4 EditStyle = {})
+    : control(L"EDIT", Init, EditStyle, Rect, GroupNo, true) {
+    if (!defproc) defproc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc);
+    SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc);
+  }
+};
+
+/// class for creating a valuebox control
+class valuebox : public control {
+protected:
+  inline static WNDPROC defproc = nullptr;
+  static LRESULT CALLBACK proc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_CHAR) {
+      if (wp == VK_RETURN) {
+        if (auto& t = *static_cast<valuebox*>(whole_controls[hw].second); t.enter) return t.enter(t), 0;
+      } else if (wp == VK_TAB) {
+        auto& g = get_group(whole_controls[hw].first);
+        auto i = get_index(g, hw);
+        auto& t = *static_cast<valuebox*>(g[i].second);
+        if (t.tab) t.tab(t);
+        return focus_on_next(g, i, GetKeyState(VK_SHIFT) < 0), 0;
+      } else if (wp == VK_ESCAPE) return SetFocus(main::hwnd), 0;
+      else if (wp == VK_BACK || wp == VK_DELETE || wp == VK_LEFT || wp == VK_RIGHT) void(0);
+      else if (!(wp >= '0' && wp <= '9' || wp == '-' || wp == '.')) return 0;
+    } else if (msg == WM_SETFOCUS) {
+      if (auto& t = *static_cast<valuebox*>(whole_controls[hw].second); t.intofocus) return t.intofocus(t), 0;
+    } else if (msg == WM_KILLFOCUS) {
+      if (auto& t = *static_cast<valuebox*>(whole_controls[hw].second); t.killfocus) return t.killfocus(t), 0;
+    }
+    return CallWindowProcW(defproc, hw, msg, wp, lp);
+  }
+public:
+  void (*enter)(const valuebox& This) = nullptr;
+  void (*tab)(const valuebox& This) = nullptr;
+  void (*intofocus)(const valuebox& This) = nullptr;
+  void (*killfocus)(const valuebox& This) = nullptr;
+  valuebox() noexcept = default;
+  valuebox(valuebox&&) = default;
+  valuebox& operator=(valuebox&&) = default;
+  valuebox(const rect& Rect, const arithmetic auto Init, nat4 EditStyle = {})
+    : control(L"EDIT", vtos<cat2>(Init), EditStyle, Rect, true) {
+    if (!defproc) defproc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc);
+    SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc);
+  }
+  valuebox(const natt GroupNo, const rect& Rect, const arithmetic auto Init, nat4 EditStyle = {})
+    : control(L"EDIT", vtos<cat2>(Init), EditStyle, Rect, GroupNo, true) {
+    if (!defproc) defproc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc);
+    SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc);
+  }
+  void value(const arithmetic auto Value) const { SetWindowTextW(hwnd, vtos<cat2>(Value).data()); }
+  template<arithmetic T> T value() const { return stov<T>(text()); }
+};
+
+/// class for creating a label control
+class label : public control {
+public:
+  label() noexcept = default;
+  label(label&&) = default;
+  label& operator=(label&&) = default;
+  label(const rect& Rect, const str2& Text, nat4 StaticStyle = {})
+    : control(L"STATIC", Text, StaticStyle, Rect, false) {}
+  label(const natt GroupNo, const rect& Rect, const str2& Text, nat4 StaticStyle = {})
+    : control(L"STATIC", Text, StaticStyle, Rect, GroupNo, false) {}
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// class for obtaining the button state
+template<typename Button, invocable<const Button&> Converter> class button_state {
+  const Button* ptr;
+  Converter func;
+public:
+  template<typename F> button_state(const Button* B, F&& Func) noexcept : ptr(B), func(fwd<F>(Func)) {}
+  operator invoke_result_t<Converter, const Button&>() const { return func(*ptr); }
+};
+template<typename B, typename F> button_state(const B*, F&&) -> button_state<B, F>;
+
+/// class for creating button controls
+class button : public control {
+  static bool get_state(const button& This) { return bool(defproc(This.hwnd, BM_GETSTATE, 0, 0) & BST_PUSHED); }
+protected:
+  inline static WNDPROC defproc = nullptr;
+  static LRESULT CALLBACK proc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_LBUTTONDOWN) {
+      if (auto& t = *static_cast<button*>(whole_controls[hw].second); t.enter)
+        return [&](auto r) { return t.enter(t), r; }(defproc(hw, msg, wp, lp));
+    } else if (msg == WM_KEYDOWN) {
+      if (wp == VK_RETURN || wp == VK_SPACE) {
+        if (auto& t = *static_cast<button*>(whole_controls[hw].second); t.enter)
+          return [&](auto r) { return t.enter(t), r; }(defproc(hw, msg, wp, lp));
+      } else if (wp == VK_TAB) {
+        auto& g = get_group(whole_controls[hw].first);
+        auto i = get_index(g, hw);
+        return focus_on_next(g, i, GetKeyState(VK_SHIFT) < 0), 0;
+      } else if (wp == VK_ESCAPE) return SetFocus(main::hwnd), 0;
+    }
+    return CallWindowProcW(defproc, hw, msg, wp, lp);
+  }
+public:
+  const button_state<button, decltype(&get_state)> state;
+  void (*enter)(const button& This) = nullptr;
+  button() noexcept : control(), state(this, get_state) {}
+  button(button&& A) : control(mv(dynamic_cast<control&>(A))), state(this, get_state), enter(A.enter) {}
+  button& operator=(button&& A) {
+    return dynamic_cast<control&>(*this) = mv(dynamic_cast<control&>(A)), enter = A.enter, *this;
+  }
+  button(const rect& Rect, const str2& Text, nat4 ButtonStyle = {})
+    : control(L"BUTTON", Text.data(), ButtonStyle, Rect, true), state(this, get_state) {
+    if (!defproc) defproc = (WNDPROC)GetWindowLongPtrW(hwnd, GWLP_WNDPROC);
+    SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc);
+  }
+  button(natt GroupNo, const rect& Rect, const str2& Text, nat4 ButtonStyle = {})
+    : control(L"BUTTON", Text.data(), ButtonStyle, Rect, GroupNo, true), state(this, get_state) {
+    if (!defproc) defproc = (WNDPROC)GetWindowLongPtrW(hwnd, GWLP_WNDPROC);
+    SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc);
+  }
+};
+
+/// class for creating checkbox controls
+class checkbox : public control {
+  static bool get_state(const checkbox& This) { return bool(defproc(This.hwnd, BM_GETCHECK, 0, 0) & BST_CHECKED); }
+protected:
+  inline static WNDPROC defproc = nullptr;
+  static LRESULT CALLBACK proc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_LBUTTONUP) {
+      if (auto& t = *static_cast<checkbox*>(whole_controls[hw].second); t.enter)
+        return [&](auto r) { return t.enter(t), r; }(defproc(hw, msg, wp, lp));
+    } else if (msg == WM_KEYUP) {
+      if (wp == VK_RETURN || wp == VK_SPACE)
+        if (auto& t = *static_cast<checkbox*>(whole_controls[hw].second); t.enter)
+          return [&](auto r) { return t.enter(t), r; }(defproc(hw, msg, VK_SPACE, lp));
+    } else if (msg == WM_KEYDOWN) {
+      if (wp == VK_RETURN) wp = VK_SPACE;
+      else if (wp == VK_TAB) {
+        auto& g = get_group(whole_controls[hw].first);
+        auto i = get_index(g, hw);
+        return focus_on_next(g, i, GetKeyState(VK_SHIFT) < 0), 0;
+      } else if (wp == VK_ESCAPE) return SetFocus(main::hwnd), 0;
+    }
+    return CallWindowProcW(defproc, hw, msg, wp, lp);
+  }
+public:
+  const button_state<checkbox, decltype(&get_state)> state;
+  void (*enter)(const checkbox& This) = nullptr;
+  checkbox() noexcept : control(), state(this, get_state) {}
+  checkbox(checkbox&& A) : control(mv(dynamic_cast<control&>(A))), state(this, get_state), enter(A.enter) {}
+  checkbox& operator=(checkbox&& A) {
+    return dynamic_cast<control&>(*this) = mv(dynamic_cast<control&>(A)), enter = A.enter, *this;
+  }
+  checkbox(const rect& Rect, const str2& Text, nat4 ButtonStyle = {})
+    : control(L"BUTTON", Text.data(), BS_AUTOCHECKBOX | ButtonStyle, Rect, true), state(this, get_state) {
+    if (!defproc) defproc = (WNDPROC)GetWindowLongPtrW(hwnd, GWLP_WNDPROC);
+    SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc);
+  }
+  checkbox(natt GroupNo, const rect& Rect, const str2& Text, nat4 ButtonStyle = {})
+    : control(L"BUTTON", Text.data(), BS_AUTOCHECKBOX | ButtonStyle, Rect, GroupNo, true), state(this, get_state) {
+    if (!defproc) defproc = (WNDPROC)GetWindowLongPtrW(hwnd, GWLP_WNDPROC);
+    SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc);
+  }
+};
+
+/// class for creating radiobutton controls
+class radiobutton : public control {
+  nat4 get_index(HWND hw) {
+    for (nat4 i{}; i < buttons.size(); ++i)
+      if (buttons[i] == hw) return i;
+    return nat4(-1);
+  }
+  void initialize(const rect& r, const str2& t, const auto& ts) {
+    if (!defproc) defproc = (WNDPROC)GetWindowLongPtrW(hwnd, GWLP_WNDPROC);
+    SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc);
+    int4 height = r.height() / (1 + extent<decltype(ts)>), width = r.width();
+    auto hw = CreateWindowExW(WS_EX_TOPMOST, L"BUTTON", t.data(),
+                              WS_VISIBLE | WS_CHILD | BS_AUTORADIOBUTTON | WS_GROUP,
+                              0, 0, width, height, hwnd, 0, main::hinstance, 0);
+    if (!defproc2) defproc2 = (WNDPROC)GetWindowLongPtrW(hw, GWLP_WNDPROC);
+    SendMessageW(hw, WM_SETFONT, (WPARAM)hfont, true);
+    SetWindowLongPtrW(hw, GWLP_WNDPROC, (LONG_PTR)proc2);
+    SetWindowLongPtrW(hw, GWLP_ID, (LONG_PTR)hw);
+    buttons.emplace_back(hw);
+    cfor<0, [](natt i) { return i < extent<decltype(ts)>; }>(
+      [&](const str2& Text, natt i) {
+        auto hw = CreateWindowExW(WS_EX_TOPMOST, L"BUTTON", Text.data(),
+                                  WS_VISIBLE | WS_CHILD | BS_AUTORADIOBUTTON,
+                                  0, int4(i) * height, width,  height,
+                                  hwnd, 0, main::hinstance, 0);
+        SendMessageW(hw, WM_SETFONT, (WPARAM)hfont, true);
+        SetWindowLongPtrW(hw, GWLP_WNDPROC, (LONG_PTR)proc2);
+        SetWindowLongPtrW(hw, GWLP_ID, (LONG_PTR)hw);
+        buttons.emplace_back(hw); }, ts, make_sequence<1 + extent<decltype(ts)>, 1>{});
+    SendMessageW(buttons[0], BM_SETCHECK, BST_CHECKED, 0);
+  }
+protected:
+  array<HWND> buttons{};
+  inline static WNDPROC defproc = nullptr, defproc2 = nullptr;
+  static LRESULT CALLBACK proc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_COMMAND && HIWORD(wp) == BN_CLICKED) {
+      auto& t = *static_cast<radiobutton*>(whole_controls[hw].second);
+      const_cast<nat4&>(t.state) = t.get_index((HWND)lp);
+      std::cout << t.state << std::endl;
+      if (t.enter) t.enter(t);
+    }
+    return CallWindowProcW(defproc, hw, msg, wp, lp);
+  }
+  static LRESULT CALLBACK proc2(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_LBUTTONUP) {
+      if (auto& t = *static_cast<radiobutton*>(whole_controls[GetParent(hw)].second); t.enter)
+        return [&](auto r) { return t.enter(t), r; }(defproc(hw, msg, wp, lp));
+    } else if (msg == WM_KEYUP) {
+      if (wp == VK_RETURN || wp == VK_SPACE)
+        if (auto& t = *static_cast<radiobutton*>(whole_controls[GetParent(hw)].second); t.enter)
+          return [&](auto r) { return t.enter(t), r; }(defproc(hw, msg, wp, lp));
+    } else if (msg == WM_KEYDOWN) {
+      if (wp == VK_RETURN) wp = VK_SPACE;
+      else if (wp == VK_TAB) {
+        auto p = GetParent(hw);
+        auto& g = get_group(whole_controls[p].first);
+        auto i = control::get_index(g, p);
+        return focus_on_next(g, i, GetKeyState(VK_SHIFT) < 0), 0;
+      } else if (wp == VK_UP || wp == VK_LEFT) {
+        auto& t = *static_cast<radiobutton*>(whole_controls[GetParent(hw)].second);
+        // const_cast<nat4&>(t.state) = static_cast<nat4>((t.get_index(hw) + t.buttons.size() - 1) % t.buttons.size());
+        SetFocus(t.buttons[(t.get_index(hw) + t.buttons.size() - 1) % t.buttons.size()]);
+      } else if (wp == VK_DOWN || wp == VK_RIGHT) {
+        auto& t = *static_cast<radiobutton*>(whole_controls[GetParent(hw)].second);
+        // const_cast<nat4&>(t.state) = (t.get_index(hw) + 1) % t.buttons.size();
+        SetFocus(t.buttons[(t.get_index(hw) + 1) % t.buttons.size()]);
+      } else if (wp == VK_ESCAPE) return SetFocus(main::hwnd), 0;
+    }
+    return CallWindowProcW(defproc2, hw, msg, wp, lp);
+  }
+public:
+  const nat4 state{};
+  const nat4 count{};
+  void (*enter)(const radiobutton& This) = nullptr;
+  radiobutton() noexcept = default;
+  radiobutton(radiobutton&& A) : control(mv(dynamic_cast<control&>(A))), buttons(mv(A.buttons)), count(A.count), enter(A.enter) {}
+  radiobutton& operator=(radiobutton&& A) {
+    dynamic_cast<control&>(*this) = mv(dynamic_cast<control&>(A));
+    return buttons = mv(A.buttons), const_cast<nat4&>(count) = A.count, enter = A.enter, *this;
+  }
+  radiobutton(const rect& Rect, const str2& Title,
+              const str2& FirstButtonText, convertible_to<str2> auto&&... ButtonTexts)
+    : control(L"BUTTON", Title.data(), WS_BORDER | BS_GROUPBOX, Rect, true), count(1 + sizeof...(ButtonTexts)) {
+    initialize(Rect, FirstButtonText, list<>::asref(ButtonTexts...));
+  }
+  radiobutton(natt GroupNo, const rect& Rect, const str2& Title,
+              const str2& FirstButtonText, convertible_to<str2> auto&&... ButtonTexts)
+    : control(L"BUTTON", Title.data(), WS_BORDER | BS_GROUPBOX, Rect, GroupNo, true), count(1 + sizeof...(ButtonTexts)) {
+    initialize(Rect, FirstButtonText, list<>::asref(ButtonTexts...));
+  }
+  virtual void setfocus() const override { SetFocus(buttons[state]); }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// class for displaying a bitmap on main-window
+class bitmap : public control {
+protected:
+  yw::rect yw_rect{};
+  yw::bitmap yw_bitmap{};
+  bitmap(const bitmap&) = delete;
+  bitmap& operator=(const bitmap&) = delete;
+  bitmap(yw::bitmap&& Bitmap) : yw_bitmap(mv(Bitmap)) {}
+public:
+  bitmap() noexcept = default;
+  bitmap(bitmap&&) noexcept = default;
+  bitmap& operator=(bitmap&&) noexcept = default;
+  bitmap(const rect& Rect) : control(L"STATIC", L"", 0, {}, false), yw_rect(Rect), yw_bitmap(Rect.width(), Rect.height()) {}
+  bitmap(natt GroupNo, const rect& Rect) : control(L"STATIC", L"", 0, {}, GroupNo, false), yw_rect(Rect), yw_bitmap(Rect.width(), Rect.height()) {}
+};
+
+class coordinator {
+protected:
+  texture tex;
+  camera cmr;
+  coordinator(const coordinator&) = delete;
+  coordinator& operator=(const coordinator&) = delete;
+  void initialize() {
+    static constexpr auto ff = font<200, L"Yu Gothic UI", 0>{};
+    static constexpr auto bb = brush<color::white>{};
+    cmr.orthographic = true;
+    cmr.offset.z = -10;
+    cmr.factor = 0.3125f * min(cmr.width, cmr.height);
+    tex.begin_draw(color::black);
+    rect{0, 0, 1024, 512}.draw_rectangle(brush<color::red>{});
+    rect{1024, 0, 2048, 512}.draw_rectangle(brush<color::blue>{});
+    rect{2048, 0, 3072, 512}.draw_rectangle(brush<color::green>{});
+    rect{0, 100, 512, 512}.draw_text(L"+X", ff, bb);
+    rect{512, 100, 1024, 512}.draw_text(L"-X", ff, bb);
+    rect{1024, 100, 1512, 512}.draw_text(L"+Y", ff, bb);
+    rect{1512, 100, 2048, 512}.draw_text(L"-Y", ff, bb);
+    rect{2048, 100, 2512, 512}.draw_text(L"+Z", ff, bb);
+    rect{2512, 100, 3072, 512}.draw_text(L"-Z", ff, bb);
+    tex.end_draw();
+    operator()({});
+  }
+public:
+  coordinator() noexcept = default;
+  coordinator(coordinator&&) noexcept = default;
+  coordinator& operator=(coordinator&&) noexcept = default;
+  coordinator(natt Width, natt Height, natt Msaa = {}) : tex(4096, 512), cmr(Width, Height, Msaa) { initialize(); }
+  void operator()(const vector& Radians, const color& Background = color::black) {
+    static constexpr stv1 hlsl = R"(
+#pragma pack_matrix(row_major)
+struct SB { float4 p, t; };
+struct PSIN {
+  float4 p : SV_Position;
+  float2 t : TEXCOORD;
+};
+cbuffer CB : register(b0) { matrix v; };
+StructuredBuffer<SB> sb : register(t0);
+void vsmain(uint In : SV_VertexID, out PSIN Out) {
+  Out.p = mul(v, float4(sb[In].p.xyz, 1));
+  Out.t = sb[In].t.xy;
+}
+Texture2D tx : register(t0);
+SamplerState ss : register(s0);
+void psmain(PSIN In, out float4 Out : SV_Target) {
+  Out = tx.Sample(ss, In.t);
+})";
+    static constexpr array<list<vector, vector>, 36> vv{
+      // clang-format off
+      list{vector{1, 1, 1}, vector{0, 0}}, list{vector{1, -1, 1}, vector{0, 1}}, list{vector{1, 1, -1}, vector{0.125f, 0}},              // +X
+      list{vector{1, -1, -1}, vector{0.125f, 1}}, list{vector{1, 1, -1}, vector{0.125f, 0}}, list{vector{1, -1, 1}, vector{0, 1}},
+      list{vector{-1, 1, -1}, vector{0.125f, 0}}, list{vector{-1, -1, -1}, vector{0.125f, 1}}, list{vector{-1, 1, 1}, vector{0.25f, 0}}, // -X
+      list{vector{-1, -1, 1}, vector{0.25f, 1}}, list{vector{-1, 1, 1}, vector{0.25f, 0}}, list{vector{-1, -1, -1}, vector{0.125f, 1}},
+      list{vector{1, 1, 1}, vector{0.25f, 0}}, list{vector{1, 1, -1}, vector{0.25f, 1}}, list{vector{-1, 1, 1}, vector{0.375f, 0}},      // +Y
+      list{vector{-1, 1, -1}, vector{0.375f, 1}}, list{vector{-1, 1, 1}, vector{0.375f, 0}}, list{vector{1, 1, -1}, vector{0.25f, 1}},
+      list{vector{-1, -1, 1}, vector{0.375f, 0}}, list{vector{-1, -1, -1}, vector{0.375f, 1}}, list{vector{1, -1, 1}, vector{0.5f, 0}},  // -Y
+      list{vector{1, -1, -1}, vector{0.5f, 1}}, list{vector{1, -1, 1}, vector{0.5f, 0}}, list{vector{-1, -1, -1}, vector{0.375f, 1}},
+      list{vector{-1, 1, 1}, vector{0.5f, 0}}, list{vector{-1, -1, 1}, vector{0.5f, 1}}, list{vector{1, 1, 1}, vector{0.625f, 0}},       // +Z
+      list{vector{1, -1, 1}, vector{0.625f, 1}}, list{vector{1, 1, 1}, vector{0.625f, 0}}, list{vector{-1, -1, 1}, vector{0.5f, 1}},
+      list{vector{1, 1, -1}, vector{0.625f, 0}}, list{vector{1, -1, -1}, vector{0.625f, 1}}, list{vector{-1, 1, -1}, vector{0.75f, 0}},  // -Z
+      list{vector{-1, -1, -1}, vector{0.75f, 1}}, list{vector{-1, 1, -1}, vector{0.75f, 0}}, list{vector{1, -1, -1}, vector{0.625f, 1}},
+    }; // clang-format on
+    static auto rd = renderer<typepack<structured_buffer<list<vector, vector>>>, typepack<xmatrix>, typepack<>, typepack<>, typepack<texture>>(hlsl);
+    static auto sb = structured_buffer<list<vector, vector>>(vv.data(), 36);
+    static constant_buffer<xmatrix> cb;
+    try {
+      tiff(tex);
+      cmr.rotation = Radians, cmr.update();
+      cb.load(cmr.view_projection_matrix);
+      cmr.begin_render(Background);
+      rd(36, {sb}, {cb}, {}, {}, {tex});
+      cmr.end_render();
+    } catch (const std::exception& E) { throw except(E); }
+  }
+  void operator()(const rect& Rect) const { rect{Rect}.draw_bitmap(cmr); }
+  // void operator()(const array<const yw::bitmap&, 6>& PlusXYZ_MinusXYZ) const {
+  //   tex.begin_draw(color::black);
+  //   if (PlusXYZ_MinusXYZ[0]) rect{0, 0, 512, 512}.draw_bitmap(PlusXYZ_MinusXYZ[0]);
+  //   if (PlusXYZ_MinusXYZ[1]) rect{1024, 0, 1536, 512}.draw_bitmap(PlusXYZ_MinusXYZ[1]);
+  //   if (PlusXYZ_MinusXYZ[2]) rect{2048, 0, 2560, 512}.draw_bitmap(PlusXYZ_MinusXYZ[2]);
+  //   if (PlusXYZ_MinusXYZ[3]) rect{512, 0, 1024, 512}.draw_bitmap(PlusXYZ_MinusXYZ[3]);
+  //   if (PlusXYZ_MinusXYZ[4]) rect{1536, 0, 2048, 512}.draw_bitmap(PlusXYZ_MinusXYZ[4]);
+  //   if (PlusXYZ_MinusXYZ[5]) rect{2560, 0, 3072, 512}.draw_bitmap(PlusXYZ_MinusXYZ[5]);
+  //   tex.end_draw();
+  // }
+};
+
+/// Class for creating a progress bar.
+class progressbar {
+protected:
+  yw::bitmap bm;
+  yw::brush<> brush;
+  progressbar(const progressbar&) = delete;
+  progressbar& operator=(const progressbar&) = delete;
+public:
+  color background{color::white};
+  progressbar() noexcept = default;
+  progressbar(progressbar&&) = default;
+  progressbar& operator=(progressbar&&) = default;
+  explicit operator bool() const noexcept { return bool(bm); }
+  operator comptr<ID2D1Bitmap1>::reference*() const noexcept { return bm; }
+  progressbar(natt Width, natt Height, const color& Color) : bm(Width, Height), brush(Color) { bm.begin_draw(background), bm.end_draw(); }
+  void operator()(fat4 Progress) { bm.begin_draw(background), rect{0, 0, bm.width * Progress, bm.height}.draw_rectangle(brush), bm.end_draw(); }
+  void operator()(const color& Color) { brush = yw::brush(Color); }
+  void operator()(const rect& Rect) const { Rect.draw_bitmap(bm); }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+}
+
+namespace main {
+
+/// render target of the main window
+inline const bitmap render_target;
+
+/// width of the main window
+inline const nat4& width = render_target.width;
+
+/// height of the main window
+inline const nat4& height = render_target.height;
+
+/// resizes the main window
+void resize(natt Width, natt Height) {
+  static constexpr auto getaddressof = []<typename Com>(const comptr<Com>& a) { return const_cast<comptr<Com>&>(a).addressof(); };
+  static constexpr cat2 class_name[] = L"ywlib";
+  static int4 width_pad{}, height_pad{};
+  if (auto& name = const_cast<str2&>(username); name.empty()) // gets the user name
+    [&](DWORD s) { ::GetUserNameW(nullptr, &s), name.resize(s), ::GetUserNameW(name.data(), &s); }(0);
+  if (!main::hinstance) { // initializes hinstance and window class
+    const_cast<HINSTANCE&>(main::hinstance) = GetModuleHandleW(nullptr);
+    WNDCLASSEXW wc{sizeof(WNDCLASSEXW), CS_OWNDC, main::wndproc, 0, 0, main::hinstance};
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW), wc.lpszClassName = class_name;
+    tiff(RegisterClassExW(&wc));
+  }
+  if (main::args.empty()) { // gets the command line arguments
+    int c;
+    auto args = CommandLineToArgvW(GetCommandLineW(), &c);
+    auto& a = const_cast<array<str2>&>(main::args);
+    for (a.resize(c); 0 <= --c;) a[c] = args[c];
+  }
+  if (!main::hwnd) { // creates the main window
+    const_cast<HWND&>(main::hwnd) = CreateWindowExW(
+      WS_EX_ACCEPTFILES, class_name, class_name, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN,
+      0, 0, int4(Width), int4(Height), 0, 0, main::hinstance, 0);
+    [&](RECT r = {}) { GetClientRect(main::hwnd, &r), width_pad = width - r.right, height_pad = height - r.bottom; }();
+    tiff(SetWindowPos(main::hwnd, 0, 0, 0, width + width_pad, height + height_pad, SWP_NOZORDER));
+  }
+  if (!main::d3d_device) { // initializes DirectX
+    comptr<IDXGIFactory2> factory{};
+    tiff(CreateDXGIFactory1(IID_PPV_ARGS(factory.addressof())));
+    tiff(factory->MakeWindowAssociation(main::hwnd, DXGI_MWA_NO_ALT_ENTER));
+    D3D_FEATURE_LEVEL featurelevels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0};
+    tiff(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                           featurelevels, (UINT)extent<decltype(featurelevels)>, D3D11_SDK_VERSION,
+                           (ID3D11Device**)getaddressof(main::d3d_device), nullptr, (ID3D11DeviceContext**)getaddressof(main::d3d_context)));
+    DXGI_SWAP_CHAIN_DESC1 sc_desc{width, height, DXGI_FORMAT_R8G8B8A8_UNORM, false, {1, 0}, DXGI_USAGE_RENDER_TARGET_OUTPUT, 2};
+    sc_desc.Scaling = DXGI_SCALING_STRETCH, sc_desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    tiff(factory->CreateSwapChainForHwnd(main::d3d_device, main::hwnd, &sc_desc, nullptr, nullptr, getaddressof(main::swap_chain)));
+    tiff(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, getaddressof(main::d2d_factory)));
+    [&](comptr<IDXGIDevice2> dxgi_device) {
+      tiff(main::d3d_device.as(dxgi_device));
+      tiff(main::d2d_factory->CreateDevice(dxgi_device, getaddressof(main::d2d_device))); }({});
+    tiff(main::d2d_device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, getaddressof(main::d2d_context)));
+    tiff(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), (IUnknown**)getaddressof(main::dw_factory)));
+    tiff(CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(getaddressof(main::wic_factory))));
+    [&](comptr<ID3D11BlendState> state, D3D11_BLEND_DESC desc) {
+      desc.RenderTarget[0] = {true, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD,
+                                D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD, 0x0f};
+      tiff(main::d3d_device->CreateBlendState(&desc, state.addressof()));
+      main::d3d_context->OMSetBlendState(state, nullptr, 0xffffffff); }({}, {});
+    [&](comptr<ID3D11SamplerState> state, D3D11_SAMPLER_DESC desc) {
+      desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP, desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+      desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP, desc.MaxAnisotropy = 1;
+      desc.ComparisonFunc = D3D11_COMPARISON_ALWAYS, desc.MaxLOD = D3D11_FLOAT32_MAX;
+      tiff(main::d3d_device->CreateSamplerState(&desc, state.addressof()));
+      main::d3d_context->PSSetSamplers(0, 1, &state); }({}, {D3D11_FILTER_MIN_MAG_MIP_LINEAR});
+    [&](comptr<ID3D11RasterizerState> state, D3D11_RASTERIZER_DESC desc) {
+      desc.DepthClipEnable = true, desc.MultisampleEnable = true, desc.AntialiasedLineEnable = true;
+      tiff(main::d3d_device->CreateRasterizerState(&desc, state.addressof()));
+      main::d3d_context->RSSetState(state); }({}, {D3D11_FILL_SOLID, D3D11_CULL_NONE, true});
+  }
+  auto& rt = const_cast<bitmap&>(main::render_target);
+  rt = bitmap{}, main::d2d_context->SetTarget(nullptr);
+  const_cast<nat4&>(rt.width) = nat4(Width), const_cast<nat4&>(rt.height) = nat4(Height);
+  tiff(SetWindowPos(main::hwnd, 0, 0, 0, width + width_pad, height + height_pad, SWP_NOMOVE | SWP_NOZORDER));
+  tiff(main::swap_chain->ResizeBuffers(2, width, height, DXGI_FORMAT_UNKNOWN, 0));
+  [&](comptr<ID3D11Texture2D> tex, comptr<IDXGISurface> surface) {
+    tiff(main::swap_chain->GetBuffer(0, IID_PPV_ARGS(tex.addressof())));
+    tiff(tex->QueryInterface(IID_PPV_ARGS(surface.addressof())));
+    auto p = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+                                         D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_PREMULTIPLIED));
+    tiff(main::d2d_context->CreateBitmapFromDxgiSurface(surface, p, rt.d2d_bitmap.addressof())); }({}, {});
+}
+
+/// renames the main window
+inline void rename(const str2& Name) { SetWindowTextW(main::hwnd, Name.data()); }
+
+/// terminates the main window
+inline void terminate() noexcept {
+  if (main::hwnd) DestroyWindow(exchange(const_cast<HWND&>(main::hwnd), nullptr));
+}
+
+/// sets the main window to topmost
+inline void topmost(bool Flag = true) {
+  if (auto style = GetWindowLongW(main::hwnd, GWL_EXSTYLE); Flag) {
+    SetWindowPos(main::hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+    SetWindowLongW(main::hwnd, GWL_EXSTYLE, style | WS_EX_TOPMOST);
+  } else {
+    SetWindowPos(main::hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+    if (style & WS_EX_TOPMOST) SetWindowLongW(main::hwnd, GWL_EXSTYLE, style & ~WS_EX_TOPMOST);
+  }
+}
+
+/// takes a screenshot of the main window
+inline void screenshot(const path& Path) { main::render_target.to_png(Path); }
+
+/// updates the main window
+inline constexpr caster update{
+  []() {
+    static MSG msg{};
+    static rect rc{}, pt{};
+    static stopwatch sw{};
+    if (!mouse::hover) {
+      rect& r = const_cast<rect&>(main::mouse);
+      GetClientRect(main::hwnd, (RECT*)&rc), GetCursorPos((POINT*)&pt);
+      r = [&](const xrect& a) { return xvpermute<0, 1, 4, 5>(a, xvsub(a, r)); }(xvsub(pt, rc));
+    }
+    const_cast<fat8&>(main::spf) = sw.push(), const_cast<fat8&>(main::fps) = 1.0f / main::spf;
+    main::swap_chain->Present(1, 0);
+    while (main::hwnd) {
+      if (PeekMessageW(&msg, 0, 0, 0, PM_REMOVE)) {
+        if (msg.message == WM_QUIT) return false;
+        TranslateMessage(&msg), DispatchMessageW(&msg);
+      } else return true;
+    }
+    return false;
+  }};
+
+/// begins drawing to main-window.
+void begin_draw() { main::render_target.begin_draw(); }
+
+/// begins drawing to main-window after filling with the specified color.
+void begin_draw(const color& Fill) { main::render_target.begin_draw(Fill); }
+
+/// ends drawing to main-window.
+void end_draw() { main::render_target.end_draw(); }
+
+/// window procedure for the main window
+inline LRESULT WINAPI wndproc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
+  static constexpr auto key_down = [](key::key& k) { if (const_cast<fat8&>(k.pushed_time) = main::timer.read(), k.down) k.down(); };
+  static constexpr auto key_up = [](key::key& k) { fat8& t = const_cast<fat8&>(k.pushed_time); t == 0 ? void() : (k.up ? k.up(main::timer.read() - exchange(t, 0.0)) : void(t = 0.0)); };
+  static TRACKMOUSEEVENT tme{.cbSize = sizeof(TRACKMOUSEEVENT), .dwFlags = TME_LEAVE};
+  if (userproc && userproc(hw, msg, wp, lp)) return 0;
+  switch (msg) {
+  case WM_MOUSEMOVE: {
+    if (!main::hover) TrackMouseEvent(&tme), const_cast<bool&>(main::hover) = true;
+    const_cast<rect&>(main::mouse) = [&](const xrect& a) { return xvpermute<0, 1, 4, 5>(a, xvsub(a, main::mouse)); }(_mm_cvtepi16_epi32(_mm_loadu_si128((xrect*)&lp)));
+    return (yw::mouse::moved ? yw::mouse::moved(mouse.right, mouse.bottom) : void(0)), 0;
+  }
+  case WM_MOUSEWHEEL: return (mouse::wheeled ? mouse::wheeled(int2((wp & 0xffff0000) >> 16)) : void(0)), 0;
+  case WM_MOUSELEAVE:
+    for (auto& k : key::keys) const_cast<fat8&>(k.pushed_time) = 0.0;
+    return (const_cast<bool&>(main::hover) = false), 0;
+  case WM_LBUTTONDOWN: return SetFocus(hw), key_down(key::keys[VK_LBUTTON]), 0;
+  case WM_RBUTTONDOWN: return SetFocus(hw), key_down(key::keys[VK_RBUTTON]), 0;
+  case WM_MBUTTONDOWN: return SetFocus(hw), key_down(key::keys[VK_MBUTTON]), 0;
+  case WM_KEYDOWN: return SetFocus(hw), key_down(key::keys[wp]), 0;
+  case WM_LBUTTONUP: return key_up(key::keys[VK_LBUTTON]), 0;
+  case WM_RBUTTONUP: return key_up(key::keys[VK_RBUTTON]), 0;
+  case WM_MBUTTONUP: return key_up(key::keys[VK_MBUTTON]), 0;
+  case WM_KEYUP: return key_up(key::keys[wp]), 0;
+  case WM_DROPFILES: {
+    if (!main::dropped) return 0;
+    auto hdrop = (HDROP)wp;
+    const natt count = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
+    array<path> out(count);
+    for (nat4 i{}; i < count; ++i) {
+      str2 buffer(DragQueryFileW(hdrop, i, nullptr, 0), L'\0');
+      DragQueryFileW(hdrop, i, buffer.data(), (nat4)buffer.size() + 1), out[i] = path(buffer);
+    }
+    return main::dropped(mv(out)), 0;
+  }
+  case WM_CLOSE: return DestroyWindow(hw), 0;
+  case WM_DESTROY: return PostQuitMessage(0), 0;
+  case WM_CREATE: tme.hwndTrack = hw, TrackMouseEvent(&tme);
+  }
+  return DefWindowProcW(hw, msg, wp, lp);
+}
+}
 }
 
 #endif
