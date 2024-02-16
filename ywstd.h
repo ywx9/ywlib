@@ -475,12 +475,19 @@ template<typename T, typename Src> using copy_pointer = type_switch<is_pointer<T
 template<typename F, typename... As> concept invocable = std::invocable<F, As...>;
 
 /// checks if `F` is nothrow invocable with `As`
-template<typename F, typename... As> concept nt_invocable =
-  invocable<F, As...> && std::is_nothrow_invocable_v<F, As...>;
+template<typename F, typename... As> concept nt_invocable = invocable<F, As...> && std::is_nothrow_invocable_v<F, As...>;
+
+// clang-format off
+
+/// invokes `Func` with `Args`
+inline constexpr auto invoke = []<typename F, typename... As>(F&& Func, As&&... Args)
+  noexcept(nt_invocable<F, As...>) -> decltype(auto) requires invocable<F, As...> {
+  if constexpr (is_void<std::invoke_result_t<F, As...>>) return std::invoke(fwd<F>(Func), fwd<As>(Args)...), none{};
+  else return std::invoke(fwd<F>(Func), fwd<As>(Args)...);
+};
 
 /// gets the result type of invoking `F` with `As`
-template<typename F, typename... As> using invoke_result_t =
-  type_switch<is_void<std::invoke_result_t<F, As...>>, none, std::invoke_result_t<F, As...>>;
+template<typename F, typename... As> using invoke_result_t = decltype(invoke(declval<F>(), declval<As>()...));
 
 /// checks if `F` is invocable with `As` and the result is convertible to `R`
 template<typename F, typename R, typename... As> concept invocable_r =
@@ -492,15 +499,6 @@ template<typename F, typename R, typename... As> concept nt_invocable_r =
 
 /// checks if `F` is a predicate; i.e. the result of invoking `F` with `As` is convertible to `bool`
 template<typename F, typename... As> concept predicate = invocable_r<F, bool, As...>;
-
-// clang-format off
-
-/// invokes `Func` with `Args`
-inline constexpr auto invoke = []<typename F, typename... As>(F&& Func, As&&... Args)
-  noexcept(nt_invocable<F, As...>) -> invoke_result_t<F, As...> requires invocable<F, As...> {
-  if constexpr (is_void<std::invoke_result_t<F, As...>>) return std::invoke(fwd<F>(Func), fwd<As>(Args)...), none{};
-  else return std::invoke(fwd<F>(Func), fwd<As>(Args)...);
-};
 
 /// invokes `Func` with `Args` and converts the result to `R`
 template<typename R> inline constexpr auto invoke_r = []<typename F, typename... As>(F&& f, As&&... as)
@@ -854,8 +852,9 @@ public:
 
   /// copies elements of `Range` to this
   template<range_for<T> Rg> constexpr array& operator=(Rg&& Range) {
-    auto i = begin(Range); auto e = end(Range);
+    auto i = yw::begin(Range); auto e = yw::end(Range);
     for (natt j{}; j < N && i != e; ++j, ++i) _cpp_array[j] = *i;
+    return *this;
   }
 
   /// conversion to reference to array
@@ -1320,21 +1319,34 @@ template<typename Fn, typename Tp, typename S = make_indices_for<Tp>> concept nt
 template<typename Fn, typename Tp, typename S = make_indices_for<Tp>> requires applyable<Fn, Tp, S>
 using apply_result_t = decltype(apply(S{}, declval<Fn>(), declval<Tp>()));
 
+// struct t_vapply {
+//   template<natt... Is, typename Fn, tuple... Tps>
+//   constexpr auto operator()(sequence<Is...>, Fn&& Func, Tps&&... Tuples) const
+//     noexcept((noexcept(call(constant<Is>{}, Func, fwd<Tps>(Tuples)...)) && ...))
+//     requires requires { ((call(constant<Is>{}, Func, fwd<Tps>(Tuples)...)), ...); }
+//   { return list<>::asref(call(constant<Is>{}, Func, fwd<Tps>(Tuples)...)...); }
+//   template<sequence_of<natt> Sq, typename Fn, tuple... Tps>
+//   constexpr auto operator()(Sq, Fn&& Func, Tps&&... Tuples) const
+//     ywlib_wrapper((*this)(to_sequence<Sq, natt>{}, Func, fwd<Tps>(Tuples)...));
+//   template<typename Fn, tuple Tp, tuple... Tps> constexpr auto operator()(Fn&& Func, Tp&& Tuple, Tps&&... Tuples) const
+//     ywlib_wrapper((*this)(make_indices_for<Tp>{}, Func, fwd<Tp>(Tuple), fwd<Tps>(Tuples)...));
+// private:
+//   template<natt I, typename Fn, typename... Tps> static constexpr auto call(constant<I>, Fn& Func, Tps&&... Tuples)
+//     noexcept((nt_gettable<Tps, I> && ...) && nt_invocable<Fn&, element_t<Tps, I>...>)
+//     -> decltype(auto) { return invoke(Func, get<I>(fwd<Tps>(Tuples)...)); }
+// };
+
 struct t_vapply {
-  template<natt... Is, typename Fn, tuple... Tps>
-  constexpr auto operator()(sequence<Is...>, Fn&& Func, Tps&&... Tuples) const
-    noexcept((noexcept(call(constant<Is>{}, Func, fwd<Tps>(Tuples)...)) && ...))
-    requires requires { ((call(constant<Is>{}, Func, fwd<Tps>(Tuples)...)), ...); }
-  { return list<>::asref(call(constant<Is>{}, Func, fwd<Tps>(Tuples)...)...); }
-  template<sequence_of<natt> Sq, typename Fn, tuple... Tps>
-  constexpr auto operator()(Sq, Fn&& Func, Tps&&... Tuples) const
-    ywlib_wrapper((*this)(to_sequence<Sq, natt>{}, Func, fwd<Tps>(Tuples)...));
-  template<typename Fn, tuple... Tps> constexpr auto operator()(Fn&& Func, Tps&&... Tuples) const
-    ywlib_wrapper((*this)(make_indices_for<type_switch<0, Tps...>>{}, Func, fwd<Tps>(Tuples)...));
 private:
-  template<natt I, typename Fn, typename... Tps> static constexpr auto call(constant<I>, Fn& Func, Tps&&... Tuples)
-    noexcept((nt_gettable<Tps, I> && ...) && nt_invocable<Fn&, element_t<Tps, I>...>)
-    -> decltype(auto) { return invoke(Func, get<I>(fwd<Tps>(Tuples)...)); }
+  template<natt I, typename Fn, typename... Ts> static constexpr auto call(constant<I>, Fn& f, Ts&&... ts)
+    noexcept((nt_gettable<Ts, I> && ...) && nt_invocable<Fn&, element_t<Ts, I>...>) -> decltype(auto)
+  { if constexpr (is_void<invoke_result_t<Fn&, element_t<Ts, I>...>>) return invoke(f, get<I>(fwd<Ts>(ts)...)), none{}; else return invoke(f, get<I>(fwd<Ts>(ts)...)); }
+public:
+  template<natt... Is, typename Fn, tuple... Ts> constexpr auto operator()(sequence<Is...>, Fn&& f, Ts&&... ts) const
+    noexcept((noexcept(call(constant<Is>{}, f, fwd<Ts>(ts)...)) && ...)) requires requires { ((call(constant<Is>{}, f, fwd<Ts>(ts)...)), ...); }
+  { return list<add_fwref<decltype(call(constant<Is>{}, f, fwd<Ts>(ts)...))>...>{call(constant<Is>{}, f, fwd<Ts>(ts)...)...}; }
+  template<sequence_of<natt> S, typename Fn, tuple... Ts> constexpr auto operator()(S, Fn&& f, Ts&&... ts) const ywlib_wrapper((*this)(to_sequence<S, natt>{}, f, fwd<Ts>(ts)...));
+  template<typename Fn, tuple T, tuple... Ts> constexpr auto operator()(Fn&& f, T&& t, Ts&&... ts) const ywlib_wrapper((*this)(make_indices_for<T>{}, f, fwd<T>(t), fwd<Ts>(ts)...));
 };
 
 /// vertically applies a function `Fn` to the elements of `Tps`
@@ -1413,107 +1425,142 @@ template<typename T, typename Tp, typename Sq = make_indices_for<Tp>> concept nt
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// class for tuple projection
-template<typename T, sequence_of<natt> Sq = make_indices_for<T>, typename Fn = none> struct projector;
+// template<typename T, sequence_of<natt> Sq = make_indices_for<T>, typename Fn = none> struct projector;
 
-/// makes a virtual tuple whose size is the same as `Sq` and whose elements are the specified reference.
-template<typename T, sequence_of<natt> Sq> requires(!tuple<T>) struct projector<T, Sq, none> {
-  static_assert(to_sequence<Sq, natt>::count != 0);
+// /// makes a virtual tuple whose size is the same as `Sq` and whose elements are the specified reference.
+// template<typename T, sequence_of<natt> Sq> requires(!tuple<T>) struct projector<T, Sq, none> {
+//   static_assert(to_sequence<Sq, natt>::count != 0);
 
-  /// indices type
-  using indices_type = to_sequence<Sq, natt>;
+//   /// indices type
+//   using indices_type = to_sequence<Sq, natt>;
 
-  /// size of the tuple
+//   /// size of the tuple
+//   static constexpr natt count = indices_type::count;
+
+//   /// reference to the object
+//   add_fwref<T> ref;
+
+//   /// constructor
+//   constexpr projector(add_fwref<T> Ref, Sq) noexcept : ref(Ref) {}
+
+//   /// gets the element at index `I`
+//   template<natt I> requires(I < count) constexpr auto get() const ywlib_wrapper(ref);
+// };
+
+// /// makes a virtual tuple whose size is the same as `Sq` and whose elements are `invoke_result_t<Fn, T&>`
+// template<typename T, sequence_of<natt> Sq, invocable<T> Fn> requires(!tuple<T>) struct projector<T, Sq, Fn> {
+//   static_assert(to_sequence<Sq, natt>::count != 0);
+
+//   /// indices type
+//   using indices_type = to_sequence<Sq, natt>;
+
+//   /// size of the tuple
+//   static constexpr natt count = indices_type::count;
+
+//   /// reference to the object
+//   add_fwref<T> ref;
+
+//   /// projection function
+//   Fn proj;
+
+//   /// constructor
+//   constexpr projector(add_fwref<T> Ref, Sq, Fn Proj) noexcept : ref(Ref), proj(mv(Proj)) {}
+
+//   /// gets the element at index `I`
+//   template<natt I> requires(I < count) constexpr auto get() const ywlib_wrapper(invoke(proj, ref));
+// };
+
+
+// /// makes a virtual tuple whose elements are arranged according to `Sq`
+// template<tuple Tp, sequence_of<natt> Sq> struct projector<Tp, Sq, none> {
+//   static_assert(to_sequence<Sq, natt>::count != 0);
+
+//   /// indices type
+//   using indices_type = to_sequence<Sq, natt>;
+
+//   /// size of the tuple
+//   static constexpr natt count = indices_type::count;
+
+//   /// reference to the tuple
+//   add_fwref<Tp> ref;
+
+//   /// constructor
+//   constexpr projector(add_fwref<Tp> Ref) noexcept : ref(Ref) {}
+//   constexpr projector(add_fwref<Tp> Ref, Sq) noexcept : ref(Ref) {}
+
+//   /// gets the element at index `I`
+//   template<natt I> requires(I < count) constexpr auto get() const
+//     ywlib_wrapper(yw::get<indices_type::template at<I>>(ref));
+// };
+
+
+// /// makes a virtual tuple whose elements at index `I` are `invoke_result_t<Fn, element_t<Tp, Sq::at<I>>>`
+// template<tuple Tp, sequence_of<natt> Sq, typename Fn> struct projector<Tp, Sq, Fn> {
+//   static_assert(to_sequence<Sq, natt>::count != 0);
+
+//   /// indices type
+//   using indices_type = to_sequence<Sq, natt>;
+
+//   /// size of the tuple
+//   static constexpr natt count = indices_type::count;
+
+//   /// reference to the tuple
+//   add_fwref<Tp> ref;
+
+//   /// projection function
+//   Fn proj;
+
+//   /// constructor
+//   constexpr projector(add_fwref<Tp> Ref, Fn Proj) noexcept : ref(Ref), proj(mv(Proj)) {}
+//   constexpr projector(add_fwref<Tp> Ref, Sq, Fn Proj) noexcept : ref(Ref), proj(mv(Proj)) {}
+
+//   /// gets the element at index `I`
+//   template<natt I> requires(I < count) constexpr auto get() const
+//     ywlib_wrapper(invoke(proj, yw::get<indices_type::template at<I>>(ref)));
+// };
+
+// /// deduction guide for `projector`
+// template<typename T, sequence_of<natt> Sq> requires(!tuple<T>) projector(T&&, Sq) -> projector<T, Sq, none>;
+// template<typename T, sequence_of<natt> Sq, invocable<T> Fn> requires(!tuple<T>) projector(T&&, Sq, Fn) -> projector<T, Sq, Fn>;
+// template<tuple Tp> projector(Tp&&) -> projector<Tp, make_indices_for<Tp>, none>;
+// template<tuple Tp, sequence_of<natt> Sq> projector(Tp&&, Sq) -> projector<Tp, Sq, none>;
+// template<tuple Tp, vapplyable<Tp, make_indices_for<Tp>> Fn> projector(Tp&&, Fn) -> projector<Tp, make_indices_for<Tp>, Fn>;
+// template<tuple Tp, sequence_of<natt> Sq, typename Fn> projector(Tp&&, Sq, Fn) -> projector<Tp, Sq, Fn>;
+
+template<typename T, sequence_of<natt> S = make_indices_for<T>, typename F = none> struct projector {
+  using indices_type = to_sequence<S, natt>;
   static constexpr natt count = indices_type::count;
-
-  /// reference to the object
   add_fwref<T> ref;
-
-  /// constructor
-  constexpr projector(add_fwref<T> Ref, Sq) noexcept : ref(Ref) {}
-
-  /// gets the element at index `I`
-  template<natt I> requires(I < count) constexpr auto get() const ywlib_wrapper(ref);
+  remove_ref<F> proj;
+  constexpr projector(T&& Tuple, F Proj) noexcept(nt_constructible<add_fwref<T>, T> && nt_constructible<F, F>)
+    requires constructible<add_fwref<T>, T> && constructible<F, F> : ref(fwd<T>(Tuple)), proj(fwd<F>(Proj)) {}
+  constexpr projector(T&& Tuple, F Proj, sequence_of<natt> auto) noexcept(nt_constructible<add_fwref<T>, T> && nt_constructible<F, F>)
+    requires constructible<add_fwref<T>, T> && constructible<F, F> : ref(fwd<T>(Tuple)), proj(fwd<F>(Proj)) {}
+  template<natt I> auto get() const ywlib_wrapper(invoke(proj, yw::get<indices_type::template at<I>>(static_cast<add_fwref<T>>(ref))));
 };
 
-/// makes a virtual tuple whose size is the same as `Sq` and whose elements are `invoke_result_t<Fn, T&>`
-template<typename T, sequence_of<natt> Sq, invocable<T> Fn> requires(!tuple<T>) struct projector<T, Sq, Fn> {
-  static_assert(to_sequence<Sq, natt>::count != 0);
-
-  /// indices type
-  using indices_type = to_sequence<Sq, natt>;
-
-  /// size of the tuple
+template<tuple T, typename S> struct projector<T, S, none> {
+  using indices_type = to_sequence<S, natt>;
   static constexpr natt count = indices_type::count;
-
-  /// reference to the object
   add_fwref<T> ref;
-
-  /// projection function
-  Fn proj;
-
-  /// constructor
-  constexpr projector(add_fwref<T> Ref, Sq, Fn Proj) noexcept : ref(Ref), proj(mv(Proj)) {}
-
-  /// gets the element at index `I`
-  template<natt I> requires(I < count) constexpr auto get() const ywlib_wrapper(invoke(proj, ref));
+  constexpr projector(T&& t) noexcept : ref{fwd<T>(t)} {}
+  constexpr projector(T&& Tuple, indices_for<T> auto) noexcept : ref{fwd<T>(Tuple)} {}
+  template<natt I> auto get() const ywlib_wrapper(yw::get<indices_type::template at<I>>(static_cast<add_fwref<T>>(ref)));
 };
 
+template<tuple T> projector(T&&) -> projector<T, make_indices_for<T>, none>;
+template<tuple T, indices_for<T> S> projector(T&&, S) -> projector<T, S, none>;
+template<tuple T, typename F> requires(!sequence_of<F, natt>) projector(T&&, F&&) -> projector<T, make_indices_for<T>, remove_ref<F>>;
+template<tuple T, typename F, sequence_of<natt> S> requires(!sequence_of<F, natt>) projector(T&&, F&&, S) -> projector<T, remove_ref<F>, to_sequence<S, natt>>;
 
-/// makes a virtual tuple whose elements are arranged according to `Sq`
-template<tuple Tp, sequence_of<natt> Sq> struct projector<Tp, Sq, none> {
-  static_assert(to_sequence<Sq, natt>::count != 0);
-
-  /// indices type
-  using indices_type = to_sequence<Sq, natt>;
-
-  /// size of the tuple
-  static constexpr natt count = indices_type::count;
-
-  /// reference to the tuple
-  add_fwref<Tp> ref;
-
-  /// constructor
-  constexpr projector(add_fwref<Tp> Ref) noexcept : ref(Ref) {}
-  constexpr projector(add_fwref<Tp> Ref, Sq) noexcept : ref(Ref) {}
-
-  /// gets the element at index `I`
-  template<natt I> requires(I < count) constexpr auto get() const
-    ywlib_wrapper(yw::get<indices_type::template at<I>>(ref));
+template<natt I, invocable_r<bool, natt> auto Cond, invocable_r<natt, natt> auto Incrementer = [](natt i) { return i + 1; }>
+inline constexpr auto cfor = []<typename F, gettable<I>... Ts>(F&& Func, Ts&&... Tuples) requires invocable<F&, element_t<Ts&, I>...> {
+  Func(yw::get<I>(Tuples)...);
+  if constexpr (Cond(Incrementer(I))) {
+    static_assert(((gettable<Ts&, Incrementer(I)>)&&...), "Not satisfied `gettable<Ts, I>`. Check `Cond` or `extent<Ts>`.");
+    cfor<Incrementer(I), Cond, Incrementer>(fwd<F>(Func), fwd<Ts>(Tuples)...);
+  }
 };
-
-
-/// makes a virtual tuple whose elements at index `I` are `invoke_result_t<Fn, element_t<Tp, Sq::at<I>>>`
-template<tuple Tp, sequence_of<natt> Sq, vapplyable<Tp, Sq> Fn> struct projector<Tp, Sq, Fn> {
-  static_assert(to_sequence<Sq, natt>::count != 0);
-
-  /// indices type
-  using indices_type = to_sequence<Sq, natt>;
-
-  /// size of the tuple
-  static constexpr natt count = indices_type::count;
-
-  /// reference to the tuple
-  add_fwref<Tp> ref;
-
-  /// projection function
-  Fn proj;
-
-  /// constructor
-  constexpr projector(add_fwref<Tp> Ref, Fn Proj) noexcept : ref(Ref), proj(mv(Proj)) {}
-  constexpr projector(add_fwref<Tp> Ref, Sq, Fn Proj) noexcept : ref(Ref), proj(mv(Proj)) {}
-
-  /// gets the element at index `I`
-  template<natt I> requires(I < count) constexpr auto get() const
-    ywlib_wrapper(invoke(proj, yw::get<indices_type::template at<I>>(ref)));
-};
-
-/// deduction guide for `projector`
-template<typename T, sequence_of<natt> Sq> requires(!tuple<T>) projector(T&&, Sq) -> projector<T, Sq, none>;
-template<typename T, sequence_of<natt> Sq, invocable<T> Fn> requires(!tuple<T>) projector(T&&, Sq, Fn) -> projector<T, Sq, Fn>;
-template<tuple Tp> projector(Tp&&) -> projector<Tp, make_indices_for<Tp>, none>;
-template<tuple Tp, sequence_of<natt> Sq> projector(Tp&&, Sq) -> projector<Tp, Sq, none>;
-template<tuple Tp, vapplyable<Tp, make_indices_for<Tp>> Fn> projector(Tp&&, Fn) -> projector<Tp, make_indices_for<Tp>, Fn>;
-template<tuple Tp, sequence_of<natt> Sq, vapplyable<Tp, Sq> Fn> projector(Tp&&, Sq, Fn) -> projector<Tp, Sq, Fn>;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1534,16 +1581,16 @@ template<character Ct> struct string_view {
   template<cnt_sized_range_of<Ct> Rg> constexpr string_view(Rg&& r) : string_view(yw::begin(r), yw::end(r)) {}
 
   /// assignment
-  constexpr string_view& operator=(const string_view& s) {
-    const_cast<const Ct*>(pointer) = s.pointer;
-    const_cast<natt&>(count) = s.count;
-    return *this;
-  }
-  constexpr string_view& operator=(string_view&& s) {
-    const_cast<const Ct*>(pointer) = s.pointer;
-    const_cast<natt&>(count) = s.count;
-    return *this;
-  }
+  // constexpr string_view& operator=(const string_view& s) {
+  //   const_cast<const Ct*>(pointer) = s.pointer;
+  //   const_cast<natt&>(count) = s.count;
+  //   return *this;
+  // }
+  // constexpr string_view& operator=(string_view&& s) {
+  //   const_cast<const Ct*>(pointer) = s.pointer;
+  //   const_cast<natt&>(count) = s.count;
+  //   return *this;
+  // }
 
   /// checks if the string is empty
   constexpr bool empty() const noexcept { return !count; }
@@ -1727,8 +1774,8 @@ inline constexpr overload strlen{
   []<range Rg>(Rg&& Str) requires character<iter_value_t<Rg>> { return std::ranges::distance(Str); }};
 
 template<arithmetic T> struct t_stov {
-  T operator()(str1 Str) noexcept { return call(mv(Str)); }
-  T operator()(str2 Str) noexcept { return call(mv(Str)); }
+  T operator()(str1 Str) const noexcept { return call(mv(Str)); }
+  T operator()(str2 Str) const noexcept { return call(mv(Str)); }
 private:
   static auto call(auto Str) noexcept {
     for (; Str.size(); Str.erase(0, 1)) {
@@ -1835,10 +1882,21 @@ public:
   /// @note `Out` must be a non-const container whose size is equal to the file size
   void read(cnt_range auto& Out) const requires(!is_const<decltype(yw::data(Out))>) {
     using rg = decltype(Out);
+    std::cout << source{} << std::endl;
+    std::cout << file_size() << std::endl;
+    std::cout << yw::size(Out) << std::endl;
+    std::cout << source{} << std::endl;
     if (const auto n = yw::size(Out) * sizeof(iter_value_t<rg>); file_size() == n) {
-      if (std::ifstream ifs(*this, std::ios::binary); ifs) ifs.read(reinterpret_cast<char*>(yw::data(Out)), n);
-      else throw except("failed to open the file");
-    } else throw except("byte size of `Out` is not equal to the file size");
+      std::cout << source{} << std::endl;
+      if (std::ifstream ifs(*this, std::ios::binary); ifs) {
+        ifs.read(reinterpret_cast<char*>(yw::data(Out)), n);
+        std::cout << source{} << std::endl;
+      } else throw except("failed to open the file");
+      std::cout << source{} << std::endl;
+    } else {
+      std::cout << source{} << std::endl;
+      throw except("byte size of `Out` is not equal to the file size");
+    }
   }
 
   /// writes the file
@@ -1887,14 +1945,16 @@ template<typename... Ts> struct tuple_size<yw::typepack<Ts...>> : integral_const
 template<size_t I, typename... Ts> struct tuple_element<I, yw::typepack<Ts...>> : type_identity<yw::type_switch<I, Ts...>> {};
 template<typename... Ts> struct tuple_size<yw::list<Ts...>> : integral_constant<size_t, sizeof...(Ts)> {};
 template<size_t I, typename... Ts> struct tuple_element<I, yw::list<Ts...>> : type_identity<yw::type_switch<I, Ts...>> {};
-template<typename T, typename S, typename F> struct tuple_size<yw::projector<T, S, F>> : integral_constant<size_t, yw::to_sequence<S>::size> {};
+template<typename T, typename S, typename F> struct tuple_size<yw::projector<T, S, F>> : integral_constant<size_t, yw::to_sequence<S>::count> {};
 template<size_t I, typename T, typename S, typename F> struct tuple_element<I, yw::projector<T, S, F>> : remove_cvref<yw::element_t<yw::projector<T, S, F>, I>> {};
 template<typename T, size_t N> struct tuple_size<yw::array<T, N>> : integral_constant<size_t, N> {};
 template<size_t I, typename T, size_t N> struct tuple_element<I, yw::array<T, N>> : type_identity<T> {};
-template<typename Ct> struct formatter<yw::string_view<Ct>> : formatter<basic_string_view<Ct>> {
-  auto format(const yw::string_view<Ct>& s, format_context& ctx) const { return formatter<basic_string_view<Ct>>::format({s.pointer, s.count}, ctx); } };
-template<typename Ct> struct formatter<yw::string<Ct>> : formatter<basic_string<Ct>> {
-  auto format(const yw::string<Ct>& s, format_context& ctx) const { return formatter<basic_string<Ct>>::format(s, ctx); } };
+template<typename Ct> struct formatter<yw::string_view<Ct>> : formatter<basic_string_view<Ct>, Ct> {
+  auto format(const yw::string_view<Ct>& s, yw::type_switch<same_as<Ct, char>, format_context, wformat_context>& ctx) const {
+    return formatter<basic_string_view<Ct>, Ct>::format({s.pointer, s.count}, ctx); } };
+template<typename Ct> struct formatter<yw::string<Ct>> : formatter<basic_string<Ct>, Ct> {
+  auto format(const yw::string<Ct>& s, yw::type_switch<same_as<Ct, char>, format_context, wformat_context>& ctx) const {
+    return formatter<basic_string<Ct>, Ct>::format(s, ctx); } };
 template<> struct formatter<yw::source> : formatter<string> {
   auto format(const yw::source& s, format_context& ctx) const {
     return formatter<string>::format(std::format("{} ({}, {}, {})", s.file, s.line, s.column, s.func), ctx); } };
@@ -1927,7 +1987,10 @@ inline constexpr overload xv{
   [](const fat4 X, const fat4 Y, const fat4 Z, const fat4 W) noexcept { return _mm_set_ps(W, Z, Y, X); },
   [](const fat8 X, const fat8 Y, const fat8 Z, const fat8 W) noexcept { return _mm256_set_pd(W, Z, Y, X); },
   [](const int4 X, const int4 Y, const int4 Z, const int4 W) noexcept { return _mm_set_epi32(W, Z, Y, X); },
-  [](const xvector& X, const xvector& Y, const xvector& Z, const xvector& W) noexcept { return xmatrix{X, Y, Z, W}; }};
+  [](const xvector& X, const xvector& Y, const xvector& Z, const xvector& W) noexcept { return xmatrix{X, Y, Z, W}; },
+  []<convertible_to<xvector> T>(T&& A) noexcept(nt_convertible_to<T, xvector>) { return static_cast<xvector>(fwd<T>(A)); },
+  []<convertible_to<xwector> T>(T&& A) noexcept(nt_convertible_to<T, xwector>) { return static_cast<xwector>(fwd<T>(A)); },
+  []<convertible_to<xrect> T>(T&& A) noexcept(nt_convertible_to<T, xrect>) { return static_cast<xrect>(fwd<T>(A)); }};
 
 /// casts a xvector type to another type
 template<included_in<xvector, xwector, xrect> Xv> inline constexpr overload xvcast{
@@ -3296,6 +3359,8 @@ inline constexpr overload xvcamera{
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+struct rect;
+
 /// vector structure with 4 elements; `x`, `y`, `z`, `w`
 struct vector {
   fat4 x{}, y{}, z{}, w{};
@@ -3412,6 +3477,8 @@ struct vector {
   friend constexpr vector& operator-=(vector& A, const fat4& B) noexcept { return A = A - B; }
   friend constexpr vector& operator*=(vector& A, const fat4& B) noexcept { return A = A * B; }
   friend constexpr vector& operator/=(vector& A, const fat4& B) noexcept { return A = A / B; }
+
+  constexpr rect to_rect() const noexcept;
 };
 
 /// color structure with 4 elements; `r`, `g`, `b`, `a`
@@ -3443,7 +3510,7 @@ struct color {
     sienna, saddlebrown, maroon, darkred, brown, firebrick, indianred, rosybrown, darksalmon, lightcoral, salmon,
     lightsalmon, coral, tomato, orangered, red, crimson, mediumvioletred, deeppink, hotpink, palevioletred, pink,
     lightpink, thistle, magenta, fuchsia, violet, plum, orchid, mediumorchid, darkorchid, darkviolet, darkmagenta,
-    purple, indigo, darkslateblue, blueviolet, mediumpurple, slateblue, mediumslateblue, transparent, undefined;
+    purple, indigo, darkslateblue, blueviolet, mediumpurple, slateblue, mediumslateblue, transparent, undefined, yw;
 private:
   static constexpr color from_code(const nat4& a) noexcept {
     if (is_cev) return color(fat4((0xff0000 & a) >> 16) / 255.f, fat4((0xff00 & a) >> 8) / 255.f, fat4(0xff & a) / 255.f, fat4((0xff000000 & a) >> 24) / 255.f);
@@ -3478,7 +3545,7 @@ inline constexpr color color::black{0x000000}, color::dimgray{0x696969}, color::
   color::lightpink{0xffb6c1}, color::thistle{0xd8bfd8}, color::magenta{0xff00ff}, color::fuchsia{0xff00ff}, color::violet{0xee82ee}, color::plum{0xdda0dd},
   color::orchid{0xda70d6}, color::mediumorchid{0xba55d3}, color::darkorchid{0x9932cc}, color::darkviolet{0x9400d3}, color::darkmagenta{0x8b008b},
   color::purple{0x800080}, color::indigo{0x4b0082}, color::darkslateblue{0x483d8b}, color::blueviolet{0x8a2be2}, color::mediumpurple{0x9370db},
-  color::slateblue{0x6a5acd}, color::mediumslateblue{0x7b68ee}, color::undefined = color(-0.f, -0.f, -0.f, -0.f);
+  color::slateblue{0x6a5acd}, color::mediumslateblue{0x7b68ee}, color::undefined = color(-0.f, -0.f, -0.f, -0.f), color::yw{0x081020};
 
 /// rectangle structure with 4 elements; `left`, `top`, `right`, `bottom`
 struct rect {
@@ -3610,7 +3677,17 @@ struct rect {
   friend constexpr rect& operator-=(rect& A, const int4& B) noexcept { return A = A - B; }
   friend constexpr rect& operator*=(rect& A, const int4& B) noexcept { return A = A * B; }
   friend constexpr rect& operator/=(rect& A, const int4& B) noexcept { return A = A / B; }
+
+  constexpr vector to_vector() const noexcept {
+    if (is_cev) return vector{fat4(left), fat4(top), fat4(right), fat4(bottom)};
+    else return vector{xvcast<xvector>(*this)};
+  }
 };
+
+constexpr rect vector::to_rect() const noexcept {
+  if (is_cev) return rect{int4(x), int4(y), int4(z), int4(w)};
+  else return rect{xvcast<xrect>(*this)};
+}
 }
 
 namespace std { // clang-format off
@@ -3657,9 +3734,11 @@ template<> struct formatter<yw::xmatrix> : public formatter<string> {
 #ifdef ywlib_debug
 #define _DEBUG
 #define ywlib_enable_console
-#define ywlib_assert(Bool, Str) (Bool ? void() : void(std::cerr << Str << std::endl, throw yw::except(Str)))
+#define ywlib_assert(Bool, Str) (Bool ? void() : (void)(std::cerr << Str << std::endl, throw yw::except(Str)))
+inline constexpr bool ywlib_nodebug = false;
 #else
 #define ywlib_assert(Bool, Str) (void())
+inline constexpr bool ywlib_nodebug = true;
 #endif
 
 namespace yw {
@@ -3749,13 +3828,6 @@ inline constexpr auto tiff = overload{
   [](const auto& B, source S = {}) requires requires { { !B } -> convertible_to<bool>; } {
     if (!B) throw except("FAILED", mv(S)); }};
 
-/// checks if `T` is a rect-like type
-template<typename T> concept rect_like = requires {
-  requires extent<T> == 4;
-  requires same_as<element_t<T, 0>, element_t<T, 1>, element_t<T, 2>, element_t<T, 3>>;
-  requires arithmetic<remove_ref<element_t<T, 0>>>;
-};
-
 /// stopwatch class
 class stopwatch {
   mutable LARGE_INTEGER _li;
@@ -3783,59 +3855,75 @@ public:
 
 namespace main {
 
+namespace system {
+inline str2 username{};
+inline array<str2> args{};
+inline stopwatch timer{};
+inline HWND hwnd{};
+inline HINSTANCE hinstance{};
+inline rect mouse{};
+inline bool hover{};
+inline fat8 spf{}, fps{};
+inline comptr<ID3D11Device1> d3d_device{};
+inline comptr<ID3D11DeviceContext1> d3d_context{};
+inline comptr<IDXGISwapChain1> swap_chain{};
+inline comptr<ID2D1Device5> d2d_device{};
+inline comptr<ID2D1DeviceContext5> d2d_context{};
+inline comptr<ID2D1Factory6> d2d_factory{};
+inline comptr<IDWriteFactory> dw_factory{};
+inline comptr<IWICImagingFactory2> wic_factory{};
+}
+
 /// username
-inline const str2 username{};
+inline const str2& username = system::username;
 
 /// command line arguments
-inline const array<str2> args{};
+inline const array<str2>& args = system::args;
 
 /// application timer
-inline const stopwatch timer{};
+inline const stopwatch& timer = system::timer;
 
 /// seconds per frame
-inline const fat8 spf{1};
+inline const fat8& spf = system::spf;
 
 /// frames per second
-inline const fat8 fps{1};
+inline const fat8& fps = system::fps;
 
 /// mouse position; `{x, y, na, na}`
-inline const rect mouse{};
+inline const rect& mouse = system::mouse;
 
 /// if the cursor is on the window
-inline const bool hover{true};
+inline const bool& hover = system::hover;
 
 /// window handle
-inline const HWND hwnd{};
+inline const HWND& hwnd = system::hwnd;
 
 /// instance handle
-inline const HINSTANCE hinstance{};
+inline const HINSTANCE& hinstance = system::hinstance;
 
 /// Direct3D device
-inline const comptr<ID3D11Device1> d3d_device{};
+inline const comptr<ID3D11Device1>& d3d_device = system::d3d_device;
 
 /// Direct3D device context
-inline const comptr<ID3D11DeviceContext1> d3d_context{};
+inline const comptr<ID3D11DeviceContext1>& d3d_context = system::d3d_context;
 
 /// DirectX swap chain
-inline const comptr<IDXGISwapChain1> swap_chain{};
-
-/// render target
-// inline const comptr<ID2D1Bitmap1> render_target{};
+inline const comptr<IDXGISwapChain1>& swap_chain = system::swap_chain;
 
 /// Direct2D device
-inline const comptr<ID2D1Device5> d2d_device{};
+inline const comptr<ID2D1Device5>& d2d_device = system::d2d_device;
 
 /// Direct2D device context
-inline const comptr<ID2D1DeviceContext5> d2d_context{};
+inline const comptr<ID2D1DeviceContext5>& d2d_context = system::d2d_context;
 
 /// Direct2D factory
-inline const comptr<ID2D1Factory6> d2d_factory{};
+inline const comptr<ID2D1Factory6>& d2d_factory = system::d2d_factory;
 
 /// DirectWrite factory
-inline const comptr<IDWriteFactory> dw_factory{};
+inline const comptr<IDWriteFactory>& dw_factory = system::dw_factory;
 
 /// WIC factory
-inline const comptr<IWICImagingFactory2> wic_factory{};
+inline const comptr<IWICImagingFactory2>& wic_factory = system::wic_factory;
 
 /// procedure of main window
 inline LRESULT WINAPI wndproc(HWND, UINT, WPARAM, LPARAM);
@@ -3850,59 +3938,6 @@ inline void (*dropped)(array<path> Files) = nullptr;
 /// @note If this returns `true`, the default procedure will be ignored.
 inline bool (*userproc)(HWND, nat4, natt, intt) = nullptr;
 }
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// brush class
-/// @note `brush(color)` -> dynamic brush
-/// @note `brush<color>()` -> static brush
-template<color Color = color::undefined> class brush;
-
-template<> class brush<color::undefined> {
-  brush(const brush&) = delete;
-  brush& operator=(const brush&) = delete;
-protected:
-  comptr<ID2D1SolidColorBrush> d2d_brush{};
-public:
-  /// checks if this is valid
-  explicit operator bool() const noexcept { return bool(d2d_brush); }
-
-  /// conversion to a restricted pointer to `ID2D1SolidColorBrush`
-  operator comptr<ID2D1SolidColorBrush>::reference*() const noexcept {
-    ywlib_assert(d2d_brush, "this brush is not valid");
-    return d2d_brush;
-  }
-
-  /// constructor
-  brush() noexcept = default;
-  brush(brush&& Brush) noexcept { d2d_brush.swap(Brush.d2d_brush); }
-  brush(color Color) { tiff(main::d2d_context->CreateSolidColorBrush(bitcast<D2D1_COLOR_F>(Color), d2d_brush.addressof())); }
-
-  /// move assignment
-  brush& operator=(brush&& Brush) noexcept { return d2d_brush.reset(), d2d_brush.swap(Brush.d2d_brush), *this; }
-
-  /// gets the color of this brush
-  yw::color color() const {
-    ywlib_assert(d2d_brush, "this brush is not valid");
-    return bitcast<yw::color>(d2d_brush->GetColor());
-  }
-};
-
-template<color Color> requires(Color != color::undefined) class brush<Color> {
-  inline static yw::brush<color::undefined> yw_brush{};
-public:
-  /// checks if this is valid
-  explicit operator bool() const noexcept { return (yw_brush ? none{} : yw_brush = yw::brush<>(Color)), true; }
-
-  /// conversion to a restricted pointer to `ID2D1SolidColorBrush`
-  operator comptr<ID2D1SolidColorBrush>::reference*() const noexcept { return yw_brush; }
-
-  /// gets the color of this brush
-  yw::color color() const { return Color; }
-};
-
-/// deduction guide for `brush`
-template<typename... Ts> brush(Ts&&...) -> brush<color::undefined>;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -3939,7 +3974,7 @@ public:
     tiff(main::dw_factory->CreateTextFormat(
       Name.data(), nullptr, Bold ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL,
       Italic ? DWRITE_FONT_STYLE_OBLIQUE : DWRITE_FONT_STYLE_NORMAL,
-      DWRITE_FONT_STRETCH_NORMAL, Size, L"", &dw_format));
+      DWRITE_FONT_STRETCH_NORMAL, fat4(Size), L"", dw_format.addressof()));
     if (Alignment < 0) dw_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
     else if (Alignment > 0) dw_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
     else dw_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -3980,16 +4015,29 @@ public:
   }
 };
 
-template<value Size, stv2 Name, intt Alignment, bool Bold, bool Italic> requires(Size != 0)
+template<value Size, stv2 Name, intt Alignment, bool Bold, bool Italic> requires(Size != value{})
 class font<Size, Name, Alignment, Bold, Italic> {
-  inline static yw::font<value{}> yw_font{};
-  static void init() { yw_font ? none{} : yw_font = yw::font<value{}>(Size, Name, Alignment, Bold, Italic); }
+  static comptr<IDWriteTextFormat> _init() {
+    comptr<IDWriteTextFormat> f;
+    tiff(main::dw_factory->CreateTextFormat(
+      Name.data(), nullptr, Bold ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL,
+      Italic ? DWRITE_FONT_STYLE_OBLIQUE : DWRITE_FONT_STYLE_NORMAL,
+      DWRITE_FONT_STRETCH_NORMAL, fat4(Size), L"", f.addressof()));
+    if (Alignment < 0) f->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+    else if (Alignment > 0) f->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+    else f->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+    return f;
+  }
+  static const auto& _get() {
+    static comptr<IDWriteTextFormat> f(_init());
+    return f;
+  }
 public:
   /// check if this is valid
-  explicit operator bool() const noexcept { return init(), true; }
+  explicit operator bool() const noexcept { return bool(_get()); }
 
   /// conversion to a restricted pointer to `IDWriteTextFormat`
-  operator comptr<IDWriteTextFormat>::reference*() const noexcept { return init(), yw_font; }
+  operator comptr<IDWriteTextFormat>::reference*() const noexcept { return _get(); }
 
   /// gets the size of this font
   constexpr fat4 size() const { return Size; }
@@ -4001,6 +4049,111 @@ public:
   /// @note - : leading, 0 : center, + : trailing
   constexpr intt alignment() const { return Alignment; }
 };
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// brush class
+/// @note `brush(color)` -> dynamic brush
+/// @note `brush<color>()` -> static brush
+template<color Color = color::undefined> class brush;
+
+template<> class brush<color::undefined> {
+  brush(const brush&) = delete;
+  brush& operator=(const brush&) = delete;
+protected:
+  comptr<ID2D1SolidColorBrush> d2d_brush{};
+public:
+  /// checks if this is valid
+  explicit operator bool() const noexcept { return bool(d2d_brush); }
+
+  /// conversion to a restricted pointer to `ID2D1SolidColorBrush`
+  operator comptr<ID2D1SolidColorBrush>::reference*() const noexcept(ywlib_nodebug) {
+    ywlib_assert(d2d_brush, "this brush is not valid");
+    return d2d_brush;
+  }
+
+  /// constructor
+  brush() noexcept = default;
+  brush(brush&& Brush) noexcept { d2d_brush.swap(Brush.d2d_brush); }
+  brush(color Color) { tiff(main::d2d_context->CreateSolidColorBrush(bitcast<D2D1_COLOR_F>(Color), d2d_brush.addressof())); }
+
+  /// move assignment
+  brush& operator=(brush&& Brush) noexcept { return d2d_brush.reset(), d2d_brush.swap(Brush.d2d_brush), *this; }
+
+  /// gets the color of this brush
+  yw::color color() const {
+    ywlib_assert(d2d_brush, "this brush is not valid");
+    return bitcast<yw::color>(d2d_brush->GetColor());
+  }
+
+  /// draws a line
+  void draw_line(const vector& BeginEnd, fat4 Width) const {
+    main::d2d_context->DrawLine({BeginEnd.x, BeginEnd.y}, {BeginEnd.z, BeginEnd.w}, *this, Width);
+  }
+
+  /// fills a rectangle
+  void draw_rectangle(const vector& Rect) const {
+    main::d2d_context->FillRectangle(reinterpret_cast<const D2D1_RECT_F&>(Rect), *this);
+  }
+
+  /// draws a rectangle
+  void draw_rectangle(const vector& Rect, fat4 Width) const {
+    main::d2d_context->DrawRectangle(reinterpret_cast<const D2D1_RECT_F&>(Rect), *this, Width);
+  }
+
+  /// fills a rounded rectangle
+  void draw_rounded_rectangle(const vector& Rect, fat4 Radius) const {
+    main::d2d_context->FillRoundedRectangle(D2D1_ROUNDED_RECT{reinterpret_cast<const D2D1_RECT_F&>(Rect), Radius, Radius}, *this);
+  }
+
+  /// fills a rounded rectangle
+  void draw_rounded_rectangle(const vector& Rect, const list<fat4, fat4>& Radius) const {
+    main::d2d_context->FillRoundedRectangle(D2D1_ROUNDED_RECT{reinterpret_cast<const D2D1_RECT_F&>(Rect), Radius.first, Radius.second}, *this);
+  }
+
+  /// draws a rounded rectangle
+  void draw_rounded_rectangle(const vector& Rect, fat4 Width, fat4 Radius) const {
+    main::d2d_context->DrawRoundedRectangle(D2D1_ROUNDED_RECT{reinterpret_cast<const D2D1_RECT_F&>(Rect), Radius, Radius}, *this, Width);
+  }
+
+  /// draws a rounded rectangle
+  void draw_rounded_rectangle(const vector& Rect, fat4 Width, const list<fat4, fat4>& Radius) const {
+    main::d2d_context->DrawRoundedRectangle(D2D1_ROUNDED_RECT{reinterpret_cast<const D2D1_RECT_F&>(Rect), Radius.first, Radius.second}, *this, Width);
+  }
+
+  /// draws a text
+  void draw_text(const vector& Rect, convertible_to<IDWriteTextFormat*> auto&& Font, const stv2 Text) const {
+    main::d2d_context->DrawTextW(Text.data(), nat4(Text.size()), Font, reinterpret_cast<const D2D1_RECT_F&>(Rect), *this);
+  }
+};
+
+template<color Color> requires(Color != color::undefined) class brush<Color> {
+  static const auto& _get() {
+    static auto c = yw::brush<color::undefined>(Color);
+    return c;
+  }
+public:
+  /// checks if this is valid
+  explicit operator bool() const noexcept { return bool(_get()); }
+
+  /// conversion to a restricted pointer to `ID2D1SolidColorBrush`
+  operator comptr<ID2D1SolidColorBrush>::reference*() const noexcept { return _get(); }
+
+  /// gets the color of this brush
+  yw::color color() const { return Color; }
+
+  void draw_line(const vector& BeginEnd, fat4 Width) const { _get().draw_line(BeginEnd, Width); }
+  void draw_rectangle(const vector& Rect) const { _get().draw_rectangle(Rect); }
+  void draw_rectangle(const vector& Rect, fat4 Width) const { _get().draw_rectangle(Rect, Width); }
+  void draw_rounded_rectangle(const vector& Rect, fat4 Radius) const { _get().draw_rounded_rectangle(Rect, Radius); }
+  void draw_rounded_rectangle(const vector& Rect, const list<fat4, fat4>& Radius) const { _get().draw_rounded_rectangle(Rect, Radius); }
+  void draw_rounded_rectangle(const vector& Rect, fat4 Width, fat4 Radius) const { _get().draw_rounded_rectangle(Rect, Width, Radius); }
+  void draw_rounded_rectangle(const vector& Rect, fat4 Width, const list<fat4, fat4>& Radius) const { _get().draw_rounded_rectangle(Rect, Width, Radius); }
+  void draw_text(const vector& Rect, convertible_to<IDWriteTextFormat*> auto&& Font, const stv2 Text) const { _get().draw_text(Rect, Font, Text); }
+};
+
+/// deduction guide for `brush`
+template<typename... Ts> brush(Ts&&...) -> brush<color::undefined>;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -4032,7 +4185,7 @@ public:
   explicit operator bool() const noexcept { return bool(d3d_buffer); }
 
   /// conversion to a restricted pointer to `ID3D11Buffer`
-  operator comptr<ID3D11Buffer>::reference*() const noexcept {
+  operator comptr<ID3D11Buffer>::reference*() const noexcept(ywlib_nodebug) {
     ywlib_assert(d3d_buffer, "this buffer is not valid");
     return d3d_buffer;
   }
@@ -4066,6 +4219,8 @@ public:
     D3D11_BUFFER_DESC desc{nat4(sizeof(T) * Count), D3D11_USAGE_STAGING, 0, D3D11_CPU_ACCESS_READ};
     tiff(main::d3d_device->CreateBuffer(&desc, nullptr, buffer<T>::d3d_buffer.addressof()));
   }
+
+  using buffer<T>::from;
 
   /// Copies this contents to CPU.
   array<T> to_cpu() const {
@@ -4102,9 +4257,10 @@ public:
     [&](D3D11_SUBRESOURCE_DATA d) { tiff(main::d3d_device->CreateBuffer(&desc, &d, buffer<T>::d3d_buffer.addressof())); }({&Value});
   }
 
+  using buffer<T>::from;
+
   /// copies `Value` to this buffer
   template<typename U> requires assignable<T&, U> || vassignable<T&, U> void from(U&& Value) {
-    ywlib_assert(*this, "this buffer is not valid");
     if (*this) {
       D3D11_MAPPED_SUBRESOURCE mapped;
       tiff(main::d3d_context->Map(*this, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped));
@@ -4175,7 +4331,7 @@ public:
                            0, D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, sizeof(T)};
     tiff(main::d3d_device->CreateBuffer(&desc, nullptr, buffer<T>::d3d_buffer.addressof()));
     D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{DXGI_FORMAT_UNKNOWN, D3D11_SRV_DIMENSION_BUFFER, {}};
-    srv_desc.Buffer.NumElements = Count;
+    srv_desc.Buffer.NumElements = nat4(Count);
     tiff(main::d3d_device->CreateShaderResourceView(*this, &srv_desc, d3d_srv.addressof()));
   }
 
@@ -4191,6 +4347,14 @@ public:
       DXGI_FORMAT_UNKNOWN, D3D11_SRV_DIMENSION_BUFFER, D3D11_BUFFER_SRV{0, nat4(Count)}};
     tiff(main::d3d_device->CreateShaderResourceView(*this, &srv_desc, d3d_srv.addressof()));
   }
+
+  /// conversion to a restricted pointer to `ID3D11ShaderResourceView`
+  operator comptr<ID3D11ShaderResourceView>::reference*() const noexcept(ywlib_nodebug) {
+    ywlib_assert(*this, "this buffer is not valid");
+    return d3d_srv;
+  }
+
+  using buffer<T>::from;
 
   /// copies the contents of `Data` to this buffer
   /// @note `Data` must have the same or larger size as this buffer.
@@ -4261,6 +4425,14 @@ public:
     tiff(main::d3d_device->CreateUnorderedAccessView(*this, nullptr, d3d_uav.addressof()));
   }
 
+  /// conversion to a restricted pointer to `ID3D11UnorderedAccessView`
+  operator comptr<ID3D11UnorderedAccessView>::reference*() const noexcept(ywlib_nodebug) {
+    ywlib_assert(*this, "this buffer is not valid");
+    return d3d_uav;
+  }
+
+  using buffer<T>::from;
+
   /// copies the contents of `Data` to this buffer
   /// @note `Data` must have the same or larger size as this buffer.
   void from(const T* Data) {
@@ -4287,36 +4459,35 @@ template<typename T> unordered_buffer(const T*, natt) -> unordered_buffer<T>;
 template<specialization_of<typepack> VSResources, specialization_of<typepack> VSCBuffers,
          specialization_of<typepack> GSResources = typepack<>, specialization_of<typepack> GSCBuffers = typepack<>,
          specialization_of<typepack> PSResources = typepack<>, specialization_of<typepack> PSCBuffers = typepack<>>
-requires requires {
-  requires []<natt... Is>(sequence<Is...>) { return (convertible_to<typename VSResources::template at<Is>, ID3D11ShaderResourceView*> && ...); }(make_indices_for<VSResources>{});
-  requires []<natt... Is>(sequence<Is...>) { return (convertible_to<typename GSResources::template at<Is>, ID3D11ShaderResourceView*> && ...); }(make_indices_for<GSResources>{});
-  requires []<natt... Is>(sequence<Is...>) { return (convertible_to<typename PSResources::template at<Is>, ID3D11ShaderResourceView*> && ...); }(make_indices_for<PSResources>{});
-  requires []<natt... Is>(sequence<Is...>) { return (convertible_to<typename VSCBuffers::template at<Is>, ID3D11Buffer*> && ...); }(make_indices_for<VSCBuffers>{});
-  requires []<natt... Is>(sequence<Is...>) { return (convertible_to<typename GSCBuffers::template at<Is>, ID3D11Buffer*> && ...); }(make_indices_for<GSCBuffers>{});
-  requires []<natt... Is>(sequence<Is...>) { return (convertible_to<typename PSCBuffers::template at<Is>, ID3D11Buffer*> && ...); }(make_indices_for<PSCBuffers>{});
-} class renderer {
+         class renderer {
 protected:
+  static_assert([]<natt... Is>(sequence<Is...>) { return (convertible_to<typename VSResources::template at<Is>, ID3D11ShaderResourceView*> && ...); }(make_indices_for<VSResources>{}));
+  static_assert([]<natt... Is>(sequence<Is...>) { return (convertible_to<typename GSResources::template at<Is>, ID3D11ShaderResourceView*> && ...); }(make_indices_for<GSResources>{}));
+  static_assert([]<natt... Is>(sequence<Is...>) { return (convertible_to<typename PSResources::template at<Is>, ID3D11ShaderResourceView*> && ...); }(make_indices_for<PSResources>{}));
+  static_assert([]<natt... Is>(sequence<Is...>) { return (convertible_to<typename VSCBuffers::template at<Is>, ID3D11Buffer*> && ...); }(make_indices_for<VSCBuffers>{}));
+  static_assert([]<natt... Is>(sequence<Is...>) { return (convertible_to<typename GSCBuffers::template at<Is>, ID3D11Buffer*> && ...); }(make_indices_for<GSCBuffers>{}));
+  static_assert([]<natt... Is>(sequence<Is...>) { return (convertible_to<typename PSCBuffers::template at<Is>, ID3D11Buffer*> && ...); }(make_indices_for<PSCBuffers>{}));
   comptr<ID3D11VertexShader> d3d_vs{};
   comptr<ID3D11GeometryShader> d3d_gs{};
   comptr<ID3D11PixelShader> d3d_ps{};
 public:
   /// list of shader resources and textures for the vertex shader
-  using vs_resource_list = type_switch<VSResources::size == 0, none, array<ID3D11ShaderResourceView*, VSResources::size>>;
+  using vs_resource_list = type_switch<VSResources::count == 0, none, array<ID3D11ShaderResourceView*, VSResources::count>>;
 
   /// list of shader resources and textures for the geometry shader
-  using gs_resource_list = type_switch<GSResources::size == 0, none, array<ID3D11ShaderResourceView*, GSResources::size>>;
+  using gs_resource_list = type_switch<GSResources::count == 0, none, array<ID3D11ShaderResourceView*, GSResources::count>>;
 
   /// list of shader resources and textures for the pixel shader
-  using ps_resource_list = type_switch<PSResources::size == 0, none, array<ID3D11ShaderResourceView*, PSResources::size>>;
+  using ps_resource_list = type_switch<PSResources::count == 0, none, array<ID3D11ShaderResourceView*, PSResources::count>>;
 
   /// list of constant buffers for the vertex shader
-  using vs_cbuffer_list = type_switch<VSCBuffers::size == 0, none, array<ID3D11Buffer*, VSCBuffers::size>>;
+  using vs_cbuffer_list = type_switch<VSCBuffers::count == 0, none, array<ID3D11Buffer*, VSCBuffers::count>>;
 
   /// list of constant buffers for the geometry shader
-  using gs_cbuffer_list = type_switch<GSCBuffers::size == 0, none, array<ID3D11Buffer*, GSCBuffers::size>>;
+  using gs_cbuffer_list = type_switch<GSCBuffers::count == 0, none, array<ID3D11Buffer*, GSCBuffers::count>>;
 
   /// list of constant buffers for the pixel shader
-  using ps_cbuffer_list = type_switch<PSCBuffers::size == 0, none, array<ID3D11Buffer*, PSCBuffers::size>>;
+  using ps_cbuffer_list = type_switch<PSCBuffers::count == 0, none, array<ID3D11Buffer*, PSCBuffers::count>>;
 
   /// default constructor
   renderer() noexcept = default;
@@ -4347,12 +4518,12 @@ public:
                   vs_resource_list VSResources, vs_cbuffer_list VSCBuffers,
                   gs_resource_list GSResources = {}, gs_cbuffer_list GSCBuffers = {},
                   ps_resource_list PSResources = {}, ps_cbuffer_list PSCbuffers = {}) const {
-    if constexpr (vs_resource_list.size > 0) main::d3d_context->VSSetShaderResources(0, nat4(VSResources.count), &VSResources.first);
-    if constexpr (gs_resource_list.size > 0) main::d3d_context->GSSetShaderResources(0, nat4(VSResources.count), &VSResources.first);
-    if constexpr (ps_resource_list.size > 0) main::d3d_context->PSSetShaderResources(0, nat4(VSResources.count), &VSResources.first);
-    if constexpr (vs_cbuffer_list != none) main::d3d_context->VSSetConstantBuffers(0, VSCBuffers.size, nat4(VSCBuffers.count));
-    if constexpr (gs_cbuffer_list != none) main::d3d_context->GSSetConstantBuffers(0, GSCBuffers.size, nat4(GSCBuffers.count));
-    if constexpr (ps_cbuffer_list != none) main::d3d_context->PSSetConstantBuffers(0, PSCbuffers.size, nat4(PSCbuffers.count));
+    if constexpr (!same_as<vs_resource_list, none>) main::d3d_context->VSSetShaderResources(0, nat4(VSResources.count), VSResources.data());
+    if constexpr (!same_as<gs_resource_list, none>) main::d3d_context->GSSetShaderResources(0, nat4(VSResources.count), VSResources.data());
+    if constexpr (!same_as<ps_resource_list, none>) main::d3d_context->PSSetShaderResources(0, nat4(VSResources.count), VSResources.data());
+    if constexpr (!same_as<vs_cbuffer_list, none>) main::d3d_context->VSSetConstantBuffers(0, nat4(VSCBuffers.count), VSCBuffers.data());
+    if constexpr (!same_as<gs_cbuffer_list, none>) main::d3d_context->GSSetConstantBuffers(0, nat4(GSCBuffers.count), GSCBuffers.data());
+    if constexpr (!same_as<ps_cbuffer_list, none>) main::d3d_context->PSSetConstantBuffers(0, nat4(PSCbuffers.count), PSCbuffers.data());
     main::d3d_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     main::d3d_context->IASetInputLayout(nullptr);
     main::d3d_context->IASetVertexBuffers(0, 0, nullptr, nullptr, nullptr);
@@ -4365,6 +4536,67 @@ public:
 };
 
 // clang-format on
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<specialization_of<typepack> Unordered,
+         specialization_of<typepack> Structured = typepack<>,
+         specialization_of<typepack> Constant = typepack<>>
+class gpgpu {
+protected:
+  static_assert(Unordered::count != 0);
+  comptr<ID3D11ComputeShader> cs{};
+public:
+  using ub_list = list<>::from_typepack<Unordered, const unordered_buffer<int4>&>;
+  using sb_list = list<>::from_typepack<Structured, const structured_buffer<int4>&>;
+  using cb_list = list<>::from_typepack<Constant, const constant_buffer<vector>&>;
+  gpgpu() noexcept = default;
+  gpgpu(gpgpu&&) noexcept = default;
+  gpgpu& operator=(gpgpu&&) noexcept = default;
+  gpgpu(stv1 Hlsl, str1 Entry = "csmain", str1 Target = "cs_5_0") {
+    try {
+      comptr<ID3DBlob> b, r;
+      std::cout << source{} << std::endl;
+      if (0 > D3DCompile(Hlsl.data(), Hlsl.size(), 0, 0, 0, Entry.data(), Target.data(),
+                         D3D10_SHADER_ENABLE_STRICTNESS, 0, b.addressof(), r.addressof())) throw except((cat1*)r->GetBufferPointer());
+      std::cout << source{} << std::endl;
+      std::cout << main::d3d_device.get() << std::endl;
+      std::cout << b->GetBufferSize() << std::endl;
+      std::cout << cs.addressof() << std::endl;
+      std::cout << source{} << std::endl;
+      tiff(main::d3d_device->GetDeviceRemovedReason());
+      tiff(main::d3d_device->CreateComputeShader(b->GetBufferPointer(), b->GetBufferSize(), nullptr, cs.addressof()));
+      std::cout << source{} << std::endl;
+    } catch (const except& E) { std::cout << E.what() << std::endl, throw except(E); }
+  }
+  void operator()(ub_list UBuffers, sb_list SBuffers, cb_list CBuffers,
+                  nat4 ThreadGroupX, nat4 ThreadGroupY = 1, nat4 ThreadGroupZ = 1) const {
+    using ubseq = make_indices_for<ub_list>;
+    tiff([&]<natt... Is>(sequence<Is...>) { return (bool(get<Is>(UBuffers)) && ...); }(ubseq{}));
+    [&]<natt... Is>(sequence<Is...>) { (get<Is>(UBuffers).to_cs(Is), ...); }(ubseq{});
+    using sbseq = make_indices_for<sb_list>;
+    if constexpr (extent<sb_list> != 0) {
+      tiff([&]<natt... Is>(sequence<Is...>) { return (bool(get<Is>(SBuffers)) && ...); }(sbseq{}));
+      [&]<natt... Is>(sequence<Is...>) { (get<Is>(SBuffers).to_cs(Is), ...); }(sbseq{});
+    }
+    using cbseq = make_indices_for<cb_list>;
+    if constexpr (extent<cb_list> != 0) {
+      tiff([&]<natt... Is>(sequence<Is...>) { return (bool(get<Is>(CBuffers)) && ...); }(cbseq{}));
+      [&]<natt... Is>(sequence<Is...>) { (get<Is>(CBuffers).to_cs(Is), ...); }(cbseq{});
+    }
+    main::d3d_context->CSSetShader(cs, nullptr, 0);
+    main::d3d_context->Dispatch(ThreadGroupX, ThreadGroupY, ThreadGroupZ);
+    [&]<natt... Is>(ID3D11UnorderedAccessView* t, sequence<Is...>) { (main::d3d_context->CSSetUnorderedAccessViews(Is, 1, &t, 0), ...); }({}, ubseq{});
+    [&]<natt... Is>(ID3D11ShaderResourceView* t, sequence<Is...>) { (main::d3d_context->CSSetShaderResources(Is, 1, &t), ...); }({}, sbseq{});
+    [&]<natt... Is>(ID3D11Buffer* t, sequence<Is...>) { (main::d3d_context->CSSetConstantBuffers(Is, 1, &t), ...); }({}, cbseq{});
+  }
+  /// @brief 一次元に並列化したGPGPUを実行する。
+  /// @param Parallels 並列数
+  /// @note  動作条件：Shaderにおいて`numthreads(1024, 1, 1)`が指定されていること。
+  void operator()(natt Parallels, ub_list UBuffers, sb_list SBuffers, cb_list CBuffers) const {
+    this->operator()(mv(UBuffers), mv(SBuffers), mv(CBuffers), nat4(Parallels - 1) / 1024u + 1, 1, 1);
+  }
+};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -4423,7 +4655,7 @@ public:
   explicit operator bool() const noexcept { return bool(d2d_bitmap); }
 
   /// conversion to a restricted pointer to `ID2D1Bitmap1`
-  operator comptr<ID2D1Bitmap1>::reference*() const noexcept {
+  operator comptr<ID2D1Bitmap1>::reference*() const noexcept(ywlib_nodebug) {
     ywlib_assert(d2d_bitmap, "this bitmap is not valid");
     return d2d_bitmap;
   }
@@ -4456,11 +4688,8 @@ public:
   void end_draw() const { main::d2d_context->EndDraw(); }
 
   /// draws this bitmap to another bitmap
-  void draw(rect_like auto&& Rect, const fat4 Opacity = 1.0f) const {
-    if constexpr (!same_as<remove_cvref<decltype(RECT)>, vector>) {
-      auto&& r = D2D1_RECT_F(fat4(get<0>(Rect)), fat4(get<1>(Rect)), fat4(get<2>(Rect)), fat4(get<3>(Rect)));
-      main::d2d_context->DrawBitmap(d2d_bitmap, mv(r), Opacity);
-    } else main::d2d_context->DrawBitmap(d2d_bitmap, bitcast<D2D1_RECT_F>(Rect), Opacity);
+  void draw(const vector& Rect, const fat4 Opacity = 1.0f) const {
+    main::d2d_context->DrawBitmap(d2d_bitmap, reinterpret_cast<const D2D1_RECT_F&>(Rect), Opacity);
   }
 };
 
@@ -4496,13 +4725,13 @@ public:
   explicit operator bool() const noexcept { return bool(d3d_texture); }
 
   /// conversion to a restricted pointer to `ID3D11Texture2D`
-  operator comptr<ID3D11Texture2D>::reference*() const noexcept {
+  operator comptr<ID3D11Texture2D>::reference*() const noexcept(ywlib_nodebug) {
     ywlib_assert(d3d_texture, "this texture is not valid");
     return d3d_texture;
   }
 
   /// conversion to a restricted pointer to `ID3D11ShaderResourceView`
-  operator comptr<ID3D11ShaderResourceView>::reference*() const noexcept {
+  operator comptr<ID3D11ShaderResourceView>::reference*() const noexcept(ywlib_nodebug) {
     ywlib_assert(d3d_srv, "this texture is not valid");
     return d3d_srv;
   }
@@ -4577,17 +4806,26 @@ public:
   /// creates a canvas from a bitmap
   explicit canvas(texture&& Texture, natt MSAA = 0) : texture(mv(Texture)), msaa(nat4(MSAA)) { initialize(); }
 
+  /// move assignment
+  canvas& operator=(canvas&& Canvas) noexcept {
+    texture::operator=(mv(Canvas));
+    d3d_rtv = mv(Canvas.d3d_rtv);
+    d3d_dsv = mv(Canvas.d3d_dsv);
+    const_cast<nat4&>(msaa) = Canvas.msaa;
+    return *this;
+  }
+
   /// checks if this is valid
   explicit operator bool() const noexcept { return bool(d3d_rtv) && bool(d3d_dsv); }
 
   /// conversion to a restricted pointer to `ID3D11RenderTargetView`
-  operator comptr<ID3D11RenderTargetView>::reference*() const noexcept {
+  operator comptr<ID3D11RenderTargetView>::reference*() const noexcept(ywlib_nodebug) {
     ywlib_assert(d3d_rtv, "this canvas is not valid");
     return d3d_rtv;
   }
 
   /// conversion to a restricted pointer to `ID3D11DepthStencilView`
-  operator comptr<ID3D11DepthStencilView>::reference*() const noexcept {
+  operator comptr<ID3D11DepthStencilView>::reference*() const noexcept(ywlib_nodebug) {
     ywlib_assert(d3d_dsv, "this canvas is not valid");
     return d3d_dsv;
   }
@@ -4734,8 +4972,8 @@ class mouse {
 public:
   /// sets the position of the mouse cursor
   mouse(int4 X, int4 Y) {
+    main::system::mouse.left = X, main::system::mouse.top = Y;
     [&](RECT r) { GetClientRect(main::hwnd, &r), SetCursorPos(r.left + X, r.top + Y); }({});
-    const_cast<int4&>(main::mouse.left) = X, const_cast<int4&>(main::mouse.top) = Y;
   }
 
   /// x-position of the mouse cursor
@@ -4762,14 +5000,6 @@ public:
   /// callback function for mouse middle button press
   inline static auto& middle = key::mbutton;
 };
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// draws a rectangle
-/// BAD CODE
-void draw_rectangle(const rect& Rect, convertible_to<ID2D1SolidColorBrush*> auto&& Brush, fat4 Opacity = 1.0f) {
-  main::d2d_context->FillRectangle(bitcast<D2D1_RECT_F>(Rect), Brush);
-}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -4840,8 +5070,10 @@ inline path save_file(const path& InitialDir = {}, const path& InitialFileName =
 
 /// base class for creating controls
 class control {
-  inline static HFONT hfont{};
 public:
+  /// default font handle
+  inline static HFONT hfont{};
+
   /// maximum number of control groups
   inline static constexpr natt max_groups = 16;
 
@@ -4878,7 +5110,9 @@ public:
     if (auto& g = groups[group + 1]; hwnd)
       DestroyWindow(hwnd), g.erase(g.begin() + get_index(g, hwnd)), whole_controls.erase(hwnd);
     const_cast<HWND&>(hwnd) = exchange(const_cast<HWND&>(A.hwnd), nullptr), const_cast<natt&>(group) = A.group;
-    if (hwnd) whole_controls[hwnd].second = this, groups[group + 1][get_index(groups[group + 1], hwnd)].second = this;
+    if (!hwnd) return *this;
+    whole_controls[hwnd].second = this;
+    groups[group + 1][get_index(groups[group + 1], hwnd)].second = this;
     return *this;
   }
 
@@ -4916,7 +5150,8 @@ protected:
   /// creates a control and adds it to group[`-1 + 1`]
   control(const cat2* Class, const str2& Text, nat4 Style, const rect& Rect, bool Inputable)
     : hwnd(CreateWindowExW(0, Class, Text.data(), WS_VISIBLE | WS_CHILD | WS_GROUP | Style, Rect.left, Rect.top,
-                           Rect.width(), Rect.height(), main::hwnd, 0, main::hinstance, this)) {
+                           Rect.width(), Rect.height(), main::hwnd, 0, main::hinstance, this)),
+      group(npos) {
     if (!hfont) hfont = CreateFontW(16, 0, 0, 0, FW_NORMAL, 0, 0, 0, SHIFTJIS_CHARSET, OUT_DEFAULT_PRECIS,
                                     CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, VARIABLE_PITCH | FF_ROMAN, L"Yu Gothic UI");
     SendMessageW(hwnd, WM_SETFONT, (WPARAM)hfont, true), SetWindowLongPtrW(hwnd, GWLP_ID, (LONG_PTR)hwnd);
@@ -4928,13 +5163,15 @@ protected:
   /// @note `GroupNo` must be less than `max_groups`
   control(const cat2* Class, const str2& Text, nat4 Style, const rect& Rect, const natt GroupNo, bool Inputable)
     : hwnd(CreateWindowExW(0, Class, Text.data(), WS_VISIBLE | WS_CHILD | WS_GROUP | Style, Rect.left, Rect.top,
-                           Rect.width(), Rect.height(), main::hwnd, 0, main::hinstance, this)) {
+                           Rect.width(), Rect.height(), main::hwnd, 0, main::hinstance, this)),
+      group(GroupNo) {
     ywlib_assert(GroupNo < max_groups, "Control group index is out of range");
     if (!hfont) hfont = CreateFontW(16, 0, 0, 0, FW_NORMAL, 0, 0, 0, SHIFTJIS_CHARSET, OUT_DEFAULT_PRECIS,
                                     CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, VARIABLE_PITCH | FF_ROMAN, L"Yu Gothic UI");
     SendMessageW(hwnd, WM_SETFONT, (WPARAM)hfont, true), SetWindowLongPtrW(hwnd, GWLP_ID, (LONG_PTR)hwnd);
     if (groups[GroupNo + 1].empty()) groups[GroupNo + 1].reserve(1024);
-    groups[GroupNo + 1].push_back(list{hwnd, this, Inputable}), whole_controls[hwnd] = list{GroupNo, this};
+    groups[GroupNo + 1].push_back(list{hwnd, this, Inputable});
+    whole_controls[hwnd] = list{GroupNo, this};
   }
 
   /// gets a control group by `GroupNo`
@@ -5288,15 +5525,15 @@ protected:
     cmr.offset.z = -10;
     cmr.factor = 0.3125f * min(cmr.width, cmr.height);
     tex.begin_draw(color::black);
-    rect{0, 0, 1024, 512}.draw_rectangle(brush<color::red>{});
-    rect{1024, 0, 2048, 512}.draw_rectangle(brush<color::blue>{});
-    rect{2048, 0, 3072, 512}.draw_rectangle(brush<color::green>{});
-    rect{0, 100, 512, 512}.draw_text(L"+X", ff, bb);
-    rect{512, 100, 1024, 512}.draw_text(L"-X", ff, bb);
-    rect{1024, 100, 1512, 512}.draw_text(L"+Y", ff, bb);
-    rect{1512, 100, 2048, 512}.draw_text(L"-Y", ff, bb);
-    rect{2048, 100, 2512, 512}.draw_text(L"+Z", ff, bb);
-    rect{2512, 100, 3072, 512}.draw_text(L"-Z", ff, bb);
+    brush<color::red>{}.draw_rectangle(vector{0, 0, 1024, 512});
+    brush<color::blue>{}.draw_rectangle(vector{1024, 0, 2048, 512});
+    brush<color::green>{}.draw_rectangle(vector{2048, 0, 3072, 512});
+    bb.draw_text(vector{0, 100, 512, 512}, ff, L"+X");
+    bb.draw_text(vector{512, 100, 1024, 512}, ff, L"-X");
+    bb.draw_text(vector{1024, 100, 1512, 512}, ff, L"+Y");
+    bb.draw_text(vector{1512, 100, 2048, 512}, ff, L"-Y");
+    bb.draw_text(vector{2048, 100, 2512, 512}, ff, L"+Z");
+    bb.draw_text(vector{2512, 100, 3072, 512}, ff, L"-Z");
     tex.end_draw();
     operator()({});
   }
@@ -5339,19 +5576,27 @@ void psmain(PSIN In, out float4 Out : SV_Target) {
       list{vector{1, 1, -1}, vector{0.625f, 0}}, list{vector{1, -1, -1}, vector{0.625f, 1}}, list{vector{-1, 1, -1}, vector{0.75f, 0}},  // -Z
       list{vector{-1, -1, -1}, vector{0.75f, 1}}, list{vector{-1, 1, -1}, vector{0.75f, 0}}, list{vector{1, -1, -1}, vector{0.625f, 1}},
     }; // clang-format on
-    static auto rd = renderer<typepack<structured_buffer<list<vector, vector>>>, typepack<xmatrix>, typepack<>, typepack<>, typepack<texture>>(hlsl);
+    static renderer<
+      typepack<structured_buffer<list<vector, vector>>>,
+      typepack<constant_buffer<xmatrix>>,
+      typepack<>,
+      typepack<>,
+      typepack<texture>>
+      rd{hlsl};
     static auto sb = structured_buffer<list<vector, vector>>(vv.data(), 36);
     static constant_buffer<xmatrix> cb;
     try {
       tiff(tex);
       cmr.rotation = Radians, cmr.update();
-      cb.load(cmr.view_projection_matrix);
+      cb.from(cmr.view_proj);
       cmr.begin_render(Background);
       rd(36, {sb}, {cb}, {}, {}, {tex});
       cmr.end_render();
     } catch (const std::exception& E) { throw except(E); }
   }
-  void operator()(const rect& Rect) const { rect{Rect}.draw_bitmap(cmr); }
+
+  void draw(const vector& Rect) const { cmr.draw(Rect); }
+  // void operator()(const rect& Rect) const { cmr.draw_bitmap(Rect); }
   // void operator()(const array<const yw::bitmap&, 6>& PlusXYZ_MinusXYZ) const {
   //   tex.begin_draw(color::black);
   //   if (PlusXYZ_MinusXYZ[0]) rect{0, 0, 512, 512}.draw_bitmap(PlusXYZ_MinusXYZ[0]);
@@ -5379,9 +5624,9 @@ public:
   explicit operator bool() const noexcept { return bool(bm); }
   operator comptr<ID2D1Bitmap1>::reference*() const noexcept { return bm; }
   progressbar(natt Width, natt Height, const color& Color) : bm(Width, Height), brush(Color) { bm.begin_draw(background), bm.end_draw(); }
-  void operator()(fat4 Progress) { bm.begin_draw(background), rect{0, 0, bm.width * Progress, bm.height}.draw_rectangle(brush), bm.end_draw(); }
+  void operator()(fat4 Progress) { bm.begin_draw(background), brush.draw_rectangle(vector{0, 0, bm.width * Progress, bm.height}), bm.end_draw(); }
   void operator()(const color& Color) { brush = yw::brush(Color); }
-  void operator()(const rect& Rect) const { Rect.draw_bitmap(bm); }
+  void operator()(const vector& Rect) const { bm.draw(Rect); }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -5389,8 +5634,12 @@ public:
 
 namespace main {
 
+namespace system {
+inline bitmap render_target;
+}
+
 /// render target of the main window
-inline const bitmap render_target;
+inline bitmap& render_target = system::render_target;
 
 /// width of the main window
 inline const nat4& width = render_target.width;
@@ -5400,13 +5649,19 @@ inline const nat4& height = render_target.height;
 
 /// resizes the main window
 void resize(natt Width, natt Height) {
-  static constexpr auto getaddressof = []<typename Com>(const comptr<Com>& a) { return const_cast<comptr<Com>&>(a).addressof(); };
+  // static constexpr auto getaddressof = []<typename Com>(const comptr<Com>& a) { return const_cast<comptr<Com>&>(a).addressof(); };
   static constexpr cat2 class_name[] = L"ywlib";
   static int4 width_pad{}, height_pad{};
-  if (auto& name = const_cast<str2&>(username); name.empty()) // gets the user name
-    [&](DWORD s) { ::GetUserNameW(nullptr, &s), name.resize(s), ::GetUserNameW(name.data(), &s); }(0);
+  // auto& rt = const_cast<bitmap&>(main::render_target);
+  system::render_target = bitmap{};
+  const_cast<nat4&>(system::render_target.width) = nat4(Width);
+  const_cast<nat4&>(system::render_target.height) = nat4(Height);
+  if (username.empty()) { // gets the user name
+    [&](DWORD s) { ::GetUserNameW(nullptr, &s), system::username.resize(s);
+                   ::GetUserNameW(system::username.data(), &s); }(0);
+  }
   if (!main::hinstance) { // initializes hinstance and window class
-    const_cast<HINSTANCE&>(main::hinstance) = GetModuleHandleW(nullptr);
+    main::system::hinstance = GetModuleHandleW(nullptr);
     WNDCLASSEXW wc{sizeof(WNDCLASSEXW), CS_OWNDC, main::wndproc, 0, 0, main::hinstance};
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW), wc.lpszClassName = class_name;
     tiff(RegisterClassExW(&wc));
@@ -5414,11 +5669,10 @@ void resize(natt Width, natt Height) {
   if (main::args.empty()) { // gets the command line arguments
     int c;
     auto args = CommandLineToArgvW(GetCommandLineW(), &c);
-    auto& a = const_cast<array<str2>&>(main::args);
-    for (a.resize(c); 0 <= --c;) a[c] = args[c];
+    for (system::args.resize(c); 0 <= --c;) system::args[c] = args[c];
   }
   if (!main::hwnd) { // creates the main window
-    const_cast<HWND&>(main::hwnd) = CreateWindowExW(
+    system::hwnd = CreateWindowExW(
       WS_EX_ACCEPTFILES, class_name, class_name, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN,
       0, 0, int4(Width), int4(Height), 0, 0, main::hinstance, 0);
     [&](RECT r = {}) { GetClientRect(main::hwnd, &r), width_pad = width - r.right, height_pad = height - r.bottom; }();
@@ -5431,17 +5685,18 @@ void resize(natt Width, natt Height) {
     D3D_FEATURE_LEVEL featurelevels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0};
     tiff(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
                            featurelevels, (UINT)extent<decltype(featurelevels)>, D3D11_SDK_VERSION,
-                           (ID3D11Device**)getaddressof(main::d3d_device), nullptr, (ID3D11DeviceContext**)getaddressof(main::d3d_context)));
+                           (ID3D11Device**)system::d3d_device.addressof(), nullptr,
+                           (ID3D11DeviceContext**)system::d3d_context.addressof()));
     DXGI_SWAP_CHAIN_DESC1 sc_desc{width, height, DXGI_FORMAT_R8G8B8A8_UNORM, false, {1, 0}, DXGI_USAGE_RENDER_TARGET_OUTPUT, 2};
     sc_desc.Scaling = DXGI_SCALING_STRETCH, sc_desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-    tiff(factory->CreateSwapChainForHwnd(main::d3d_device, main::hwnd, &sc_desc, nullptr, nullptr, getaddressof(main::swap_chain)));
-    tiff(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, getaddressof(main::d2d_factory)));
+    tiff(factory->CreateSwapChainForHwnd(main::d3d_device, main::hwnd, &sc_desc, nullptr, nullptr, system::swap_chain.addressof()));
+    tiff(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, system::d2d_factory.addressof()));
     [&](comptr<IDXGIDevice2> dxgi_device) {
       tiff(main::d3d_device.as(dxgi_device));
-      tiff(main::d2d_factory->CreateDevice(dxgi_device, getaddressof(main::d2d_device))); }({});
-    tiff(main::d2d_device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, getaddressof(main::d2d_context)));
-    tiff(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), (IUnknown**)getaddressof(main::dw_factory)));
-    tiff(CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(getaddressof(main::wic_factory))));
+      tiff(main::d2d_factory->CreateDevice(dxgi_device, system::d2d_device.addressof())); }({});
+    tiff(main::d2d_device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, system::d2d_context.addressof()));
+    tiff(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), (IUnknown**)system::dw_factory.addressof()));
+    tiff(CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(system::wic_factory.addressof())));
     [&](comptr<ID3D11BlendState> state, D3D11_BLEND_DESC desc) {
       desc.RenderTarget[0] = {true, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD,
                                 D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD, 0x0f};
@@ -5458,9 +5713,7 @@ void resize(natt Width, natt Height) {
       tiff(main::d3d_device->CreateRasterizerState(&desc, state.addressof()));
       main::d3d_context->RSSetState(state); }({}, {D3D11_FILL_SOLID, D3D11_CULL_NONE, true});
   }
-  auto& rt = const_cast<bitmap&>(main::render_target);
-  rt = bitmap{}, main::d2d_context->SetTarget(nullptr);
-  const_cast<nat4&>(rt.width) = nat4(Width), const_cast<nat4&>(rt.height) = nat4(Height);
+  main::d2d_context->SetTarget(nullptr);
   tiff(SetWindowPos(main::hwnd, 0, 0, 0, width + width_pad, height + height_pad, SWP_NOMOVE | SWP_NOZORDER));
   tiff(main::swap_chain->ResizeBuffers(2, width, height, DXGI_FORMAT_UNKNOWN, 0));
   [&](comptr<ID3D11Texture2D> tex, comptr<IDXGISurface> surface) {
@@ -5468,7 +5721,7 @@ void resize(natt Width, natt Height) {
     tiff(tex->QueryInterface(IID_PPV_ARGS(surface.addressof())));
     auto p = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
                                          D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_PREMULTIPLIED));
-    tiff(main::d2d_context->CreateBitmapFromDxgiSurface(surface, p, rt.d2d_bitmap.addressof())); }({}, {});
+    tiff(main::d2d_context->CreateBitmapFromDxgiSurface(surface, p, system::render_target.d2d_bitmap.addressof())); }({}, {});
 }
 
 /// renames the main window
@@ -5496,22 +5749,32 @@ inline void screenshot(const path& Path) { main::render_target.to_png(Path); }
 /// updates the main window
 inline constexpr caster update{
   []() {
+    std::cout << source{} << std::endl, tiff(main::d3d_device->GetDeviceRemovedReason());
     static MSG msg{};
+    std::cout << source{} << std::endl, tiff(main::d3d_device->GetDeviceRemovedReason());
     static rect rc{}, pt{};
+    std::cout << source{} << std::endl, tiff(main::d3d_device->GetDeviceRemovedReason());
     static stopwatch sw{};
+    std::cout << source{} << std::endl, tiff(main::d3d_device->GetDeviceRemovedReason());
     if (!mouse::hover) {
-      rect& r = const_cast<rect&>(main::mouse);
+      std::cout << source{} << std::endl, tiff(main::d3d_device->GetDeviceRemovedReason());
       GetClientRect(main::hwnd, (RECT*)&rc), GetCursorPos((POINT*)&pt);
-      r = [&](const xrect& a) { return xvpermute<0, 1, 4, 5>(a, xvsub(a, r)); }(xvsub(pt, rc));
+      std::cout << source{} << std::endl, tiff(main::d3d_device->GetDeviceRemovedReason());
+      system::mouse = [&](const xrect& a) { return xvpermute<0, 1, 4, 5>(a, xvsub(a, system::mouse)); }(xvsub(pt, rc));
+      std::cout << source{} << std::endl, tiff(main::d3d_device->GetDeviceRemovedReason());
     }
-    const_cast<fat8&>(main::spf) = sw.push(), const_cast<fat8&>(main::fps) = 1.0f / main::spf;
+    std::cout << source{} << std::endl, tiff(main::d3d_device->GetDeviceRemovedReason());
+    system::fps = 1.0f / (system::spf = sw.push());
+    std::cout << source{} << std::endl, tiff(main::d3d_device->GetDeviceRemovedReason());
     main::swap_chain->Present(1, 0);
+    std::cout << source{} << std::endl, tiff(main::d3d_device->GetDeviceRemovedReason());
     while (main::hwnd) {
       if (PeekMessageW(&msg, 0, 0, 0, PM_REMOVE)) {
         if (msg.message == WM_QUIT) return false;
         TranslateMessage(&msg), DispatchMessageW(&msg);
       } else return true;
     }
+    std::cout << source{} << std::endl, tiff(main::d3d_device->GetDeviceRemovedReason());
     return false;
   }};
 
@@ -5529,43 +5792,121 @@ inline LRESULT WINAPI wndproc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
   static constexpr auto key_down = [](key::key& k) { if (const_cast<fat8&>(k.pushed_time) = main::timer.read(), k.down) k.down(); };
   static constexpr auto key_up = [](key::key& k) { fat8& t = const_cast<fat8&>(k.pushed_time); t == 0 ? void() : (k.up ? k.up(main::timer.read() - exchange(t, 0.0)) : void(t = 0.0)); };
   static TRACKMOUSEEVENT tme{.cbSize = sizeof(TRACKMOUSEEVENT), .dwFlags = TME_LEAVE};
-  if (userproc && userproc(hw, msg, wp, lp)) return 0;
-  switch (msg) {
-  case WM_MOUSEMOVE: {
-    if (!main::hover) TrackMouseEvent(&tme), const_cast<bool&>(main::hover) = true;
-    const_cast<rect&>(main::mouse) = [&](const xrect& a) { return xvpermute<0, 1, 4, 5>(a, xvsub(a, main::mouse)); }(_mm_cvtepi16_epi32(_mm_loadu_si128((xrect*)&lp)));
-    return (yw::mouse::moved ? yw::mouse::moved(mouse.right, mouse.bottom) : void(0)), 0;
-  }
-  case WM_MOUSEWHEEL: return (mouse::wheeled ? mouse::wheeled(int2((wp & 0xffff0000) >> 16)) : void(0)), 0;
-  case WM_MOUSELEAVE:
-    for (auto& k : key::keys) const_cast<fat8&>(k.pushed_time) = 0.0;
-    return (const_cast<bool&>(main::hover) = false), 0;
-  case WM_LBUTTONDOWN: return SetFocus(hw), key_down(key::keys[VK_LBUTTON]), 0;
-  case WM_RBUTTONDOWN: return SetFocus(hw), key_down(key::keys[VK_RBUTTON]), 0;
-  case WM_MBUTTONDOWN: return SetFocus(hw), key_down(key::keys[VK_MBUTTON]), 0;
-  case WM_KEYDOWN: return SetFocus(hw), key_down(key::keys[wp]), 0;
-  case WM_LBUTTONUP: return key_up(key::keys[VK_LBUTTON]), 0;
-  case WM_RBUTTONUP: return key_up(key::keys[VK_RBUTTON]), 0;
-  case WM_MBUTTONUP: return key_up(key::keys[VK_MBUTTON]), 0;
-  case WM_KEYUP: return key_up(key::keys[wp]), 0;
-  case WM_DROPFILES: {
-    if (!main::dropped) return 0;
-    auto hdrop = (HDROP)wp;
-    const natt count = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
-    array<path> out(count);
-    for (nat4 i{}; i < count; ++i) {
-      str2 buffer(DragQueryFileW(hdrop, i, nullptr, 0), L'\0');
-      DragQueryFileW(hdrop, i, buffer.data(), (nat4)buffer.size() + 1), out[i] = path(buffer);
+  try {
+    if (userproc && userproc(hw, msg, wp, lp)) return 0;
+    switch (msg) {
+    case WM_MOUSEMOVE: {
+      if (!main::hover) TrackMouseEvent(&tme), system::hover = true;
+      system::mouse = [&](const xrect& a) { return xvpermute<0, 1, 4, 5>(a, xvsub(a, mouse)); }(_mm_cvtepi16_epi32(_mm_loadu_si128((xrect*)&lp)));
+      return (yw::mouse::moved ? yw::mouse::moved(mouse.right, mouse.bottom) : void(0)), 0;
     }
-    return main::dropped(mv(out)), 0;
-  }
-  case WM_CLOSE: return DestroyWindow(hw), 0;
-  case WM_DESTROY: return PostQuitMessage(0), 0;
-  case WM_CREATE: tme.hwndTrack = hw, TrackMouseEvent(&tme);
-  }
-  return DefWindowProcW(hw, msg, wp, lp);
+    case WM_MOUSEWHEEL: return (mouse::wheeled ? mouse::wheeled(int2((wp & 0xffff0000) >> 16)) : void(0)), 0;
+    case WM_MOUSELEAVE:
+      for (auto& k : key::keys) const_cast<fat8&>(k.pushed_time) = 0.0;
+      return system::hover = false;
+    case WM_LBUTTONDOWN: return SetFocus(hw), key_down(key::keys[VK_LBUTTON]), 0;
+    case WM_RBUTTONDOWN: return SetFocus(hw), key_down(key::keys[VK_RBUTTON]), 0;
+    case WM_MBUTTONDOWN: return SetFocus(hw), key_down(key::keys[VK_MBUTTON]), 0;
+    case WM_KEYDOWN: return SetFocus(hw), key_down(key::keys[wp]), 0;
+    case WM_LBUTTONUP: return key_up(key::keys[VK_LBUTTON]), 0;
+    case WM_RBUTTONUP: return key_up(key::keys[VK_RBUTTON]), 0;
+    case WM_MBUTTONUP: return key_up(key::keys[VK_MBUTTON]), 0;
+    case WM_KEYUP: return key_up(key::keys[wp]), 0;
+    case WM_DROPFILES: {
+      if (!main::dropped) return 0;
+      auto hdrop = (HDROP)wp;
+      const natt count = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
+      array<path> out(count);
+      for (nat4 i{}; i < count; ++i) {
+        str2 buffer(DragQueryFileW(hdrop, i, nullptr, 0), L'\0');
+        DragQueryFileW(hdrop, i, buffer.data(), (nat4)buffer.size() + 1), out[i] = path(buffer);
+      }
+      return main::dropped(mv(out)), 0;
+    }
+    case WM_CLOSE: return DestroyWindow(hw), 0;
+    case WM_DESTROY: return PostQuitMessage(0), 0;
+    case WM_CREATE: tme.hwndTrack = hw, TrackMouseEvent(&tme);
+    }
+    return DefWindowProcW(hw, msg, wp, lp);
+  } catch (const std::exception& e) { return ui::ok(e.what(), "FATAL ERROR"), main::terminate(), -1; }
 }
 }
 }
 
+/// Main Function for YWLIB
+extern void
+ywmain();
+
+#ifndef ywlib_disable_main
+#ifdef ywlib_enable_console
+int wmain() {
+  using namespace yw;
+  try {
+    std::wcout.imbue(std::locale("Japanese"));
+    tiff(CoInitialize(nullptr));
+    main::resize(400, 400);
+    ShowWindow(main::hwnd, SW_SHOW);
+    SetForegroundWindow(main::hwnd);
+    SetFocus(main::hwnd);
+    main::system::timer.start();
+    ywmain();
+    return 0;
+  } catch (const std::exception& e) { std::cout << e.what(); }
+  CoUninitialize();
+  return -1;
+}
+#else
+int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
+  using namespace yw;
+  try {
+    std::wcout.imbue(std::locale("Japanese"));
+    tiff(CoInitialize(nullptr));
+    main::resize(400, 400);
+    ShowWindow(main::hwnd, SW_SHOW);
+    SetForegroundWindow(main::hwnd);
+    SetFocus(main::hwnd);
+    main::system::timer.start();
+    ywmain();
+    return 0;
+  } catch (const std::exception& e) { ui::ok(e.what(), "FATAL ERROR"); }
+  CoUninitialize();
+  return -1;
+}
 #endif
+#endif
+
+#endif
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace yw::ff {
+
+class stl {
+  array<nat1> _{};
+public:
+#pragma pack(2)
+  struct facet {
+    array<fat4, 3> normal;
+    array<fat4, 3> vertex[3];
+    nat2 attribute;
+  };
+#pragma pack()
+  stl() noexcept = default;
+  stl(natt Facets) : _(80 + 4 + 50 * Facets) { *(nat4*)(_.data() + 80) = nat4(Facets); }
+  stl(const path& File) : _(File.file_size()) { File.read(_); }
+  nat4 size() const noexcept { return _.empty() ? nat4{} : *(nat4*)(_.data() + 80); }
+  bool empty() const noexcept { return _.empty(); }
+  bool valid() const noexcept { return _.size() >= 84 && (_.size() >= 84 + (*(nat4*)(_.data() + 80) * 50)); }
+  stv1 header() const noexcept { return valid() ? stv1((cat1*)(_.data())) : stv1(); }
+  void header(cnt_range_of<cat1> auto&& Text) { valid() ? void(std::ranges::copy_n(Text, _.data(), min(80, yw::size(Text)))) : void(); }
+  facet* data() { return valid() ? (facet*)(_.data() + 84) : nullptr; }
+  const facet* data() const { return valid() ? (facet*)(_.data() + 84) : nullptr; }
+  facet* begin() { return valid() ? (facet*)(_.data() + 84) : nullptr; }
+  const facet* begin() const { return valid() ? (facet*)(_.data() + 84) : nullptr; }
+  facet* end() { return valid() ? (facet*)(_.data() + 84 + (*(nat4*)(_.data() + 80) * 50)) : nullptr; }
+  const facet* end() const { return valid() ? (facet*)(_.data() + 84 + (*(nat4*)(_.data() + 80) * 50)) : nullptr; }
+  facet& operator[](natt i) { return *(data() + i); }
+  const facet& operator[](natt i) const { return *(data() + i); }
+  void write(const path& File) const { valid() ? void(File.write(_)) : void(); }
+};
+}

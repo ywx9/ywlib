@@ -857,9 +857,8 @@ void resize(natt Width, natt Height) {
   system::width = nat4(Width), system::height = nat4(Height);
   if (username.empty()) {
     DWORD size{};
-    auto& name = const_cast<str2&>(username);
-    ::GetUserNameW(nullptr, &size), name.resize(size - 1);
-    ::GetUserNameW(name.data(), &size);
+    ::GetUserNameW(nullptr, &size), system::username.resize(size - 1);
+    ::GetUserNameW(system::username.data(), &size);
   }
   if (!system::hinstance) {
     system::hinstance = GetModuleHandleW(0);
