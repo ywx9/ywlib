@@ -805,7 +805,7 @@ template<typename T> requires iterator<T> || range<T> using iter_reference = typ
 template<typename T> requires iterator<T> || range<T> using iter_rvref = typename _::_iter_t<T>::rr;
 
 /// alias template representing the common type of `iter_reference_t<T>` and `iter_value_t<T>`
-template<typename T> requires iterator<T> || range<T> using iter_common = common_type<iter_reference_t<T>, iter_value_t<T>>;
+template<typename T> requires iterator<T> || range<T> using iter_common = common_type<iter_reference<T>, iter_value<T>>;
 
 /// checks if `It` is an iterator for `U`
 template<typename It, typename U> concept iterator_for = iterator<It> && convertible_to<iter_reference<It>, U>;
@@ -1544,7 +1544,7 @@ struct source {
 /// exception class which contains the source location
 struct except : public std::exception {
   explicit except(const std::string& s, source _ = {}) noexcept : except(s.data(), mv(_)){};
-  explicit except(const cat1* s, source _ = {}) noexcept;
+  explicit except(const cat1* s, source _ = {}) noexcept : std::exception(std::format("{}->{}\n", s, _).data()) {}
   explicit except(const std::exception& Base, source _ = {}) noexcept : except(Base.what(), mv(_)){};
 };
 
@@ -1570,12 +1570,12 @@ public:
     return A;
   }
   void read(cnt_range auto& Out) const requires(!is_const<decltype(yw::data(Out))>) {
-    if (const auto n = yw::size(Out) * sizeof(iter_value_t<decltype(Out)>); file_size() == n) {
+    if (const auto n = yw::size(Out) * sizeof(iter_value<decltype(Out)>); file_size() == n) {
       if (std::ifstream ifs(*this, std::ios::binary); ifs) ifs.read(reinterpret_cast<char*>(yw::data(Out)), n);
       else throw except("failed to open the file");
     } else throw except("byte size of `Out` is not equal to the file size");
   }
-  void write(cnt_range auto&& In) const { write(yw::data(In), yw::size(In) * sizeof(iter_value_t<decltype(In)>)); }
+  void write(cnt_range auto&& In) const { write(yw::data(In), yw::size(In) * sizeof(iter_value<decltype(In)>)); }
   void write(const void* In, natt Size) const {
     if (std::ofstream ofs(*this, std::ios_base::binary); ofs) ofs.write(reinterpret_cast<const char*>(In), Size);
     else throw except("failed to open the file");

@@ -32,7 +32,7 @@ namespace yw { // clang-format off
 #define _DEBUG
 #define ywlib_enable_console
 #define ywlib_assert(Bool, Str) (Bool ? void() : (void)(std::cerr << Str << std::endl, throw yw::except(Str)))
-inline constexpr nodebug = false;
+inline constexpr bool nodebug = false;
 #else
 #define ywlib_assert(Bool, Str) (void())
 inline constexpr bool nodebug = true;
@@ -91,6 +91,14 @@ public:
   void start() noexcept { QueryPerformanceCounter(&_li), _last = _li.QuadPart; }
 };
 
+/// throws a exception if failed
+inline constexpr auto tiff = overload{
+  [](HRESULT B, source S = {}) {
+    if (B < 0) { cat1 buf[128];
+      FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, B, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buf, 128, nullptr);
+      throw except(buf, mv(S)); } },
+  [](const auto& B, source S = {}) requires requires { { !B } -> convertible_to<bool>; } { if (!B) throw except("FAILED", mv(S)); }};
+
 namespace main {
 
 namespace system {
@@ -100,9 +108,10 @@ inline stopwatch timer{};
 inline HWND hwnd{};
 inline HFONT hfont{};
 inline HINSTANCE hinstance{};
-inline rect mouse{};
+inline rect mpos{};
 inline bool hover{};
 inline fat8 spf{}, fps{};
+inline int4 width_pad{}, height_pad{};
 inline comptr<ID3D11Device1> d3d_device{};
 inline comptr<ID3D11DeviceContext1> d3d_context{};
 inline comptr<IDXGISwapChain1> swap_chain{};
@@ -112,7 +121,7 @@ inline comptr<ID2D1Factory6> d2d_factory{};
 inline comptr<IDWriteFactory> dw_factory{};
 inline comptr<IWICImagingFactory2> wic_factory{};
 LRESULT CALLBACK wndproc(HWND, UINT, WPARAM, LPARAM);
-inline void initialize();
+inline void initialize(natt Width, natt Height);
 }
 
 inline const str2& username = system::username;
@@ -131,21 +140,85 @@ inline const comptr<ID2D1DeviceContext5>& d2d_context = system::d2d_context;
 inline const comptr<ID2D1Factory6>& d2d_factory = system::d2d_factory;
 inline const comptr<IDWriteFactory>& dw_factory = system::dw_factory;
 inline const comptr<IWICImagingFactory2>& wic_factory = system::wic_factory;
+
+/// callbackfunction that is called when the main window accepts files
+inline void (*dropped)(array<path> Files) = nullptr;
+
 inline void resize(natt Width, natt Height);
+
+/// renames the title of the main window
+inline void rename(const str2& Name) { SetWindowTextW(hwnd, Name.data()); }
+
+/// closes the main window
+inline void terminate() noexcept { (hwnd ? DestroyWindow(exchange(system::hwnd, nullptr)) : none{}), CoUninitialize(); }
+
+/// sets the window to be topmost
+inline void topmost(bool TopMost = true) {
+  if (auto style = GetWindowLongW(main::system::hwnd, GWL_EXSTYLE); TopMost) {
+           SetWindowPos(main::system::hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+           SetWindowLongW(main::system::hwnd, GWL_EXSTYLE, style | WS_EX_TOPMOST);
+  } else { SetWindowPos(main::system::hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+           if (style & WS_EX_TOPMOST) SetWindowLongW(main::system::hwnd, GWL_EXSTYLE, style & ~WS_EX_TOPMOST); }
 }
 
-inline void main::system::initialize() {
+/// updates the main window
+inline constexpr caster update{
+  []() {
+    static MSG msg{}; static rect rc{}, pt{}; static stopwatch sw{}; static auto& mpos = system::mpos;
+    if (!hover) { GetWindowRect(hwnd, (RECT*)&rc), GetCursorPos((POINT*)&pt), rc.left += system::width_pad / 2;
+                  mpos = [](const xrect& a) { return xvpermute<0, 1, 4, 5>(a, xvsub(a, mpos)); }(xvsub(pt, rc)); }
+    system::spf = sw.push(), system::fps = 1.0f / system::spf; system::swap_chain->Present(1, 0);
+    while (hwnd) { if (PeekMessageW(&msg, 0, 0, 0, PM_REMOVE)) {
+                     if (msg.message == WM_QUIT) return false;
+                     TranslateMessage(&msg), DispatchMessageW(&msg);
+                   } else return true; } return false; }};
+}
+
+inline void main::system::initialize(natt Width, natt Height) {
   static constexpr cat2 class_name[] = L"ywlib";
+  main::system::timer.start(); std::wcout.imbue(std::locale("Japanese")); tiff(CoInitialize(nullptr));
   [&](DWORD d) { ::GetUserNameW(nullptr, &d); username.resize(d - 1); ::GetUserNameW(username.data(), &d); }({});
   hinstance = GetModuleHandleW(nullptr);
   [&](WNDCLASSEXW wc) { wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); wc.lpszClassName = class_name;
                         tiff(RegisterClassExW(&wc)); }({sizeof(WNDCLASSEXW), CS_OWNDC, wndproc, 0, 0, hinstance});
-  tiff(hwnd = CreateWindowExW(WS_EX_ACCEPTFILES, class_name, class_name, WS_OVERLAPPED,
-                              704, 284, 512, 512, nullptr, nullptr, hinstance, nullptr));
-  tiff(system::hfont = CreateFontW(16, 0, 0, 0, FW_NORMAL, 0, 0, 0, SHIFTJIS_CHARSET, OUT_DEFAULT_PRECIS,
-                                   CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, VARIABLE_PITCH | FF_ROMAN, L"Yu Gothic UI"));
-  [&](int c) { auto args = CommandLineToArgvW(GetCommandLineW(), &c);
-               for (system::args.resize(c); 0 <= --c;) system::args[c] = args[c]; }(0);
+  tiff(hwnd = CreateWindowExW(WS_EX_ACCEPTFILES, class_name, class_name, WS_OVERLAPPED | WS_SYSMENU,
+                              0, 0, 400, 400, nullptr, nullptr, hinstance, nullptr));
+  [&](RECT r) { GetClientRect(hwnd, &r); width_pad = 400 - r.right, height_pad = 400 - r.bottom; }({});
+  SetWindowPos(hwnd, HWND_TOPMOST, -width_pad / 2, 0,
+               (int)(Width + width_pad), (int)(Height + height_pad), SWP_SHOWWINDOW);
+  tiff(hfont = CreateFontW(16, 0, 0, 0, FW_NORMAL, 0, 0, 0, SHIFTJIS_CHARSET, OUT_DEFAULT_PRECIS,
+                           CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, VARIABLE_PITCH | FF_ROMAN, L"Yu Gothic UI"));
+  [&](int c) { auto a = CommandLineToArgvW(GetCommandLineW(), &c); for (args.resize(c); 0 <= --c;) args[c] = a[c]; }(0);
+  constexpr D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
+  tiff(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                         levels, (UINT)extent<decltype(levels)>, D3D11_SDK_VERSION,
+                         (ID3D11Device**)d3d_device.addressof(), 0, (ID3D11DeviceContext**)d3d_context.addressof()));
+  DXGI_SWAP_CHAIN_DESC1 sc_desc{(nat4)Width, (nat4)Height, DXGI_FORMAT_R8G8B8A8_UNORM, false, {1, 0},
+                                DXGI_USAGE_RENDER_TARGET_OUTPUT, 2, DXGI_SCALING_STRETCH, DXGI_SWAP_EFFECT_DISCARD};
+  [&](comptr<IDXGIFactory2> f) {
+    tiff(CreateDXGIFactory1(IID_PPV_ARGS(f.addressof()))), tiff(f->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER));
+    tiff(f->CreateSwapChainForHwnd(d3d_device, hwnd, &sc_desc, nullptr, nullptr, swap_chain.addressof()));
+    tiff(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, d2d_factory.addressof())); }({});
+  [&](comptr<IDXGIDevice2> d) {
+    tiff(d3d_device.as(d)), tiff(d2d_factory->CreateDevice(d, d2d_device.addressof())); }({});
+  tiff(d2d_device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, d2d_context.addressof()));
+  tiff(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), (IUnknown**)dw_factory.addressof()));
+  tiff(CoCreateInstance(CLSID_WICImagingFactory2, 0, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(wic_factory.addressof())));
+  [&](comptr<ID3D11BlendState> state, D3D11_BLEND_DESC desc) {
+    desc.RenderTarget[0] = {true, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD,
+                            D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD, 0x0f};
+    tiff(d3d_device->CreateBlendState(&desc, state.addressof()));
+    d3d_context->OMSetBlendState(state, 0, 0xffffffff); }({}, {});
+  [&](comptr<ID3D11SamplerState> state, D3D11_SAMPLER_DESC desc) {
+      desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP, desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+      desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP, desc.MaxAnisotropy = 1;
+      desc.ComparisonFunc = D3D11_COMPARISON_ALWAYS, desc.MaxLOD = D3D11_FLOAT32_MAX;
+      tiff(d3d_device->CreateSamplerState(&desc, state.addressof()));
+      d3d_context->PSSetSamplers(0, 1, asconst(state).addressof()); }({}, {D3D11_FILTER_MIN_MAG_MIP_LINEAR});
+  [&](comptr<ID3D11RasterizerState> state, D3D11_RASTERIZER_DESC desc) {
+    tiff(d3d_device->CreateRasterizerState(&desc, state.addressof()));
+    d3d_context->RSSetState(state); }({}, {D3D11_FILL_SOLID, D3D11_CULL_NONE, 1, 0, 0, 0, 1, 0, 1, 1});
+  resize(Width, Height); SetForegroundWindow(main::system::hwnd); SetFocus(main::system::hwnd);
 }
 
 /// opens a message box with OK button and returns `true`
@@ -157,14 +230,6 @@ inline constexpr overload ok{
 inline constexpr overload yes{
   [](const stv1& Text, const stv1& Caption = "Yes?") noexcept { return MessageBoxA(main::hwnd, Text.data(), Caption.data(), MB_YESNO | MB_ICONQUESTION) == IDYES; },
   [](const stv2& Text, const stv2& Caption = L"Yes?") noexcept { return MessageBoxW(main::hwnd, Text.data(), Caption.data(), MB_YESNO | MB_ICONQUESTION) == IDYES; }};
-
-/// throws a exception if failed
-inline constexpr auto tiff = overload{
-  [](HRESULT B, source S = {}) {
-    if (B < 0) { cat1 buf[128];
-      FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, B, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buf, 128, nullptr);
-      throw except(buf, mv(S)); } },
-  [](const auto& B, source S = {}) requires requires { { !B } -> convertible_to<bool>; } { if (!B) throw except("FAILED", mv(S)); }};
 
 /// displays the exception message
 inline constexpr overload disp = {
@@ -191,7 +256,7 @@ inline constexpr auto save_file = [](const path& InitialDir = {}, const path& In
 namespace key {
 /// class for handling key states
 class key {
-  friend LRESULT CALLBACK ::yw::main::wndproc(HWND, UINT, WPARAM, LPARAM);
+  friend LRESULT CALLBACK ::yw::main::system::wndproc(HWND, UINT, WPARAM, LPARAM);
   fat8 pushed_time{};
 public:
   explicit operator bool() const noexcept { return pushed_time != 0; }
@@ -226,13 +291,13 @@ inline key &oem20 = keys[VK_OEM_1], &oem21 = keys[VK_OEM_6], &oem30 = keys[VK_OE
 /// empty structure for handling mouse states
 struct mouse {
   /// x-position of the mouse
-  inline static const auto& x = main::system::mouse.left;
+  inline static const auto& x = main::system::mpos.left;
   /// y-position of the mouse
-  inline static const auto& y = main::system::mouse.top;
+  inline static const auto& y = main::system::mpos.top;
   /// checks if the mouse is hovering over the window
   inline static const bool& hover = main::hover;
   /// callback function for mouse wheel
-  inline static void (*wheeled)(fat4 delta) = nullptr;
+  inline static void (*wheeled)(int4 delta) = nullptr;
   /// callback function for mouse movement
   inline static void (*moved)(int4 dx, int4 dy) = nullptr;
   /// alias of `key::lbutton`
@@ -291,9 +356,7 @@ protected:
     : hwnd(CreateWindowExW(0, Class, Text.data(), WS_VISIBLE | WS_CHILD | WS_GROUP | Style, Rect.left, Rect.top,
                            Rect.width(), Rect.height(), main::hwnd, 0, main::hinstance, this)), group(GroupNo) {
     ywlib_assert(GroupNo < max_groups, "Control group index is out of range");
-    if (!hfont) hfont = CreateFontW(16, 0, 0, 0, FW_NORMAL, 0, 0, 0, SHIFTJIS_CHARSET, OUT_DEFAULT_PRECIS,
-                                    CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, VARIABLE_PITCH | FF_ROMAN, L"Yu Gothic UI");
-    SendMessageW(hwnd, WM_SETFONT, (WPARAM)hfont, true), SetWindowLongPtrW(hwnd, GWLP_ID, (LONG_PTR)hwnd);
+    SendMessageW(hwnd, WM_SETFONT, (WPARAM)main::system::hfont, true), SetWindowLongPtrW(hwnd, GWLP_ID, (LONG_PTR)hwnd);
     if (groups[GroupNo + 1].empty()) groups[GroupNo + 1].reserve(1024);
     groups[GroupNo + 1].push_back(list{hwnd, this, Inputable}), whole_controls[hwnd] = list{GroupNo, this}; }
   static array<list<HWND, control*, bool>>& get_group(const natt GroupNo) {
@@ -448,11 +511,11 @@ class radiobutton : public control {
     int4 h = r.height() / (1 + extent<decltype(ts)>), w = r.width();
     auto hw = CreateWindowExW(WS_EX_TOPMOST, L"BUTTON", t, WS_VISIBLE | WS_CHILD | BS_AUTORADIOBUTTON | WS_GROUP, 0, 0, w, h, hwnd, 0, main::hinstance, 0);
     if (!defproc2) defproc2 = (WNDPROC)GetWindowLongPtrW(hw, GWLP_WNDPROC); SetWindowLongPtrW(hw, GWLP_WNDPROC, (LONG_PTR)proc2);
-    SendMessageW(hw, WM_SETFONT, (WPARAM)hfont, true); SetWindowLongPtrW(hw, GWLP_ID, (LONG_PTR)hw), buttons.emplace_back(hw);
+    SendMessageW(hw, WM_SETFONT, (WPARAM)main::system::hfont, true); SetWindowLongPtrW(hw, GWLP_ID, (LONG_PTR)hw), buttons.emplace_back(hw);
     [&]<natt... Is>(sequence<Is...>) {
       (([&]<natt I>(constant<I>) {
         auto hw = CreateWindowExW(WS_EX_TOPMOST, L"BUTTON", get<I>(ts), WS_VISIBLE | WS_CHILD | BS_AUTORADIOBUTTON, 0, int4(I) * h, w, h, hwnd, 0, main::hinstance, 0);
-        SetWindowLongPtrW(hw, GWLP_WNDPROC, (LONG_PTR)proc2), SendMessageW(hw, WM_SETFONT, (WPARAM)hfont, true);
+        SetWindowLongPtrW(hw, GWLP_WNDPROC, (LONG_PTR)proc2), SendMessageW(hw, WM_SETFONT, (WPARAM)main::system::hfont, true);
         SetWindowLongPtrW(hw, GWLP_ID, (LONG_PTR)hw), buttons.emplace_back(hw); }(constant<Is>{})), ...); };
     SendMessageW(buttons[0], BM_SETCHECK, BST_CHECKED, 0);
   }
@@ -564,19 +627,6 @@ public:
   brush(color Color) { tiff(main::d2d_context->CreateSolidColorBrush(bitcast<D2D1_COLOR_F>(Color), d2d_brush.addressof())); }
   brush& operator=(brush&& Brush) noexcept { return d2d_brush.reset(), d2d_brush.swap(Brush.d2d_brush), *this; }
   yw::color color() const { ywlib_assert(d2d_brush, "this brush is not valid"); return bitcast<yw::color>(d2d_brush->GetColor()); }
-  void draw_line(const vector& BeginEnd, fat4 Width) const { main::d2d_context->DrawLine({BeginEnd.x, BeginEnd.y}, {BeginEnd.z, BeginEnd.w}, *this, Width); }
-  void draw_rectangle(const vector& Rect) const { main::d2d_context->FillRectangle(reinterpret_cast<const D2D1_RECT_F&>(Rect), *this); }
-  void draw_rectangle(const vector& Rect, fat4 Width) const { main::d2d_context->DrawRectangle(reinterpret_cast<const D2D1_RECT_F&>(Rect), *this, Width); }
-  void draw_rounded_rectangle(const vector& Rect, fat4 Radius) const {
-    main::d2d_context->FillRoundedRectangle(D2D1_ROUNDED_RECT{reinterpret_cast<const D2D1_RECT_F&>(Rect), Radius, Radius}, *this); }
-  void draw_rounded_rectangle(const vector& Rect, const list<fat4, fat4>& Radius) const {
-    main::d2d_context->FillRoundedRectangle(D2D1_ROUNDED_RECT{reinterpret_cast<const D2D1_RECT_F&>(Rect), Radius.first, Radius.second}, *this); }
-  void draw_rounded_rectangle(const vector& Rect, fat4 Width, fat4 Radius) const {
-    main::d2d_context->DrawRoundedRectangle(D2D1_ROUNDED_RECT{reinterpret_cast<const D2D1_RECT_F&>(Rect), Radius, Radius}, *this, Width); }
-  void draw_rounded_rectangle(const vector& Rect, fat4 Width, const list<fat4, fat4>& Radius) const {
-    main::d2d_context->DrawRoundedRectangle(D2D1_ROUNDED_RECT{reinterpret_cast<const D2D1_RECT_F&>(Rect), Radius.first, Radius.second}, *this, Width); }
-  void draw_text(const vector& Rect, convertible_to<IDWriteTextFormat*> auto&& Font, const stv2 Text) const {
-    main::d2d_context->DrawTextW(Text.data(), nat4(Text.size()), Font, reinterpret_cast<const D2D1_RECT_F&>(Rect), *this); }
 };
 
 template<color Color> requires(Color != color::undefined) class brush<Color> {
@@ -585,14 +635,6 @@ public:
   explicit operator bool() const noexcept { return bool(_get()); }
   operator comptr<ID2D1SolidColorBrush>::reference*() const noexcept { return _get(); }
   yw::color color() const { return Color; }
-  void draw_line(const vector& BeginEnd, fat4 Width) const { _get().draw_line(BeginEnd, Width); }
-  void draw_rectangle(const vector& Rect) const { _get().draw_rectangle(Rect); }
-  void draw_rectangle(const vector& Rect, fat4 Width) const { _get().draw_rectangle(Rect, Width); }
-  void draw_rounded_rectangle(const vector& Rect, fat4 Radius) const { _get().draw_rounded_rectangle(Rect, Radius); }
-  void draw_rounded_rectangle(const vector& Rect, const list<fat4, fat4>& Radius) const { _get().draw_rounded_rectangle(Rect, Radius); }
-  void draw_rounded_rectangle(const vector& Rect, fat4 Width, fat4 Radius) const { _get().draw_rounded_rectangle(Rect, Width, Radius); }
-  void draw_rounded_rectangle(const vector& Rect, fat4 Width, const list<fat4, fat4>& Radius) const { _get().draw_rounded_rectangle(Rect, Width, Radius); }
-  void draw_text(const vector& Rect, convertible_to<IDWriteTextFormat*> auto&& Font, const stv2 Text) const { _get().draw_text(Rect, Font, Text); }
 };
 
 template<typename... Ts> brush(Ts&&...) -> brush<color::undefined>;
@@ -834,6 +876,7 @@ public:
 class bitmap {
   bitmap(bitmap&) = delete;
   bitmap& operator=(bitmap&) = delete;
+  bitmap(natt Width, natt Height, constant<0>) : width(nat4(Width)), height(nat4(Height)) {}
   friend void main::resize(natt, natt);
 protected:
   comptr<ID2D1Bitmap1> d2d_bitmap;
@@ -1148,85 +1191,168 @@ namespace main {
 namespace system {
 inline bitmap render_target{};
 }
+
 /// width of the main window
-inline const nat4& width = render_target.width;
+inline const nat4& width = system::render_target.width;
 
 /// height of the main window
-inline const nat4& height = render_target.height;
+inline const nat4& height = system::render_target.height;
 
 /// resizes the main window
-void main::resize(natt Width, natt Height) {
-  static int4 width_pad{}, height_pad{};         // padding for the window frame
-  static constexpr cat2 class_name[] = L"ywlib"; // class name of the main window
-  system::render_target = bitmap{};                               // resets the render target
-  const_cast<nat4&>(system::render_target.width) = nat4(Width);   // updates the width
-  const_cast<nat4&>(system::render_target.height) = nat4(Height); // updates the height
-  if (username.empty()) {
-    DWORD size{};
-    ::GetUserNameW(nullptr, &size);
-    system::username.resize(size - 1);
-    ::GetUserNameW(system::username.data(), &size); }
-  if (!system::hinstance) {
-    system::hinstance = GetModuleHandleW(0);
-    WNDCLASSEXW wc{sizeof(WNDCLASSEXW), CS_OWNDC, wndproc, 0, 0, system::hinstance};
-    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW), wc.lpszClassName = class_name;
-    tiff(RegisterClassExW(&wc)); }
-  if (!system::hwnd) {
-    tiff(system::hwnd = CreateWindowExW(WS_EX_ACCEPTFILES, class_name, class_name, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN,
-                                        0, 0, int4(width), int4(height), 0, 0, system::hinstance, 0));
-  if (!hfont) hfont = CreateFontW(16, 0, 0, 0, FW_NORMAL, 0, 0, 0, SHIFTJIS_CHARSET, OUT_DEFAULT_PRECIS,
-                                    CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, VARIABLE_PITCH | FF_ROMAN, L"Yu Gothic UI");
-    tiff(system::hfont = CreateFontW(16, 0, 0, 0, FW_NORMAL, 0, 0, 0, SHIFTJIS_CHARSET, OUT_DEFAULT_PRECIS,
-                                     CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, VARIABLE_PITCH | FF_ROMAN, L"Yu Gothic UI"));
-    [&](int c) { auto args = CommandLineToArgvW(GetCommandLineW(), &c); for (system::args.resize(c); 0 <= --c;) system::args[c] = args[c]; }(0);
-    [&](RECT r = {}) { GetClientRect(system::hwnd, &r), width_pad = width - r.right, height_pad = height - r.bottom; }();
-    tiff(SetWindowPos(system::hwnd, 0, 0, 0, width + width_pad, height + height_pad, SWP_NOZORDER));
-    comptr<IDXGIFactory2> factory{};
-    tiff(CreateDXGIFactory1(IID_PPV_ARGS(&factory)));
-    tiff(factory->MakeWindowAssociation(system::hwnd, DXGI_MWA_NO_ALT_ENTER));
-    D3D_FEATURE_LEVEL featurelevels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0};
-    tiff(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-                           featurelevels, (UINT)extent<decltype(featurelevels)>, D3D11_SDK_VERSION,
-                           (ID3D11Device**)&system::d3d_device, nullptr, (ID3D11DeviceContext**)&system::d3d_context));
-    DXGI_SWAP_CHAIN_DESC1 sc_desc{width, height, DXGI_FORMAT_R8G8B8A8_UNORM, false, {1, 0}, DXGI_USAGE_RENDER_TARGET_OUTPUT, 2};
-    sc_desc.Scaling = DXGI_SCALING_STRETCH, sc_desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-    tiff(factory->CreateSwapChainForHwnd(system::d3d_device, system::hwnd, &sc_desc, nullptr, nullptr, &system::swap_chain));
-    tiff(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &system::d2d_factory));
-    [&](comptr<IDXGIDevice2> dxgi_device) {
-      tiff(system::d3d_device.as(dxgi_device));
-      tiff(system::d2d_factory->CreateDevice(dxgi_device, &system::d2d_device)); }({});
-    tiff(system::d2d_device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &system::d2d_context));
-    tiff(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), (IUnknown**)&system::dw_factory));
-    tiff(CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&system::wic_factory)));
-    [&](comptr<ID3D11BlendState> state, D3D11_BLEND_DESC desc) {
-      desc.RenderTarget[0] = {true, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD,
-                                D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD, 0x0f};
-      tiff(system::d3d_device->CreateBlendState(&desc, &state));
-      system::d3d_context->OMSetBlendState(state, nullptr, 0xffffffff); }({}, {});
-    [&](comptr<ID3D11SamplerState> state, D3D11_SAMPLER_DESC desc) {
-      desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP, desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
-      desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP, desc.MaxAnisotropy = 1;
-      desc.ComparisonFunc = D3D11_COMPARISON_ALWAYS, desc.MaxLOD = D3D11_FLOAT32_MAX;
-      tiff(system::d3d_device->CreateSamplerState(&desc, &state));
-      system::d3d_context->PSSetSamplers(0, 1, &asconst(state)); }({}, {D3D11_FILTER_MIN_MAG_MIP_LINEAR});
-    [&](comptr<ID3D11RasterizerState> state, D3D11_RASTERIZER_DESC desc) {
-      desc.DepthClipEnable = true, desc.MultisampleEnable = true, desc.AntialiasedLineEnable = true;
-      tiff(system::d3d_device->CreateRasterizerState(&desc, &state));
-      system::d3d_context->RSSetState(state); }({}, {D3D11_FILL_SOLID, D3D11_CULL_NONE, true});
-  }
-  tiff(SetWindowPos(system::hwnd, 0, 0, 0, width + width_pad, height + height_pad, SWP_NOMOVE | SWP_NOZORDER));
-  system::bitmap.reset();
-  system::d2d_context->SetTarget(0);
-  tiff(system::swap_chain->ResizeBuffers(2, width, height, DXGI_FORMAT_UNKNOWN, 0));
+inline void resize(natt Width, natt Height) {
+  tiff(SetWindowPos(hwnd, 0, 0, 0, int4(Width + system::width_pad),
+                    int4(Height + system::height_pad), SWP_NOMOVE | SWP_NOZORDER));
+  system::render_target = bitmap{Width, Height, constant<0>{}}; system::d2d_context->SetTarget(0);
+  tiff(system::swap_chain->ResizeBuffers(2, nat4(Width), nat4(Height), DXGI_FORMAT_UNKNOWN, 0));
   [&](comptr<ID3D11Texture2D> tex, comptr<IDXGISurface> surface) {
-    tiff(system::swap_chain->GetBuffer(0, IID_PPV_ARGS(&tex)));
-    tiff(tex->QueryInterface(IID_PPV_ARGS(&surface)));
+    tiff(system::swap_chain->GetBuffer(0, IID_PPV_ARGS(tex.addressof())));
+    tiff(tex->QueryInterface(IID_PPV_ARGS(surface.addressof())));
     auto props = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
                                          D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_PREMULTIPLIED));
-    tiff(system::d2d_context->CreateBitmapFromDxgiSurface(surface, props, &system::bitmap)); }({}, {});
-}
+    tiff(system::d2d_context->CreateBitmapFromDxgiSurface(
+      surface, props, system::render_target.d2d_bitmap.addressof())); }({}, {});
 }
 
+/// saves the main window as a PNG file
+inline void screenshot(const path& Path) {
+  if (Path.exists()) Path.remove();
+  auto& factory = system::wic_factory;
+  comptr<IWICStream> stream{};
+  tiff(factory->CreateStream(stream.addressof()));
+  tiff(stream->InitializeFromFilename(Path.c_str(), GENERIC_WRITE));
+  comptr<IWICBitmapEncoder> encoder{};
+  tiff(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.addressof()));
+  tiff(encoder->Initialize(stream, WICBitmapEncoderNoCache));
+  comptr<IWICBitmapFrameEncode> frame{};
+  tiff(encoder->CreateNewFrame(frame.addressof(), nullptr));
+  tiff(frame->Initialize(nullptr));
+  comptr<IWICImageEncoder> image_encoder{};
+  tiff(factory->CreateImageEncoder(d2d_device, image_encoder.addressof()));
+  tiff(image_encoder->WriteFrame(system::render_target, frame, nullptr));
+  frame->Commit(), encoder->Commit(), stream->Commit(STGC_DEFAULT);
+}
 
+inline LRESULT WINAPI system::wndproc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
+  static constexpr auto key_down = [](key::key& k) { if (k.pushed_time = timer.read(), k.down) k.down(); };
+  static constexpr auto key_up = [](key::key& k) { if (auto a = exchange(k.pushed_time, 0.0); a && k.up) k.up(a); };
+  static TRACKMOUSEEVENT tme{.cbSize = sizeof(TRACKMOUSEEVENT), .dwFlags = TME_LEAVE};
+  if (msg == WM_MOUSEMOVE) {
+    if (!hover) TrackMouseEvent(&tme), hover = true;
+    mpos = [](auto a) {
+      return xvpermute<0, 1, 4, 5>(a, xvsub(a, mpos)); }(_mm_cvtepi16_epi32(_mm_loadu_si128((xrect*)&lp)));
+    return (mouse::moved ? mouse::moved(mpos.right, mpos.bottom) : void()), 0; }
+  else if (msg == WM_MOUSELEAVE) { for (auto& k : key::keys) k.pushed_time = 0.0f; return hover = false; }
+  else if (msg == WM_MOUSEWHEEL) return mouse::wheeled ? (mouse::wheeled(int2((wp & 0xffff0000) >> 16) / WHEEL_DELTA), 0) : 0;
+  else if (msg == WM_LBUTTONDOWN) return SetFocus(hw), key_down(key::keys[VK_LBUTTON]), 0;
+  else if (msg == WM_RBUTTONDOWN) return SetFocus(hw), key_down(key::keys[VK_RBUTTON]), 0;
+  else if (msg == WM_MBUTTONDOWN) return SetFocus(hw), key_down(key::keys[VK_MBUTTON]), 0;
+  else if (msg == WM_KEYDOWN) return SetFocus(hw), key_down(key::keys[wp]), 0;
+  else if (msg == WM_LBUTTONUP) return key_up(key::keys[VK_LBUTTON]), 0;
+  else if (msg == WM_RBUTTONUP) return key_up(key::keys[VK_RBUTTON]), 0;
+  else if (msg == WM_MBUTTONUP) return key_up(key::keys[VK_MBUTTON]), 0;
+  else if (msg == WM_KEYUP) return key_up(key::keys[wp]), 0;
+  else if (msg == WM_DROPFILES) {
+    if (!main::dropped) return 0;
+    array<path> out(DragQueryFileW((HDROP)wp, 0xffffffff, nullptr, 0));
+    for (nat4 i{}; i < out.size(); ++i) { str2 s(DragQueryFileW((HDROP)wp, i, nullptr, 0), 0);
+                                          DragQueryFileW((HDROP)wp, i, s.data(), nat4(s.size()) + 1), out[i] = mv(s); }
+    return main::dropped(mv(out)), 0; }
+  else if (msg == WM_CLOSE) return DestroyWindow(hw), 0;
+  else if (msg == WM_DESTROY) return PostQuitMessage(0), 0;
+  else if (msg == WM_CREATE) tme.hwndTrack = hw, TrackMouseEvent(&tme);
+  return DefWindowProcW(hw, msg, wp, lp);
+}
+
+/// Begins drawing to the main window
+inline void begin_draw() { d2d_context->SetTarget(system::render_target), d2d_context->BeginDraw(); }
+
+/// Begins drawing to the main window after filling with the specified color
+inline void begin_draw(const color& Fill) { begin_draw(), d2d_context->Clear(bitcast<D2D1_COLOR_F>(Fill)); }
+
+/// Ends drawing to the main window
+inline void end_draw() { tiff(d2d_context->EndDraw()); }
+}
+
+/// checks if the type is brush-like
+template<typename T> concept brush_like = convertible_to<T, ID2D1Brush*>;
+
+/// checks if the type if bitmap-like
+template<typename T> concept bitmap_like = convertible_to<T, ID2D1Bitmap*>;
+
+/// checks if the type is font-like
+template<typename T> concept font_like = convertible_to<T, IDWriteTextFormat*>;
+
+/// draws a bitmap
+inline constexpr auto draw_bitmap = [](const vector& Rect, bitmap_like auto&& Bitmap, fat4 Opacity = 1.0f) {
+  main::d2d_context->DrawBitmap(Bitmap, reinterpret_cast<const D2D1_RECT_F&>(Rect), Opacity); };
+
+/// draws a line
+inline constexpr overload draw_line{
+  [](const vector& Rect, brush_like auto&& Brush, fat4 Width = 1.0f) {
+    main::d2d_context->DrawLine(reinterpret_cast<const D2D1_POINT_2F&>(Rect.x),
+                                reinterpret_cast<const D2D1_POINT_2F&>(Rect.z), Brush, Width); },
+  [](const list<fat4, fat4>& Begin, const list<fat4, fat4>& End, brush_like auto&& Brush, fat4 Width = 1.0f) {
+    main::d2d_context->DrawLine(reinterpret_cast<const D2D1_POINT_2F&>(Begin),
+                                reinterpret_cast<const D2D1_POINT_2F&>(End), Brush, Width); }};
+
+/// draws a ellipse
+inline constexpr overload draw_ellipse{
+  [](const vector& CenterRadius, brush_like auto&& Brush, fat4 Width = 1.0f) {
+    main::d2d_context->DrawEllipse(reinterpret_cast<D2D1_ELLIPSE&>(CenterRadius), Brush, Width); },
+  [](const list<list<fat4, fat4>, list<fat4, fat4>>& CenterRadius, brush_like auto&& Brush, fat4 Width = 1.0f) {
+    main::d2d_context->DrawEllipse(reinterpret_cast<D2D1_ELLIPSE&>(CenterRadius[0]), Brush, Width); }};
+
+/// fills a ellipse
+inline constexpr overload fill_ellipse{
+  [](const vector& CenterRadius, brush_like auto&& Brush) {
+    main::d2d_context->FillEllipse(reinterpret_cast<D2D1_ELLIPSE&>(CenterRadius), Brush); },
+  [](const list<list<fat4, fat4>, list<fat4, fat4>>& CenterRadius, brush_like auto&& Brush) {
+    main::d2d_context->FillEllipse(reinterpret_cast<D2D1_ELLIPSE&>(CenterRadius), Brush); }};
+
+/// draws a rectangle
+inline constexpr overload draw_rectangle{
+  [](const vector& Rect, brush_like auto&& Brush, fat4 Width = 1.0f) {
+    main::d2d_context->DrawRectangle(reinterpret_cast<const D2D1_RECT_F&>(Rect), Brush, Width); },
+  [](const list<vector, fat4, fat4>& RectRadius, brush_like auto&& Brush, fat4 Width = 1.0f) {
+    main::d2d_context->DrawRoundedRectangle(reinterpret_cast<const D2D1_ROUNDED_RECT&>(RectRadius), Brush, Width); }};
+
+/// fills a rectangle
+inline constexpr overload fill_rectangle {
+  [](const vector& Rect, brush_like auto&& Brush) {
+    main::d2d_context->FillRectangle(reinterpret_cast<const D2D1_RECT_F&>(Rect), Brush); },
+  [](const list<vector, fat4, fat4>& RectRadius, brush_like auto&& Brush) {
+    main::d2d_context->FillRoundedRectangle(reinterpret_cast<const D2D1_ROUNDED_RECT&>(RectRadius), Brush); }};
+
+/// draws a text
+inline constexpr overload draw_text{
+  [](const vector& Rect, font_like auto&& Font, brush_like auto&& Brush, const stv2& Text) {
+    main::d2d_context->DrawTextW(Text.data(), nat4(Text.size()), Font,
+                                 reinterpret_cast<const D2D1_RECT_F&>(Rect), Brush); },
+  [](const vector& Rect, font_like auto&& Font, const stv2& Text) {
+    main::d2d_context->DrawTextW(Text.data(), nat4(Text.size()), Font,
+                                 reinterpret_cast<const D2D1_RECT_F&>(Rect), brush<color::black>{}); }};
 
 } // clang-format on
+
+/// main function
+extern void ywmain();
+
+#ifndef ywlib_disable_main
+#ifdef ywlib_enable_console
+int wmain() {
+  using namespace yw;
+  try {
+    return main::system::initialize(400, 400), ywmain(), 0;
+  } catch (const std::exception& e) { std::cout << e.what(); }
+  return -1;
+}
+#else
+int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
+  using namespace yw;
+  try {
+    return main::system::initialize(400, 400), ywmain(), 0;
+  } catch (const std::exception& e) { ok(e.what(), "FATAL ERROR"); }
+  return -1;
+}
+#endif
+#endif
