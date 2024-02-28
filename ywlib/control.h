@@ -60,12 +60,12 @@ public:
   /// shows all controls in the specified group
   static void show(natt GroupNo) {
     ywlib_assert(GroupNo < max_groups, "GroupNo must be less than max_groups");
-    for (auto& g : groups[GroupNo]) g.second->show(); }
+    for (auto& g : groups[GroupNo + 1]) g.second->show(); }
 
   /// hides all controls in the specified group
   static void hide(natt GroupNo) {
     ywlib_assert(GroupNo < max_groups, "GroupNo must be less than max_groups");
-    for (auto& g : groups[GroupNo]) g.second->hide(); }
+    for (auto& g : groups[GroupNo + 1]) g.second->hide(); }
 
   /// destructor
   ~control() noexcept {
@@ -232,14 +232,14 @@ public:
   valuebox() noexcept = default;
 
   /// constructor for creating a valuebox which is not attached to any group
-  valuebox(const rect& Rect, const arithmetic auto Init, nat4 EditStyle = {})
-    : control(L"EDIT", vtos<cat2>(Init), EditStyle, Rect, true) {
+  valuebox(const rect& Rect, stv2 Init, nat4 EditStyle = {})
+    : control(L"EDIT", Init, EditStyle, Rect, true) {
     if (!defproc) defproc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc);
     SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc); }
 
   /// constructor for creating a valuebox which is attached to the specified group
-  valuebox(const natt GroupNo, const rect& Rect, const arithmetic auto Init, nat4 EditStyle = {})
-    : control(L"EDIT", vtos<cat2>(Init), EditStyle, Rect, GroupNo, true) {
+  valuebox(const natt GroupNo, const rect& Rect, stv2 Init, nat4 EditStyle = {})
+    : control(L"EDIT", Init, EditStyle, Rect, GroupNo, true) {
     if (!defproc) defproc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc);
     SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)proc); }
 
@@ -386,7 +386,7 @@ protected:
 
   /// window procedure for the groupbox
   static LRESULT CALLBACK proc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
-    if (msg == WM_COMMAND) std::cout << HIWORD(wp) << std::endl;
+    // if (msg == WM_COMMAND) std::cout << HIWORD(wp) << std::endl;
     if (msg == WM_COMMAND && HIWORD(wp) == BN_CLICKED) {
       auto& t = get_control<radiobutton>(hw); const_cast<nat4&>(t.state) = t.get_index(lp); if (t.input) t.input(t); }
     return CallWindowProcW(defproc1, hw, msg, wp, lp); }
@@ -400,11 +400,15 @@ protected:
         auto p = GetParent(hw); auto& g = get_group(whole_controls[p].first); auto i = control::get_index(g, p);
         return focus_on_next(g, i, GetKeyState(VK_SHIFT) < 0), 0;
       } else if (wp == VK_UP || wp == VK_LEFT) {
+        SendMessageW(hw, BM_SETCHECK, BST_UNCHECKED, 0);
         auto& t = get_control<radiobutton>(GetParent(hw));
-        SetFocus(t.buttons[(t.get_index(hw) + t.buttons.size() - 1) % t.buttons.size()]);
+        auto b = t.buttons[(t.get_index(hw) + t.buttons.size() - 1) % t.buttons.size()];
+        SetFocus(b); SendMessageW(b, BM_SETCHECK, BST_CHECKED, 0);
       } else if (wp == VK_DOWN || wp == VK_RIGHT) {
+        SendMessageW(hw, BM_SETCHECK, BST_UNCHECKED, 0);
         auto& t = get_control<radiobutton>(GetParent(hw));
-        SetFocus(t.buttons[(t.get_index(hw) + 1) % t.buttons.size()]);
+        auto b = t.buttons[(t.get_index(hw) + 1) % t.buttons.size()];
+        SetFocus(b); SendMessageW(b, BM_SETCHECK, BST_CHECKED, 0);
       } else if (wp == VK_ESCAPE) return SetFocus(main::hwnd), 0; }
     return CallWindowProcW(defproc2, hw, msg, wp, lp); }
 public:

@@ -33,9 +33,13 @@ namespace yw { // clang-format off
 #define ywlib_enable_console
 #define ywlib_assert(Bool, Str) (Bool ? void() : (void)(std::cerr << Str << std::endl, throw yw::except(Str)))
 inline constexpr bool nodebug = false;
+#define ywlib_try_begin try {
+#define ywlib_try_end } catch (const std::exception& E) { yw::disp(E); }
 #else
 #define ywlib_assert(Bool, Str) (void())
 inline constexpr bool nodebug = true;
+#define ywlib_try_begin
+#define ywlib_try_end
 #endif
 
 /// comptr structure
@@ -409,37 +413,60 @@ public:
     ywlib_assert(d3d_buffer, "this buffer is not valid");
     ywlib_assert(count == Src.count, "the size of the source buffer must be the same as this buffer");
     main::d3d_context->CopyResource(*this, Src); }
-  array<T> to_cpu() const;
-  array<T> to_cpu(staging_buffer<T>& Staging) const;
+  virtual array<T> to_cpu() const;
+  virtual array<T> to_cpu(staging_buffer<T>& Staging) const;
 };
 
 template<typename T> class staging_buffer : public buffer<T> {
 public:
   using buffer<T>::from;
+
+  /// default constructor
   staging_buffer() noexcept = default;
+
+  /// constructor from another buffer
   explicit staging_buffer(const buffer<T>& Src) : staging_buffer(Src.count) { buffer<T>::from(Src); }
+
+  /// constructor from the number of elements
   explicit staging_buffer(natt Count) : buffer<T>(Count) {
     D3D11_BUFFER_DESC desc{nat4(sizeof(T) * Count), D3D11_USAGE_STAGING, 0, D3D11_CPU_ACCESS_READ};
     tiff(main::d3d_device->CreateBuffer(&desc, nullptr, buffer<T>::d3d_buffer.addressof())); }
-  array<T> to_cpu() const {
+
+  /// outputs the data to CPU memory
+  virtual array<T> to_cpu() const {
     ywlib_assert(*this, "this buffer is not valid");
-    array<T> a(buffer<T>::count); D3D11_MAPPED_SUBRESOURCE mapped;
-    tiff(main::d3d_context->Map(*this, 0, D3D11_MAP_READ, 0, &mapped));
-    memcpy(a.data(), mapped.pData, nat4(sizeof(T)) * buffer<T>::count);
+    D3D11_MAPPED_SUBRESOURCE mapped{}; tiff(main::d3d_context->Map(*this, 0, D3D11_MAP_READ, 0, &mapped));
+    array<T> a{(const T*)(mapped.pData), (const T*)(mapped.pData) + buffer<T>::count};
     main::d3d_context->Unmap(*this, 0); return a; }
 };
 
-template<typename T> array<T> buffer<T>::to_cpu() const { ywlib_assert(*this, "this buffer is not valid"); return staging_buffer<T>(*this).to_cpu(); }
-template<typename T> array<T> buffer<T>::to_cpu(staging_buffer<T>& S) const { ywlib_assert(*this, "this buffer is not valid"); return S.from(*this), S.to_cpu(); }
+template<typename T> staging_buffer(const buffer<T>&) -> staging_buffer<T>;
+
+template<typename T> array<T> buffer<T>::to_cpu() const {
+  ywlib_assert(*this, "this buffer is not valid"); return staging_buffer(*this).to_cpu(); }
+
+template<typename T> array<T> buffer<T>::to_cpu(staging_buffer<T>& S) const {
+  ywlib_assert(*this, "this buffer is not valid"); return S.from(*this), S.to_cpu(); }
 
 /// class for creating constant buffers
 template<typename T> requires((sizeof(T) & 0xf) == 0) class constant_buffer : public buffer<T> {
+  static constexpr D3D11_BUFFER_DESC desc{nat4(sizeof(T)), D3D11_USAGE_DYNAMIC,
+                                          D3D11_BIND_CONSTANT_BUFFER, D3D11_CPU_ACCESS_WRITE};
 public:
   using buffer<T>::from;
+
+  /// default constructor
   constant_buffer() noexcept = default;
+
   constant_buffer(const T& Value) : buffer<T>(1) {
-    static constexpr D3D11_BUFFER_DESC desc{nat4(sizeof(T)), D3D11_USAGE_DYNAMIC, D3D11_BIND_CONSTANT_BUFFER, D3D11_CPU_ACCESS_WRITE};
-    [&](D3D11_SUBRESOURCE_DATA d) { tiff(main::d3d_device->CreateBuffer(&desc, &d, buffer<T>::d3d_buffer.addressof())); }({&Value}); }
+    D3D11_SUBRESOURCE_DATA d(&Value);
+    tiff(main::d3d_device->CreateBuffer(&desc, &d, buffer<T>::d3d_buffer.addressof())); }
+
+  template<typename U> requires assignable<T&, U> || vassignable<T&, U> constant_buffer(U&& Value) : buffer<T>(1) {
+    tiff(main::d3d_device->CreateBuffer(&desc, nullptr, buffer<T>::d3d_buffer.addressof()));
+    from(fwd<U>(Value));
+  }
+
   template<typename U> requires assignable<T&, U> || vassignable<T&, U> void from(U&& Value) {
     if (*this) { D3D11_MAPPED_SUBRESOURCE mapped; tiff(main::d3d_context->Map(*this, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped));
                  if constexpr (assignable<T&, U>) *reinterpret_cast<T*>(mapped.pData) = fwd<U>(Value);
@@ -448,48 +475,89 @@ public:
     } else {     T temp;
                  if constexpr (assignable<T&, U>) *this = constant_buffer(temp = fwd<U>(Value));
                  else vassign(temp, fwd<U>(Value)), *this = constant_buffer(temp); } }
+
+  /// copies the source data to this buffer
   void from(invocable<T&> auto&& Func) {
     ywlib_assert(*this, "this buffer is not valid");
-    if (*this) { D3D11_MAPPED_SUBRESOURCE mapped; tiff(main::d3d_context->Map(*this, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped));
-                 Func(*reinterpret_cast<T*>(mapped.pData)), main::d3d_context->Unmap(*this, 0);
-    } else [&](T temp) { Func(temp), *this = constant_buffer(temp); }({}); }
-  void to_vs(natt Slot = 0) const { ywlib_assert(*this, "this buffer is not valid"); main::d3d_context->VSSetConstantBuffers(nat4(Slot), 1, &buffer<T>::d3d_buffer); }
-  void to_gs(natt Slot = 0) const { ywlib_assert(*this, "this buffer is not valid"); main::d3d_context->GSSetConstantBuffers(nat4(Slot), 1, &buffer<T>::d3d_buffer); }
-  void to_ps(natt Slot = 0) const { ywlib_assert(*this, "this buffer is not valid"); main::d3d_context->PSSetConstantBuffers(nat4(Slot), 1, &buffer<T>::d3d_buffer); }
-  void to_cs(natt Slot = 0) const { ywlib_assert(*this, "this buffer is not valid"); main::d3d_context->CSSetConstantBuffers(nat4(Slot), 1, &buffer<T>::d3d_buffer); }
+    D3D11_MAPPED_SUBRESOURCE mapped; tiff(main::d3d_context->Map(*this, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped));
+    Func(*reinterpret_cast<T*>(mapped.pData)), main::d3d_context->Unmap(*this, 0);
+  }
+  void to_vs(natt Slot = 0) const { ywlib_assert(*this, "this buffer is not valid"); main::d3d_context->VSSetConstantBuffers(nat4(Slot), 1, buffer<T>::d3d_buffer.addressof()); }
+  void to_gs(natt Slot = 0) const { ywlib_assert(*this, "this buffer is not valid"); main::d3d_context->GSSetConstantBuffers(nat4(Slot), 1, buffer<T>::d3d_buffer.addressof()); }
+  void to_ps(natt Slot = 0) const { ywlib_assert(*this, "this buffer is not valid"); main::d3d_context->PSSetConstantBuffers(nat4(Slot), 1, buffer<T>::d3d_buffer.addressof()); }
+  void to_cs(natt Slot = 0) const { ywlib_assert(*this, "this buffer is not valid"); main::d3d_context->CSSetConstantBuffers(nat4(Slot), 1, buffer<T>::d3d_buffer.addressof()); }
 };
 
 template<typename T> constant_buffer(const T&) -> constant_buffer<T>;
 
 /// class for creating structured buffers
 template<typename T> class structured_buffer : public buffer<T> {
+  inline static constexpr nat4 _n = nat4(sizeof(T));
+  D3D11_SHADER_RESOURCE_VIEW_DESC _srv_desc() const noexcept {
+    return {DXGI_FORMAT_UNKNOWN, D3D11_SRV_DIMENSION_BUFFER, D3D11_BUFFER_SRV{0, count}}; }
 protected:
   comptr<ID3D11ShaderResourceView> d3d_srv;
 public:
+  using buffer<T>::count;
   using buffer<T>::from;
+
+  /// default constructor
   structured_buffer() noexcept = default;
-  operator comptr<ID3D11ShaderResourceView>::reference*() const noexcept(nodebug) { ywlib_assert(*this, "this buffer is not valid"); return d3d_srv; }
-  explicit structured_buffer(const buffer<T>& Src) : structured_buffer(Src.count) { buffer<T>::from(Src); }
+
+  /// conversion to the restricted pointer to `ID3D11ShaderResourceView`
+  operator comptr<ID3D11ShaderResourceView>::reference*() const
+    noexcept(nodebug) { ywlib_assert(*this, "this buffer is not valid"); return d3d_srv; }
+
+  /// constructor from another buffer
+  explicit structured_buffer(const buffer<T>& Src)
+    : structured_buffer(Src.count) { buffer<T>::from(Src); }
+
+  /// constructor from the count of elements
   explicit structured_buffer(natt Count) : buffer<T>(Count) {
-    D3D11_BUFFER_DESC desc{nat4(sizeof(T) * Count), D3D11_USAGE_DEFAULT, D3D11_BIND_SHADER_RESOURCE, 0, D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, sizeof(T)};
+    D3D11_BUFFER_DESC desc{_n * count, D3D11_USAGE_DEFAULT, D3D11_BIND_SHADER_RESOURCE,
+                           0, D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, _n};
     tiff(main::d3d_device->CreateBuffer(&desc, nullptr, buffer<T>::d3d_buffer.addressof()));
-    D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{DXGI_FORMAT_UNKNOWN, D3D11_SRV_DIMENSION_BUFFER, {}}; srv_desc.Buffer.NumElements = nat4(Count);
+    auto srv_desc = _srv_desc();
     tiff(main::d3d_device->CreateShaderResourceView(*this, &srv_desc, d3d_srv.addressof())); }
+
+  /// constructor from the source data and the count of elements
   structured_buffer(const T* Data, natt Count) : buffer<T>(Count) {
-    D3D11_BUFFER_DESC desc{nat4(sizeof(T) * Count), D3D11_USAGE_DEFAULT, D3D11_BIND_SHADER_RESOURCE, 0, D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, nat4(sizeof(T))};
-    if (Data) { D3D11_SUBRESOURCE_DATA data{.pSysMem = Data, .SysMemPitch = nat4(sizeof(T))};
+  ywlib_try_begin
+    D3D11_BUFFER_DESC desc{_n * count, D3D11_USAGE_DEFAULT, D3D11_BIND_SHADER_RESOURCE,
+                           0, D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, _n};
+    if (Data) { D3D11_SUBRESOURCE_DATA data{.pSysMem = Data, .SysMemPitch = _n};
                 tiff(main::d3d_device->CreateBuffer(&desc, &data, buffer<T>::d3d_buffer.addressof()));
     } else      tiff(main::d3d_device->CreateBuffer(&desc, nullptr, buffer<T>::d3d_buffer.addressof()));
-    D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{DXGI_FORMAT_UNKNOWN, D3D11_SRV_DIMENSION_BUFFER, D3D11_BUFFER_SRV{0, nat4(Count)}};
-    tiff(main::d3d_device->CreateShaderResourceView(*this, &srv_desc, d3d_srv.addressof())); }
+    auto srv_desc = _srv_desc();
+    tiff(main::d3d_device->CreateShaderResourceView(*this, &srv_desc, d3d_srv.addressof()));
+  ywlib_try_end
+  }
+
+  /// constructor from the range of elements
+  template<cnt_range_of<T> R> structured_buffer(R&& Range) : structured_buffer(yw::data(Range), yw::size(Range)) {}
+
+  /// copies the source data to this buffer
   void from(const T* Data) { ywlib_assert(*this, "this buffer is not valid");
-                             main::d3d_context->UpdateSubresource(*this, 0, 0, Data, nat4(sizeof(T)), nat4(sizeof(T)) * buffer<T>::count); }
-  void to_vs(natt Slot = 0) const { ywlib_assert(*this, "this buffer is not valid"); main::d3d_context->VSSetShaderResources(nat4(Slot), 1, &d3d_srv); }
-  void to_gs(natt Slot = 0) const { ywlib_assert(*this, "this buffer is not valid"); main::d3d_context->GSSetShaderResources(nat4(Slot), 1, &d3d_srv); }
-  void to_ps(natt Slot = 0) const { ywlib_assert(*this, "this buffer is not valid"); main::d3d_context->PSSetShaderResources(nat4(Slot), 1, &d3d_srv); }
-  void to_cs(natt Slot = 0) const { ywlib_assert(*this, "this buffer is not valid"); main::d3d_context->CSSetShaderResources(nat4(Slot), 1, &d3d_srv); }
+                             main::d3d_context->UpdateSubresource(*this, 0, 0, Data, _n, _n * count); }
+
+  /// sets this buffer to the vertex shader
+  void to_vs(natt Slot = 0) const { ywlib_assert(*this, "this buffer is not valid");
+                                    main::d3d_context->VSSetShaderResources(nat4(Slot), 1, d3d_srv.addressof()); }
+
+  /// sets this buffer to the geometry shader
+  void to_gs(natt Slot = 0) const { ywlib_assert(*this, "this buffer is not valid");
+                                    main::d3d_context->GSSetShaderResources(nat4(Slot), 1, d3d_srv.addressof()); }
+
+  /// sets this buffer to the pixel shader
+  void to_ps(natt Slot = 0) const { ywlib_assert(*this, "this buffer is not valid");
+                                    main::d3d_context->PSSetShaderResources(nat4(Slot), 1, d3d_srv.addressof()); }
+
+  /// sets this buffer to the compute shader
+  void to_cs(natt Slot = 0) const { ywlib_assert(*this, "this buffer is not valid");
+                                    main::d3d_context->CSSetShaderResources(nat4(Slot), 1, d3d_srv.addressof()); }
 };
 
+/// deduction guide for `structured_buffer`
 template<typename T> structured_buffer(const buffer<T>&) -> structured_buffer<T>;
 template<typename T> structured_buffer(const T*, natt) -> structured_buffer<T>;
 template<cnt_range R> structured_buffer(R&&) -> structured_buffer<iter_value<R>>;
@@ -515,7 +583,7 @@ public:
     tiff(main::d3d_device->CreateUnorderedAccessView(*this, nullptr, d3d_uav.addressof())); }
   void from(const T* Data) { ywlib_assert(*this, "this buffer is not valid");
                              main::d3d_context->UpdateSubresource(*this, 0, 0, Data, nat4(sizeof(T)), nat4(sizeof(T)) * buffer<T>::count); }
-  void to_cs(nat4 Slot = 0) const { ywlib_assert(*this, "this buffer is not valid"); main::d3d_context->CSSetUnorderedAccessViews(Slot, 1, &d3d_uav, nullptr); }
+  void to_cs(nat4 Slot = 0) const { ywlib_assert(*this, "this buffer is not valid"); main::d3d_context->CSSetUnorderedAccessViews(Slot, 1, d3d_uav.addressof(), nullptr); }
 };
 
 template<typename T> unordered_buffer(const buffer<T>&) -> unordered_buffer<T>;
@@ -568,31 +636,39 @@ public:
     main::d3d_context->Draw(nat4(VertexCounts), 0); }
 };
 
-template<specialization_of<typepack> Unordered, specialization_of<typepack> Structured = typepack<>, specialization_of<typepack> Constant = typepack<>> class gpgpu {
+template<specialization_of<typepack> Unordered, specialization_of<typepack> Structured = typepack<>,
+         specialization_of<typepack> Constant = typepack<>> class gpgpu {
 protected:
   static_assert(Unordered::count != 0);
   comptr<ID3D11ComputeShader> cs{};
 public:
+  /// const reference list of `unordered_buffer`
   using ub_list = list<>::from_typepack<Unordered, const unordered_buffer<int4>&>;
+
+  /// const reference list of `structured_buffer`
   using sb_list = list<>::from_typepack<Structured, const structured_buffer<int4>&>;
+
+  /// const reference list of `constant_buffer`
   using cb_list = list<>::from_typepack<Constant, const constant_buffer<vector>&>;
+
+  /// default constructor
   gpgpu() noexcept = default;
+
+  /// constructor from HLSL
   gpgpu(stv1 Hlsl, str1 Entry = "csmain", str1 Target = "cs_5_0") {
-    try { comptr<ID3DBlob> b, r;
-          if (0 > D3DCompile(Hlsl.data(), Hlsl.size(), 0, 0, 0, Entry.data(), Target.data(),
+    ywlib_try_begin
+    comptr<ID3DBlob> b, r;
+      if (0 > D3DCompile(Hlsl.data(), Hlsl.size(), 0, 0, 0, Entry.data(), Target.data(),
                          D3D10_SHADER_ENABLE_STRICTNESS, 0, b.addressof(), r.addressof())) throw except((cat1*)r->GetBufferPointer());
-      std::cout << source{} << std::endl;
-      std::cout << main::d3d_device.get() << std::endl;
-      std::cout << b->GetBufferSize() << std::endl;
-      std::cout << cs.addressof() << std::endl;
-      std::cout << source{} << std::endl;
-      tiff(main::d3d_device->GetDeviceRemovedReason());
-      tiff(main::d3d_device->CreateComputeShader(b->GetBufferPointer(), b->GetBufferSize(), nullptr, cs.addressof()));
-      std::cout << source{} << std::endl;
-    } catch (const except& E) { std::cout << E.what() << std::endl, throw except(E); }
+    tiff(main::d3d_device->GetDeviceRemovedReason());
+    tiff(main::d3d_device->CreateComputeShader(b->GetBufferPointer(), b->GetBufferSize(), nullptr, cs.addressof()));
+    ywlib_try_end
   }
+
+  /// performs GPGPU
   void operator()(ub_list UBuffers, sb_list SBuffers, cb_list CBuffers,
                   nat4 ThreadGroupX, nat4 ThreadGroupY = 1, nat4 ThreadGroupZ = 1) const {
+    ywlib_try_begin
     using ubseq = make_indices_for<ub_list>;
     tiff([&]<natt... Is>(sequence<Is...>) { return (bool(get<Is>(UBuffers)) && ...); }(ubseq{}));
     [&]<natt... Is>(sequence<Is...>) { (get<Is>(UBuffers).to_cs(Is), ...); }(ubseq{});
@@ -611,12 +687,16 @@ public:
     [&]<natt... Is>(ID3D11UnorderedAccessView* t, sequence<Is...>) { (main::d3d_context->CSSetUnorderedAccessViews(Is, 1, &t, 0), ...); }({}, ubseq{});
     [&]<natt... Is>(ID3D11ShaderResourceView* t, sequence<Is...>) { (main::d3d_context->CSSetShaderResources(Is, 1, &t), ...); }({}, sbseq{});
     [&]<natt... Is>(ID3D11Buffer* t, sequence<Is...>) { (main::d3d_context->CSSetConstantBuffers(Is, 1, &t), ...); }({}, cbseq{});
+    ywlib_try_end
   }
+
   /// @brief 一次元に並列化したGPGPUを実行する。
   /// @param Parallels 並列数
   /// @note  動作条件：Shaderにおいて`numthreads(1024, 1, 1)`が指定されていること。
   void operator()(natt Parallels, ub_list UBuffers, sb_list SBuffers, cb_list CBuffers) const {
+    ywlib_try_begin
     this->operator()(mv(UBuffers), mv(SBuffers), mv(CBuffers), nat4(Parallels - 1) / 1024u + 1, 1, 1);
+    ywlib_try_end
   }
 };
 

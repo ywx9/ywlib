@@ -1538,7 +1538,11 @@ struct source {
   stv1 file, func;
   constexpr source(nat4 Line = __builtin_LINE(), nat4 Column = __builtin_COLUMN(), stv1 File = __builtin_FILE(),
                    stv1 Func = __builtin_FUNCTION()) noexcept : line(Line), column(Column), file(mv(File)), func(mv(Func)) {}
-  template<typename Tr> friend std::basic_ostream<cat1, Tr>& operator<<(std::basic_ostream<cat1, Tr>& OS, const source& S) { return OS << std::format("{} ({}, {}, {})", S.file, S.line, S.column, S.func); }
+
+  /// outputs the source location to the stream
+  template<typename Tr> friend std::basic_ostream<cat1, Tr>&
+  operator<<(std::basic_ostream<cat1, Tr>& os, const source& s) {
+    return os << std::format("{}({},{})", s.file, s.line, s.column); }
 };
 
 /// exception class which contains the source location
@@ -1611,13 +1615,13 @@ template<typename T, typename S, typename F> struct tuple_size<yw::projector<T, 
 template<size_t I, typename T, typename S, typename F> struct tuple_element<I, yw::projector<T, S, F>> : remove_cvref<yw::element_t<yw::projector<T, S, F>, I>> {};
 template<typename T, size_t N> struct tuple_size<yw::array<T, N>> : integral_constant<size_t, N> {};
 template<size_t I, typename T, size_t N> struct tuple_element<I, yw::array<T, N>> : type_identity<T> {};
-template<typename Ct> struct formatter<yw::string_view<Ct>> : formatter<basic_string_view<Ct>, Ct> {
+template<typename Ct> struct formatter<yw::string_view<Ct>, Ct> : formatter<basic_string_view<Ct>, Ct> {
   auto format(const yw::string_view<Ct>& s, yw::type_switch<same_as<Ct, char>, format_context, wformat_context>& ctx) const {
-    return formatter<basic_string_view<Ct>, Ct>::format({s.pointer, s.count}, ctx); } };
-template<typename Ct> struct formatter<yw::string<Ct>> : formatter<basic_string<Ct>, Ct> {
+    return formatter<basic_string_view<Ct>, Ct>::format(reinterpret_cast<const std::basic_string_view<Ct>&>(s), ctx); } };
+template<typename Ct> struct formatter<yw::string<Ct>, Ct> : formatter<basic_string<Ct>, Ct> {
   auto format(const yw::string<Ct>& s, yw::type_switch<same_as<Ct, char>, format_context, wformat_context>& ctx) const {
     return formatter<basic_string<Ct>, Ct>::format(s, ctx); } };
 template<> struct formatter<yw::source> : formatter<string> {
   auto format(const yw::source& s, format_context& ctx) const {
-    return formatter<string>::format(std::format("{} ({}, {}, {})", s.file, s.line, s.column, s.func), ctx); } };
+    return formatter<string>::format(std::format("{}({},{})", s.file, s.line, s.column), ctx); } };
 } // clang-format on
