@@ -158,15 +158,26 @@ protected:
 
   /// window procedure for textbox controls
   static LRESULT CALLBACK proc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
-    if (msg == WM_CHAR) {
-      if (wp == VK_RETURN) if (auto& t = get_control<textbox>(hw); t.input) return t.input(t), 0;
-      else if (wp == VK_TAB) {
-        auto& g = get_group(whole_controls[hw].first); auto i = get_index(g, hw); auto& t = *(textbox*)(g[i].second);
-        if (t.tab) t.tab(t); return focus_on_next(g, i, GetKeyState(VK_SHIFT) < 0), 0;
-      } else if (wp == VK_ESCAPE) return SetFocus(main::hwnd), 0;
-    } else if (msg == WM_SETFOCUS) if (auto& t = get_control<textbox>(hw); t.intofocus) return t.intofocus(t), 0;
-    else if (msg == WM_KILLFOCUS) if (auto& t = get_control<textbox>(hw); t.killfocus) return t.killfocus(t), 0;
-    return CallWindowProcW(defproc, hw, msg, wp, lp); }
+    switch (msg) {
+    case WM_CHAR:
+      switch (wp) {
+        case VK_RETURN:
+          if (auto& t = get_control<textbox>(hw); t.input) t.input(t);
+          return 0;
+        case VK_TAB: {
+          auto& g = get_group(whole_controls[hw].first);
+          auto i = get_index(g, hw);
+          auto& t = *(textbox*)(g[i].second);
+          return (t.tab ? t.tab(t) : focus_on_next(g, i, GetKeyState(VK_SHIFT) < 0)), 0; }
+        case VK_ESCAPE: return SetFocus(main::hwnd), 0;
+      } break;
+    case WM_SETFOCUS:
+      if (auto& t = get_control<textbox>(hw); t.intofocus) t.intofocus(t);
+      return 0;
+    case WM_KILLFOCUS:
+      if (auto& t = get_control<textbox>(hw); t.killfocus) t.killfocus(t);
+      return 0;
+    } return CallWindowProcW(defproc, hw, msg, wp, lp); }
 public:
   /// callback function for the enter key
   void (*input)(const textbox& This) = nullptr;
@@ -204,17 +215,29 @@ protected:
 
   /// window procedure for valuebox controls
   static LRESULT CALLBACK proc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
-    if (msg == WM_CHAR) {
-      if (wp == VK_RETURN) if (auto& t = get_control<valuebox>(hw); t.input) return t.input(t), 0;
-      else if (wp == VK_TAB) {
-        auto& g = get_group(whole_controls[hw].first); auto i = get_index(g, hw); auto& t = *(valuebox*)(g[i].second);
-        if (t.tab) t.tab(t); return focus_on_next(g, i, GetKeyState(VK_SHIFT) < 0), 0;
-      } else if (wp == VK_ESCAPE) return SetFocus(main::hwnd), 0;
-      else if (wp == VK_BACK || wp == VK_DELETE || wp == VK_LEFT || wp == VK_RIGHT) void(0);
-      else if (!(wp >= '0' && wp <= '9' || wp == '-' || wp == '.')) return 0;
-    } else if (msg == WM_SETFOCUS) if (auto& t = get_control<valuebox>(hw); t.intofocus) return t.intofocus(t), 0;
-    else if (msg == WM_KILLFOCUS) if (auto& t = get_control<valuebox>(hw); t.killfocus) return t.killfocus(t), 0;
-    return CallWindowProcW(defproc, hw, msg, wp, lp); }
+    switch (msg) {
+    case WM_CHAR:
+      switch (wp) {
+      case VK_RETURN:
+        if (auto& t = get_control<valuebox>(hw); t.input) t.input(t);
+        return 0;
+      case VK_TAB: {
+        auto& g = get_group(whole_controls[hw].first);
+        auto i = get_index(g, hw);
+        auto& t = *(valuebox*)(g[i].second);
+        return (t.tab ? t.tab(t) : focus_on_next(g, i, GetKeyState(VK_SHIFT) < 0)), 0; }
+      case VK_ESCAPE: return SetFocus(main::hwnd), 0;
+      case VK_BACK: case VK_DELETE: case VK_LEFT: case VK_RIGHT: return CallWindowProcW(defproc, hw, msg, wp, lp);
+      } return ('0' <= wp && wp <= '9') || wp == '-' || wp == '.' ? CallWindowProcW(defproc, hw, msg, wp, lp) : 0;
+    case WM_SETFOCUS:
+      if (auto& t = get_control<valuebox>(hw); t.intofocus) t.intofocus(t);
+      else SendMessageW(hw, EM_SETSEL, 0, -1);
+      break;
+    case WM_KILLFOCUS:
+      if (auto& t = get_control<valuebox>(hw); t.killfocus) t.killfocus(t);
+      else SendMessageW(hw, EM_SETSEL, 0, -1);
+      break;
+    } return CallWindowProcW(defproc, hw, msg, wp, lp); }
 public:
   /// callback function for the enter key
   void (*input)(const valuebox& This) = nullptr;
@@ -268,15 +291,22 @@ protected:
 
   /// window procedure for button controls
   static LRESULT CALLBACK proc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
-    if (msg == WM_LBUTTONDOWN)
-      if (auto& t = get_control<button>(hw); t.input)
-        return [&](auto r) { return t.input(t), r; }(defproc(hw, msg, wp, lp));
-    else if (msg == WM_KEYDOWN) {
-      if (wp == VK_RETURN || wp == VK_SPACE) {
-        if (auto& t = get_control<button>(hw); t.input) { auto r = defproc(hw, msg, wp, lp); t.input(t); return r; }
-      } else if (wp == VK_TAB) { auto& g = get_group(whole_controls[hw].first); auto i = get_index(g, hw);
-                                 return focus_on_next(g, i, GetKeyState(VK_SHIFT) < 0), 0;
-      } else if (wp == VK_ESCAPE) return SetFocus(main::hwnd), 0; }
+    switch (msg) {
+    case WM_LBUTTONDOWN:
+      if (auto& t = get_control<button>(hw); t.input) {
+        auto r = CallWindowProcW(defproc, hw, msg, wp, lp);
+        t.input(t); return r; } return 0;
+    case WM_KEYDOWN:
+      switch (wp) {
+        case VK_RETURN: case VK_SPACE:
+          if (auto& t = get_control<button>(hw); t.input) {
+            auto r = CallWindowProcW(defproc, hw, msg, wp, lp);
+            t.input(t); return r; } return 0;
+        case VK_TAB: {
+          auto& g = get_group(whole_controls[hw].first);
+          auto i = get_index(g, hw);
+          focus_on_next(g, i, GetKeyState(VK_SHIFT) < 0); return 0; }
+        case VK_ESCAPE: return SetFocus(main::hwnd), 0; } }
     return CallWindowProcW(defproc, hw, msg, wp, lp); }
 public:
   /// checks the state of this button

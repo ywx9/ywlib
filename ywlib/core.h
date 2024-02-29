@@ -1548,7 +1548,7 @@ struct source {
 /// exception class which contains the source location
 struct except : public std::exception {
   explicit except(const std::string& s, source _ = {}) noexcept : except(s.data(), mv(_)){};
-  explicit except(const cat1* s, source _ = {}) noexcept : std::exception(std::format("{}->{}\n", s, _).data()) {}
+  explicit except(const cat1* s, source _ = {}) noexcept : std::exception(std::format("{}\n->{}", s, _).data()) {}
   explicit except(const std::exception& Base, source _ = {}) noexcept : except(Base.what(), mv(_)){};
 };
 

@@ -188,7 +188,7 @@ inline void main::system::initialize(natt Width, natt Height) {
   tiff(hwnd = CreateWindowExW(WS_EX_ACCEPTFILES, class_name, class_name, WS_OVERLAPPED | WS_SYSMENU | WS_CLIPCHILDREN,
                               0, 0, 400, 400, nullptr, nullptr, hinstance, nullptr));
   [&](RECT r) { GetClientRect(hwnd, &r); width_pad = 400 - r.right, height_pad = 400 - r.bottom; }({});
-  SetWindowPos(hwnd, HWND_TOPMOST, -width_pad / 2, 0,
+  SetWindowPos(hwnd, HWND_TOP, -width_pad / 2, 0,
                (int)(Width + width_pad), (int)(Height + height_pad), SWP_SHOWWINDOW);
   tiff(hfont = CreateFontW(16, 0, 0, 0, FW_NORMAL, 0, 0, 0, SHIFTJIS_CHARSET, OUT_DEFAULT_PRECIS,
                            CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, VARIABLE_PITCH | FF_ROMAN, L"Yu Gothic UI"));
