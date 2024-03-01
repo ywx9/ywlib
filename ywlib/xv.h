@@ -699,19 +699,23 @@ template<natt N, natt Zero = 0> requires(0 < N && N <= 4 && Zero < 16) struct t_
     else if constexpr (N == 4) (a = _mm256_hadd_pd(xvmul(A, B), A)), a = xvadd(a, _mm256_castpd128_pd256(_mm256_extractf128_pd(a, 1)));
     return xvsetzero<Zero & 1, Zero & 2, Zero & 4, Zero & 8>(xvpermute<0, 0, 0, 0>(a)); }
   template<natt M> requires(M <= 4) void operator()(const xvector (&A)[M], const xvector& B, xvector& Result) const noexcept {
-    if constexpr (1 <= N) Result = xvdot<N, 0b1110>(A[0], B);
-    if constexpr (2 <= N) Result = xvpermute<0, 5, 2, 3>(Result, xvdot<N>(A[1], B));
-    if constexpr (3 <= N) Result = xvpermute<0, 1, 6, 3>(Result, xvdot<N>(A[2], B));
-    if constexpr (4 == N) Result = xvpermute<0, 1, 2, 7>(Result, xvdot<N>(A[3], B)); }
+    if constexpr (1 <= N) Result = t_xvdot<N, 0b1110>{}(A[0], B);
+    if constexpr (2 <= N) Result = xvpermute<0, 5, 2, 3>(Result, t_xvdot<N>{}(A[1], B));
+    if constexpr (3 <= N) Result = xvpermute<0, 1, 6, 3>(Result, t_xvdot<N>{}(A[2], B));
+    if constexpr (4 == N) Result = xvpermute<0, 1, 2, 7>(Result, t_xvdot<N>{}(A[3], B)); }
   template<natt M> requires(M <= 4) void operator()(const xvector& A, const xvector (&B)[M], xvector& Result) const noexcept {
     if constexpr (1 <= M) Result = xvmul(xvpermute<0, 0, 0, 0>(A), B[0]);
     if constexpr (2 <= M) Result = xvfma(xvpermute<1, 1, 1, 1>(A), B[1], Result);
     if constexpr (3 <= M) Result = xvfma(xvpermute<2, 2, 2, 2>(A), B[2], Result);
     if constexpr (4 == M) Result = xvfma(xvpermute<3, 3, 3, 3>(A), B[3], Result);
     if constexpr (N != 4) Result = _mm_blend_ps(xv_zero, Result, (1 << N) - 1); }
-  template<natt M, natt L> requires(M <= 4 && L <= 4) void operator()(const xvector (&A)[L], const xvector (&B)[M], xvector (&Result)[L]) const noexcept {
-    if constexpr (1 <= L) xvdot<N, Zero>(A[0], B, Result[0]); if constexpr (2 <= L) xvdot<N, Zero>(A[1], B, Result[1]);
-    if constexpr (3 <= L) xvdot<N, Zero>(A[2], B, Result[2]); if constexpr (4 == L) xvdot<N, Zero>(A[3], B, Result[3]); } };
+
+  /// calculates the dot product of two matrices
+  template<tuple TpA, tuple TpB, tuple TpR> void operator()(TpA&& A, TpB&& B, TpR&& Result) const
+    noexcept(noexcept(vapply([&](xvector& a, xvector& r) { t_xvdot<N, Zero>{}(a, B, r); }, A, Result)))
+    requires requires { vapply([&](xvector& a, xvector& r) { t_xvdot<N, Zero>{}(a, B, r); }, A, Result); }
+  { vapply([&](xvector& a, xvector& r) { t_xvdot<N, Zero>{}(a, B, r); }, A, Result);}
+};
 
 template<natt N, natt Zero = 0> requires(0 < N && N <= 4 && Zero < 16) inline constexpr t_xvdot<N, Zero> xvdot;
 

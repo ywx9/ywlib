@@ -958,11 +958,13 @@ template<typename T, typename U, typename Sq> struct _nt_tuple_for : constant<fa
 template<typename T, typename U, natt... Is> struct _nt_tuple_for<T, U, sequence<Is...>>
   : constant<(nt_gettable<T, Is> && ...) && (nt_convertible_to<element_t<T, Is>, U> && ...)> {};
 template<typename S, typename T = none> struct _to_sequence;
-template<template<auto...> typename Tm, typename T, auto... Vs> struct _to_sequence<Tm<Vs...>, T> : trait<sequence<static_cast<T>(Vs)...>, sizeof...(Vs)> {};
+template<template<auto...> typename Tm, typename T, auto... Vs> struct _to_sequence<Tm<Vs...>, T> : trait<sequence<static_cast<T>(Vs)...>> {};
 template<template<typename, auto...> typename Tm, typename T, typename U, auto... Vs>
-struct _to_sequence<Tm<U, Vs...>, T> : trait<sequence<static_cast<T>(Vs)...>, sizeof...(Vs)> {};
-template<template<auto...> typename Tm, auto... Vs> struct _to_sequence<Tm<Vs...>, none> : trait<sequence<Vs...>, sizeof...(Vs)> {};
-template<template<typename, auto...> typename Tm, typename U, auto... Vs> struct _to_sequence<Tm<U, Vs...>, none> : trait<sequence<Vs...>, sizeof...(Vs)> {};
+struct _to_sequence<Tm<U, Vs...>, T> : trait<sequence<static_cast<T>(Vs)...>> {};
+template<template<auto...> typename Tm, auto... Vs> struct _to_sequence<Tm<Vs...>, none> : trait<sequence<Vs...>> {};
+template<template<typename, auto...> typename Tm, typename U, auto... Vs> struct _to_sequence<Tm<U, Vs...>, none> : trait<sequence<Vs...>> {};
+template<typename S, natt N> struct _indices_for : constant<false> {};
+template<natt... Is, natt N> struct _indices_for<sequence<Is...>, N> : constant<(lt(Is, N) && ...)> {};
 template<natt End, natt Begin = 0, invocable<natt> auto Proj = pass{}, natt... Vs>
 struct _make_sequence : _make_sequence<End, Begin + 1, Proj, Vs..., Proj(Begin)> {};
 template<natt End, auto Proj, natt... Vs> struct _make_sequence<End, End, Proj, Vs...> : trait<sequence<Vs...>> {};
@@ -989,11 +991,11 @@ template<typename Sq, typename T = none> using to_sequence = typename _::_to_seq
 /// checks if `to_sequence<Sq, T>` is a valid sequence
 template<typename Sq, typename T = none> concept sequence_of = variation_of<to_sequence<Sq, T>, sequence<0>>;
 
-/// checks if the number of components of `Sq` is equal to the tuple size of `Tp`
+/// checks if the number of components of `Sq` is equal to or less than the extent of `Tp`
 template<typename Sq, typename Tp> concept indices_for = requires {
   requires tuple<Tp>;
   requires sequence_of<Sq, natt>;
-  requires _::_to_sequence<Sq, natt>::value == extent<Tp>; };
+  requires _::_indices_for<to_sequence<Sq>, extent<Tp>>::value; };
 
 /// returns `sequence<Proj(Is)...>` where `Is = [Begin, End)`
 template<natt End, natt Begin = 0, invocable<natt> auto Proj = pass{}> requires(Begin <= End)
@@ -1013,7 +1015,8 @@ template<typename Tp, typename U> concept tuple_for = requires {
 
 /// checks if `Tp` is a tuple for `U` and `get<I>(Tp)` is noexcept for all `I`
 template<typename Tp, typename U> concept nt_tuple_for = requires {
-  requires tuple_for<Tp, U>; requires _::_nt_tuple_for<Tp, U, make_indices_for<Tp>>::value; };
+  requires tuple_for<Tp, U>;
+  requires _::_nt_tuple_for<Tp, U, make_indices_for<Tp>>::value; };
 
 /// converts `Tp` to the specialization of `typepack` those components are the element types of `Tp`
 template<tuple Tp> using to_typepack = typename _::_to_typepack<Tp, make_indices_for<Tp>>::type;
@@ -1254,10 +1257,12 @@ template<typename Fn, typename Tp, typename Sq = make_indices_for<Tp>> requires 
 using apply_result = decltype(apply(Sq{}, declval<Fn>(), declval<Tp>()));
 
 struct t_vapply {
-  template<natt I, typename Fn, typename... Ts> constexpr auto operator()(constant<I>, Fn&& f, Ts&&... ts) const
-    ywlib_wrapper(invoke(f, get<I>(fwd<Ts>(ts)...)));
-  template<natt... Is, typename Fn, tuple... Ts> constexpr auto call(sequence<Is...>, Fn&& f, Ts&&... ts) const
-    ywlib_wrapper(list<>::asref((*this)(constant<Is>{}, f, fwd<Ts>(ts)...)...));
+private:
+  template<natt I, typename Fn, typename... Ts> constexpr static auto call(
+    constant<I>, Fn&& f, Ts&&... ts) ywlib_wrapper(invoke(f, get<I>(fwd<Ts>(ts)...)));
+public:
+  template<natt... Is, typename Fn, tuple... Ts> constexpr auto operator()(sequence<Is...>, Fn&& f, Ts&&... ts) const
+    ywlib_wrapper(list<>::asref(call(constant<Is>{}, f, fwd<Ts>(ts)...)...));
   template<sequence_of<natt> S, typename Fn, tuple... Ts> constexpr auto operator()(S, Fn&& f, Ts&&... ts) const
     ywlib_wrapper((*this)(to_sequence<S, natt>{}, fwd<Fn>(f), fwd<Ts>(ts)...));
   template<typename Fn, tuple T, tuple... Ts> constexpr auto operator()(Fn&& f, T&& t, Ts&&... ts) const
@@ -1269,7 +1274,8 @@ inline constexpr t_vapply vapply;
 
 /// checks if `vapply(Func, Tuples...)` is valid
 template<typename Fn, typename... Ts> concept vapplyable = requires {
-  requires (tuple<Ts> && ...); vapply(declval<Fn>(), declval<Ts>()...); };
+  requires (tuple<Ts> && ...);
+  vapply(declval<Fn>(), declval<Ts>()...); };
 
 /// checks if `vapply(Func, Tuples...)` is valid and noexcept
 template<typename Fn, typename... Ts> concept nt_vapplyable = requires {
@@ -1281,14 +1287,19 @@ template<typename Fn, typename... Ts> requires vapplyable<Fn, Ts...>
 using vapply_result = decltype(vapply(declval<Fn>(), declval<Ts>()...));
 
 struct t_vassign {
-  template<natt... Is, typename TpL, typename TpR> constexpr TpL&& operator()(sequence<Is...>, TpL&& Left, TpR&& Right) const
-    noexcept(((nt_gettable<TpL, Is> && nt_gettable<TpR, Is>)&&...) && (nt_assignable<element_t<TpL, Is>, element_t<TpR, Is>> && ...))
-      requires((gettable<TpL, Is> && gettable<TpR, Is>) && ...) && (assignable<element_t<TpL, Is>, element_t<TpR, Is>> && ...)
-  { return ((get<Is>(fwd<TpL>(Left)) = get<Is>(fwd<TpR>(Right))), ...), fwd<TpL>(Left); }
-  template<typename Sq, typename TpL, typename TpR> constexpr auto operator()(Sq, TpL&& Left, TpR&& Right) const
-    ywlib_wrapper((*this)(to_sequence<Sq, natt>{}, fwd<TpL>(Left), fwd<TpR>(Right)));
-  template<typename TpL, typename TpR> constexpr auto operator()(TpL&& Left, TpR&& Right) const
-    ywlib_wrapper((*this)(make_indices_for<TpL>{}, fwd<TpL>(Left), fwd<TpR>(Right)));
+  template<natt... Is, typename TpL, typename TpR, typename Pj = pass>
+  constexpr TpL&& operator()(sequence<Is...>, TpL&& Left, TpR&& Right, Pj proj = {}) const
+    noexcept(noexcept(((get<Is>(Left) = invoke(proj, get<Is>(Right))), ...)))
+    requires requires { ((get<Is>(Left) = invoke(proj, get<Is>(Right))), ...); }
+  { return ((get<Is>(Left) = invoke(proj, get<Is>(Right))), ...), fwd<TpL>(Left); }
+
+  template<typename Sq, typename TpL, typename TpR, typename Pj = pass>
+  constexpr auto operator()(Sq, TpL&& Left, TpR&& Right, Pj proj = {}) const
+    ywlib_wrapper((*this)(to_sequence<Sq, natt>{}, fwd<TpL>(Left), fwd<TpR>(Right), mv(proj)));
+
+  template<typename TpL, typename TpR, typename Pj = pass>
+  constexpr auto operator()(TpL&& Left, TpR&& Right, Pj proj = {}) const
+    ywlib_wrapper((*this)(make_indices_for<TpL>{}, fwd<TpL>(Left), fwd<TpR>(Right), mv(proj)));
 };
 
 /// performs `get<Is>(Left) = get<Is>(Right)`
@@ -1359,7 +1370,7 @@ template<tuple Tp, sequence_of<natt> Sq, typename Pj> struct projector<Tp, Sq, P
   constexpr projector() noexcept = default;
   template<typename Tp_, vapplyable<Tp_&&> Pj_> constexpr projector(Tp_&& t, Sq, Pj_&& p) noexcept : ref(fwd<Tp_>(t)), proj(fwd<Pj_>(p)) {}
   template<typename Tp_, vapplyable<Tp_&&> Pj_> constexpr projector(Tp_&& t, Pj_&& p) noexcept : ref(fwd<Tp_>(t)), proj(fwd<Pj_>(p)) {}
-  template<natt I> requires(I < count) constexpr auto get() const ywlib_wrapper(invoke(proj, get<indices_type::at<I>>(ref)));
+  template<natt I> requires(I < count) constexpr auto get() const ywlib_wrapper(invoke(proj, yw::get<indices_type::at<I>>(ref)));
 };
 
 template<tuple Tp, sequence_of<natt> Sq> struct projector<Tp, Sq, none> {
@@ -1369,11 +1380,12 @@ template<tuple Tp, sequence_of<natt> Sq> struct projector<Tp, Sq, none> {
   constexpr projector() noexcept = default;
   template<typename Tp_> constexpr projector(Tp_&& t, Sq) noexcept : ref(fwd<Tp_>(t)) {}
   template<typename Tp_> constexpr projector(Tp_&& t) noexcept : ref(fwd<Tp_>(t)) {}
-  template<natt I> requires(I < count) constexpr auto get() const noexcept { return get<indices_type::at<I>>(ref); }
+  template<natt I> requires(I < count) constexpr auto get() const noexcept { return yw::get<indices_type::at<I>>(ref); }
 };
 
 template<typename T, sequence_of<natt> Sq, typename Pj> projector(T&&, Sq, Pj&&) -> projector<T, Sq, Pj>;
-template<typename T, sequence_of<natt> Sq> projector(T&&, Sq) -> projector<T, Sq, none>;
+template<typename T, sequence_of<natt> Sq> requires (!vapplyable<Sq, T>) projector(T&&, Sq) -> projector<T, Sq, none>;
+template<tuple Tp, vapplyable<Tp> Pj> requires (!sequence_of<Pj, natt>) projector(Tp&&, Pj&&) -> projector<Tp, make_indices_for<Tp>, Pj>;
 
 /// string view class
 template<character Ct> struct string_view {

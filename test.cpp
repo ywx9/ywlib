@@ -448,12 +448,18 @@ void render_all() {
 }
 
 void align() {
-  if (AlignMode < 0 || !(sb_facets && sb_vertices)) return;
-  auto original_off = xv(ui_valuebox_off[0].value<fat4>(), ui_valuebox_off[1].value<fat4>(), ui_valuebox_off[2].value<fat4>(), 0.f);
-  auto original_rot = xv(ui_valuebox_rot[0].value<fat4>(), ui_valuebox_rot[1].value<fat4>(), ui_valuebox_rot[2].value<fat4>(), 0.f);
-  original_rot = xvneg(xvradian(original_rot));
+  static auto world = constant_buffer<xmatrix>{};
+  static auto margins = unordered_buffer<margin>{};
+  static maxmin mm_test[13];
+  static maxmin& mm = mm_test[12];
+  static xmatrix matrix, matrix_temp;
+  static xvector radian_delta;
 
-  auto checker = []<natt I>(constant<I>, const maxmin& Now, const maxmin& New) {
+  // static_assert(invocable<decltype(&vector::w), decltype(mm.mins)>);
+  // static_assert(vapplyable<decltype(&vector::w), decltype(mm.mins)>);
+
+
+  auto checker = []<natt I>(constant<I>, const maxmin& Now, const maxmin& New) -> bool {
     if constexpr (I == 0) // 基準面厚み最小化 (yz軸回転)
       return (Now.maxs[25].x - Now.mins[25].x) > (New.maxs[25].x - New.mins[25].x);
     else if constexpr (I == 1) // 基準面最大取代最小化 (x軸移動)
@@ -473,10 +479,45 @@ void align() {
       return min(Now.mins[0].w, Now.mins[2].w, Now.mins[12].w, Now.mins[14].w) <
              min(New.mins[0].w, New.mins[2].w, New.mins[12].w, New.mins[14].w);
     else if constexpr (I == 6) // 面上最小取代最大化 (x軸回転、XYZ軸移動)
-      return apply(min, projector(Now.mins, vector::w)) < apply(min, projector(New.mins, vector::w));
+      return apply(min, projector(Now.mins, &vector::w)) < apply(min, projector(New.mins, &vector::w));
   };
 
-  // 続き
+  auto select_best = [&]<natt I>(constant<I>, fat4 Delta, nat4 Blocker) {
+    static constexpr auto rot_list = list<>::asref(xv_x, xv_y, xv_z, xv_zero, xv_zero, xv_zero, xv_neg_x, xv_neg_y, xv_neg_z, xv_zero, xv_zero, xv_zero);
+    static constexpr auto off_list = list<>::asref(xv_zero, xv_zero, xv_zero, xv_x, xv_y, xv_z, xv_zero, xv_zero, xv_zero, xv_neg_x, xv_neg_y, xv_neg_z);
+    natt best{12};
+    for (natt i{}; i < 12; ++i) {
+      if ((Blocker >> (i % 6)) & 1) continue;
+      xvworld(off_list[i], rot_list[i], matrix_temp);
+      world.from([&](xmatrix& m) { xvdot<4>(matrix_temp, matrix, m); });
+      calc_margin(sb_facets, sb_vertices, world, margins), calc_maxmin(sb_vertices, margins, mm_test[i]);
+      if (checker(constant<I>, mm_test[best], mm_test[i])) best = i;
+      sb_margins.from(margins);
+    }
+    if (best == 12) return void(++AlignMode);
+    matrix_temp = matrix, xvworld(off_list[best], rot_list[best], matrix);
+    xvector temp = matrix[0];
+    xvdot<4>(temp, matrix_temp, matrix[0]);
+    temp = matrix[1], xvdot<4>(temp, matrix_temp, matrix[1]);
+    temp = matrix[2], xvdot<4>(temp, matrix_temp, matrix[2]);
+    temp = matrix[3], xvdot<4>(temp, matrix_temp, matrix[3]);
+    cb_world.from(matrix), mm = mm_test[best];
+  };
+
+  if (AlignMode < 0 || !(sb_facets && sb_vertices)) return;
+  else if (AlignMode == 0) {
+    cb_world.from(xvworld);
+    if (margins.count != sb_vertices.count) margins = unordered_buffer<margin>(sb_vertices.count);
+    calc_margin(sb_facets, sb_vertices, cb_world, margins), calc_maxmin(sb_vertices, margins, mm);
+    radian_delta = xvmul(xvadd(mm.maxs[25], mm.mins[25]), xv_constant<-0.5f>), xvworld(radian_delta, matrix); // 中心座標を原点に移す行列
+    radian_delta = xvmax(xvadd(radian_delta, mm.maxs[25]), xvsub(radian_delta, mm.mins[25]));                 // 原点から各軸方向の最大距離
+    radian_delta = xvmul(radian_delta, radian_delta);                                                         // 最大距離の二乗
+    radian_delta = xvsqrt(xvmul(xvpermute<1, 2, 0, -1>(radian_delta), xvpermute<2, 0, 1, -1>(radian_delta))); // 各断面での最大距離
+    radian_delta = xvdiv(xv_constant<1>, radian_delta);                                                       // およそ1mmあたりの回転角度
+    cb_world.from(matrix), ++AlignMode;
+    calc_margin(sb_facets, sb_vertices, cb_world, ub_margins), sb_margins.from(ub_margins);
+    calc_maxmin(sb_vertices, ub_margins, MaxMin);
+  }
 }
 
 void ywmain() {
@@ -676,6 +717,7 @@ void ywmain() {
   };
 
   while (main::update) {
+
     align();
   }
 
