@@ -711,11 +711,12 @@ template<natt N, natt Zero = 0> requires(0 < N && N <= 4 && Zero < 16) struct t_
     if constexpr (N != 4) Result = _mm_blend_ps(xv_zero, Result, (1 << N) - 1); }
 
   /// calculates the dot product of two matrices
-  template<tuple TpA, tuple TpB, tuple TpR> void operator()(TpA&& A, TpB&& B, TpR&& Result) const
-    noexcept(noexcept(vapply([&](xvector& a, xvector& r) { t_xvdot<N, Zero>{}(a, B, r); }, A, Result)))
-    requires requires { vapply([&](xvector& a, xvector& r) { t_xvdot<N, Zero>{}(a, B, r); }, A, Result); }
-  { vapply([&](xvector& a, xvector& r) { t_xvdot<N, Zero>{}(a, B, r); }, A, Result);}
-};
+  template<tuple TpA, tuple TpB, same_size_tuple<TpA> TpR> void operator()(TpA&& A, TpB&& B, TpR&& Result) const noexcept {
+    constexpr natt m = extent<TpA>;
+    if constexpr (1 <= m) (*this)(get<0>(A), B, get<0>(Result));
+    if constexpr (2 <= m) (*this)(get<1>(A), B, get<1>(Result));
+    if constexpr (3 <= m) (*this)(get<2>(A), B, get<2>(Result));
+    if constexpr (4 <= m) (*this)(get<3>(A), B, get<3>(Result)); }};
 
 template<natt N, natt Zero = 0> requires(0 < N && N <= 4 && Zero < 16) inline constexpr t_xvdot<N, Zero> xvdot;
 

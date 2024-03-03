@@ -465,11 +465,11 @@ void align() {
     else if constexpr (I == 1) // 基準面最大取代最小化 (x軸移動)
       return max(Now.maxs[0].w, Now.maxs[12].w) > max(New.maxs[0].w, New.maxs[12].w);
     else if constexpr (I == 2) // 側面最大取代最小化 (x軸回転)
-      return max(Now.maxs[6].w, Now.maxs[7], Now.maxs[8], Now.maxs[9], Now.maxs[10], Now.maxs[11]) >
-             max(New.maxs[6].w, New.maxs[7], New.maxs[8], New.maxs[9], New.maxs[10], New.maxs[11]);
+      return max(Now.maxs[6].w, Now.maxs[7].w, Now.maxs[8].w, Now.maxs[9].w, Now.maxs[10].w, Now.maxs[11].w) >
+             max(New.maxs[6].w, New.maxs[7].w, New.maxs[8].w, New.maxs[9].w, New.maxs[10].w, New.maxs[11].w);
     else if constexpr (I == 3) // 側面最小取代最大化 (x軸回転、z軸移動)
-      return min(Now.mins[6].w, Now.mins[7], Now.mins[8], Now.mins[9], Now.mins[10], Now.mins[11]) <
-             min(New.mins[6].w, New.mins[7], New.mins[8], New.mins[9], New.mins[10], New.mins[11]);
+      return min(Now.mins[6].w, Now.mins[7].w, Now.mins[8].w, Now.mins[9].w, Now.mins[10].w, Now.mins[11].w) <
+             min(New.mins[6].w, New.mins[7].w, New.mins[8].w, New.mins[9].w, New.mins[10].w, New.mins[11].w);
     else if constexpr (I == 4) // 前後最小取代最大化 (y軸移動)
       return min(Now.mins[3].w, Now.mins[4].w, Now.mins[5].w, Now.mins[8].w, Now.mins[11].w,
                  Now.mins[15].w, Now.mins[16].w, Now.mins[17].w, Now.mins[20].w, Now.mins[23].w) <
@@ -478,30 +478,31 @@ void align() {
     else if constexpr (I == 5) // 基準面+内股最小取代最大化 (yz軸回転、x軸移動)
       return min(Now.mins[0].w, Now.mins[2].w, Now.mins[12].w, Now.mins[14].w) <
              min(New.mins[0].w, New.mins[2].w, New.mins[12].w, New.mins[14].w);
-    else if constexpr (I == 6) // 面上最小取代最大化 (x軸回転、XYZ軸移動)
-      return apply(min, projector(Now.mins, &vector::w)) < apply(min, projector(New.mins, &vector::w));
+    else if constexpr (I == 6) 1;
+    // return apply(min, projector(Now.mins, &vector::w)) < apply(min, projector(New.mins, &vector::w));// 面上最小取代最大化 (x軸回転、XYZ軸移動)
   };
 
+  constexpr auto rot_list = list{xv_x, xv_y, xv_z, xv_zero, xv_zero, xv_zero, xv_neg_x, xv_neg_y, xv_neg_z, xv_zero, xv_zero, xv_zero};
+  constexpr auto off_list = list{xv_zero, xv_zero, xv_zero, xv_x, xv_y, xv_z, xv_zero, xv_zero, xv_zero, xv_neg_x, xv_neg_y, xv_neg_z};
+
   auto select_best = [&]<natt I>(constant<I>, fat4 Delta, nat4 Blocker) {
-    static constexpr auto rot_list = list<>::asref(xv_x, xv_y, xv_z, xv_zero, xv_zero, xv_zero, xv_neg_x, xv_neg_y, xv_neg_z, xv_zero, xv_zero, xv_zero);
-    static constexpr auto off_list = list<>::asref(xv_zero, xv_zero, xv_zero, xv_x, xv_y, xv_z, xv_zero, xv_zero, xv_zero, xv_neg_x, xv_neg_y, xv_neg_z);
     natt best{12};
     for (natt i{}; i < 12; ++i) {
       if ((Blocker >> (i % 6)) & 1) continue;
       xvworld(off_list[i], rot_list[i], matrix_temp);
       world.from([&](xmatrix& m) { xvdot<4>(matrix_temp, matrix, m); });
       calc_margin(sb_facets, sb_vertices, world, margins), calc_maxmin(sb_vertices, margins, mm_test[i]);
-      if (checker(constant<I>, mm_test[best], mm_test[i])) best = i;
+      if (checker(constant<I>{}, mm_test[best], mm_test[i])) best = i;
       sb_margins.from(margins);
     }
-    if (best == 12) return void(++AlignMode);
-    matrix_temp = matrix, xvworld(off_list[best], rot_list[best], matrix);
-    xvector temp = matrix[0];
-    xvdot<4>(temp, matrix_temp, matrix[0]);
-    temp = matrix[1], xvdot<4>(temp, matrix_temp, matrix[1]);
-    temp = matrix[2], xvdot<4>(temp, matrix_temp, matrix[2]);
-    temp = matrix[3], xvdot<4>(temp, matrix_temp, matrix[3]);
-    cb_world.from(matrix), mm = mm_test[best];
+    //   if (best == 12) return void(++AlignMode);
+    //   matrix_temp = matrix, xvworld(off_list[best], rot_list[best], matrix);
+    //   xvector temp = matrix[0];
+    //   xvdot<4>(temp, matrix_temp, matrix[0]);
+    //   temp = matrix[1], xvdot<4>(temp, matrix_temp, matrix[1]);
+    //   temp = matrix[2], xvdot<4>(temp, matrix_temp, matrix[2]);
+    //   temp = matrix[3], xvdot<4>(temp, matrix_temp, matrix[3]);
+    //   cb_world.from(matrix), mm = mm_test[best];
   };
 
   if (AlignMode < 0 || !(sb_facets && sb_vertices)) return;
