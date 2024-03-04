@@ -703,12 +703,13 @@ template<natt N, natt Zero = 0> requires(0 < N && N <= 4 && Zero < 16) struct t_
     if constexpr (2 <= N) Result = xvpermute<0, 5, 2, 3>(Result, t_xvdot<N>{}(A[1], B));
     if constexpr (3 <= N) Result = xvpermute<0, 1, 6, 3>(Result, t_xvdot<N>{}(A[2], B));
     if constexpr (4 == N) Result = xvpermute<0, 1, 2, 7>(Result, t_xvdot<N>{}(A[3], B)); }
-  template<natt M> requires(M <= 4) void operator()(const xvector& A, const xvector (&B)[M], xvector& Result) const noexcept {
-    if constexpr (1 <= M) Result = xvmul(xvpermute<0, 0, 0, 0>(A), B[0]);
-    if constexpr (2 <= M) Result = xvfma(xvpermute<1, 1, 1, 1>(A), B[1], Result);
-    if constexpr (3 <= M) Result = xvfma(xvpermute<2, 2, 2, 2>(A), B[2], Result);
-    if constexpr (4 == M) Result = xvfma(xvpermute<3, 3, 3, 3>(A), B[3], Result);
-    if constexpr (N != 4) Result = _mm_blend_ps(xv_zero, Result, (1 << N) - 1); }
+  template<tuple TpB> void operator()(const xvector& A, TpB&& B, xvector& Result) const noexcept {
+    constexpr natt m = extent<TpB>;
+    if constexpr (1 <= m) Result = xvmul(xvpermute<0, 0, 0, 0>(A), get<0>(B));
+    if constexpr (2 <= m) Result = xvfma(xvpermute<1, 1, 1, 1>(A), get<1>(B), Result);
+    if constexpr (3 <= m) Result = xvfma(xvpermute<2, 2, 2, 2>(A), get<2>(B), Result);
+    if constexpr (4 == m) Result = xvfma(xvpermute<3, 3, 3, 3>(A), get<3>(B), Result);
+    if constexpr (4 <= m) Result = _mm_blend_ps(xv_zero, Result, (1 << N) - 1); }
 
   /// calculates the dot product of two matrices
   template<tuple TpA, tuple TpB, same_size_tuple<TpA> TpR> void operator()(TpA&& A, TpB&& B, TpR&& Result) const noexcept {
@@ -916,6 +917,17 @@ inline constexpr overload xvcamera{
     Result[1] = xvset<1>(xv_zero, 2.0f * Factor / Height);
     Result[2] = xv_constant<0, 0, 1 / (f - n), -n / (f - n)>;
     if constexpr (N == 4) Result[3] = xv_w; }};
+
+
+/// converts a rotation matrix to euler angles
+inline constexpr auto xveuler = []<tuple Tp>(Tp&& Matrix) noexcept {
+  if (extent<Tp> >= 3) {
+    xvector v = xvneg(xvpermute<3, 0, 3, 3>(get<2>(Matrix)));
+    if (xveq(v, xv_y)) return xvasin(xvpermute<5, 1, -1, -1>(v, get<0>(Matrix)));
+    v = xvpermute<0, 1, 6, 3>(xvpermute<4, 1, -1, 3>(v, xvdiv(get<1>(Matrix), get<0>(Matrix))), xvdiv(xvpermute<-1, -1, 1, -1>(get<2>(Matrix)), get<2>(Matrix)));
+    return xvpermute<6, 1, 4, 3>(xvasin(v), xvatan(xvpermute<0, -1, 5, -1>(get<1>(Matrix), get<2>(Matrix)), xvblend<0, 0, 1, 1>(get<0>(Matrix), get<2>(Matrix))));
+  }
+};
 
 struct rect;
 

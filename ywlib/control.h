@@ -4,6 +4,10 @@
 
 #include "main.h"
 
+#include <CommCtrl.h>
+#pragma comment(lib, "Comctl32.lib")
+
+
 // clang-format off
 
 namespace yw {
@@ -21,6 +25,8 @@ class button;
 class checkbox;
 
 class radiobutton;
+
+class progressbar;
 
 template<typename Button, invocable<const Button&> Converter> class button_state;
 template<typename B, typename F> button_state(const B*, F&&) -> button_state<B, F>;
@@ -228,7 +234,7 @@ protected:
         return (t.tab ? t.tab(t) : focus_on_next(g, i, GetKeyState(VK_SHIFT) < 0)), 0; }
       case VK_ESCAPE: return SetFocus(main::hwnd), 0;
       case VK_BACK: case VK_DELETE: case VK_LEFT: case VK_RIGHT: return CallWindowProcW(defproc, hw, msg, wp, lp);
-      } return ('0' <= wp && wp <= '9') || wp == '-' || wp == '.' ? CallWindowProcW(defproc, hw, msg, wp, lp) : 0;
+      } return GetKeyState(VK_CONTROL) || ('0' <= wp && wp <= '9') || wp == '-' || wp == '.' ? CallWindowProcW(defproc, hw, msg, wp, lp) : 0;
     case WM_SETFOCUS:
       if (auto& t = get_control<valuebox>(hw); t.intofocus) t.intofocus(t);
       else SendMessageW(hw, EM_SETSEL, 0, -1);
@@ -477,4 +483,28 @@ public:
 
   /// sets the focus to this control
   virtual void setfocus() const override { SetFocus(buttons[state]); }
+};
+
+
+/// class for creating progressbar controls
+class yw::progressbar : public yw::control {
+public:
+  /// default constructor
+  progressbar() noexcept = default;
+
+  /// constructor for creating a progressbar which is not attached to any group
+  progressbar(const rect& Rect, nat4 Style = {})
+    : control(PROGRESS_CLASSW, L"", Style, Rect, false) {
+    SendMessageW(hwnd, PBM_SETRANGE, 0, MAKELPARAM(0, 32768)); }
+
+  /// constructor for creating a progressbar which is attached to the specified group
+  progressbar(natt GroupNo, const rect& Rect, nat4 Style = {})
+    : control(PROGRESS_CLASSW, L"", Style, Rect, GroupNo, false) {
+    SendMessageW(hwnd, PBM_SETRANGE, 0, MAKELPARAM(0, 32768)); }
+
+  /// sets the position of this progressbar
+  void progress(value Ratio) const { SendMessageW(hwnd, PBM_SETPOS, nat4(Ratio * 32768), 0); }
+
+  /// gets the position of this progressbar
+  value progress() const { return SendMessageW(hwnd, PBM_GETPOS, 0, 0) * constant<value{1.0 / 32768}>::value; }
 };

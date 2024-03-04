@@ -42,6 +42,7 @@ label ui_label_cad{};
 radiobutton ui_radiobutton_hide{};
 checkbox ui_checkbox_reverse{};
 checkbox ui_checkbox_alpha{};
+progressbar ui_progressbar_align{};
 button ui_button_align{};
 label ui_label_align{}; // 計算時間
 label ui_label_rotation{};
@@ -60,7 +61,8 @@ label ui_label_max_over{};
 label ui_label_timer{};
 label ui_label_margins[4];
 button ui_button_result{};
-textbox ui_textbox_result[7]; // Group 2
+
+textbox ui_textbox_result[8]; // Group 2
 
 structured_buffer<facet> sb_facets{};
 unordered_buffer<facet> ub_facets{};
@@ -73,6 +75,7 @@ constant_buffer<list<xmatrix, xmatrix>> cb_camera{};
 constant_buffer<list<nat4, fat4, nat8>> cb_options{};
 
 ff::stl stl_facets{};
+fat4 facets_y_center{};
 
 camera Camera{};
 maxmin MaxMin{};
@@ -115,11 +118,14 @@ StructuredBuffer<SB0> sb0 : register(t0);
   static auto gp = gpgpu<typepack<facet>, typepack<list<nat4, array<fat4, 9>>>>(hlsl);
   unordered_buffer<facet> ub(Stl.size());
   array<list<nat4, array<fat4, 9>>> t(Stl.size());
+  fat4 ymax, ymin;
   for (natt i{}; i < t.size(); ++i)
-    t[i].first = a[Reverse][Stl[i].attribute],
-    memcpy(t[i].second.data(), Stl[i].vertex, 36);
+    ymax = max(ymax, Stl[i].vertex[0][1], Stl[i].vertex[1][1], Stl[i].vertex[2][2]),
+    ymin = min(ymin, Stl[i].vertex[0][1], Stl[i].vertex[1][1], Stl[i].vertex[2][2]),
+    t[i].first = a[Reverse][Stl[i].attribute], memcpy(t[i].second.data(), Stl[i].vertex, 36);
   structured_buffer sb(t);
   gp(t.size(), {ub}, {sb}, {});
+  facets_y_center = (ymax + ymin) / 2;
   return ub;
   ywlib_try_end;
   return {};
@@ -447,79 +453,300 @@ void render_all() {
   ywlib_try_end;
 }
 
-void align() {
-  static auto world = constant_buffer<xmatrix>{};
-  static auto margins = unordered_buffer<margin>{};
-  static maxmin mm_test[13];
-  static maxmin& mm = mm_test[12];
-  static xmatrix matrix, matrix_temp;
-  static xvector radian_delta;
+template<natt I> bool checker(const maxmin& Now, const maxmin& New) {
+  if constexpr (I == 0) // ジャーナル穴最小取代最大化 (yz軸移動)
+    return min(Now.mins[3].w + Now.mins[15].w) < min(New.mins[3].w + New.mins[15].w);
+  else if constexpr (I == 1) // 基準面厚み最小化 (yz軸回転)
+    return (Now.maxs[25].x - Now.mins[25].x) > (New.maxs[25].x - New.mins[25].x);
+  else if constexpr (I == 2) // 基準面最大取代最小化 (x軸移動)
+    return max(Now.maxs[0].w, Now.maxs[12].w) > max(New.maxs[0].w, New.maxs[12].w);
+  else if constexpr (I == 3) // 側面最大取代最小化 (x軸回転)
+    return max(Now.maxs[6].w, Now.maxs[7].w, Now.maxs[8].w, Now.maxs[9].w, Now.maxs[10].w, Now.maxs[11].w) >
+           max(New.maxs[6].w, New.maxs[7].w, New.maxs[8].w, New.maxs[9].w, New.maxs[10].w, New.maxs[11].w);
+  else if constexpr (I == 4) // 基準面+内股最小取代最大化 (yz軸回転、x軸移動)
+    return min(Now.mins[0].w, Now.mins[2].w, Now.mins[12].w, Now.mins[14].w) <
+           min(New.mins[0].w, New.mins[2].w, New.mins[12].w, New.mins[14].w);
+  else if constexpr (I == 5) // 面上最小取代最大化 (x軸回転、XYZ軸移動)
+    return apply(min, projector(Now.mins, &vector::w, make_sequence<25>{})) < apply(min, projector(New.mins, &vector::w, make_sequence<25>{}));
+}
 
-  // static_assert(invocable<decltype(&vector::w), decltype(mm.mins)>);
-  // static_assert(vapplyable<decltype(&vector::w), decltype(mm.mins)>);
-
-
-  auto checker = []<natt I>(constant<I>, const maxmin& Now, const maxmin& New) -> bool {
-    if constexpr (I == 0) // 基準面厚み最小化 (yz軸回転)
-      return (Now.maxs[25].x - Now.mins[25].x) > (New.maxs[25].x - New.mins[25].x);
-    else if constexpr (I == 1) // 基準面最大取代最小化 (x軸移動)
-      return max(Now.maxs[0].w, Now.maxs[12].w) > max(New.maxs[0].w, New.maxs[12].w);
-    else if constexpr (I == 2) // 側面最大取代最小化 (x軸回転)
-      return max(Now.maxs[6].w, Now.maxs[7].w, Now.maxs[8].w, Now.maxs[9].w, Now.maxs[10].w, Now.maxs[11].w) >
-             max(New.maxs[6].w, New.maxs[7].w, New.maxs[8].w, New.maxs[9].w, New.maxs[10].w, New.maxs[11].w);
-    else if constexpr (I == 3) // 側面最小取代最大化 (x軸回転、z軸移動)
-      return min(Now.mins[6].w, Now.mins[7].w, Now.mins[8].w, Now.mins[9].w, Now.mins[10].w, Now.mins[11].w) <
-             min(New.mins[6].w, New.mins[7].w, New.mins[8].w, New.mins[9].w, New.mins[10].w, New.mins[11].w);
-    else if constexpr (I == 4) // 前後最小取代最大化 (y軸移動)
-      return min(Now.mins[3].w, Now.mins[4].w, Now.mins[5].w, Now.mins[8].w, Now.mins[11].w,
-                 Now.mins[15].w, Now.mins[16].w, Now.mins[17].w, Now.mins[20].w, Now.mins[23].w) <
-             min(New.mins[3].w, New.mins[4].w, New.mins[5].w, New.mins[8].w, New.mins[11].w,
-                 New.mins[15].w, New.mins[16].w, New.mins[17].w, New.mins[20].w, New.mins[23].w);
-    else if constexpr (I == 5) // 基準面+内股最小取代最大化 (yz軸回転、x軸移動)
-      return min(Now.mins[0].w, Now.mins[2].w, Now.mins[12].w, Now.mins[14].w) <
-             min(New.mins[0].w, New.mins[2].w, New.mins[12].w, New.mins[14].w);
-    else if constexpr (I == 6) 1;
-    // return apply(min, projector(Now.mins, &vector::w)) < apply(min, projector(New.mins, &vector::w));// 面上最小取代最大化 (x軸回転、XYZ軸移動)
-  };
-
-  constexpr auto rot_list = list{xv_x, xv_y, xv_z, xv_zero, xv_zero, xv_zero, xv_neg_x, xv_neg_y, xv_neg_z, xv_zero, xv_zero, xv_zero};
-  constexpr auto off_list = list{xv_zero, xv_zero, xv_zero, xv_x, xv_y, xv_z, xv_zero, xv_zero, xv_zero, xv_neg_x, xv_neg_y, xv_neg_z};
-
-  auto select_best = [&]<natt I>(constant<I>, fat4 Delta, nat4 Blocker) {
-    natt best{12};
-    for (natt i{}; i < 12; ++i) {
-      if ((Blocker >> (i % 6)) & 1) continue;
-      xvworld(off_list[i], rot_list[i], matrix_temp);
-      world.from([&](xmatrix& m) { xvdot<4>(matrix_temp, matrix, m); });
-      calc_margin(sb_facets, sb_vertices, world, margins), calc_maxmin(sb_vertices, margins, mm_test[i]);
-      if (checker(constant<I>{}, mm_test[best], mm_test[i])) best = i;
-      sb_margins.from(margins);
+template<natt I> bool select_best(
+  unordered_buffer<margin>& Margins, array<maxmin, 13>& Mm,
+  xmatrix& Matrix, const xvector& Theta, fat4 Delta, nat4 Blocker) {
+  natt best{12};
+  auto off = xv(Delta), rot = xvmul(Theta, off);
+  xmatrix mtemp, original = Matrix;
+  // std::cout << std::format("{}\n", original);
+  if (!(Blocker & 1)) {
+    auto d = xvsetzero<0, 1, 1, 1>(off);
+    xvworld(d, xv_zero, mtemp);
+    cb_world.from([&](xmatrix& m) { xvdot<4>(mtemp, original, m); });
+    calc_margin(sb_facets, sb_vertices, cb_world, Margins);
+    calc_maxmin(sb_vertices, Margins, Mm[0]);
+    if (checker<I>(Mm[best], Mm[0])) best = 0, sb_margins.from(Margins), Matrix = mtemp;
+    else {
+      d = xvneg(d);
+      xvworld(d, xv_zero, mtemp);
+      cb_world.from([&](xmatrix& m) { xvdot<4>(mtemp, original, m); });
+      calc_margin(sb_facets, sb_vertices, cb_world, Margins);
+      calc_maxmin(sb_vertices, Margins, Mm[6]);
+      if (checker<I>(Mm[best], Mm[6])) best = 6, sb_margins.from(Margins), Matrix = mtemp;
     }
-    //   if (best == 12) return void(++AlignMode);
-    //   matrix_temp = matrix, xvworld(off_list[best], rot_list[best], matrix);
-    //   xvector temp = matrix[0];
-    //   xvdot<4>(temp, matrix_temp, matrix[0]);
-    //   temp = matrix[1], xvdot<4>(temp, matrix_temp, matrix[1]);
-    //   temp = matrix[2], xvdot<4>(temp, matrix_temp, matrix[2]);
-    //   temp = matrix[3], xvdot<4>(temp, matrix_temp, matrix[3]);
-    //   cb_world.from(matrix), mm = mm_test[best];
-  };
+  }
+  if (!(Blocker & 2)) {
+    auto d = xvsetzero<1, 0, 1, 1>(off);
+    xvworld(d, xv_zero, mtemp);
+    cb_world.from([&](xmatrix& m) { xvdot<4>(mtemp, original, m); });
+    calc_margin(sb_facets, sb_vertices, cb_world, Margins);
+    calc_maxmin(sb_vertices, Margins, Mm[1]);
+    if (checker<I>(Mm[best], Mm[1])) best = 1, sb_margins.from(Margins), Matrix = mtemp;
+    else {
+      d = xvneg(d);
+      xvworld(d, xv_zero, mtemp);
+      cb_world.from([&](xmatrix& m) { xvdot<4>(mtemp, original, m); });
+      calc_margin(sb_facets, sb_vertices, cb_world, Margins);
+      calc_maxmin(sb_vertices, Margins, Mm[7]);
+      if (checker<I>(Mm[best], Mm[7])) best = 7, sb_margins.from(Margins), Matrix = mtemp;
+    }
+  }
+  if (!(Blocker & 4)) {
+    auto d = xvsetzero<1, 1, 0, 1>(off);
+    xvworld(d, xv_zero, mtemp);
+    cb_world.from([&](xmatrix& m) { xvdot<4>(mtemp, original, m); });
+    calc_margin(sb_facets, sb_vertices, cb_world, Margins);
+    calc_maxmin(sb_vertices, Margins, Mm[2]);
+    if (checker<I>(Mm[best], Mm[2])) best = 2, sb_margins.from(Margins), Matrix = mtemp;
+    else {
+      d = xvneg(d);
+      xvworld(d, xv_zero, mtemp);
+      cb_world.from([&](xmatrix& m) { xvdot<4>(mtemp, original, m); });
+      calc_margin(sb_facets, sb_vertices, cb_world, Margins);
+      calc_maxmin(sb_vertices, Margins, Mm[8]);
+      if (checker<I>(Mm[best], Mm[8])) best = 8, sb_margins.from(Margins), Matrix = mtemp;
+    }
+  }
+  if (!(Blocker & 8)) {
+    auto d = xvsetzero<0, 1, 1, 1>(rot);
+    xvworld(xv_zero, d, mtemp);
+    cb_world.from([&](xmatrix& m) { xvdot<4>(mtemp, original, m); });
+    calc_margin(sb_facets, sb_vertices, cb_world, Margins);
+    calc_maxmin(sb_vertices, Margins, Mm[3]);
+    if (checker<I>(Mm[best], Mm[3])) best = 3, sb_margins.from(Margins), Matrix = mtemp;
+    else {
+      d = xvneg(d);
+      xvworld(xv_zero, d, mtemp);
+      cb_world.from([&](xmatrix& m) { xvdot<4>(mtemp, original, m); });
+      calc_margin(sb_facets, sb_vertices, cb_world, Margins);
+      calc_maxmin(sb_vertices, Margins, Mm[9]);
+      if (checker<I>(Mm[best], Mm[9])) best = 9, sb_margins.from(Margins), Matrix = mtemp;
+    }
+  }
+  if (!(Blocker & 16)) {
+    auto d = xvsetzero<1, 0, 1, 1>(rot);
+    xvworld(xv_zero, d, mtemp);
+    cb_world.from([&](xmatrix& m) { xvdot<4>(mtemp, original, m); });
+    calc_margin(sb_facets, sb_vertices, cb_world, Margins);
+    calc_maxmin(sb_vertices, Margins, Mm[4]);
+    if (checker<I>(Mm[best], Mm[4])) best = 4, sb_margins.from(Margins), Matrix = mtemp;
+    else {
+      d = xvneg(d);
+      xvworld(xv_zero, d, mtemp);
+      cb_world.from([&](xmatrix& m) { xvdot<4>(mtemp, original, m); });
+      calc_margin(sb_facets, sb_vertices, cb_world, Margins);
+      calc_maxmin(sb_vertices, Margins, Mm[10]);
+      if (checker<I>(Mm[best], Mm[10])) best = 10, sb_margins.from(Margins), Matrix = mtemp;
+    }
+  }
+  if (!(Blocker & 32)) {
+    auto d = xvsetzero<1, 1, 0, 1>(rot);
+    xvworld(xv_zero, d, mtemp);
+    cb_world.from([&](xmatrix& m) { xvdot<4>(mtemp, original, m); });
+    calc_margin(sb_facets, sb_vertices, cb_world, Margins);
+    calc_maxmin(sb_vertices, Margins, Mm[5]);
+    if (checker<I>(Mm[best], Mm[5])) best = 5, sb_margins.from(Margins), Matrix = mtemp;
+    else {
+      d = xvneg(d);
+      xvworld(xv_zero, d, mtemp);
+      cb_world.from([&](xmatrix& m) { xvdot<4>(mtemp, original, m); });
+      calc_margin(sb_facets, sb_vertices, cb_world, Margins);
+      calc_maxmin(sb_vertices, Margins, Mm[11]);
+      if (checker<I>(Mm[best], Mm[11])) best = 11, sb_margins.from(Margins), Matrix = mtemp;
+    }
+  }
+  if (best == 12) return cb_world.from(Matrix = original), true;
+  else return xvdot<4>(Matrix, original, mtemp), cb_world.from(Matrix = mtemp), Mm[12] = Mm[best], false;
+}
+
+void align() {
+  static auto margins = unordered_buffer<margin>{};
+  static array<maxmin, 13> mm;
+  static xmatrix matrix;
+  static xvector theta;
+  static fat8 time;
 
   if (AlignMode < 0 || !(sb_facets && sb_vertices)) return;
-  else if (AlignMode == 0) {
+
+  stopwatch sw;
+
+  if (AlignMode == 0) {
+    time = 0;
     cb_world.from(xvworld);
     if (margins.count != sb_vertices.count) margins = unordered_buffer<margin>(sb_vertices.count);
-    calc_margin(sb_facets, sb_vertices, cb_world, margins), calc_maxmin(sb_vertices, margins, mm);
-    radian_delta = xvmul(xvadd(mm.maxs[25], mm.mins[25]), xv_constant<-0.5f>), xvworld(radian_delta, matrix); // 中心座標を原点に移す行列
-    radian_delta = xvmax(xvadd(radian_delta, mm.maxs[25]), xvsub(radian_delta, mm.mins[25]));                 // 原点から各軸方向の最大距離
-    radian_delta = xvmul(radian_delta, radian_delta);                                                         // 最大距離の二乗
-    radian_delta = xvsqrt(xvmul(xvpermute<1, 2, 0, -1>(radian_delta), xvpermute<2, 0, 1, -1>(radian_delta))); // 各断面での最大距離
-    radian_delta = xvdiv(xv_constant<1>, radian_delta);                                                       // およそ1mmあたりの回転角度
+    calc_margin(sb_facets, sb_vertices, cb_world, margins), calc_maxmin(sb_vertices, margins, mm[12]);
+    theta = xvadd(xvmul(xvadd(mm[12].maxs[25], mm[12].mins[25]), xv_constant<-0.5f>), xvset<1>(xv_zero, facets_y_center));
+    xvworld(theta, matrix);                                                              // 中心座標を原点に移す行列
+    theta = xvmax(xvadd(theta, mm[12].maxs[25]), xvsub(theta, mm[12].mins[25]));         // 原点から各軸方向の最大距離
+    theta = xvmul(theta, theta);                                                         // 最大距離の二乗
+    theta = xvsqrt(xvadd(xvpermute<1, 2, 0, -1>(theta), xvpermute<2, 0, 1, -1>(theta))); // 各断面での最大距離
+    theta = xvdiv(xv_constant<1>, theta);                                                // およそ1mmあたりの回転角度
     cb_world.from(matrix), ++AlignMode;
     calc_margin(sb_facets, sb_vertices, cb_world, ub_margins), sb_margins.from(ub_margins);
-    calc_maxmin(sb_vertices, ub_margins, MaxMin);
+    calc_maxmin(sb_vertices, ub_margins, mm[12]);
+  }
+
+  else if (AlignMode == 1) {
+    if (select_best<0>(margins, mm, matrix, theta, 25.f, 0b111001)) ++AlignMode;
+  } else if (AlignMode == 2) {
+    if (select_best<0>(margins, mm, matrix, theta, 5.f, 0b111001)) ++AlignMode;
+  } else if (AlignMode == 3) {
+    if (select_best<0>(margins, mm, matrix, theta, 1.f, 0b111001)) ++AlignMode;
+  }
+
+  else if (AlignMode == 4) {
+    if (select_best<1>(margins, mm, matrix, theta, 25.f, 0b001111)) ++AlignMode;
+  } else if (AlignMode == 5) {
+    if (select_best<1>(margins, mm, matrix, theta, 5.f, 0b001111)) ++AlignMode;
+  } else if (AlignMode == 6) {
+    if (select_best<1>(margins, mm, matrix, theta, 1.f, 0b001111)) ++AlignMode;
+  }
+
+  else if (AlignMode == 7) {
+    if (select_best<2>(margins, mm, matrix, theta, 25.f, 0b111110)) ++AlignMode;
+  } else if (AlignMode == 8) {
+    if (select_best<2>(margins, mm, matrix, theta, 5.f, 0b111110)) ++AlignMode;
+  } else if (AlignMode == 9) {
+    if (select_best<2>(margins, mm, matrix, theta, 1.f, 0b111110)) ++AlignMode;
+  }
+
+  else if (AlignMode == 10) {
+    if (select_best<3>(margins, mm, matrix, theta, 25.f, 0b110111)) ++AlignMode;
+  } else if (AlignMode == 11) {
+    if (select_best<3>(margins, mm, matrix, theta, 5.f, 0b110111)) ++AlignMode;
+  } else if (AlignMode == 12) {
+    if (select_best<3>(margins, mm, matrix, theta, 1.f, 0b110111)) ++AlignMode;
+  }
+
+  else if (AlignMode == 13) {
+    if (select_best<4>(margins, mm, matrix, theta, 25.f, 0b001110)) ++AlignMode;
+  } else if (AlignMode == 14) {
+    if (select_best<4>(margins, mm, matrix, theta, 5.f, 0b001110)) ++AlignMode;
+  } else if (AlignMode == 15) {
+    if (select_best<4>(margins, mm, matrix, theta, 1.f, 0b001110)) ++AlignMode;
+  } else if (AlignMode == 16) {
+    if (select_best<4>(margins, mm, matrix, theta, .2f, 0b001110)) ++AlignMode;
+  }
+
+  else if (AlignMode == 17) {
+    if (select_best<5>(margins, mm, matrix, theta, 5.f, 0)) ++AlignMode;
+  } else if (AlignMode == 18) {
+    if (select_best<5>(margins, mm, matrix, theta, 1.f, 0)) ++AlignMode;
+  } else if (AlignMode == 19) {
+    if (select_best<5>(margins, mm, matrix, theta, .2f, 0)) ++AlignMode;
+  }
+
+  else {
+    AlignMode = -1;
+    vector euler = xvneg(xvdegree(xveuler(matrix)));
+    ui_valuebox_rot[0].text(std::format(L"{:.4f}  ", euler.x));
+    ui_valuebox_rot[1].text(std::format(L"{:.4f}  ", euler.y));
+    ui_valuebox_rot[2].text(std::format(L"{:.4f}  ", euler.z));
+    ui_valuebox_off[0].text(std::format(L"{:.3f}  ", xvget<3>(matrix[0])));
+    ui_valuebox_off[1].text(std::format(L"{:.3f}  ", xvget<3>(matrix[1])));
+    ui_valuebox_off[2].text(std::format(L"{:.3f}  ", xvget<3>(matrix[2])));
+  }
+
+  time += sw.read();
+  ui_progressbar_align.progress(AlignMode / 20.0);
+  ui_label_margins[0].text(std::format(L"{:.3f}  ", mm[12].minimum.w));
+  ui_label_margins[1].text(std::format(L"{:.3f}  ", apply(min, projector(mm[12].mins, &vector::w, make_sequence<25>{}))));
+  ui_label_margins[2].text(std::format(L"{:.3f}  ", apply(max, projector(mm[12].maxs, &vector::w, make_sequence<25>{}))));
+  ui_label_margins[3].text(std::format(L"{:.1f}", time));
+  render_all();
+}
+
+
+void show_result() {
+
+  main::resize(1400, 980);
+
+  constexpr rect rect_textbox_result[8] = {
+    {10, 890, 110, 940},
+    {110, 890, 260, 940},
+    {260, 890, 410, 940},
+    {410, 890, 560, 940},
+    {560, 890, 760, 940},
+    {760, 890, 960, 940},
+    {960, 890, 1190, 940},
+    {1190, 890, 1390, 940}};
+  ui_textbox_result[0] = textbox(1, rect_textbox_result[0], L"", WS_BORDER | ES_CENTER);
+  ui_textbox_result[1] = textbox(1, rect_textbox_result[1], L"", WS_BORDER | ES_CENTER);
+  ui_textbox_result[2] = textbox(1, rect_textbox_result[2], L"", WS_BORDER | ES_CENTER);
+  ui_textbox_result[3] = textbox(1, rect_textbox_result[3], L"", WS_BORDER | ES_CENTER);
+  ui_textbox_result[4] = textbox(1, rect_textbox_result[4], L"", WS_BORDER | ES_CENTER);
+  ui_textbox_result[5] = textbox(1, rect_textbox_result[5], L"", WS_BORDER | ES_CENTER);
+  ui_textbox_result[6] = textbox(1, rect_textbox_result[6], L"", WS_BORDER | ES_CENTER);
+  ui_textbox_result[7] = textbox(1, rect_textbox_result[7], L"", WS_BORDER | ES_CENTER);
+
+  main::begin_draw(color::white);
+
+  draw_text({10, 50, 800, 90}, font<30, L"Yu Gothic UI", -1, true, true>{}, L"芯出成績表 ／ 株式会社 神戸製鋼所 高砂鋳鍛鋼工場");
+
+  constexpr vector ui_label_result_title[8] = {
+    {10, 860, 110, 890},
+    {110, 860, 260, 890},
+    {260, 860, 410, 890},
+    {410, 860, 560, 890},
+    {560, 860, 760, 890},
+    {760, 860, 960, 890},
+    {960, 860, 1190, 890},
+    {1190, 860, 1390, 890}};
+  constexpr auto vector_frame_lower = array{
+    rect_textbox_result[0].to_vector(), rect_textbox_result[1].to_vector(), rect_textbox_result[2].to_vector(), rect_textbox_result[3].to_vector(),
+    rect_textbox_result[4].to_vector(), rect_textbox_result[5].to_vector(), rect_textbox_result[6].to_vector(), rect_textbox_result[7].to_vector()};
+  constexpr fat4 frame_width = 1.f;
+
+  draw_text(ui_label_result_title[0], font<18>{}, L"判定");
+  draw_text(ui_label_result_title[1], font<18>{}, L"工程");
+  draw_text(ui_label_result_title[2], font<18>{}, L"型入鍛造");
+  draw_text(ui_label_result_title[3], font<18>{}, L"芯出");
+  draw_text(ui_label_result_title[4], font<18>{}, L"O. No.");
+  draw_text(ui_label_result_title[5], font<18>{}, L"Ch. No.");
+  draw_text(ui_label_result_title[6], font<18>{}, L"品名/型式");
+  draw_text(ui_label_result_title[7], font<18>{}, L"所内図面");
+  draw_rectangle(ui_label_result_title[0], brush<color::black>{}, frame_width);
+  draw_rectangle(ui_label_result_title[1], brush<color::black>{}, frame_width);
+  draw_rectangle(ui_label_result_title[2], brush<color::black>{}, frame_width);
+  draw_rectangle(ui_label_result_title[3], brush<color::black>{}, frame_width);
+  draw_rectangle(ui_label_result_title[4], brush<color::black>{}, frame_width);
+  draw_rectangle(ui_label_result_title[5], brush<color::black>{}, frame_width);
+  draw_rectangle(ui_label_result_title[6], brush<color::black>{}, frame_width);
+  draw_rectangle(ui_label_result_title[7], brush<color::black>{}, frame_width);
+  draw_rectangle(get<0>(vector_frame_lower), brush<color::black>{}, frame_width);
+  draw_rectangle(get<1>(vector_frame_lower), brush<color::black>{}, frame_width);
+  draw_rectangle(get<2>(vector_frame_lower), brush<color::black>{}, frame_width);
+  draw_rectangle(get<3>(vector_frame_lower), brush<color::black>{}, frame_width);
+  draw_rectangle(get<4>(vector_frame_lower), brush<color::black>{}, frame_width);
+  draw_rectangle(get<5>(vector_frame_lower), brush<color::black>{}, frame_width);
+  draw_rectangle(get<6>(vector_frame_lower), brush<color::black>{}, frame_width);
+  draw_rectangle(get<7>(vector_frame_lower), brush<color::black>{}, frame_width);
+
+
+  main::end_draw();
+  control::show(1);
+  while (main::update) {
   }
 }
+
 
 void ywmain() {
   main::rename(app_name);
@@ -592,7 +819,7 @@ void ywmain() {
   ui_radiobutton_hide = radiobutton(0, {305, 5, 405, 75}, L"", list{L"全表示", L"＋Ｘ側を非表示", L"－Ｘ側を非表示"});
   ui_radiobutton_hide.input = [](const radiobutton& This) {
     ywlib_try_begin;
-    cb_options.from(list<>::asref(This.state, ui_checkbox_alpha.state, 0));
+    cb_options.from(list<>::asref(This.state, ui_checkbox_alpha.state ? 0.7f : 1.0f, 0));
     render_all();
     ywlib_try_end;
   };
@@ -619,6 +846,8 @@ void ywmain() {
     ywlib_try_end;
   };
 
+  ui_progressbar_align = progressbar(0, {820, 5, 945, 15});
+
   ui_button_align = button(0, {820, 20, 945, 75}, L"自動芯合わせ", WS_BORDER);
   ui_button_align.input = [](const button& This) { AlignMode = 0; };
 
@@ -627,9 +856,9 @@ void ywmain() {
   ui_label_rot_y = label(0, {810, 135, 850, 155}, L"Y", SS_CENTER | SS_CENTERIMAGE);
   ui_label_rot_z = label(0, {810, 160, 850, 180}, L"Z", SS_CENTER | SS_CENTERIMAGE);
 
-  ui_valuebox_rot[0] = valuebox(0, {855, 110, 955, 130}, L"0");
-  ui_valuebox_rot[1] = valuebox(0, {855, 135, 955, 155}, L"0");
-  ui_valuebox_rot[2] = valuebox(0, {855, 160, 955, 180}, L"0");
+  ui_valuebox_rot[0] = valuebox(0, {855, 110, 955, 130}, L"0", SS_RIGHT);
+  ui_valuebox_rot[1] = valuebox(0, {855, 135, 955, 155}, L"0", SS_RIGHT);
+  ui_valuebox_rot[2] = valuebox(0, {855, 160, 955, 180}, L"0", SS_RIGHT);
 
   ui_valuebox_rot[0].input = [](const valuebox& This) {
     update_world();
@@ -655,9 +884,9 @@ void ywmain() {
   ui_label_off_y = label(0, {810, 240, 850, 260}, L"Y", SS_CENTER | SS_CENTERIMAGE);
   ui_label_off_z = label(0, {810, 265, 850, 285}, L"Z", SS_CENTER | SS_CENTERIMAGE);
 
-  ui_valuebox_off[0] = valuebox(0, {855, 215, 955, 235}, L"0");
-  ui_valuebox_off[1] = valuebox(0, {855, 240, 955, 260}, L"0");
-  ui_valuebox_off[2] = valuebox(0, {855, 265, 955, 285}, L"0");
+  ui_valuebox_off[0] = valuebox(0, {855, 215, 955, 235}, L"0", SS_RIGHT);
+  ui_valuebox_off[1] = valuebox(0, {855, 240, 955, 260}, L"0", SS_RIGHT);
+  ui_valuebox_off[2] = valuebox(0, {855, 265, 955, 285}, L"0", SS_RIGHT);
 
   ui_valuebox_off[0].input = ui_valuebox_rot[0].input;
   ui_valuebox_off[1].input = ui_valuebox_rot[0].input;
@@ -674,10 +903,17 @@ void ywmain() {
   ui_label_max_over = label(0, {810, 345, 890, 365}, L"面上最大取代", SS_CENTER | SS_CENTERIMAGE);
   ui_label_timer = label(0, {810, 370, 890, 390}, L"計算時間", SS_CENTER | SS_CENTERIMAGE);
 
-  ui_label_margins[0] = label(0, {895, 295, 955, 315}, L"");
-  ui_label_margins[1] = label(0, {895, 320, 955, 340}, L"");
-  ui_label_margins[2] = label(0, {895, 345, 955, 365}, L"");
-  ui_label_margins[3] = label(0, {895, 370, 955, 390}, L"");
+  ui_label_margins[0] = label(0, {895, 295, 955, 315}, L"", SS_RIGHT);
+  ui_label_margins[1] = label(0, {895, 320, 955, 340}, L"", SS_RIGHT);
+  ui_label_margins[2] = label(0, {895, 345, 955, 365}, L"", SS_RIGHT);
+  ui_label_margins[3] = label(0, {895, 370, 955, 390}, L"", SS_CENTER);
+
+  ui_button_result = button(0, {820, 495, 945, 535}, L"成績表モード");
+  ui_button_result.input = [](const button&) {
+    if (!(sb_facets && sb_vertices)) return;
+    ResultMode = true;
+    control::hide(0);
+  };
 
   control::show(0);
   render_all();
@@ -718,8 +954,8 @@ void ywmain() {
   };
 
   while (main::update) {
-
     align();
+    if (ResultMode) show_result();
   }
 
   main::terminate();
