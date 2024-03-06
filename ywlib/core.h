@@ -1617,6 +1617,11 @@ public:
 /// checks if the current code is being evaluated at compile time
 inline constexpr caster is_cev{[]() noexcept { return std::is_constant_evaluated(); }};
 
+
+/// for each function for tuples
+constexpr auto cfor = []<typename Fn, natt... Is, typename... Ts>(Fn&& Func, sequence<Is...>, Ts&&... Args)
+  requires (invocable<Fn&, constant<Is>, Ts...> && ...) { ((invoke(Func, constant<Is>{}, fwd<Ts>(Args)...)), ...); };
+
 } // clang-format on
 
 namespace std { // clang-format off

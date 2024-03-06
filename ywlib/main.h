@@ -792,6 +792,24 @@ public:
   void draw(const vector& Rect, const fat4 Opacity = 1.0f) const {
     main::d2d_context->DrawBitmap(d2d_bitmap, reinterpret_cast<const D2D1_RECT_F&>(Rect), Opacity);
   }
+
+  /// returns a new bitmap that is rotated by `Angle`
+  bitmap rotate(fat4 Angle) const {
+    auto m = D2D1::Matrix3x2F::Rotation(Angle);
+    auto p = array{D2D1_POINT_2F{0, 0}, D2D1::Point2F(fat4(width), 0) * m,
+                   D2D1::Point2F(0, fat4(height)) * m, D2D1::Point2F(fat4(width), fat4(height)) * m};
+    auto w = array{floor(apply(min, projector(p, &D2D1_POINT_2F::x))), ceil(apply(max, projector(p, &D2D1_POINT_2F::x)))};
+    auto h = array{floor(apply(min, projector(p, &D2D1_POINT_2F::y))), ceil(apply(max, projector(p, &D2D1_POINT_2F::y)))};
+    bitmap b(natt(w[1] - w[0]), natt(h[1] - h[0]));
+    main::d2d_context->SetTarget(b);
+    main::d2d_context->BeginDraw();
+    main::d2d_context->SetTransform(m * D2D1::Matrix3x2F::Translation(-w[0], -h[0]));
+    main::d2d_context->Clear(bitcast<D2D1_COLOR_F>(color::transparent));
+    main::d2d_context->DrawBitmap(d2d_bitmap);
+    main::d2d_context->SetTransform(D2D1::Matrix3x2F::Identity());
+    main::d2d_context->EndDraw();
+    return b;
+  }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1113,8 +1131,9 @@ template<typename T> concept bitmap_like = convertible_to<T, ID2D1Bitmap*>;
 template<typename T> concept font_like = convertible_to<T, IDWriteTextFormat*>;
 
 /// draws a bitmap
-inline constexpr auto draw_bitmap = [](const vector& Rect, bitmap_like auto&& Bitmap, fat4 Opacity = 1.0f) {
-  main::d2d_context->DrawBitmap(Bitmap, reinterpret_cast<const D2D1_RECT_F&>(Rect), Opacity); };
+inline constexpr auto draw_bitmap =
+  [](const vector& Rect, bitmap_like auto&& Bitmap, fat4 Opacity = 1.0f) {
+    main::d2d_context->DrawBitmap(Bitmap, reinterpret_cast<const D2D1_RECT_F&>(Rect), Opacity); };
 
 /// draws a line
 inline constexpr overload draw_line{

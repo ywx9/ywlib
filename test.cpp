@@ -63,6 +63,8 @@ label ui_label_margins[4];
 button ui_button_result{};
 
 textbox ui_textbox_result[8]; // Group 2
+button ui_button_output;
+button ui_button_endresult;
 
 structured_buffer<facet> sb_facets{};
 unordered_buffer<facet> ub_facets{};
@@ -80,8 +82,13 @@ fat4 facets_y_center{};
 camera Camera{};
 maxmin MaxMin{};
 
+bool Reversed = false;
 bool ResultMode = false;
 intt AlignMode = -1;
+
+fat4 journal_hole_radius{};
+fat4 half_gap{};
+fat4 half_stroke{};
 }
 
 unordered_buffer<facet> facets_from_stl(const ff::stl& Stl, bool Reverse) {
@@ -126,6 +133,9 @@ StructuredBuffer<SB0> sb0 : register(t0);
   structured_buffer sb(t);
   gp(t.size(), {ub}, {sb}, {});
   facets_y_center = (ymax + ymin) / 2;
+  journal_hole_radius = *reinterpret_cast<const fat4*>(Stl.header().data() + 16);
+  half_gap = *reinterpret_cast<const fat4*>(Stl.header().data() + 20);
+  half_stroke = *reinterpret_cast<const fat4*>(Stl.header().data() + 24);
   return ub;
   ywlib_try_end;
   return {};
@@ -678,6 +688,7 @@ void align() {
 void show_result() {
 
   main::resize(1400, 980);
+  key::escape.down = []() { ResultMode = false; };
 
   constexpr rect rect_textbox_result[8] = {
     {10, 890, 110, 940},
@@ -696,6 +707,16 @@ void show_result() {
   ui_textbox_result[5] = textbox(1, rect_textbox_result[5], L"", WS_BORDER | ES_CENTER);
   ui_textbox_result[6] = textbox(1, rect_textbox_result[6], L"", WS_BORDER | ES_CENTER);
   ui_textbox_result[7] = textbox(1, rect_textbox_result[7], L"", WS_BORDER | ES_CENTER);
+
+  ui_button_output = button(1, {1240, 760, 1390, 800}, L"成績表出力", WS_BORDER);
+  ui_button_output.input = [](const button&) {
+    ok("まだ作成中");
+  };
+
+  ui_button_endresult = button(1, {1240, 805, 1390, 845}, L"芯合わせモード", WS_BORDER);
+  ui_button_endresult.input = [](const button&) {
+    ResultMode = false;
+  };
 
   main::begin_draw(color::white);
 
@@ -740,11 +761,68 @@ void show_result() {
   draw_rectangle(get<6>(vector_frame_lower), brush<color::black>{}, frame_width);
   draw_rectangle(get<7>(vector_frame_lower), brush<color::black>{}, frame_width);
 
+  // camera cam(230, 500, 8);
+  auto cam_angles = array{array{vector{0, 0, -pi / 2},       // 右サイド
+                                vector{pi / 2, 0, -pi / 2},  // TOP基準面
+                                vector{-pi / 2, 0, -pi / 2}, // TOP内股
+                                vector{pi / 2, 0, -pi / 2},  // BOT内股
+                                vector{pi / 2, 0, -pi / 2},  // BOT基準面
+                                vector{0, pi, pi / 2},      // 左サイド
+                                vector{0, -pi / 2, -pi / 2}, // R面
+                                vector{0, -pi / 2, -pi / 2}, // J穴PIN側
+                                vector{pi / 2, pi / 2, 0},   // J穴R側
+                                vector{pi / 2, pi / 2, 0}},  // ピン
+                          array{vector{0, pi, -pi / 2},
+                                vector{0, pi / 2, -pi / 2},
+                                vector{0, -pi / 2, -pi / 2},
+                                vector{0, pi / 2, -pi / 2},
+                                vector{0, -pi / 2, -pi / 2},
+                                vector{0, 0, -pi / 2},
+                                vector{0, pi / 2, -pi / 2},
+                                vector{0, pi / 2, -pi / 2},
+                                vector{pi / 2, -pi / 2, -pi / 2},
+                                vector{pi / 2, -pi / 2, -pi / 2}}};
+  auto cam_offset_zs = array{-10000.f, -10000.f, 0.f, 0.f, -10000.f, -10000.f, -10000.f, 0.f, 0.f, -10000.f};
+  auto cam_factor = 0.9f * min(500 / (MaxMin.maxs[25].y - MaxMin.mins[25].y),
+                               230 / max(MaxMin.maxs[25].x - MaxMin.mins[25].x, MaxMin.maxs[25].z - MaxMin.mins[25].z));
+  auto cam_offset_y = (MaxMin.maxs[25].y + MaxMin.mins[25].y) / 2;
 
+  auto faces = list{array{4, 9, 10, 11, 16, 21, 22, 23, 24}, array{12, 13}, array{14}, array{2}, array{0, 1},
+                    array{4, 6, 7, 8, 16, 18, 19, 20, 24}, array{4, 16}, array{3, 15}, array{3, 15}, array{5, 17, 24}};
+
+  constant_buffer<list<nat4, fat4, nat8>> cb_options(list<>::asref(0, 1.f, 0));
+  constant_buffer<list<xmatrix, xmatrix>> cb_camera;
+
+  auto func = [&]<natt I>(constant<I>) {
+    camera cam;
+    cam = I < 6 ? camera(500, 230) : camera(230, 250);
+    cam.offset.x = I < 6 ? -cam_offset_y : 0;
+    cam.offset.z = cam_offset_zs[I];
+    cam.rotation = cam_angles[Reversed][I];
+    cam.orthographic = true;
+    cam.factor = cam_factor;
+    cam.update();
+    cb_camera.from(list<>::asref(cam.view, cam.view_proj));
+    cam.begin_render(color::white);
+    render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
+    cam.end_render();
+    bitmap bmp = cam.rotate(-90);
+    main::begin_draw();
+    if (I < 6) draw_bitmap({10.f + 230 * I, 100.f, 240.f + 230 * I, 600.f}, bmp);
+    else draw_bitmap({10.f + 230 * (I - 6), 600.f, 240.f + 230 * (I - 6), 850.f}, cam);
+    main::end_draw();
+  };
   main::end_draw();
+
+  cfor(func, make_sequence<10>{});
+
   control::show(1);
-  while (main::update) {
-  }
+  while (ResultMode && main::update) {}
+  key::escape.down = []() { yes(L"終了しますか？") ? main::terminate() : void(); };
+  control::hide(1);
+  main::resize(app_width, app_height);
+  control::show(0);
+  render_all();
 }
 
 
@@ -827,6 +905,7 @@ void ywmain() {
   ui_checkbox_reverse = checkbox(0, {410, 5, 510, 25}, L"＋ＸがBOT側");
   ui_checkbox_reverse.input = [](const checkbox& This) {
     ywlib_try_begin;
+    Reversed = This.state;
     if (AlignMode >= 0) AlignMode = -1, ok(L"自動芯合わせを中断しました。");
     if (stl_facets.empty()) return;
     ub_facets = facets_from_stl(stl_facets, This.state);

@@ -1065,7 +1065,7 @@ inline constexpr color color::black{0x000000}, color::dimgray{0x696969}, color::
   color::lightpink{0xffb6c1}, color::thistle{0xd8bfd8}, color::magenta{0xff00ff}, color::fuchsia{0xff00ff}, color::violet{0xee82ee}, color::plum{0xdda0dd},
   color::orchid{0xda70d6}, color::mediumorchid{0xba55d3}, color::darkorchid{0x9932cc}, color::darkviolet{0x9400d3}, color::darkmagenta{0x8b008b},
   color::purple{0x800080}, color::indigo{0x4b0082}, color::darkslateblue{0x483d8b}, color::blueviolet{0x8a2be2}, color::mediumpurple{0x9370db},
-  color::slateblue{0x6a5acd}, color::mediumslateblue{0x7b68ee}, color::undefined = color(0x0, -1.f), color::yw{0x081020};
+  color::slateblue{0x6a5acd}, color::mediumslateblue{0x7b68ee}, color::transparent = color(0x0, 0.0f), color::undefined = color(0x0, -1.f), color::yw{0x081020};
 
 /// rectangle structure (left, top, right, bottom)
 struct rect {
