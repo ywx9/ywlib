@@ -319,7 +319,7 @@ struct mouse {
 };
 
 /// font class
-template<value Size = value{}, string_view Name = L"Yu Gothic UI", intt Alignment = 0, bool Bold = false, bool Italic = false> class font;
+template<value Size = value{}, string_view Name = L"Yu Gothic UI", intt Alignment = 0, bool Bold = false, bool Italic = false> class font {};
 
 template<stv2 Name, intt Alignment, bool Bold, bool Italic> class font<value{}, Name, Alignment, Bold, Italic> {
 protected:

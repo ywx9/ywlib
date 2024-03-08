@@ -1,4 +1,4 @@
-#define ywlib_debug
+// #define ywlib_debug
 #include "ywlib/control.h"
 #include "ywlib/ff-stl.h"
 using namespace yw;
@@ -28,7 +28,7 @@ struct maxmin {
 
 namespace {
 
-constexpr auto app_name = L"test";
+constexpr auto app_name = L"ACMA-TEST-V0.6";
 
 constexpr natt app_width = 960, app_height = 540;
 
@@ -721,7 +721,6 @@ void show_result() {
   main::begin_draw(color::white);
 
   draw_text({10, 50, 800, 90}, font<30, L"Yu Gothic UI", -1, true, true>{}, L"芯出成績表 ／ 株式会社 神戸製鋼所 高砂鋳鍛鋼工場");
-
   constexpr vector ui_label_result_title[8] = {
     {10, 860, 110, 890},
     {110, 860, 260, 890},
@@ -763,40 +762,60 @@ void show_result() {
 
   // camera cam(230, 500, 8);
   auto cam_angles = array{array{vector{0, 0, -pi / 2},       // 右サイド
-                                vector{pi / 2, 0, -pi / 2},  // TOP基準面
-                                vector{-pi / 2, 0, -pi / 2}, // TOP内股
-                                vector{pi / 2, 0, -pi / 2},  // BOT内股
-                                vector{pi / 2, 0, -pi / 2},  // BOT基準面
-                                vector{0, pi, pi / 2},      // 左サイド
+                                vector{0, -pi / 2, 0},       // TOP基準面
+                                vector{0, pi / 2, 0},        // TOP内股
+                                vector{0, -pi / 2, 0},       // BOT内股
+                                vector{0, pi / 2, 0},        // BOT基準面
+                                vector{0, pi, pi / 2},       // 左サイド
                                 vector{0, -pi / 2, -pi / 2}, // R面
                                 vector{0, -pi / 2, -pi / 2}, // J穴PIN側
                                 vector{pi / 2, pi / 2, 0},   // J穴R側
                                 vector{pi / 2, pi / 2, 0}},  // ピン
-                          array{vector{0, pi, -pi / 2},
-                                vector{0, pi / 2, -pi / 2},
-                                vector{0, -pi / 2, -pi / 2},
-                                vector{0, pi / 2, -pi / 2},
-                                vector{0, -pi / 2, -pi / 2},
+                          array{vector{0, pi, pi / 2},
+                                vector{0, pi / 2, 0},
+                                vector{0, -pi / 2, 0},
+                                vector{0, pi / 2, 0},
+                                vector{0, -pi / 2, 0},
                                 vector{0, 0, -pi / 2},
-                                vector{0, pi / 2, -pi / 2},
-                                vector{0, pi / 2, -pi / 2},
-                                vector{pi / 2, -pi / 2, -pi / 2},
-                                vector{pi / 2, -pi / 2, -pi / 2}}};
+                                vector{0, pi / 2, pi / 2},
+                                vector{0, pi / 2, pi / 2},
+                                vector{pi / 2, -pi / 2, 0},
+                                vector{pi / 2, -pi / 2, 0}}};
   auto cam_offset_zs = array{-10000.f, -10000.f, 0.f, 0.f, -10000.f, -10000.f, -10000.f, 0.f, 0.f, -10000.f};
-  auto cam_factor = 0.9f * min(500 / (MaxMin.maxs[25].y - MaxMin.mins[25].y),
-                               230 / max(MaxMin.maxs[25].x - MaxMin.mins[25].x, MaxMin.maxs[25].z - MaxMin.mins[25].z));
+  auto cam_factor = .9f * min(500 / (MaxMin.maxs[25].y - MaxMin.mins[25].y),
+                              230 / max(MaxMin.maxs[25].x - MaxMin.mins[25].x, MaxMin.maxs[25].z - MaxMin.mins[25].z));
   auto cam_offset_y = (MaxMin.maxs[25].y + MaxMin.mins[25].y) / 2;
 
-  auto faces = list{array{4, 9, 10, 11, 16, 21, 22, 23, 24}, array{12, 13}, array{14}, array{2}, array{0, 1},
-                    array{4, 6, 7, 8, 16, 18, 19, 20, 24}, array{4, 16}, array{3, 15}, array{3, 15}, array{5, 17, 24}};
+  auto faces = list{array{4, 9, 10, 16, 21, 22}, array{12, 13}, array{14}, array{2}, array{0, 1},
+                    array{4, 6, 7, 16, 18, 19}, array{4, 16}, array{3, 15}, array{3, 15}, array{5, 17, 24}};
 
   constant_buffer<list<nat4, fat4, nat8>> cb_options(list<>::asref(0, 1.f, 0));
   constant_buffer<list<xmatrix, xmatrix>> cb_camera;
 
+  main::end_draw();
+
+  static constexpr auto get_color = [](fat4 f) {
+    if (f > 60.f) return color(0.0f, 0.0f, 0.5f, 1.0f);
+    else if (f > 45.f) return color(0.0f, 0.5f, 1.0f, 1.0f);
+    else if (f > 24.f) return color(0.0f, 1.0f, 0.5f, 1.0f);
+    else if (f > 10.f) return color(1.0f, 1.0f, 0.0f, 1.0f);
+    else if (f > 5.f) return color(1.0f, 0.5f, 0.0f, 1.0f);
+    else return color(1.0f, 0.0f, 0.0f, 1.0f);
+  };
+
   auto func = [&]<natt I>(constant<I>) {
+    vector mx = MaxMin.maxs[get<I>(faces)[0]], mn = MaxMin.mins[get<I>(faces)[0]];
+    for (natt i{}; i < get<I>(faces).count; ++i) {
+      if (mx.w < MaxMin.maxs[get<I>(faces)[i]].w) mx = MaxMin.maxs[get<I>(faces)[i]];
+      if (mn.w > MaxMin.mins[get<I>(faces)[i]].w) mn = MaxMin.mins[get<I>(faces)[i]];
+    }
     camera cam;
-    cam = I < 6 ? camera(500, 230) : camera(230, 250);
-    cam.offset.x = I < 6 ? -cam_offset_y : 0;
+    bitmap bmp;
+    vector r;
+    const natt flag = I < 6 ? (I == 0 || I == 5 ? 0 : 1) : 2;
+    cam = flag == 0 ? camera(500, 230, 8) : (flag == 1 ? camera(230, 500, 8) : camera(230, 250, 8));
+    if (flag == 0) cam.offset.x = -cam_offset_y;
+    else if (flag == 1) cam.offset.y = cam_offset_y;
     cam.offset.z = cam_offset_zs[I];
     cam.rotation = cam_angles[Reversed][I];
     cam.orthographic = true;
@@ -806,13 +825,30 @@ void show_result() {
     cam.begin_render(color::white);
     render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
     cam.end_render();
-    bitmap bmp = cam.rotate(-90);
+    cam.begin_draw();
+    if (flag == 0) {
+      r = {250 + 50, 5, 250 + 150, 25};
+      fill_rectangle({r, 2.5f, 2.5f}, brush(get_color(mx.w)));
+      draw_text(r, font<15>{}, std::format(L"{:.2f}", mx.w));
+    }
+    cam.end_draw();
+    if (flag == 0) bmp = cam.rotate(-90);
     main::begin_draw();
-    if (I < 6) draw_bitmap({10.f + 230 * I, 100.f, 240.f + 230 * I, 600.f}, bmp);
-    else draw_bitmap({10.f + 230 * (I - 6), 600.f, 240.f + 230 * (I - 6), 850.f}, cam);
+    if (flag == 0) {
+      r = {10.f + 230 * I, 100.f, 240.f + 230 * I, 600.f};
+      draw_bitmap(r, bmp);
+      draw_rectangle(r, brush<color::black>{}, 1.f);
+    } else if (flag == 1) {
+      r = {10.f + 230 * I, 100.f, 240.f + 230 * I, 600.f};
+      draw_bitmap(r, cam);
+      draw_rectangle(r, brush<color::black>{}, 1.f);
+    } else {
+      r = {10.f + 230 * (I - 6), 600.f, 240.f + 230 * (I - 6), 850.f};
+      draw_bitmap(r, cam);
+      draw_rectangle(r, brush<color::black>{}, 1.f);
+    }
     main::end_draw();
   };
-  main::end_draw();
 
   cfor(func, make_sequence<10>{});
 

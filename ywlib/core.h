@@ -600,6 +600,7 @@ inline constexpr t_max<1> max;
 /// returns the minimum of `A` and `B`
 inline constexpr t_max<0> min;
 
+
 /// generic value type that can be used for non-type template parameters
 struct value {
   fat8 _cpp_double{};
@@ -1621,6 +1622,27 @@ inline constexpr caster is_cev{[]() noexcept { return std::is_constant_evaluated
 /// for each function for tuples
 constexpr auto cfor = []<typename Fn, natt... Is, typename... Ts>(Fn&& Func, sequence<Is...>, Ts&&... Args)
   requires (invocable<Fn&, constant<Is>, Ts...> && ...) { ((invoke(Func, constant<Is>{}, fwd<Ts>(Args)...)), ...); };
+
+
+template<bool Max> struct t_maxi {
+private:
+  template<natt I, typename Tp, typename R> static constexpr auto call(Tp&& L, R M) {
+    if constexpr (I == extent<Tp>) return mv(M);
+    if constexpr (Max) { if (M.second < get<I>(L)) return call<I + 1>(fwd<Tp>(L), R{I, get<I>(L)});
+                         else return call<I + 1>(fwd<Tp>(L), mv(M));
+    } else             { if (M.second > get<I>(L)) return call<I + 1>(fwd<Tp>(L), R{I, get<I>(L)});
+                         else return call<I + 1>(fwd<Tp>(L), mv(M)); } }
+public:
+  constexpr list<natt, none> operator()() const noexcept { return list<natt, none>{}; }
+  template<typename T> constexpr list<natt, remove_ref<T>> operator()(T&& t) const noexcept { return {0, fwd<T>(t)}; }
+  template<typename T0, typename T1, typename... Ts>
+  constexpr list<natt, remove_ref<common_type<T0, T1, Ts...>>> operator()(T0&& t0, T1&& t1, Ts&&... ts) const {
+    return call<1>(list<>::asref(fwd<T0>(t0), fwd<T1>(t1), fwd<Ts>(ts)...),
+                   list<natt, remove_ref<common_type<T0, T1, Ts...>>>{0, fwd<T0>(t0)}); }
+};
+
+inline constexpr t_maxi<1> maxi;
+inline constexpr t_maxi<0> mini;
 
 } // clang-format on
 
