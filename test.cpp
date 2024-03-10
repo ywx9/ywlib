@@ -804,18 +804,11 @@ void show_result() {
   };
 
   auto func = [&]<natt I>(constant<I>) {
-    vector mx = MaxMin.maxs[get<I>(faces)[0]], mn = MaxMin.mins[get<I>(faces)[0]];
-    for (natt i{}; i < get<I>(faces).count; ++i) {
-      if (mx.w < MaxMin.maxs[get<I>(faces)[i]].w) mx = MaxMin.maxs[get<I>(faces)[i]];
-      if (mn.w > MaxMin.mins[get<I>(faces)[i]].w) mn = MaxMin.mins[get<I>(faces)[i]];
-    }
-    camera cam;
-    bitmap bmp;
-    vector r;
-    const natt flag = I < 6 ? (I == 0 || I == 5 ? 0 : 1) : 2;
-    cam = flag == 0 ? camera(500, 230, 8) : (flag == 1 ? camera(230, 500, 8) : camera(230, 250, 8));
-    if (flag == 0) cam.offset.x = -cam_offset_y;
-    else if (flag == 1) cam.offset.y = cam_offset_y;
+    static constexpr natt flag = I < 6 ? (I == 0 || I == 5 ? 0 : 1) : 2;
+    static constexpr array<natt, natt> camera_size[] = {{500, 230}, {230, 500}, {230, 250}};
+    auto cam = camera(camera_size[flag][0], camera_size[flag][1], 8);
+    if constexpr (flag == 0) cam.offset.x = -cam_offset_y;
+    else if constexpr (flag == 1) cam.offset.y = cam_offset_y;
     cam.offset.z = cam_offset_zs[I];
     cam.rotation = cam_angles[Reversed][I];
     cam.orthographic = true;
@@ -825,11 +818,38 @@ void show_result() {
     cam.begin_render(color::white);
     render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
     cam.end_render();
+    vector r;
+    if constexpr (flag == 0) { // 側面ビュー
+      vector mx{0, 0, 0, -1e10}, mn{0, 0, 0, 1e10};
+      for (natt i{}; i < get<I>(faces).count; ++i) {
+        if (auto t = MaxMin.maxs[get<I>(faces)[i]]; bool(Reversed ^ (t.x < 0)) && mx.w < t.w) mx = MaxMin.maxs[get<I>(faces)[i]];
+        if (auto t = MaxMin.mins[get<I>(faces)[i]]; bool(Reversed ^ (t.x < 0)) && mn.w > t.w) mn = MaxMin.mins[get<I>(faces)[i]];
+      }
+      r = {250 + 50, 5 + 9 * I, 250 + 150, 25 + 40 * I};
+      fill_rectangle({r, 2.5f, 2.5f}, brush(get_color(mx.w)));
+      draw_text(r, font<15>{}, std::format(L"{:.2f}", mx.w));
+      r = {250 - 150, 5 + 9 * I, 250 - 50, 25 + 40 * I};
+      fill_rectangle({r, 2.5f, 2.5f}, brush(get_color(mn.w)));
+      draw_text(r, font<15>{}, std::format(L"{:.2f}", mn.w));
+    } else if constexpr (flag == 1) {
+
+    } else {
+    }
+
+    vector mx = MaxMin.maxs[get<I>(faces)[0]], mn = MaxMin.mins[get<I>(faces)[0]];
+    for (natt i{}; i < get<I>(faces).count; ++i) {
+      if (mx.w < MaxMin.maxs[get<I>(faces)[i]].w) mx = MaxMin.maxs[get<I>(faces)[i]];
+      if (mn.w > MaxMin.mins[get<I>(faces)[i]].w) mn = MaxMin.mins[get<I>(faces)[i]];
+    }
+    bitmap bmp;
     cam.begin_draw();
+    vector r;
     if (flag == 0) {
       r = {250 + 50, 5, 250 + 150, 25};
       fill_rectangle({r, 2.5f, 2.5f}, brush(get_color(mx.w)));
       draw_text(r, font<15>{}, std::format(L"{:.2f}", mx.w));
+      r = {250 - 150, 5, 250 - 50, 25};
+      fill_rectangle({r, 2.5f, 2.5f}, brush(get_color(mn.w)));
     }
     cam.end_draw();
     if (flag == 0) bmp = cam.rotate(-90);
