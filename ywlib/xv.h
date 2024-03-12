@@ -721,6 +721,13 @@ template<natt N, natt Zero = 0> requires(0 < N && N <= 4 && Zero < 16) struct t_
 
 template<natt N, natt Zero = 0> requires(0 < N && N <= 4 && Zero < 16) inline constexpr t_xvdot<N, Zero> xvdot;
 
+xmatrix& operator*=(xmatrix& A, const xmatrix& B) noexcept {
+  xvector t;
+  xvdot<4>(A[0], B, t), A[0] = t, xvdot<4>(A[1], B, t), A[1] = t;
+  xvdot<4>(A[2], B, t), A[2] = t, xvdot<4>(A[3], B, t), A[3] = t;
+  return A;
+}
+
 inline constexpr overload xvcross{
   [](const xvector& A, const xvector& B) noexcept {
     auto a = xvpermute<2, 0, 1, 3>(A), b = xvpermute<1, 2, 0, 3>(B);
