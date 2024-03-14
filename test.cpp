@@ -1,9 +1,18 @@
 #include "ywlib.h"
+using namespace yw;
 
 int main() {
   std::wcout.imbue(std::locale("Japanese"));
-  yw::print_string<"test">();
-  yw::print_string<L"てすと">();
+  // constexpr auto p = yw::phrase<char, std::char_traits<char>::length(__builtin_FILE())>(__builtin_FILE());
+  // std::cout << std::char_traits<char>::length(__builtin_FILE()) << std::endl;
+  // std::cout << __builtin_FILE() << std::endl;
+  // std::cout << p.count << std::endl;
+  // std::cout << p.data() << std::endl;
+  // std::cout << p << std::endl;
+  std::cout << yw::source() << std::endl;
+
+  auto e = except("EEEERADFASDFSAF");
+  std::cout << e.what() << std::endl;
 }
 
 // #define ywlib_debug
