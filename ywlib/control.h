@@ -42,6 +42,9 @@ public:
   /// window handle of this control
   const HWND hwnd{};
 
+  /// font handle of this control
+  const HFONT hfont{};
+
   /// group index of this control
   const natt group{npos};
 
@@ -82,16 +85,52 @@ public:
   control() noexcept = default;
 
   /// move constructor
-  control(control&& A) noexcept : hwnd(exchange(const_cast<HWND&>(A.hwnd), nullptr)), group(A.group) {
-    whole_controls[hwnd].second = this, groups[group + 1][get_index(groups[group + 1], hwnd)].second = this; }
+  control(control&& A) noexcept
+    : hwnd(exchange(const_cast<HWND&>(A.hwnd), nullptr)),
+      hfont(exchange(const_cast<HFONT&>(A.hfont), nullptr)), group(A.group) {
+    whole_controls[hwnd].second = this;
+    groups[group + 1][get_index(groups[group + 1], hwnd)].second = this;
+  }
 
   /// move assignment operator
   control& operator=(control&& A) {
     if (auto& g = groups[group + 1]; hwnd)
       DestroyWindow(hwnd), g.erase(g.begin() + get_index(g, hwnd)), whole_controls.erase(hwnd);
-    const_cast<HWND&>(hwnd) = exchange(const_cast<HWND&>(A.hwnd), nullptr), const_cast<natt&>(group) = A.group;
+    if (hfont) ::DeleteObject(hfont);
+    const_cast<HWND&>(hwnd) = exchange(const_cast<HWND&>(A.hwnd), nullptr);
+    const_cast<HFONT&>(hfont) = exchange(const_cast<HFONT&>(A.hfont), nullptr);
+    const_cast<natt&>(group) = A.group;
     if (hwnd) whole_controls[hwnd].second = this, groups[group + 1][get_index(groups[group + 1], hwnd)].second = this;
     return *this; }
+
+  /// changes font size of this control
+  void font(value Size) {
+    ywlib_assert(hwnd, "This control is not initialized");
+    auto n = ::GetObjectW(hfont ? hfont : main::system::hfont, sizeof(LOGFONTW), nullptr);
+    ywlib_assert(0 < n, "GetObjectW failed");
+    auto p = new unsigned char[n];
+    auto b = ::GetObjectW(hfont ? hfont : main::system::hfont, n, p);
+    ywlib_assert(b, "GetObjectW failed");
+    auto& lf = *(LOGFONTW*)p;
+    if (hfont) ::DeleteObject(hfont);
+    lf.lfHeight = -int4(Size * 72 / 96);
+    const_cast<HFONT&>(hfont) = CreateFontIndirectW(&lf);
+    ywlib_assert(hfont, "CreateFontIndirectW failed");
+    SendMessageW(hwnd, WM_SETFONT, (WPARAM)hfont, true);
+    delete[] p;
+  }
+
+  /// changes font of this control
+  void font(const std::wstring_view Name, value Size) {
+    ywlib_assert(hwnd, "This control is not initialized");
+    if (hfont) ::DeleteObject(hfont);
+    LOGFONTW lf{};
+    lf.lfHeight = -int4(Size * 72 / 96);
+    wcscpy_s(lf.lfFaceName, Name.data());
+    const_cast<HFONT&>(hfont) = CreateFontIndirectW(&lf);
+    ywlib_assert(hfont, "CreateFontIndirectW failed");
+    SendMessageW(hwnd, WM_SETFONT, (WPARAM)hfont, true);
+  }
 
   /// checks if this control is initialized
   explicit operator bool() const noexcept { return hwnd; }
@@ -176,13 +215,15 @@ protected:
           auto& t = *(textbox*)(g[i].second);
           return (t.tab ? t.tab(t) : focus_on_next(g, i, GetKeyState(VK_SHIFT) < 0)), 0; }
         case VK_ESCAPE: return SetFocus(main::hwnd), 0;
-      } break;
+      } return CallWindowProcW(defproc, hw, msg, wp, lp);
     case WM_SETFOCUS:
       if (auto& t = get_control<textbox>(hw); t.intofocus) t.intofocus(t);
-      return 0;
+      else SendMessageW(hw, EM_SETSEL, 0, -1);
+      break;
     case WM_KILLFOCUS:
       if (auto& t = get_control<textbox>(hw); t.killfocus) t.killfocus(t);
-      return 0;
+      else SendMessageW(hw, EM_SETSEL, 0, -1);
+      break;
     } return CallWindowProcW(defproc, hw, msg, wp, lp); }
 public:
   /// callback function for the enter key
@@ -233,7 +274,7 @@ protected:
         auto& t = *(valuebox*)(g[i].second);
         return (t.tab ? t.tab(t) : focus_on_next(g, i, GetKeyState(VK_SHIFT) < 0)), 0; }
       case VK_ESCAPE: return SetFocus(main::hwnd), 0;
-      case VK_BACK: case VK_DELETE: case VK_LEFT: case VK_RIGHT: return CallWindowProcW(defproc, hw, msg, wp, lp);
+      case VK_BACK: case VK_DELETE: case VK_LEFT: case VK_RIGHT: case VK_SHIFT: return CallWindowProcW(defproc, hw, msg, wp, lp);
       } return GetKeyState(VK_CONTROL) || ('0' <= wp && wp <= '9') || wp == '-' || wp == '.' ? CallWindowProcW(defproc, hw, msg, wp, lp) : 0;
     case WM_SETFOCUS:
       if (auto& t = get_control<valuebox>(hw); t.intofocus) t.intofocus(t);

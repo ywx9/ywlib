@@ -43,6 +43,11 @@
 namespace yw {
 
 
+template<bool... Bs> inline constexpr size_t counts = (Bs + ... + 0);
+template<bool... Bs> inline constexpr size_t inspects = 0;
+template<bool B, bool... Bs> inline constexpr size_t inspects<B, Bs...> = B ? 0 : inspects<Bs...> + 1;
+
+
 /// @brief structural type for null value
 struct none {
   constexpr none() noexcept = default;
@@ -415,7 +420,7 @@ inline const auto& dw_factory = system::dw_factory;   // DirectWrite factory
 inline const auto& wic_factory = system::wic_factory; // WIC factory
 
 inline void terminate();
-inline void resize(value Width, value Height);
+inline void resize(const value Width, const value Height);
 }
 
 
@@ -423,7 +428,7 @@ inline void resize(value Width, value Height);
 class bitmap {
   bitmap(ID2D1Bitmap1* Ptr, const value Width, const value Height) noexcept
     : d2d_bitmap(Ptr), width(unsigned(Width)), height(unsigned(Height)) {}
-  friend void ::yw::main::resize(value Width, value Height);
+  friend void ::yw::main::resize(const value Width, const value Height);
 protected:
   comptr<ID2D1Bitmap1> d2d_bitmap{};
 public:
@@ -469,6 +474,114 @@ public:
   }
   explicit operator bool() const noexcept { return bool(d2d_bitmap); }
   operator ID2D1Bitmap1*() const noexcept { return d2d_bitmap.get(); }
+};
+
+
+/// texture class
+class texture : public bitmap {
+  void initialize() {
+    comptr<IDXGISurface2> surface;
+    auto hr = d2d_bitmap->GetSurface((IDXGISurface**)com_init(surface));
+    ywlib_assert(SUCCEEDED(hr), L"texture::initialize: GetSurface failed");
+    hr = surface->QueryInterface(com_init(d3d_texture));
+    ywlib_assert(SUCCEEDED(hr), L"texture::initialize: QueryInterface failed");
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvd{};
+    srvd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    srvd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    srvd.Texture2D.MipLevels = 1;
+    hr = main::d3d_device->CreateShaderResourceView(d3d_texture.get(), &srvd, com_init(d3d_srv));
+    ywlib_assert(SUCCEEDED(hr), L"texture::initialize: CreateShaderResourceView failed");
+  }
+protected:
+  comptr<ID3D11Texture2D> d3d_texture{};
+  comptr<ID3D11ShaderResourceView> d3d_srv{};
+public:
+  texture() noexcept = default;
+  texture(bitmap&& Bitmap) : bitmap(std::move(Bitmap)) { initialize(); }
+  texture(const value Width, const value Height) : bitmap(Width, Height) { initialize(); }
+  texture(const std::filesystem::path& Path) : bitmap(Path) { initialize(); }
+  explicit operator bool() const noexcept { return bitmap::operator bool() && bool(d3d_texture) && bool(d3d_srv); }
+  operator ID3D11Texture2D*() const noexcept { return d3d_texture.get(); }
+  operator ID3D11ShaderResourceView*() const noexcept { return d3d_srv.get(); }
+  void to_vs(const size_t Slot) const {
+    ywlib_assert(bool(*this), L"texture::to_vs: texture is not initialized");
+    [&](auto p) { main::d3d_context->VSSetShaderResources(UINT(Slot), 1, &p); }(d3d_srv.get());
+  }
+  void to_ps(const size_t Slot) const {
+    ywlib_assert(bool(*this), L"texture::to_ps: texture is not initialized");
+    [&](auto p) { main::d3d_context->PSSetShaderResources(UINT(Slot), 1, &p); }(d3d_srv.get());
+  }
+  void to_gs(const size_t Slot) const {
+    ywlib_assert(bool(*this), L"texture::to_gs: texture is not initialized");
+    [&](auto p) { main::d3d_context->GSSetShaderResources(UINT(Slot), 1, &p); }(d3d_srv.get());
+  }
+  void to_cs(const size_t Slot) const {
+    ywlib_assert(bool(*this), L"texture::to_cs: texture is not initialized");
+    [&](auto p) { main::d3d_context->CSSetShaderResources(UINT(Slot), 1, &p); }(d3d_srv.get());
+  }
+};
+
+
+/// canvas class for 3D render target
+class canvas : public texture {
+private:
+  void initialize() {
+    const_cast<unsigned&>(msaa) = msaa < 2 ? 0 : (msaa < 4 ? 2 : (msaa < 8 ? 4 : 8));
+    comptr<ID3D11Texture2D> temp;
+    D3D11_TEXTURE2D_DESC td{};
+    // create d3d_dsv
+    td.Width = width, td.Height = height;
+    td.MipLevels = 1, td.ArraySize = 1;
+    td.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    if (msaa != 0) td.SampleDesc.Count = msaa, td.SampleDesc.Quality = D3D11_STANDARD_MULTISAMPLE_PATTERN; // !
+    else td.SampleDesc.Count = 1, td.SampleDesc.Quality = 0;
+    td.Usage = D3D11_USAGE_DEFAULT;
+    td.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+    auto hr = main::d3d_device->CreateTexture2D(&td, nullptr, com_init(temp));
+    ywlib_assert(SUCCEEDED(hr), L"canvas::initialize: CreateTexture2D failed");
+    hr = main::d3d_device->CreateDepthStencilView(temp.get(), nullptr, com_init(d3d_dsv));
+    ywlib_assert(SUCCEEDED(hr), L"canvas::initialize: CreateDepthStencilView failed");
+    temp.reset();
+    // create d3d_rtv
+    td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    td.BindFlags = D3D11_BIND_RENDER_TARGET;
+    hr = main::d3d_device->CreateTexture2D(&td, nullptr, com_init(temp));
+    ywlib_assert(SUCCEEDED(hr), L"canvas::initialize: CreateTexture2D failed");
+    D3D11_RENDER_TARGET_VIEW_DESC rtvd{};
+    rtvd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    if (msaa != 0) rtvd.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DMS;
+    else rtvd.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+    hr = main::d3d_device->CreateRenderTargetView(temp.get(), &rtvd, com_init(d3d_rtv));
+    ywlib_assert(SUCCEEDED(hr), L"canvas::initialize: CreateRenderTargetView failed");
+  }
+protected:
+  comptr<ID3D11RenderTargetView> d3d_rtv{};
+  comptr<ID3D11DepthStencilView> d3d_dsv{};
+public:
+  const unsigned msaa{}; // multi-sample anti-aliasing
+  canvas() noexcept = default;
+  canvas(texture&& Texture, const unsigned Msaa = {}) : texture(std::move(Texture)), msaa(Msaa) { initialize(); }
+  canvas(const value Width, const value Height, const unsigned Msaa = {}) : texture(Width, Height), msaa(Msaa) { initialize(); }
+  explicit operator bool() const noexcept { return texture::operator bool() && bool(d3d_rtv) && bool(d3d_dsv); }
+  operator ID3D11RenderTargetView*() const noexcept { return d3d_rtv.get(); }
+  operator ID3D11DepthStencilView*() const noexcept { return d3d_dsv.get(); }
+
+  /// begins 3d rendering
+  template<typename... RTV_OR_UAV> void begin_render(RTV_OR_UAV&&... Views) const
+    requires(bool(std::convertible_to<RTV_OR_UAV, ID3D11RenderTargetView*> ^ std::convertible_to<RTV_OR_UAV, ID3D11UnorderedAccessView*>) && ...) {
+    ywlib_assert(bool(*this), L"canvas::begin_render: canvas is not initialized");
+    main::d3d_context->ClearDepthStencilView(d3d_dsv.get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+    D3D11_VIEWPORT vp{float(width), float(height), 1.0f, 0};
+    main::d3d_context->RSSetViewports(1, &vp);
+    static constexpr auto m = unsigned(counts<std::convertible_to<RTV_OR_UAV, ID3D11RenderTargetView*>...>) + 1;
+    static constexpr auto n = unsigned(counts<std::convertible_to<RTV_OR_UAV, ID3D11UnorderedAccessView*>...>);
+    if constexpr (n == 0) [&]<size_t... Is>(std::array<ID3D11RenderTargetView*, m> RTVs) {
+      main::d3d_context->OMSetRenderTargets(m + 1, RTVs.data(), d3d_dsv.get());
+    }({d3d_rtv, Views...});
+    else [&](auto&& RTVs, auto&& UAVs) {
+      main::d3d_context->OMSetRenderTargetsAndUnorderedAccessViews(m, RTVs.data(), d3d_dsv.get(), m, n, UAVs.data(), nullptr);
+    }([&]<size_t... Is>)
+  }
 };
 
 
