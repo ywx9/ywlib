@@ -837,10 +837,10 @@ cbuffer CB0 : register(b0) {
   } catch (const std::exception& E) { throw except(E); }
   try {
     auto temp = ub1.to_cpu();
-    // for (const auto& e : temp) {
-    //   for (const auto& f : e) std::cout << std::format("{}-", f);
-    //   std::cout << std::endl;
-    // }
+    for (const auto& e : temp) {
+      for (const auto& f : e) std::cout << std::format("{}-", f);
+      std::cout << std::endl;
+    }
     for (natt i{512}; i != 0; i /= 2) {
       for (natt j{}; j < i; ++j) {
         for (natt k{}; k < 15; ++k) {
@@ -913,12 +913,12 @@ void show_result() {
         vector(0.0f, 0.0f, journal_hole_radius, 1.0f),
         vector(0.0f, journal_hole_radius, 0.0f, 1.0f),
         vector(0.0f, 0.0f, -journal_hole_radius, 1.0f),
-        vector(0.0f, half_gap, 0.0f, 1.0f),
-        vector(-half_stroke, 0.0f, 0.0f, -3.0f),
-        vector(-half_stroke, half_gap, 0.0f, -3.0f),
-        vector(-half_stroke, 0.0f, 0.0f, 3.0f),
-        vector(-half_stroke, half_gap, 0.0f, 3.0f),
-        vector(-half_stroke, 0.0f, 0.0f, 2.0f),
+        vector(0.0f, half_stroke, 0.0f, 1.0f),
+        vector(-half_gap, 0.0f, 0.0f, -3.0f),
+        vector(-half_gap, half_stroke, 0.0f, -3.0f),
+        vector(-half_gap, 0.0f, 0.0f, 3.0f),
+        vector(-half_gap, half_stroke, 0.0f, 3.0f),
+        vector(-half_gap, 0.0f, 0.0f, 2.0f),
         vector(half_stroke, 0.0f, 0.0f, 2.0f),
         vector(-half_stroke, 0.0f, 0.0f, -2.0f),
         vector(half_stroke, 0.0f, 0.0f, -2.0f),
