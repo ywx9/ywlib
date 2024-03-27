@@ -2,7 +2,6 @@
 #pragma once
 #ifndef __ywlib__
 #define __ywlib__
-#define __ywlib_codepage__ 932
 
 
 #include <array>
@@ -36,6 +35,85 @@
 #pragma comment(lib, "uuid.lib")
 #undef max
 #undef min
+
+//
+
+// LIBRARY-USER CAN REDEFINE THE FOLLOWING MACROS
+
+/// CODEPAGE FOR MULTI-BYTE CHARACTER SET
+/// @note USED IN `mbs_to_wcs` AND `wcs_to_mbs`
+#define __ywlib_codepage__ 932
+
+/// MAXIMUM NUMBER OF CHARACTERS FOR `source::text`
+#define __ywlib_source_length__ 256
+
+//
+
+// CORE DEFINITIONS
+
+namespace ywlib {
+
+/// NATURAL INTEGER TYPE
+using nat = decltype(sizeof(int));
+
+/// SOUCE LOCATION
+struct source {
+public:
+  char text[__ywlib_source_length__]{}; // `file(line,column): function`
+  static constexpr const char* file(const char* const _ = __builtin_FILE()) noexcept { return _; }
+  static constexpr const char* function(const char* const _ = __builtin_FUNCTION()) noexcept { return _; }
+  static constexpr int line(const int _ = __builtin_LINE()) noexcept { return _; }
+  static constexpr int column(const int _ = 0) noexcept { return _; }
+  constexpr source(const char* const File = file(), const char* const Function = function(),
+                   const int Line = line(), const int Column = column()) noexcept {
+    nat n_file = std::char_traits<char>::length(File);
+    nat n_function = std::char_traits<char>::length(Function);
+    nat n_line{}, n_column{};
+    for (int i{Line}; i; i /= 10, ++n_line) text[n_line] = '0' + i % 10;
+    for (int i{Column}; i; i /= 10, ++n_column) text[n_line + n_column] = '0' + i % 10;
+    if (n_file + n_line + n_column + 3 >= __ywlib_source_length__)
+      throw std::length_error("Source location is too long. Redefine __ywlib_source_length__.");
+    for (int i{n_file + n_line + 2}, j{n_line + n_file}; n_line < j; ++i) text[i] = text[--j];
+    for (int i{n_file + 1}, j{n_line}; 0 < j; ++i) text[i] = text[--j];
+    std::char_traits<char>::copy(text, File, n_file);
+    text[n_file] = '(';
+    text[n_file + n_line] = ',';
+    text[n_file + n_line + n_column] = ')';
+    text[n_file + n_line + n_column + 1] = ':';
+    if (n_file + n_line + n_column + n_function + 4 >= __ywlib_source_length__)
+      throw std::length_error("Source location is too long. Redefine __ywlib_source_length__.");
+    std::char_traits<char>::copy(text + n_file + n_line + n_column + 4, Function, n_function);
+  }
+};
+}
+
+//
+
+// WINDOWS DEFINITIONS
+
+namespace ywlib {
+
+/// SIZE OF `comptr` MUST BE SAME AS A POINTER
+static_assert(sizeof(std::unique_ptr<int>) == sizeof(int*), "std::unique_ptr<int> is not a pointer");
+
+/// DELETER FOR `comptr`
+template<typename Com> struct com_deleter {
+  constexpr com_deleter() noexcept = default;
+  template<typename U> constexpr com_deleter(const com_deleter<U>& Other) noexcept {}
+  void operator()(Com* Ptr) const { Ptr ? void(Ptr->Release()) : void(); }
+};
+
+/// COM POINTER
+template<typename Com> struct comptr : public std::unique_ptr<Com> {
+  using std::unique_ptr<Com>::unique_ptr;
+  Com** init() & noexcept {
+  }
+};
+}
+
+
+#if 0
+
 
 namespace yw {
 
@@ -753,5 +831,7 @@ struct st {
   explicit constexpr st(it Size, ct Fill = U' ') : cpp(Size.cpp, Fill.cpp) {}
 };
 }
+
+#endif
 
 #endif // #ifndef __ywlib__
