@@ -1,6 +1,7 @@
 #define ywlib_debug
 #include "ywlib/control.h"
 #include "ywlib/ff-stl.h"
+#include "ywlib2"
 using namespace yw;
 
 struct facet { // CADデータの要素
