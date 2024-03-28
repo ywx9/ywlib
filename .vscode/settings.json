@@ -88,7 +88,8 @@
     "map": "cpp",
     "xtree": "cpp",
     "functional": "cpp",
-    "_ywlib": "cpp"
+    "_ywlib": "cpp",
+    "ywlib2": "cpp"
   },
   "svg.preview.background": "dark-transparent"
 }
