@@ -1,14 +1,14 @@
 #define ywlib_debug
-#include "ywlib/control.h"
-#include "ywlib/ff-stl.h"
+// #include "ywlib/control.h"
+// #include "ywlib/ff-stl.h"
 #include "ywlib2"
 using namespace yw;
 
 struct facet { // CADデータの要素
-  nat4 id;
-  array<fat4, 3> a, b, c;
-  array<fat4, 3> ab, bc, ca;
-  array<fat4, 3> sq, nisq;
+  unsigned id;
+  std::array<float, 3> a, b, c;
+  std::array<float, 3> ab, bc, ca;
+  std::array<float, 3> sq, nisq;
   vector plane;
 };
 
@@ -18,23 +18,20 @@ struct vertex { // CMTデータの要素
 
 struct margin { // 取代
   float margin, perp;
-  nat4 id, inside;
+  unsigned id, inside;
 };
 
 struct maxmin {
-  array<vector, 26> maxs, mins;
+  std::array<vector, 26> maxs, mins;
   vector minimum, minimum_n;
-  nat4 minimum_i;
+  unsigned minimum_i;
 };
 
 namespace {
 
 constexpr auto app_name = L"ACMA-TEST-V0.6";
 
-constexpr natt app_width = 960, app_height = 540;
-
-auto key_configs = [] { key::escape.down = []() { yes(L"終了しますか？") ? main::terminate() : void(); };
-                        return none{}; }();
+constexpr nat app_width = 960, app_height = 540;
 
 path cmt_path;
 
@@ -77,10 +74,10 @@ structured_buffer<margin> sb_margins{};
 unordered_buffer<margin> ub_margins{};
 constant_buffer<xmatrix> cb_world{};
 constant_buffer<list<xmatrix, xmatrix>> cb_camera{};
-constant_buffer<list<nat4, fat4, nat8>> cb_options{};
+constant_buffer<list<unsigned, float, nat8>> cb_options{};
 
 ff::stl stl_facets{};
-fat4 facets_y_center{};
+float facets_y_center{};
 
 camera Camera{};
 maxmin MaxMin{};
@@ -89,9 +86,9 @@ bool Reversed = false;
 bool ResultMode = false;
 intt AlignMode = -1;
 
-fat4 journal_hole_radius{};
-fat4 half_gap{};
-fat4 half_stroke{};
+float journal_hole_radius{};
+float half_gap{};
+float half_stroke{};
 bool has_second_side_chamfer = false;
 
 constexpr rect rect_textbox_result[8] = {
@@ -134,14 +131,14 @@ StructuredBuffer<SB0> sb0 : register(t0);
   ywlib_try_begin;
   if (Stl.empty()) return {};
   static constexpr auto a = array{
-    array<nat4, 25>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24},
-    array<nat4, 25>{12, 13, 14, 15, 16, 17, 21, 22, 23, 18, 19, 20, 0, 1, 2, 3, 4, 5, 9, 10, 11, 6, 7, 8, 24}};
-  static auto gp = gpgpu<typepack<facet>, typepack<list<nat4, array<fat4, 9>>>>(hlsl);
+    array<unsigned, 25>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24},
+    array<unsigned, 25>{12, 13, 14, 15, 16, 17, 21, 22, 23, 18, 19, 20, 0, 1, 2, 3, 4, 5, 9, 10, 11, 6, 7, 8, 24}};
+  static auto gp = gpgpu<typepack<facet>, typepack<list<unsigned, array<float, 9>>>>(hlsl);
   unordered_buffer<facet> ub(Stl.size());
-  array<list<nat4, array<fat4, 9>>> t(Stl.size());
-  fat4 ymax, ymin;
+  array<list<unsigned, array<float, 9>>> t(Stl.size());
+  float ymax, ymin;
   has_second_side_chamfer = false;
-  for (natt i{}; i < t.size(); ++i)
+  for (nat i{}; i < t.size(); ++i)
     ymax = max(ymax, Stl[i].vertex[0][1], Stl[i].vertex[1][1], Stl[i].vertex[2][2]),
     ymin = min(ymin, Stl[i].vertex[0][1], Stl[i].vertex[1][1], Stl[i].vertex[2][2]),
     t[i].first = a[Reverse][Stl[i].attribute], memcpy(t[i].second.data(), Stl[i].vertex, 36),
@@ -149,9 +146,9 @@ StructuredBuffer<SB0> sb0 : register(t0);
   structured_buffer sb(t);
   gp(t.size(), {ub}, {sb}, {});
   facets_y_center = (ymax + ymin) / 2;
-  journal_hole_radius = *reinterpret_cast<const fat4*>(Stl.header().data() + 16);
-  half_gap = *reinterpret_cast<const fat4*>(Stl.header().data() + 20);
-  half_stroke = *reinterpret_cast<const fat4*>(Stl.header().data() + 24);
+  journal_hole_radius = *reinterpret_cast<const float*>(Stl.header().data() + 16);
+  half_gap = *reinterpret_cast<const float*>(Stl.header().data() + 20);
+  half_stroke = *reinterpret_cast<const float*>(Stl.header().data() + 24);
   return ub;
   ywlib_try_end;
   return {};
@@ -177,10 +174,10 @@ StructuredBuffer<SB0> sb0 : register(t0);
 })";
   ywlib_try_begin;
   if (Stl.empty()) return {};
-  static auto gp = gpgpu<typepack<vertex>, typepack<array<fat4, 9>>>(hlsl);
+  static auto gp = gpgpu<typepack<vertex>, typepack<array<float, 9>>>(hlsl);
   unordered_buffer<vertex> ub(Stl.size() * 3);
-  array<array<fat4, 9>> t(Stl.size());
-  for (natt i{}; i < t.size(); ++i) memcpy(t[i].data(), Stl[i].vertex, 36);
+  array<array<float, 9>> t(Stl.size());
+  for (nat i{}; i < t.size(); ++i) memcpy(t[i].data(), Stl[i].vertex, 36);
   structured_buffer sb(t);
   gp(t.size(), {ub}, {sb}, {});
   return ub;
@@ -190,7 +187,7 @@ StructuredBuffer<SB0> sb0 : register(t0);
 
 void render_facets(const structured_buffer<facet>& Facets,
                    const constant_buffer<list<xmatrix, xmatrix>>& Camera,
-                   const constant_buffer<list<nat4, fat4, nat8>>& Options, source Source = {}) {
+                   const constant_buffer<list<unsigned, float, nat8>>& Options, source Source = {}) {
   static constexpr stv1 hlsl = R"(
 #pragma pack_matrix(row_major)
 struct SB0 {
@@ -238,7 +235,7 @@ float4 psmain(PSIN In) : SV_TARGET {
   return float4(In.c.xyz * (0.3 - 0.6 * In.n.z), In.c.w);
 })";
   static auto rd = renderer<typepack<structured_buffer<facet>>, typepack<>,
-                            typepack<>, typepack<constant_buffer<list<xmatrix, xmatrix>>, constant_buffer<list<nat4, nat4, nat8>>>>(hlsl);
+                            typepack<>, typepack<constant_buffer<list<xmatrix, xmatrix>>, constant_buffer<list<unsigned, unsigned, nat8>>>>(hlsl);
   try {
     rd(Facets.count * 3, {Facets}, {}, {}, {Camera, Options});
   } catch (const std::exception& E) { throw except(E, mv(Source)); }
@@ -246,7 +243,7 @@ float4 psmain(PSIN In) : SV_TARGET {
 
 void render_vertices(const structured_buffer<vertex>& Vertices, const structured_buffer<margin>& Margins,
                      const constant_buffer<xmatrix>& World, const constant_buffer<list<xmatrix, xmatrix>>& Camera,
-                     const constant_buffer<list<nat4, fat4, nat8>>& Options) {
+                     const constant_buffer<list<unsigned, float, nat8>>& Options) {
   static constexpr stv1 hlsl = R"(
 #pragma pack_matrix(row_major)
 struct SB0 {
@@ -314,7 +311,7 @@ float4 psmain(PSIN In) : SV_TARGET {
                             typepack<constant_buffer<xmatrix>>,
                             typepack<>,
                             typepack<constant_buffer<list<xmatrix, xmatrix>>,
-                                     constant_buffer<list<nat4, fat4, nat8>>>>(hlsl);
+                                     constant_buffer<list<unsigned, float, nat8>>>>(hlsl);
   rd(Vertices.count, {Vertices, Margins}, {World}, {}, {Camera, Options});
   ywlib_try_end;
 }
@@ -366,16 +363,16 @@ cbuffer CB1 :register(b1) {
   }
 })";
   ywlib_try_begin;
-  static auto gp = gpgpu<typepack<margin, maxmin>, typepack<vertex>, typepack<list<nat4, nat4, nat8>, xmatrix>>(hlsl);
-  static auto cb = constant_buffer(list<nat4, nat4, nat8>{}); // 頂点の数、スレッド内の処理数、パディング
+  static auto gp = gpgpu<typepack<margin, maxmin>, typepack<vertex>, typepack<list<unsigned, unsigned, nat8>, xmatrix>>(hlsl);
+  static auto cb = constant_buffer(list<unsigned, unsigned, nat8>{}); // 頂点の数、スレッド内の処理数、パディング
   static auto ub = unordered_buffer<maxmin>(1024);
   static auto st = staging_buffer<maxmin>(1024);
   cb.from(list<>::asref(Vertices.count, (Vertices.count - 1) / 1024 + 1, 0_n8));
   gp(ub.count, {Margins, ub}, {Vertices}, {cb, World});
   auto t = ub.to_cpu(st);
-  for (natt i{512}; i != 0; i /= 2) {
-    for (natt j{}; j < i; ++j) {
-      for (natt k{}; k < 25; ++k) {
+  for (nat i{512}; i != 0; i /= 2) {
+    for (nat j{}; j < i; ++j) {
+      for (nat k{}; k < 25; ++k) {
         if (t[j].maxs[k].w < t[j + i].maxs[k].w) t[j].maxs[k] = t[j + i].maxs[k];
         if (t[j].mins[k].w > t[j + i].mins[k].w) t[j].mins[k] = t[j + i].mins[k];
       }
@@ -456,8 +453,8 @@ cbuffer CB1 : register(b1) {
   ub0[i].margin = ub0[i].inside ? ub0[i].perp : sqrt(ub0[i].margin);
 })";
   ywlib_try_begin;
-  static auto gp = gpgpu<typepack<margin>, typepack<facet, vertex>, typepack<xmatrix, list<nat4, nat4, nat8>>>(hlsl);
-  static auto cb = constant_buffer(list<nat4, nat4, nat8>{});
+  static auto gp = gpgpu<typepack<margin>, typepack<facet, vertex>, typepack<xmatrix, list<unsigned, unsigned, nat8>>>(hlsl);
+  static auto cb = constant_buffer(list<unsigned, unsigned, nat8>{});
   cb.from(list<>::asref(Facets.count, Vertices.count, 0));
   gp(Vertices.count, {Margins}, {Facets, Vertices}, {World, cb});
   ywlib_try_end;
@@ -465,8 +462,8 @@ cbuffer CB1 : register(b1) {
 
 void update_world() {
   static constexpr auto f = [](xmatrix& m) {
-    auto t = xv(ui_valuebox_off[0].value<fat4>(), ui_valuebox_off[1].value<fat4>(), ui_valuebox_off[2].value<fat4>(), 0.f);
-    auto r = xv(ui_valuebox_rot[0].value<fat4>(), ui_valuebox_rot[1].value<fat4>(), ui_valuebox_rot[2].value<fat4>(), 0.f);
+    auto t = xv(ui_valuebox_off[0].value<float>(), ui_valuebox_off[1].value<float>(), ui_valuebox_off[2].value<float>(), 0.f);
+    auto r = xv(ui_valuebox_rot[0].value<float>(), ui_valuebox_rot[1].value<float>(), ui_valuebox_rot[2].value<float>(), 0.f);
     xvworld(t, xvneg(xvradian(r)), m); };
   cb_world.from(f);
 }
@@ -484,7 +481,7 @@ void render_all() {
   ywlib_try_end;
 }
 
-template<natt I> bool checker(const maxmin& Now, const maxmin& New) {
+template<nat I> bool checker(const maxmin& Now, const maxmin& New) {
   if constexpr (I == 0) // ジャーナル穴最小取代最大化 (yz軸移動)
     return min(Now.mins[3].w + Now.mins[15].w) < min(New.mins[3].w + New.mins[15].w);
   else if constexpr (I == 1) // 基準面厚み最小化 (yz軸回転)
@@ -501,10 +498,10 @@ template<natt I> bool checker(const maxmin& Now, const maxmin& New) {
     return apply(min, projector(Now.mins, &vector::w, make_sequence<25>{})) < apply(min, projector(New.mins, &vector::w, make_sequence<25>{}));
 }
 
-template<natt I> bool select_best(
+template<nat I> bool select_best(
   unordered_buffer<margin>& Margins, array<maxmin, 13>& Mm,
-  xmatrix& Matrix, const xvector& Theta, fat4 Delta, nat4 Blocker) {
-  natt best{12};
+  xmatrix& Matrix, const xvector& Theta, float Delta, unsigned Blocker) {
+  nat best{12};
   auto off = xv(Delta), rot = xvmul(Theta, off);
   xmatrix mtemp, original = Matrix;
   // std::cout << std::format("{}\n", original);
@@ -634,8 +631,8 @@ void align() {
   if (AlignMode == 0) {
     time = 0;
     xmatrix temp;
-    xvworld(xv(ui_valuebox_off[0].value<fat4>(), ui_valuebox_off[1].value<fat4>(), ui_valuebox_off[2].value<fat4>(), 0.f),
-            xvneg(xvradian(xv(ui_valuebox_rot[0].value<fat4>(), ui_valuebox_rot[1].value<fat4>(), ui_valuebox_rot[2].value<fat4>(), 0.f))), temp);
+    xvworld(xv(ui_valuebox_off[0].value<float>(), ui_valuebox_off[1].value<float>(), ui_valuebox_off[2].value<float>(), 0.f),
+            xvneg(xvradian(xv(ui_valuebox_rot[0].value<float>(), ui_valuebox_rot[1].value<float>(), ui_valuebox_rot[2].value<float>(), 0.f))), temp);
     cb_world.from(temp);
     if (margins.count != sb_vertices.count) margins = unordered_buffer<margin>(sb_vertices.count);
     calc_margin(sb_facets, sb_vertices, cb_world, margins), calc_maxmin(sb_vertices, margins, cb_world, mm[12]);
@@ -722,7 +719,7 @@ void align() {
 }
 
 
-fat4 calc_volume(const structured_buffer<vertex>& Vertices) {
+float calc_volume(const structured_buffer<vertex>& Vertices) {
   static constexpr stv1 hlsl = R"(
 #pragma pack_matrix(row_major)
 struct UB0 {
@@ -743,17 +740,17 @@ cbuffer CB0 : register(b0) {
   else ub0[i].volume = 0;
 })";
   ywlib_try_begin;
-  static auto gp = gpgpu<typepack<fat4>, typepack<vertex>, typepack<list<nat4, nat4, nat8>>>(hlsl);
-  static auto cb = constant_buffer(list<nat4, nat4, nat8>{});
-  static auto ub = unordered_buffer<fat4>{};
+  static auto gp = gpgpu<typepack<float>, typepack<vertex>, typepack<list<unsigned, unsigned, nat8>>>(hlsl);
+  static auto cb = constant_buffer(list<unsigned, unsigned, nat8>{});
+  static auto ub = unordered_buffer<float>{};
   auto m = std::bit_ceil(Vertices.count / 3);
-  if (ub.count != m) ub = unordered_buffer<fat4>(m);
+  if (ub.count != m) ub = unordered_buffer<float>(m);
   cb.from(list{Vertices.count, 0_n4, 0_n8});
   gp(m, {ub}, {Vertices}, {cb});
   auto temp = ub.to_cpu();
-  for (natt i{temp.size() / 2}; i != 0; i /= 2)
-    for (natt j{0}; j < i; ++j) temp[j] += temp[j + i];
-  return temp[0] * fat4(1e-9 / 6);
+  for (nat i{temp.size() / 2}; i != 0; i /= 2)
+    for (nat j{0}; j < i; ++j) temp[j] += temp[j + i];
+  return temp[0] * float(1e-9 / 6);
   ywlib_try_end;
   return {};
 }
@@ -761,10 +758,10 @@ cbuffer CB0 : register(b0) {
 
 inline array<vector, 15> calc_punch(const structured_buffer<vertex>& Vertices, const array<vector, 15>& Ref) {
   array<vector, 15> punches;
-  unordered_buffer<array<fat4, 15>> ub0(nullptr, Vertices.count);
-  unordered_buffer<array<fat4, 15>> ub1(nullptr, 1024);
-  constant_buffer<list<nat4, nat4, nat8, array<vector, 15>>> cb(list{
-    nat4(Vertices.count), nat4((Vertices.count - 1) / 1024 + 1), 0_n8, Ref});
+  unordered_buffer<array<float, 15>> ub0(nullptr, Vertices.count);
+  unordered_buffer<array<float, 15>> ub1(nullptr, 1024);
+  constant_buffer<list<unsigned, unsigned, nat8, array<vector, 15>>> cb(list{
+    unsigned(Vertices.count), unsigned((Vertices.count - 1) / 1024 + 1), 0_n8, Ref});
   try { // STEP 1
     static constexpr stv1 hlsl = R"(
     #pragma pack_matrix(row_major)
@@ -807,7 +804,7 @@ inline array<vector, 15> calc_punch(const structured_buffer<vertex>& Vertices, c
       }
     })";
     std::cout << "A" << std::endl;
-    static auto gp = gpgpu<typepack<array<fat4, 15>>, typepack<vertex>, typepack<decltype(cb)::value_type>>(hlsl);
+    static auto gp = gpgpu<typepack<array<float, 15>>, typepack<vertex>, typepack<decltype(cb)::value_type>>(hlsl);
     std::cout << "A" << std::endl;
     gp(Vertices.count, {ub0}, {Vertices}, {cb});
   } catch (const std::exception& E) { throw except(E); }
@@ -832,7 +829,7 @@ cbuffer CB0 : register(b0) {
   }
 })";
     std::cout << "A" << std::endl;
-    static auto gp = gpgpu<typepack<array<fat4, 15>, array<fat4, 15>>, typepack<>, typepack<decltype(cb)::value_type>>(hlsl);
+    static auto gp = gpgpu<typepack<array<float, 15>, array<float, 15>>, typepack<>, typepack<decltype(cb)::value_type>>(hlsl);
     std::cout << "A" << std::endl;
     gp(1024, {ub0, ub1}, {}, {cb});
   } catch (const std::exception& E) { throw except(E); }
@@ -842,15 +839,15 @@ cbuffer CB0 : register(b0) {
       for (const auto& f : e) std::cout << std::format("{}-", f);
       std::cout << std::endl;
     }
-    for (natt i{512}; i != 0; i /= 2) {
-      for (natt j{}; j < i; ++j) {
-        for (natt k{}; k < 15; ++k) {
+    for (nat i{512}; i != 0; i /= 2) {
+      for (nat j{}; j < i; ++j) {
+        for (nat k{}; k < 15; ++k) {
           if (Ref[k].w < 0) temp[j][k] = min(temp[j][k], temp[j + i][k]);
           else temp[j][k] = max(temp[j][k], temp[j + i][k]);
         }
       }
     }
-    for (natt k{}; k < 15; ++k) {
+    for (nat k{}; k < 15; ++k) {
       if (std::abs(Ref[k].w) == 1) punches[k].x = temp[0][k];
       else if (std::abs(Ref[k].w) == 2) punches[k].y = temp[0][k];
       else punches[k].z = temp[0][k];
@@ -860,8 +857,8 @@ cbuffer CB0 : register(b0) {
 }
 
 
-void output_punch(const path& Path, array<vector, 15> Points, const nat4 (&Arrange)[15]) {
-  static constexpr auto ff = [](fat4 f) {
+void output_punch(const path& Path, array<vector, 15> Points, const unsigned (&Arrange)[15]) {
+  static constexpr auto ff = [](float f) {
     if (f == 1) return vector(1, 0, 0);
     else if (f == 2) return vector(0, 1, 0);
     else if (f == 3) return vector(0, 0, 1);
@@ -871,11 +868,11 @@ void output_punch(const path& Path, array<vector, 15> Points, const nat4 (&Arran
     else return vector{};
   };
   try {
-    for (natt i{}; i < 15; ++i) std::cout << std::format("{}\n", Points[i]);
+    for (nat i{}; i < 15; ++i) std::cout << std::format("{}\n", Points[i]);
     std::ofstream ofs(Path);
     ofs << R"("type";"name";"coord-x";"coord-y";"coord-z";"coord-x2";"coord-y2";"coord-z2";"normal-x";"normal-y";"normal-z";"trimming-x";"trimming-y";"trimming-z";"dir-x";"dir-y";"dir-z";"length";"width";"radius";"radius2";"angle";"orientation";"edge-radius";"num-points";"tol-x-lower";"tol-x-upper";"tol-y-lower";"tol-y-upper";"tol-z-lower";"tol-z-upper";"tol-all-lower";"tol-all-upper";"tol-normal-lower";"tol-normal-upper";"tol-trimming-lower";"tol-trimming-upper";"tol-inplane-lower";"tol-inplane-upper";"tol-length-lower";"tol-length-upper";"tol-width-lower";"tol-width-upper";"tol-diameter-lower";"tol-diameter-upper";"tol-angle-lower";"tol-angle-upper";"tol-xy-lower";"tol-xy-upper";"tol-xz-lower";"tol-xz-upper";"tol-yz-lower";"tol-yz-upper";"coord-x3";"coord-y3";"coord-z3";"tol-diameter2-lower";"tol-diameter2-upper")";
     ofs << std::endl;
-    for (natt i{}; i < 15; ++i) {
+    for (nat i{}; i < 15; ++i) {
       auto nn = ff(Points[i].w);
       ofs << std::format(R"("inspection_surface_point";"point {}";"{}";"{}";"{}";"";"";"";"{}";"{}";"{}";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";")",
                          Arrange[i], Points[i].x, Points[i].y, Points[i].z, nn.x, nn.y, nn.z)
@@ -903,12 +900,12 @@ void show_result() {
   ui_button_output = button(1, {1240, 760, 1390, 800}, L"成績表出力", WS_BORDER);
   ui_button_output.input = [](const button&) {
     main::begin_draw();
-    for (natt i{}; i < 8; ++i)
+    for (nat i{}; i < 8; ++i)
       draw_text((rect_textbox_result[i] + rect(0, 10, 0, 0)).to_vector(), font<20, L"Yu Gothic UI", 0, true>{}, ui_textbox_result[i].text());
     main::end_draw();
     auto p = save_file(cmt_path.parent_path(), std::format(L"{}.png", ui_textbox_result[5].text()));
     if (!p.empty()) {
-      static constexpr nat4 arrange[] = {14, 13, 12, 15, 11, 9, 10, 4, 3, 2, 1, 8, 5, 7, 6};
+      static constexpr unsigned arrange[] = {14, 13, 12, 15, 11, 9, 10, 4, 3, 2, 1, 8, 5, 7, 6};
       array<vector, 15> ref{
         vector(0.0f, -journal_hole_radius, 0.0f, 1.0f),
         vector(0.0f, 0.0f, journal_hole_radius, 1.0f),
@@ -994,7 +991,7 @@ void show_result() {
   constexpr auto vector_frame_lower = array{
     rect_textbox_result[0].to_vector(), rect_textbox_result[1].to_vector(), rect_textbox_result[2].to_vector(), rect_textbox_result[3].to_vector(),
     rect_textbox_result[4].to_vector(), rect_textbox_result[5].to_vector(), rect_textbox_result[6].to_vector(), rect_textbox_result[7].to_vector()};
-  constexpr fat4 frame_width = 1.f;
+  constexpr float frame_width = 1.f;
 
   draw_text(ui_label_result_title[0], font<18>{}, L"判定");
   draw_text(ui_label_result_title[1], font<18>{}, L"工程");
@@ -1026,7 +1023,7 @@ void show_result() {
   auto cam_factor = .9f * min(500 / (MaxMin.maxs[25].y - MaxMin.mins[25].y), 230 / max(MaxMin.maxs[25].x - MaxMin.mins[25].x, MaxMin.maxs[25].z - MaxMin.mins[25].z));
   auto cam_offset_y = (MaxMin.maxs[25].y + MaxMin.mins[25].y) / 2;
 
-  static constexpr auto get_color = [](fat4 f) {
+  static constexpr auto get_color = [](float f) {
     if (f > 60.f) return color::darkblue;
     else if (f > 45.f) return color::royalblue;
     else if (f > 24.f) return color::mediumseagreen;
@@ -1035,7 +1032,7 @@ void show_result() {
     else return color::red;
   };
 
-  constant_buffer<list<nat4, fat4, nat8>> cb_options(list<>::asref(0, 1.f, 0));
+  constant_buffer<list<unsigned, float, nat8>> cb_options(list<>::asref(0, 1.f, 0));
   constant_buffer<list<xmatrix, xmatrix>> cb_camera;
 
   { // 右サイド
@@ -1379,7 +1376,7 @@ void ywmain() {
   Camera.orthographic = true;
   Camera.factor = 0.5f;
   Camera.offset.z = -10000;
-  Camera.rotation.z = -fat4(pi / 2);
+  Camera.rotation.z = -float(pi / 2);
   Camera.update();
   Camera.begin_render(color::white);
   Camera.end_render();
@@ -1388,7 +1385,7 @@ void ywmain() {
   static_assert(constructible<constant_buffer<list<xmatrix, xmatrix>>, list<xmatrix&, xmatrix&>>);
   cb_camera = constant_buffer<list<xmatrix, xmatrix>>(list<>::asref(Camera.view, Camera.view_proj));
   cb_world = decltype(cb_world)(xv_identity);
-  cb_options = decltype(cb_options)(list<nat4, fat4, nat8>{0, 1.f, 0});
+  cb_options = decltype(cb_options)(list<unsigned, float, nat8>{0, 1.f, 0});
 
   ui_button_cmt = button(0, {5, 5, 45, 25}, L"CMT");
   ui_button_cmt.input = [](const button& This) {
@@ -1459,7 +1456,7 @@ void ywmain() {
     sb_margins.from(ub_margins);
     calc_maxmin(sb_vertices, ub_margins, cb_world, MaxMin);
     render_all();
-    // for (natt i{}; i < 26; ++i) std::cout << std::format("({}, {})\n", MaxMin.mins[i], MaxMin.maxs[i]);
+    // for (nat i{}; i < 26; ++i) std::cout << std::format("({}, {})\n", MaxMin.mins[i], MaxMin.maxs[i]);
     // std::cout << std::endl;
     ywlib_try_end;
   };
@@ -1553,8 +1550,8 @@ void ywmain() {
         b = true;
         Camera.rotation.y -= dx * 0.003f / Camera.factor;
         Camera.rotation.x += dy * 0.003f / Camera.factor;
-        if (Camera.rotation.x < -pi / 2) Camera.rotation.x = fat4(-pi / 2);
-        else if (Camera.rotation.x > pi / 2) Camera.rotation.x = fat4(pi / 2);
+        if (Camera.rotation.x < -pi / 2) Camera.rotation.x = float(-pi / 2);
+        else if (Camera.rotation.x > pi / 2) Camera.rotation.x = float(pi / 2);
       } else if (mouse::middle) {
         b = true;
         Camera.offset.x += dx * 2.4f / Camera.factor;
