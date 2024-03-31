@@ -628,11 +628,13 @@ template<typename T> projector(T&&) -> projector<T>;
 
 inline constexpr auto cfor = []<typename Fn, nat... Is, typename... Ts>(Fn&& Func, sequence<Is...>, Ts&&... Args) requires (invocable<Fn&, constant<Is>, Ts...> && ...) { ((invoke(Func, constant<Is>{}, fwd<Ts>(Args)...)), ...); };
 
-template<invocable... Fs> struct caster : public Fs... {
+template<typename... Fs> struct caster : public Fs... {
   template<typename T> static constexpr nat i = []<typename... Ts>(typepack<Ts...>) { return inspects<same_as<Ts, T>...>; }(typepack<invoke_result<Fs>...>{});
   template<typename T> static constexpr nat j = i<T> < sizeof...(Fs) ? i<T> : []<typename... Ts>(typepack<Ts...>) { return inspects<convertible_to<Ts, T>...>; }(typepack<invoke_result<Fs>...>{});
+  template<typename... As> static constexpr nat k = inspects<invocable<Fs, As...>...>;
 public:
   template<typename T> requires(j<T> < sizeof...(Fs)) constexpr operator T() const noexcept(nt_convertible_to<invoke_result<type_switch<j<T>, Fs...>>, T>) { return type_switch<j<T>, Fs...>::operator()(); }
+  template<typename... As> requires(k<As...> != sizeof...(Fs)) constexpr auto operator()(As&&... Args) const noexcept(nt_invocable<type_switch<k<As...>, Fs...>, As...>) -> invoke_result<type_switch<k<As...>, Fs...>> { return type_switch<k<As...>, Fs...>::operator()(fwd<As>(Args)...); }
 };
 
 inline constexpr caster is_cev{[]() noexcept { return std::is_constant_evaluated(); }};
@@ -1872,13 +1874,28 @@ inline size_t _memo_offset{};
 } // clang-format on
 
 /// @brief allocates memory for momentary memos
-template<typename T, size_t N = 1> requires(0 < sizeof(T) * N && sizeof(T) * N <= _::_memo_size)
-inline constexpr caster memo{[]() noexcept -> T* {
-  static constexpr size_t l = _::_memo_align, m = sizeof(T) * N, n = m % l ? m + l - m % l : m;
-  if (_::_memo_offset + n <= _::_memo_size) {
-    auto p = reinterpret_cast<T*>(_::_memo + _::_memo_offset);
-    return _::_memo_offset += n, p;
+template<typename T> inline constexpr caster memo{
+  []() noexcept -> remove_extent<T>* requires is_bounded_array<T> {
+    constexpr nat l = sizeof(T), m = l % _::_memo_align, n = m ? l + _::_memo_align - m : l;
+    if (const nat o = _::_memo_offset + n; o <= _::_memo_size) {
+      return reinterpret_cast<remove_extent<T>*>(exchange(_::_memo_offset, 0));
+    } else return _::_memo_offset = n, reinterpret_cast<remove_extent<T>*>(_::_memo);
+  },
+  [](const nat Extent) noexcept -> T* {
+  const nat l = sizeof(T) * Extent, m = l % _::_memo_align, n = m ? l + _::_memo_align - m : l;
+  if (const nat o = _::_memo_offset + n; o <= _::_memo_size) {
+    return reinterpret_cast<T*>(_::_memo + exchange(_::_memo_offset, 0));
   } else return _::_memo_offset = n, reinterpret_cast<T*>(_::_memo); }};
+
+/// @brief insures this is null-terminated
+template<character Ct> struct null_terminated {
+  const Ct* const p;
+  constexpr null_terminated(const Ct* const P) noexcept : p(P) {}
+  constexpr null_terminated(const std::basic_string<Ct>& S) noexcept : p(S.c_str()) {}
+  constexpr null_terminated(const std::basic_string_view<Ct>& S) noexcept
+    : p([](auto& s, Ct* const o) noexcept { return *std::char_traits<Ct>::copy(o, s.data(), s.size()) = 0, o; }(S, memo<Ct>(S.size() + 1))) {}
+  constexpr operator const Ct*() const noexcept { return p; }
+};
 
 /// @brief throws an exception if `Result` is `false`
 inline void tiff(const auto& Result, const std::string_view Message, const source& _ = {})
@@ -1914,7 +1931,7 @@ namespace yw {
 /// @brief throws an exception if `Result` is `FAILED`
 inline void tiff(const HRESULT Result, const source& _ = {}) {
   if (SUCCEEDED(Result)) return;
-  char* buffer = memo<char, 128>;
+  char* buffer = memo<char[128]>();
   ::FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
                    Result, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buffer, 128, nullptr);
   auto text = std::format("runtime error: {}\n at {}({},{})", buffer, _.file, _.line, _.column);
@@ -2414,25 +2431,25 @@ inline constexpr key<VK_OEM_102> oem31{};
 /// @note `ok(Text, Title = "OK?") -> bool`
 /// @note `Text` and `Title` must be null-terminated strings
 inline constexpr overload ok{
-  [](const std::string_view Text, const std::string_view Title = "OK?")
-    -> bool { return ::MessageBoxA(main::hwnd, Text.data(), Title.data(), MB_ICONEXCLAMATION | MB_OK) == IDOK; },
-  [](const std::wstring_view Text, const std::wstring_view Title = L"OK?")
-    -> bool { return ::MessageBoxW(main::hwnd, Text.data(), Title.data(), MB_ICONEXCLAMATION | MB_OK) == IDOK; }};
+  [](const null_terminated<char> Text, const null_terminated<char> Title = "OK?")
+    -> bool { return ::MessageBoxA(main::hwnd, Text, Title, MB_ICONEXCLAMATION | MB_OK) == IDOK; },
+  [](const null_terminated<wchar_t> Text, const null_terminated<wchar_t> Title = L"OK?")
+    -> bool { return ::MessageBoxW(main::hwnd, Text, Title, MB_ICONEXCLAMATION | MB_OK) == IDOK; }};
 
 /// @brief shows a message box with Yes and No buttons
 /// @result `true` if the user clicks the Yes button
 /// @note `yes(Text, Title = "Yes?") -> bool`
 /// @note `Text` and `Title` must be null-terminated strings
 inline constexpr overload yes{
-  [](const std::string_view Text, const std::string_view Title = "Yes?")
-    -> bool { return ::MessageBoxA(main::hwnd, Text.data(), Title.data(), MB_ICONQUESTION | MB_YESNO) == IDYES; },
-  [](const std::wstring_view Text, const std::wstring_view Title = L"Yes?")
-    -> bool { return ::MessageBoxW(main::hwnd, Text.data(), Title.data(), MB_ICONQUESTION | MB_YESNO) == IDYES; }};
+  [](const null_terminated<char> Text, const null_terminated<char> Title = "Yes?")
+    -> bool { return ::MessageBoxA(main::hwnd, Text, Title, MB_ICONQUESTION | MB_YESNO) == IDYES; },
+  [](const null_terminated<wchar_t> Text, const null_terminated<wchar_t> Title = L"Yes?")
+    -> bool { return ::MessageBoxW(main::hwnd, Text, Title, MB_ICONQUESTION | MB_YESNO) == IDYES; }};
 
 /// @brief shows a file open dialog
 inline constexpr auto open_file = [](const std::filesystem::path& Dir = {}) noexcept -> std::filesystem::path {
   try {
-    wchar_t* buffer = memo<wchar_t, 256>;
+    wchar_t* buffer = memo<wchar_t[256]>();
     OPENFILENAMEW ofn{DWORD(sizeof(OPENFILENAMEW)), main::hwnd, 0, L"All Files (*.*)\0", 0, 0, 1, buffer, 256};
     ofn.lpstrInitialDir = Dir.c_str();
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
@@ -2444,7 +2461,7 @@ inline constexpr auto open_file = [](const std::filesystem::path& Dir = {}) noex
 /// @brief shows a file save dialog
 inline constexpr auto save_file = [](const std::filesystem::path& Dir = {}, const std::filesystem::path& Default = {}) noexcept -> std::filesystem::path {
   try {
-    wchar_t* buffer = memo<wchar_t, 256>;
+    wchar_t* buffer = memo<wchar_t[256]>();
     if (!Default.empty()) std::ranges::copy(Default.filename().wstring(), buffer);
     OPENFILENAMEW ofn{DWORD(sizeof(OPENFILENAMEW)), main::hwnd, 0, L"All Files (*.*)\0", 0, 0, 1, buffer, 256};
     ofn.lpstrInitialDir = Dir.c_str();
@@ -2792,7 +2809,7 @@ public:
   gpgpu() noexcept = default;
 
   /// constructor from HLSL
-  gpgpu(std::string_view Hlsl, const char* const Entry = "csmain", const char* const Target = "cs_5_0", const source& _ = {}) {
+  gpgpu(std::string_view Hlsl, const null_terminated<char> Entry = "csmain", const null_terminated<char> Target = "cs_5_0", const source& _ = {}) {
     try {
       comptr<ID3DBlob> b, r;
       auto hr = D3DCompile(Hlsl.data(), Hlsl.size(), 0, 0, 0, Entry.data(), Target.data(), D3D10_SHADER_ENABLE_STRICTNESS, 0, b.init(), r.init());
@@ -3144,53 +3161,22 @@ class yw::control {
   static constexpr auto default_font = LOGFONTW(16, 0, 0, 0, FW_NORMAL, 0, 0, 0, SHIFTJIS_CHARSET, OUT_DEFAULT_PRECIS,
                                                 CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, L"Yu Gothic UI");
 public:
-  /// maximum number of control groups
-  inline static constexpr nat max_groups = 16;
-
-  /// window handle of this control
-  const HWND hwnd{};
-
-  /// font handle of this control
-  const HFONT hfont{};
-
-  /// group index of this control
-  const nat group{npos};
-
-  /// shows this control
-  virtual void show() const {
-    tiff(hwnd, "This control is not initialized");
-    ShowWindow(hwnd, SW_SHOW);
-  }
-
-  /// hides this control
-  virtual void hide() const {
-    tiff(hwnd, "This control is not initialized");
-    ShowWindow(hwnd, SW_HIDE);
-  }
-
-  /// sets the focus to this control
-  virtual void setfocus() const {
-    tiff(hwnd, "SetFocus failed");
-    SetFocus(hwnd);
-  }
-
-  /// sets the null-terminated text to this control
-  virtual void text(const std::wstring_view& Text) const {
-    tiff(hwnd, "This control is not initialized");
-    SetWindowTextW(hwnd, Text.data());
-  }
-
-  /// gets the text of this control
+  inline static constexpr nat max_groups = 16; // maximum number of control groups
+  const HWND hwnd{};                           // window handle of this control
+  const HFONT hfont{};                         // font handle of this control
+  const nat group{npos};                       // group index of this control
+  virtual void show() const { ShowWindow(hwnd, SW_SHOW); }
+  virtual void hide() const { ShowWindow(hwnd, SW_HIDE); }
+  virtual void setfocus() const { SetFocus(hwnd); }
+  virtual void text(const null_terminated<wchar_t> Text) const { SetWindowTextW(hwnd, Text); }
   virtual std::wstring text() const {
-    tiff(hwnd, "This control is not initialized");
-    std::wstring out(GetWindowTextLengthW(hwnd), {});
+    if (!hwnd) return {};
+    std::wstring out(GetWindowTextLengthW(hwnd), wchar_t{});
     GetWindowTextW(hwnd, out.data(), int(out.size() + 1));
     return out;
   }
-
-  /// shows all controls in the specified group
   static void show(nat GroupNo) {
-    tiff(GroupNo < max_groups, "GroupNo must be less than max_groups");
+    if (GroupNo >= max_groups) throw std::logic_error("GroupNo must be less than max_groups");
     for (auto& g : groups[GroupNo + 1]) g.second->show();
   }
 
