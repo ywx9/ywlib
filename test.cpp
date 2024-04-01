@@ -1,7 +1,4 @@
-#define ywlib_debug
-// #include "ywlib/control.h"
-// #include "ywlib/ff-stl.h"
-#include "ywlib2"
+#include "ywlib"
 using namespace yw;
 
 struct facet { // CADデータの要素
@@ -74,7 +71,7 @@ structured_buffer<margin> sb_margins{};
 unordered_buffer<margin> ub_margins{};
 constant_buffer<xmatrix> cb_world{};
 constant_buffer<list<xmatrix, xmatrix>> cb_camera{};
-constant_buffer<list<unsigned, float, nat8>> cb_options{};
+constant_buffer<list<unsigned, float, unsigned long long>> cb_options{};
 
 ff::stl stl_facets{};
 float facets_y_center{};
@@ -84,7 +81,7 @@ maxmin MaxMin{};
 
 bool Reversed = false;
 bool ResultMode = false;
-intt AlignMode = -1;
+int AlignMode = -1;
 
 float journal_hole_radius{};
 float half_gap{};
@@ -103,7 +100,7 @@ constexpr rect rect_textbox_result[8] = {
 }
 
 unordered_buffer<facet> facets_from_stl(const ff::stl& Stl, bool Reverse) {
-  static constexpr stv1 hlsl = R"(
+  static constexpr std::string_view hlsl = R"(
 #pragma pack_matrix(row_major)
 struct UB0 {
   uint id;           // 面の識別番号
@@ -128,34 +125,36 @@ StructuredBuffer<SB0> sb0 : register(t0);
   t = float4(t.xyz + cross(sb0[i].b, sb0[i].c) + cross(sb0[i].c, sb0[i].a), dot(t.xyz, sb0[i].c));
   ub0[i].plane = t / length(t.xyz);
 })";
-  ywlib_try_begin;
-  if (Stl.empty()) return {};
-  static constexpr auto a = array{
-    array<unsigned, 25>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24},
-    array<unsigned, 25>{12, 13, 14, 15, 16, 17, 21, 22, 23, 18, 19, 20, 0, 1, 2, 3, 4, 5, 9, 10, 11, 6, 7, 8, 24}};
-  static auto gp = gpgpu<typepack<facet>, typepack<list<unsigned, array<float, 9>>>>(hlsl);
-  unordered_buffer<facet> ub(Stl.size());
-  array<list<unsigned, array<float, 9>>> t(Stl.size());
-  float ymax, ymin;
-  has_second_side_chamfer = false;
-  for (nat i{}; i < t.size(); ++i)
-    ymax = max(ymax, Stl[i].vertex[0][1], Stl[i].vertex[1][1], Stl[i].vertex[2][2]),
-    ymin = min(ymin, Stl[i].vertex[0][1], Stl[i].vertex[1][1], Stl[i].vertex[2][2]),
-    t[i].first = a[Reverse][Stl[i].attribute], memcpy(t[i].second.data(), Stl[i].vertex, 36),
-    has_second_side_chamfer |= t[i].first == 8;
-  structured_buffer sb(t);
-  gp(t.size(), {ub}, {sb}, {});
-  facets_y_center = (ymax + ymin) / 2;
-  journal_hole_radius = *reinterpret_cast<const float*>(Stl.header().data() + 16);
-  half_gap = *reinterpret_cast<const float*>(Stl.header().data() + 20);
-  half_stroke = *reinterpret_cast<const float*>(Stl.header().data() + 24);
-  return ub;
-  ywlib_try_end;
-  return {};
+  try {
+    if (Stl.empty()) return {};
+    static constexpr auto a = std::array{
+      std::array<unsigned, 25>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24},
+      std::array<unsigned, 25>{12, 13, 14, 15, 16, 17, 21, 22, 23, 18, 19, 20, 0, 1, 2, 3, 4, 5, 9, 10, 11, 6, 7, 8, 24}};
+    static auto gp = gpgpu<typepack<facet>, typepack<list<unsigned, std::array<float, 9>>>>(hlsl);
+    unordered_buffer<facet> ub(Stl.size());
+    std::vector<list<unsigned, std::array<float, 9>>> t(Stl.size());
+    float ymax, ymin;
+    has_second_side_chamfer = false;
+    for (nat i{}; i < t.size(); ++i)
+      ymax = max(ymax, Stl[i].vertex[0][1], Stl[i].vertex[1][1], Stl[i].vertex[2][2]),
+      ymin = min(ymin, Stl[i].vertex[0][1], Stl[i].vertex[1][1], Stl[i].vertex[2][2]),
+      t[i].first = a[Reverse][Stl[i].attribute], memcpy(t[i].second.data(), Stl[i].vertex.data(), 36),
+      has_second_side_chamfer |= t[i].first == 8;
+    structured_buffer sb(t);
+    gp(t.size(), {ub}, {sb}, {});
+    facets_y_center = (ymax + ymin) / 2;
+    journal_hole_radius = *reinterpret_cast<const float*>(Stl.header().data() + 16);
+    half_gap = *reinterpret_cast<const float*>(Stl.header().data() + 20);
+    half_stroke = *reinterpret_cast<const float*>(Stl.header().data() + 24);
+    return ub;
+  } catch (except E) {
+    E.receive();
+    return {};
+  }
 }
 
 unordered_buffer<vertex> vertices_from_stl(const ff::stl& Stl) {
-  static constexpr stv1 hlsl = R"(
+  static constexpr std::string_view hlsl = R"(
 #pragma pack_matrix(row_major)
 struct UB0 {
   float4 v, n; // 頂点座標、法線ベクトル
@@ -172,23 +171,25 @@ StructuredBuffer<SB0> sb0 : register(t0);
   ub0[j + 1].v = float4(sb0[i].b, 1); ub0[j + 1].n = normal;
   ub0[j + 2].v = float4(sb0[i].c, 1); ub0[j + 2].n = normal;
 })";
-  ywlib_try_begin;
-  if (Stl.empty()) return {};
-  static auto gp = gpgpu<typepack<vertex>, typepack<array<float, 9>>>(hlsl);
-  unordered_buffer<vertex> ub(Stl.size() * 3);
-  array<array<float, 9>> t(Stl.size());
-  for (nat i{}; i < t.size(); ++i) memcpy(t[i].data(), Stl[i].vertex, 36);
-  structured_buffer sb(t);
-  gp(t.size(), {ub}, {sb}, {});
-  return ub;
-  ywlib_try_end;
-  return {};
+  try {
+    if (Stl.empty()) return {};
+    static auto gp = gpgpu<typepack<vertex>, typepack<std::array<float, 9>>>(hlsl);
+    unordered_buffer<vertex> ub(Stl.size() * 3);
+    std::vector<std::array<float, 9>> t(Stl.size());
+    for (nat i{}; i < t.size(); ++i) memcpy(t[i].data(), Stl[i].vertex.data(), 36);
+    structured_buffer sb(t);
+    gp(t.size(), {ub}, {sb}, {});
+    return ub;
+  } catch (except E) {
+    E.receive();
+    return {};
+  }
 }
 
 void render_facets(const structured_buffer<facet>& Facets,
                    const constant_buffer<list<xmatrix, xmatrix>>& Camera,
-                   const constant_buffer<list<unsigned, float, nat8>>& Options, source Source = {}) {
-  static constexpr stv1 hlsl = R"(
+                   const constant_buffer<list<unsigned, float, unsigned long long>>& Options, source Source = {}) {
+  static constexpr std::string_view hlsl = R"(
 #pragma pack_matrix(row_major)
 struct SB0 {
   uint id;           // 面の識別番号
@@ -235,16 +236,16 @@ float4 psmain(PSIN In) : SV_TARGET {
   return float4(In.c.xyz * (0.3 - 0.6 * In.n.z), In.c.w);
 })";
   static auto rd = renderer<typepack<structured_buffer<facet>>, typepack<>,
-                            typepack<>, typepack<constant_buffer<list<xmatrix, xmatrix>>, constant_buffer<list<unsigned, unsigned, nat8>>>>(hlsl);
+                            typepack<>, typepack<constant_buffer<list<xmatrix, xmatrix>>, constant_buffer<list<unsigned, unsigned, unsigned long long>>>>(hlsl);
   try {
     rd(Facets.count * 3, {Facets}, {}, {}, {Camera, Options});
-  } catch (const std::exception& E) { throw except(E, mv(Source)); }
+  } catch (except E) { E.receive(); }
 }
 
 void render_vertices(const structured_buffer<vertex>& Vertices, const structured_buffer<margin>& Margins,
                      const constant_buffer<xmatrix>& World, const constant_buffer<list<xmatrix, xmatrix>>& Camera,
-                     const constant_buffer<list<unsigned, float, nat8>>& Options) {
-  static constexpr stv1 hlsl = R"(
+                     const constant_buffer<list<unsigned, float, unsigned long long>>& Options) {
+  static constexpr std::string_view hlsl = R"(
 #pragma pack_matrix(row_major)
 struct SB0 {
   float4 p; // 頂点座標
@@ -306,19 +307,19 @@ float4 psmain(PSIN In) : SV_TARGET {
   if (In.n.z > 0) return float4(0.5, 0.5, 0.5, In.c.w);
   else return float4(In.c.xyz * (0.3 - 0.6 * In.n.z), In.c.w);
 })";
-  ywlib_try_begin;
-  static auto rd = renderer<typepack<structured_buffer<vertex>, structured_buffer<margin>>,
-                            typepack<constant_buffer<xmatrix>>,
-                            typepack<>,
-                            typepack<constant_buffer<list<xmatrix, xmatrix>>,
-                                     constant_buffer<list<unsigned, float, nat8>>>>(hlsl);
-  rd(Vertices.count, {Vertices, Margins}, {World}, {}, {Camera, Options});
-  ywlib_try_end;
+  try {
+    static auto rd = renderer<typepack<structured_buffer<vertex>, structured_buffer<margin>>,
+                              typepack<constant_buffer<xmatrix>>,
+                              typepack<>,
+                              typepack<constant_buffer<list<xmatrix, xmatrix>>,
+                                       constant_buffer<list<unsigned, float, unsigned long long>>>>(hlsl);
+    rd(Vertices.count, {Vertices, Margins}, {World}, {}, {Camera, Options});
+  } catch (except E) { E.receive(); }
 }
 
 void calc_maxmin(const structured_buffer<vertex>& Vertices, const unordered_buffer<margin>& Margins,
                  const constant_buffer<xmatrix>& World, maxmin& MaxMin) {
-  static constexpr stv1 hlsl = R"(
+  static constexpr std::string_view hlsl = R"(
 #pragma pack_matrix(row_major)
 struct SB0 {
   float4 p; // 頂点座標
@@ -362,32 +363,32 @@ cbuffer CB1 :register(b1) {
     ub1[i].maxs[25] = max(ub1[i].maxs[25], s.p); ub1[i].mins[25] = min(ub1[i].mins[25], s.p);
   }
 })";
-  ywlib_try_begin;
-  static auto gp = gpgpu<typepack<margin, maxmin>, typepack<vertex>, typepack<list<unsigned, unsigned, nat8>, xmatrix>>(hlsl);
-  static auto cb = constant_buffer(list<unsigned, unsigned, nat8>{}); // 頂点の数、スレッド内の処理数、パディング
-  static auto ub = unordered_buffer<maxmin>(1024);
-  static auto st = staging_buffer<maxmin>(1024);
-  cb.from(list<>::asref(Vertices.count, (Vertices.count - 1) / 1024 + 1, 0_n8));
-  gp(ub.count, {Margins, ub}, {Vertices}, {cb, World});
-  auto t = ub.to_cpu(st);
-  for (nat i{512}; i != 0; i /= 2) {
-    for (nat j{}; j < i; ++j) {
-      for (nat k{}; k < 25; ++k) {
-        if (t[j].maxs[k].w < t[j + i].maxs[k].w) t[j].maxs[k] = t[j + i].maxs[k];
-        if (t[j].mins[k].w > t[j + i].mins[k].w) t[j].mins[k] = t[j + i].mins[k];
+  try {
+    static auto gp = gpgpu<typepack<margin, maxmin>, typepack<vertex>, typepack<list<unsigned, unsigned, unsigned long long>, xmatrix>>(hlsl);
+    static auto cb = constant_buffer(list<unsigned, unsigned, unsigned long long>{}); // 頂点の数、スレッド内の処理数、パディング
+    static auto ub = unordered_buffer<maxmin>(1024);
+    static auto st = staging_buffer<maxmin>(1024);
+    cb.from(list<>::asref(Vertices.count, (Vertices.count - 1) / 1024 + 1, nat(0)));
+    gp(ub.count, {Margins, ub}, {Vertices}, {cb, World});
+    auto t = ub.to_cpu(st);
+    for (nat i{512}; i != 0; i /= 2) {
+      for (nat j{}; j < i; ++j) {
+        for (nat k{}; k < 25; ++k) {
+          if (t[j].maxs[k].w < t[j + i].maxs[k].w) t[j].maxs[k] = t[j + i].maxs[k];
+          if (t[j].mins[k].w > t[j + i].mins[k].w) t[j].mins[k] = t[j + i].mins[k];
+        }
+        if (t[j].minimum.w > t[j + i].minimum.w)
+          t[j].minimum = t[j + i].minimum, t[j].minimum_n = t[j + i].minimum_n, t[j].minimum_i = t[j + i].minimum_i;
+        t[j].maxs[25] = xvmax(t[j].maxs[25], t[j + i].maxs[25]), t[j].mins[25] = xvmin(t[j].mins[25], t[j + i].mins[25]);
       }
-      if (t[j].minimum.w > t[j + i].minimum.w)
-        t[j].minimum = t[j + i].minimum, t[j].minimum_n = t[j + i].minimum_n, t[j].minimum_i = t[j + i].minimum_i;
-      t[j].maxs[25] = xvmax(t[j].maxs[25], t[j + i].maxs[25]), t[j].mins[25] = xvmin(t[j].mins[25], t[j + i].mins[25]);
     }
-  }
-  MaxMin = mv(t[0]);
-  ywlib_try_end;
+    MaxMin = mv(t[0]);
+  } catch (except E) { E.receive(); }
 }
 
 void calc_margin(const structured_buffer<facet>& Facets, const structured_buffer<vertex>& Vertices,
                  const constant_buffer<xmatrix>& World, unordered_buffer<margin>& Margins) {
-  static constexpr stv1 hlsl = R"(
+  static constexpr std::string_view hlsl = R"(
 #pragma pack_matrix(row_major)
 struct SB0 {
   uint id;           // 面の識別番号
@@ -452,33 +453,34 @@ cbuffer CB1 : register(b1) {
   }
   ub0[i].margin = ub0[i].inside ? ub0[i].perp : sqrt(ub0[i].margin);
 })";
-  ywlib_try_begin;
-  static auto gp = gpgpu<typepack<margin>, typepack<facet, vertex>, typepack<xmatrix, list<unsigned, unsigned, nat8>>>(hlsl);
-  static auto cb = constant_buffer(list<unsigned, unsigned, nat8>{});
-  cb.from(list<>::asref(Facets.count, Vertices.count, 0));
-  gp(Vertices.count, {Margins}, {Facets, Vertices}, {World, cb});
-  ywlib_try_end;
+  try {
+    static auto gp = gpgpu<typepack<margin>, typepack<facet, vertex>, typepack<xmatrix, list<unsigned, unsigned, unsigned long long>>>(hlsl);
+    static auto cb = constant_buffer(list<unsigned, unsigned, unsigned long long>{});
+    cb.from(list<>::asref(Facets.count, Vertices.count, 0));
+    gp(Vertices.count, {Margins}, {Facets, Vertices}, {World, cb});
+  } catch (except E) { E.receive(); }
 }
 
 void update_world() {
   static constexpr auto f = [](xmatrix& m) {
-    auto t = xv(ui_valuebox_off[0].value<float>(), ui_valuebox_off[1].value<float>(), ui_valuebox_off[2].value<float>(), 0.f);
-    auto r = xv(ui_valuebox_rot[0].value<float>(), ui_valuebox_rot[1].value<float>(), ui_valuebox_rot[2].value<float>(), 0.f);
+    auto t = xvload(ui_valuebox_off[0].value<float>(), ui_valuebox_off[1].value<float>(), ui_valuebox_off[2].value<float>(), 0.f);
+    auto r = xvload(ui_valuebox_rot[0].value<float>(), ui_valuebox_rot[1].value<float>(), ui_valuebox_rot[2].value<float>(), 0.f);
     xvworld(t, xvneg(xvradian(r)), m); };
   cb_world.from(f);
 }
 
 void render_all() {
-  ywlib_try_begin;
-  Camera.begin_render(color::white);
-  if (sb_facets) render_facets(sb_facets, cb_camera, cb_options);
-  if (sb_vertices) render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
-  Camera.end_render();
-  main::begin_draw(color::yw);
-  Camera.draw({5, 85, 805, 535});
-  main::end_draw();
-  main::update(), main::update();
-  ywlib_try_end;
+  try {
+    Camera.begin_render(color::white);
+    if (sb_facets) render_facets(sb_facets, cb_camera, cb_options);
+    if (sb_vertices) render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
+    Camera.end_render();
+    throw std::exception("TESTてすと");
+    main::begin_draw(color::yw);
+    // Camera.draw({5, 85, 805, 535});
+    main::end_draw();
+    main::update(), main::update();
+  } catch (except E) { E.receive(); }
 }
 
 template<nat I> bool checker(const maxmin& Now, const maxmin& New) {
@@ -499,10 +501,10 @@ template<nat I> bool checker(const maxmin& Now, const maxmin& New) {
 }
 
 template<nat I> bool select_best(
-  unordered_buffer<margin>& Margins, array<maxmin, 13>& Mm,
+  unordered_buffer<margin>& Margins, std::array<maxmin, 13>& Mm,
   xmatrix& Matrix, const xvector& Theta, float Delta, unsigned Blocker) {
   nat best{12};
-  auto off = xv(Delta), rot = xvmul(Theta, off);
+  auto off = xvload(Delta), rot = xvmul(Theta, off);
   xmatrix mtemp, original = Matrix;
   // std::cout << std::format("{}\n", original);
   if (!(Blocker & 1)) {
@@ -607,10 +609,10 @@ template<nat I> bool select_best(
 
 void align() {
   static auto margins = unordered_buffer<margin>{};
-  static array<maxmin, 13> mm;
+  static std::array<maxmin, 13> mm;
   static xmatrix matrix;
   static xvector theta;
-  static fat8 time;
+  static double time;
 
   if (!(sb_facets && sb_vertices)) return;
 
@@ -631,13 +633,13 @@ void align() {
   if (AlignMode == 0) {
     time = 0;
     xmatrix temp;
-    xvworld(xv(ui_valuebox_off[0].value<float>(), ui_valuebox_off[1].value<float>(), ui_valuebox_off[2].value<float>(), 0.f),
-            xvneg(xvradian(xv(ui_valuebox_rot[0].value<float>(), ui_valuebox_rot[1].value<float>(), ui_valuebox_rot[2].value<float>(), 0.f))), temp);
+    xvworld(xvload(ui_valuebox_off[0].value<float>(), ui_valuebox_off[1].value<float>(), ui_valuebox_off[2].value<float>(), 0.f),
+            xvneg(xvradian(xvload(ui_valuebox_rot[0].value<float>(), ui_valuebox_rot[1].value<float>(), ui_valuebox_rot[2].value<float>(), 0.f))), temp);
     cb_world.from(temp);
     if (margins.count != sb_vertices.count) margins = unordered_buffer<margin>(sb_vertices.count);
     calc_margin(sb_facets, sb_vertices, cb_world, margins), calc_maxmin(sb_vertices, margins, cb_world, mm[12]);
     theta = xvadd(xvmul(xvadd(mm[12].maxs[25], mm[12].mins[25]), xv_constant<-0.5f>), xvset<1>(xv_zero, facets_y_center));
-    xvworld(theta, matrix), matrix *= temp;                                              // 中心座標を原点に移す行列
+    xvworld(theta, matrix), xvdot<4>(matrix, temp);                                      // 中心座標を原点に移す行列
     theta = xvmax(xvadd(theta, mm[12].maxs[25]), xvsub(theta, mm[12].mins[25]));         // 原点から各軸方向の最大距離
     theta = xvmul(theta, theta);                                                         // 最大距離の二乗
     theta = xvsqrt(xvadd(xvpermute<1, 2, 0, -1>(theta), xvpermute<2, 0, 1, -1>(theta))); // 各断面での最大距離
@@ -709,7 +711,7 @@ void align() {
     MaxMin = mm[12];
   }
 
-  time += sw.read();
+  time += sw();
   ui_progressbar_align.progress(AlignMode / 20.0);
   ui_label_margins[0].text(std::format(L"{:.3f}  ", mm[12].minimum.w));
   ui_label_margins[1].text(std::format(L"{:.3f}  ", apply(min, projector(mm[12].mins, &vector::w, make_sequence<25>{}))));
@@ -720,7 +722,7 @@ void align() {
 
 
 float calc_volume(const structured_buffer<vertex>& Vertices) {
-  static constexpr stv1 hlsl = R"(
+  static constexpr std::string_view hlsl = R"(
 #pragma pack_matrix(row_major)
 struct UB0 {
   float volume; // 体積
@@ -739,31 +741,31 @@ cbuffer CB0 : register(b0) {
   if (i < m) ub0[i].volume = dot(cross(sb0[3 * i + 1].p.xyz, sb0[3 * i + 2].p.xyz), sb0[3 * i].p.xyz);
   else ub0[i].volume = 0;
 })";
-  ywlib_try_begin;
-  static auto gp = gpgpu<typepack<float>, typepack<vertex>, typepack<list<unsigned, unsigned, nat8>>>(hlsl);
-  static auto cb = constant_buffer(list<unsigned, unsigned, nat8>{});
-  static auto ub = unordered_buffer<float>{};
-  auto m = std::bit_ceil(Vertices.count / 3);
-  if (ub.count != m) ub = unordered_buffer<float>(m);
-  cb.from(list{Vertices.count, 0_n4, 0_n8});
-  gp(m, {ub}, {Vertices}, {cb});
-  auto temp = ub.to_cpu();
-  for (nat i{temp.size() / 2}; i != 0; i /= 2)
-    for (nat j{0}; j < i; ++j) temp[j] += temp[j + i];
-  return temp[0] * float(1e-9 / 6);
-  ywlib_try_end;
+  try {
+    static auto gp = gpgpu<typepack<float>, typepack<vertex>, typepack<list<unsigned, unsigned, unsigned long long>>>(hlsl);
+    static auto cb = constant_buffer(list<unsigned, unsigned, unsigned long long>{});
+    static auto ub = unordered_buffer<float>{};
+    auto m = std::bit_ceil(Vertices.count / 3);
+    if (ub.count != m) ub = unordered_buffer<float>(m);
+    cb.from(list{Vertices.count, unsigned(0), nat(0)});
+    gp(m, {ub}, {Vertices}, {cb});
+    auto temp = ub.to_cpu();
+    for (nat i{temp.size() / 2}; i != 0; i /= 2)
+      for (nat j{0}; j < i; ++j) temp[j] += temp[j + i];
+    return temp[0] * float(1e-9 / 6);
+  } catch (except E) { E.receive(); }
   return {};
 }
 
 
-inline array<vector, 15> calc_punch(const structured_buffer<vertex>& Vertices, const array<vector, 15>& Ref) {
-  array<vector, 15> punches;
-  unordered_buffer<array<float, 15>> ub0(nullptr, Vertices.count);
-  unordered_buffer<array<float, 15>> ub1(nullptr, 1024);
-  constant_buffer<list<unsigned, unsigned, nat8, array<vector, 15>>> cb(list{
-    unsigned(Vertices.count), unsigned((Vertices.count - 1) / 1024 + 1), 0_n8, Ref});
+inline std::array<vector, 15> calc_punch(const structured_buffer<vertex>& Vertices, const std::array<vector, 15>& Ref) {
+  std::array<vector, 15> punches;
+  unordered_buffer<std::array<float, 15>> ub0(nullptr, Vertices.count);
+  unordered_buffer<std::array<float, 15>> ub1(nullptr, 1024);
+  constant_buffer<list<unsigned, unsigned, unsigned long long, std::array<vector, 15>>> cb(list{
+    unsigned(Vertices.count), unsigned((Vertices.count - 1) / 1024 + 1), nat(0), Ref});
   try { // STEP 1
-    static constexpr stv1 hlsl = R"(
+    static constexpr std::string_view hlsl = R"(
     #pragma pack_matrix(row_major)
     struct UB0 { float d[15]; };
     struct SB0 { float4 v, n; };
@@ -803,13 +805,11 @@ inline array<vector, 15> calc_punch(const structured_buffer<vertex>& Vertices, c
         else ub0[i].d[k] = f0(sb0[j].v.xyz - cb[k].xyz, sb0[j + 1].v.xyz - cb[k].xyz, sb0[j + 2].v.xyz - cb[k].xyz);
       }
     })";
-    std::cout << "A" << std::endl;
-    static auto gp = gpgpu<typepack<array<float, 15>>, typepack<vertex>, typepack<decltype(cb)::value_type>>(hlsl);
-    std::cout << "A" << std::endl;
+    static auto gp = gpgpu<typepack<std::array<float, 15>>, typepack<vertex>, typepack<decltype(cb)::value_type>>(hlsl);
     gp(Vertices.count, {ub0}, {Vertices}, {cb});
   } catch (const std::exception& E) { throw except(E); }
   try {
-    static constexpr stv1 hlsl = R"(
+    static constexpr std::string_view hlsl = R"(
 #pragma pack_matrix(row_major)
 struct UB0 { float d[15]; };
 struct UB1 { float d[15]; };
@@ -828,9 +828,7 @@ cbuffer CB0 : register(b0) {
     }
   }
 })";
-    std::cout << "A" << std::endl;
-    static auto gp = gpgpu<typepack<array<float, 15>, array<float, 15>>, typepack<>, typepack<decltype(cb)::value_type>>(hlsl);
-    std::cout << "A" << std::endl;
+    static auto gp = gpgpu<typepack<std::array<float, 15>, std::array<float, 15>>, typepack<>, typepack<decltype(cb)::value_type>>(hlsl);
     gp(1024, {ub0, ub1}, {}, {cb});
   } catch (const std::exception& E) { throw except(E); }
   try {
@@ -857,7 +855,7 @@ cbuffer CB0 : register(b0) {
 }
 
 
-void output_punch(const path& Path, array<vector, 15> Points, const unsigned (&Arrange)[15]) {
+void output_punch(const path& Path, std::array<vector, 15> Points, const unsigned (&Arrange)[15]) {
   static constexpr auto ff = [](float f) {
     if (f == 1) return vector(1, 0, 0);
     else if (f == 2) return vector(0, 1, 0);
@@ -885,7 +883,7 @@ void output_punch(const path& Path, array<vector, 15> Points, const unsigned (&A
 void show_result() {
 
   main::resize(1400, 980);
-  key::escape.down = []() { ResultMode = false; };
+  if (key::escape.down) ResultMode = false;
 
   ui_textbox_result[0] = textbox(1, rect_textbox_result[0], L"", WS_BORDER | ES_CENTER);
   ui_textbox_result[1] = textbox(1, rect_textbox_result[1], L"", WS_BORDER | ES_CENTER);
@@ -898,42 +896,42 @@ void show_result() {
   for (auto& e : ui_textbox_result) e.font(25);
 
   ui_button_output = button(1, {1240, 760, 1390, 800}, L"成績表出力", WS_BORDER);
-  ui_button_output.input = [](const button&) {
-    main::begin_draw();
-    for (nat i{}; i < 8; ++i)
-      draw_text((rect_textbox_result[i] + rect(0, 10, 0, 0)).to_vector(), font<20, L"Yu Gothic UI", 0, true>{}, ui_textbox_result[i].text());
-    main::end_draw();
-    auto p = save_file(cmt_path.parent_path(), std::format(L"{}.png", ui_textbox_result[5].text()));
-    if (!p.empty()) {
-      static constexpr unsigned arrange[] = {14, 13, 12, 15, 11, 9, 10, 4, 3, 2, 1, 8, 5, 7, 6};
-      array<vector, 15> ref{
-        vector(0.0f, -journal_hole_radius, 0.0f, 1.0f),
-        vector(0.0f, 0.0f, journal_hole_radius, 1.0f),
-        vector(0.0f, journal_hole_radius, 0.0f, 1.0f),
-        vector(0.0f, 0.0f, -journal_hole_radius, 1.0f),
-        vector(0.0f, half_stroke, 0.0f, 1.0f),
-        vector(-half_gap, 0.0f, 0.0f, -3.0f),
-        vector(-half_gap, half_stroke, 0.0f, -3.0f),
-        vector(-half_gap, 0.0f, 0.0f, 3.0f),
-        vector(-half_gap, half_stroke, 0.0f, 3.0f),
-        vector(-half_gap, 0.0f, 0.0f, 2.0f),
-        vector(half_stroke, 0.0f, 0.0f, 2.0f),
-        vector(-half_stroke, 0.0f, 0.0f, -2.0f),
-        vector(half_stroke, 0.0f, 0.0f, -2.0f),
-        vector(-half_stroke, 0.0f, 50.0f, -2.0f),
-        vector(half_stroke, 0.0f, -50.0f, -2.0f)};
-      output_punch(cmt_path.parent_path() / cmt_path.stem().concat(L".csv"), calc_punch(sb_vertices, ref), arrange);
-      std::cout << p << std::endl;
-      main::screenshot(p);
-      if (p.exists()) ok(L"出力に成功しました");
-      else ok(L"出力に失敗したかもしれません");
-    }
+  ui_button_output.input = [](const button&) noexcept {
+    try {
+      main::begin_draw();
+      for (nat i{}; i < 8; ++i)
+        draw_text((rect_textbox_result[i] + rect(0, 10, 0, 0)).to_vector(), font<20, L"Yu Gothic UI", 0, true>{}, ui_textbox_result[i].text());
+      main::end_draw();
+      auto p = save_file(cmt_path.parent_path(), std::format(L"{}.png", ui_textbox_result[5].text()));
+      if (!p.empty()) {
+        static constexpr unsigned arrange[] = {14, 13, 12, 15, 11, 9, 10, 4, 3, 2, 1, 8, 5, 7, 6};
+        std::array<vector, 15> ref{
+          vector(0.0f, -journal_hole_radius, 0.0f, 1.0f),
+          vector(0.0f, 0.0f, journal_hole_radius, 1.0f),
+          vector(0.0f, journal_hole_radius, 0.0f, 1.0f),
+          vector(0.0f, 0.0f, -journal_hole_radius, 1.0f),
+          vector(0.0f, half_stroke, 0.0f, 1.0f),
+          vector(-half_gap, 0.0f, 0.0f, -3.0f),
+          vector(-half_gap, half_stroke, 0.0f, -3.0f),
+          vector(-half_gap, 0.0f, 0.0f, 3.0f),
+          vector(-half_gap, half_stroke, 0.0f, 3.0f),
+          vector(-half_gap, 0.0f, 0.0f, 2.0f),
+          vector(half_stroke, 0.0f, 0.0f, 2.0f),
+          vector(-half_stroke, 0.0f, 0.0f, -2.0f),
+          vector(half_stroke, 0.0f, 0.0f, -2.0f),
+          vector(-half_stroke, 0.0f, 50.0f, -2.0f),
+          vector(half_stroke, 0.0f, -50.0f, -2.0f)};
+        output_punch(cmt_path.parent_path() / cmt_path.stem().concat(L".csv"), calc_punch(sb_vertices, ref), arrange);
+        std::cout << p << std::endl;
+        main::screenshot(p);
+        if (std::filesystem::exists(p)) ok(L"出力に成功しました");
+        else ok(L"出力に失敗したかもしれません");
+      }
+    } catch (const except& E) { E.receive(); }
   };
 
   ui_button_endresult = button(1, {1240, 805, 1390, 845}, L"芯合わせモード", WS_BORDER);
-  ui_button_endresult.input = [](const button&) {
-    ResultMode = false;
-  };
+  ui_button_endresult.input = [](const button&) noexcept { ResultMode = false; };
 
   main::begin_draw(color::white);
 
@@ -950,17 +948,17 @@ void show_result() {
   draw_text({1200, 65, 1390, 90}, font<18>{}, brush<color::red>{}, L"TRS-FP-TE-042. Rev.12");
 
   // コンタースケール
-  fill_rectangle({940, 610, 965, 635}, brush<color::darkblue>{});
+  draw_rectangle({940, 610, 965, 635}, brush<color::darkblue>{});
   draw_rectangle({940, 610, 965, 635}, brush<color::black>{}, 1.f);
-  fill_rectangle({965, 610, 965 + (400 * 15) / 55, 635}, brush<color::royalblue>{});
+  draw_rectangle({965, 610, 965 + (400 * 15) / 55, 635}, brush<color::royalblue>{});
   draw_rectangle({965, 610, 965 + (400 * 15) / 55, 635}, brush<color::black>{}, 1.f);
-  fill_rectangle({965 + (400 * 15) / 55, 610, 965 + (400 * 36) / 55, 635}, brush<color::mediumseagreen>{});
+  draw_rectangle({965 + (400 * 15) / 55, 610, 965 + (400 * 36) / 55, 635}, brush<color::mediumseagreen>{});
   draw_rectangle({965 + (400 * 15) / 55, 610, 965 + (400 * 36) / 55, 635}, brush<color::black>{}, 1.f);
-  fill_rectangle({965 + (400 * 36) / 55, 610, 965 + (400 * 50) / 55, 635}, brush<color::yellow>{});
+  draw_rectangle({965 + (400 * 36) / 55, 610, 965 + (400 * 50) / 55, 635}, brush<color::yellow>{});
   draw_rectangle({965 + (400 * 36) / 55, 610, 965 + (400 * 50) / 55, 635}, brush<color::black>{}, 1.f);
-  fill_rectangle({965 + (400 * 50) / 55, 610, 965 + (400 * 55) / 55, 635}, brush<color::darkorange>{});
+  draw_rectangle({965 + (400 * 50) / 55, 610, 965 + (400 * 55) / 55, 635}, brush<color::darkorange>{});
   draw_rectangle({965 + (400 * 50) / 55, 610, 965 + (400 * 55) / 55, 635}, brush<color::black>{}, 1.f);
-  fill_rectangle({965 + (400 * 55) / 55, 610, 1390, 635}, brush<color::red>{});
+  draw_rectangle({965 + (400 * 55) / 55, 610, 1390, 635}, brush<color::red>{});
   draw_rectangle({965 + (400 * 55) / 55, 610, 1390, 635}, brush<color::black>{}, 1.f);
   draw_text({965 - 20, 640, 965 + 20, 660}, font<18>{}, L"60");
   draw_text({965 + (400 * 15) / 55 - 20, 640, 965 + (400 * 15) / 55 + 20, 660}, font<18>{}, L"45");
@@ -988,7 +986,7 @@ void show_result() {
     {760, 860, 960, 890},
     {960, 860, 1190, 890},
     {1190, 860, 1390, 890}};
-  constexpr auto vector_frame_lower = array{
+  constexpr auto vector_frame_lower = std::array{
     rect_textbox_result[0].to_vector(), rect_textbox_result[1].to_vector(), rect_textbox_result[2].to_vector(), rect_textbox_result[3].to_vector(),
     rect_textbox_result[4].to_vector(), rect_textbox_result[5].to_vector(), rect_textbox_result[6].to_vector(), rect_textbox_result[7].to_vector()};
   constexpr float frame_width = 1.f;
@@ -1032,7 +1030,7 @@ void show_result() {
     else return color::red;
   };
 
-  constant_buffer<list<unsigned, float, nat8>> cb_options(list<>::asref(0, 1.f, 0));
+  constant_buffer<list<unsigned, float, unsigned long long>> cb_options(list<>::asref(0, 1.f, 0));
   constant_buffer<list<xmatrix, xmatrix>> cb_camera;
 
   { // 右サイド
@@ -1054,11 +1052,11 @@ void show_result() {
     if (has_second_side_chamfer && MaxMin.mins[22].w < mn.w) mn = MaxMin.mins[22];
     if ((Reversed ? MaxMin.maxs[16].z > journal_hole_radius : MaxMin.maxs[16].z < -journal_hole_radius) && MaxMin.maxs[16].w > mx.w) mx = MaxMin.maxs[16];
     if ((Reversed ? MaxMin.mins[16].z > journal_hole_radius : MaxMin.mins[16].z < -journal_hole_radius) && MaxMin.mins[16].w < mn.w) mn = MaxMin.mins[16];
-    draw_line({350, 15}, {250 + (mx.y - cam_offset_y) * cam_factor, 115 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{300, 5, 400, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+    draw_line(vector{350, 15, 250 + (mx.y - cam_offset_y) * cam_factor, 115 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
+    draw_rectangle({vector{300, 5, 400, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
     draw_text({300, 5, 400, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
     draw_line({150, 15}, {250 + (mn.y - cam_offset_y) * cam_factor, 115 - (Reversed ? -mn.x : mn.x) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{100, 5, 200, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+    draw_rectangle({vector{100, 5, 200, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
     draw_text({100, 5, 200, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
     // BOT
     mx = MaxMin.maxs[9], mn = MaxMin.mins[9];
@@ -1067,10 +1065,10 @@ void show_result() {
     if ((Reversed ? MaxMin.maxs[4].z > journal_hole_radius : MaxMin.maxs[4].z < -journal_hole_radius) && MaxMin.maxs[4].w > mx.w) mx = MaxMin.maxs[4];
     if ((Reversed ? MaxMin.mins[4].z > journal_hole_radius : MaxMin.mins[4].z < -journal_hole_radius) && MaxMin.mins[4].w < mn.w) mn = MaxMin.mins[4];
     draw_line({350, 215}, {250 + (mx.y - cam_offset_y) * cam_factor, 115 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{300, 205, 400, 225}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+    draw_rectangle({vector{300, 205, 400, 225}, 2.5f, 2.5f}, brush(get_color(mx.w)));
     draw_text({300, 205, 400, 225}, font<15>{}, std::format(L"{:.2f}", mx.w));
     draw_line({150, 215}, {250 + (mn.y - cam_offset_y) * cam_factor, 115 - (Reversed ? -mn.x : mn.x) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{100, 205, 200, 225}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+    draw_rectangle({vector{100, 205, 200, 225}, 2.5f, 2.5f}, brush(get_color(mn.w)));
     draw_text({100, 205, 200, 225}, font<15>{}, std::format(L"{:.2f}", mn.w));
     cam.end_draw();
     bitmap bmp = cam.rotate(-90);
@@ -1100,10 +1098,10 @@ void show_result() {
     if ((Reversed ? MaxMin.maxs[16].z < -journal_hole_radius : MaxMin.maxs[16].z > journal_hole_radius) && MaxMin.maxs[16].w > mx.w) mx = MaxMin.maxs[16];
     if ((Reversed ? MaxMin.mins[16].z < -journal_hole_radius : MaxMin.mins[16].z > journal_hole_radius) && MaxMin.mins[16].w < mn.w) mn = MaxMin.mins[16];
     draw_line({350, 215}, {250 + (mx.y - cam_offset_y) * cam_factor, 115 - (Reversed ? mx.x : -mx.x) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{300, 205, 400, 225}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+    draw_rectangle({vector{300, 205, 400, 225}, 2.5f, 2.5f}, brush(get_color(mx.w)));
     draw_text({300, 205, 400, 225}, font<15>{}, std::format(L"{:.2f}", mx.w));
     draw_line({150, 215}, {250 + (mn.y - cam_offset_y) * cam_factor, 115 - (Reversed ? mn.x : -mn.x) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{100, 205, 200, 225}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+    draw_rectangle({vector{100, 205, 200, 225}, 2.5f, 2.5f}, brush(get_color(mn.w)));
     draw_text({100, 205, 200, 225}, font<15>{}, std::format(L"{:.2f}", mn.w));
     // BOT
     mx = MaxMin.maxs[6], mn = MaxMin.mins[6];
@@ -1112,10 +1110,10 @@ void show_result() {
     if ((Reversed ? MaxMin.maxs[4].z < -journal_hole_radius : MaxMin.maxs[4].z > journal_hole_radius) && MaxMin.maxs[4].w > mx.w) mx = MaxMin.maxs[4];
     if ((Reversed ? MaxMin.mins[4].z < -journal_hole_radius : MaxMin.mins[4].z > journal_hole_radius) && MaxMin.mins[4].w < mn.w) mn = MaxMin.mins[4];
     draw_line({350, 15}, {250 + (mx.y - cam_offset_y) * cam_factor, 115 - (Reversed ? mx.x : -mx.x) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{300, 5, 400, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+    draw_rectangle({vector{300, 5, 400, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
     draw_text({300, 5, 400, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
     draw_line({150, 15}, {250 + (mn.y - cam_offset_y) * cam_factor, 115 - (Reversed ? mn.x : -mn.x) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{100, 5, 200, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+    draw_rectangle({vector{100, 5, 200, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
     draw_text({100, 5, 200, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
     cam.end_draw();
     bitmap bmp = cam.rotate(-90);
@@ -1141,10 +1139,10 @@ void show_result() {
     vector mx = MaxMin.maxs[12], mn = MaxMin.mins[12];
     if (MaxMin.mins[13].w < mn.w) mn = MaxMin.mins[13];
     draw_line({60, 15}, {115 - (Reversed ? -mn.z : mn.z) * cam_factor, 250 - (mn.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{10, 5, 110, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+    draw_rectangle({vector{10, 5, 110, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
     draw_text({10, 5, 110, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
     draw_line({170, 15}, {115 - (Reversed ? -mx.z : mx.z) * cam_factor, 250 - (mx.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{120, 5, 220, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+    draw_rectangle({vector{120, 5, 220, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
     draw_text({120, 5, 220, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
     cam.end_draw();
     main::begin_draw();
@@ -1167,10 +1165,10 @@ void show_result() {
     cam.begin_draw();
     vector mx = MaxMin.maxs[14], mn = MaxMin.mins[14];
     draw_line({60, 15}, {115 + (Reversed ? -mn.z : mn.z) * cam_factor, 250 - (mn.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{10, 5, 110, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+    draw_rectangle({vector{10, 5, 110, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
     draw_text({10, 5, 110, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
     draw_line({170, 15}, {115 + (Reversed ? -mx.z : mx.z) * cam_factor, 250 - (mx.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{120, 5, 220, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+    draw_rectangle({vector{120, 5, 220, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
     draw_text({120, 5, 220, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
     cam.end_draw();
     main::begin_draw();
@@ -1193,10 +1191,10 @@ void show_result() {
     cam.begin_draw();
     vector mx = MaxMin.maxs[2], mn = MaxMin.mins[2];
     draw_line({60, 15}, {115 - (Reversed ? -mn.z : mn.z) * cam_factor, 250 - (mn.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{10, 5, 110, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+    draw_rectangle({vector{10, 5, 110, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
     draw_text({10, 5, 110, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
     draw_line({170, 15}, {115 - (Reversed ? -mx.z : mx.z) * cam_factor, 250 - (mx.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{120, 5, 220, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+    draw_rectangle({vector{120, 5, 220, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
     draw_text({120, 5, 220, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
     cam.end_draw();
     main::begin_draw();
@@ -1221,10 +1219,10 @@ void show_result() {
     vector mx = MaxMin.maxs[0], mn = MaxMin.mins[0];
     if (MaxMin.mins[1].w < mn.w) mn = MaxMin.mins[1];
     draw_line({60, 15}, {115 + (Reversed ? -mn.z : mn.z) * cam_factor, 250 - (mn.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{10, 5, 110, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+    draw_rectangle({vector{10, 5, 110, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
     draw_text({10, 5, 110, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
     draw_line({170, 15}, {115 + (Reversed ? -mx.z : mx.z) * cam_factor, 250 - (mx.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{120, 5, 220, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+    draw_rectangle({vector{120, 5, 220, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
     draw_text({120, 5, 220, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
     cam.end_draw();
     main::begin_draw();
@@ -1249,10 +1247,10 @@ void show_result() {
     if (MaxMin.maxs[16].w > mx.w) mx = MaxMin.maxs[16];
     if (MaxMin.mins[16].w < mn.w) mn = MaxMin.mins[16];
     draw_line({60, 235}, {115 - (Reversed ? -mn.z : mn.z) * cam_factor, 125 - (Reversed ? -mn.x : mn.x) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{10, 225, 110, 245}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+    draw_rectangle({vector{10, 225, 110, 245}, 2.5f, 2.5f}, brush(get_color(mn.w)));
     draw_text({10, 225, 110, 245}, font<15>{}, std::format(L"{:.2f}", mn.w));
     draw_line({170, 235}, {115 - (Reversed ? -mx.z : mx.z) * cam_factor, 125 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{120, 225, 220, 245}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+    draw_rectangle({vector{120, 225, 220, 245}, 2.5f, 2.5f}, brush(get_color(mx.w)));
     draw_text({120, 225, 220, 245}, font<15>{}, std::format(L"{:.2f}", mx.w));
     cam.end_draw();
     main::begin_draw();
@@ -1279,12 +1277,12 @@ void show_result() {
     if (auto& t = MaxMin.mins[15]; t.y > 0 && t.w < mn.w) mn = t;
     if (mn.y > 0) {
       draw_line({60, 235}, {115 - (Reversed ? -mn.z : mn.z) * cam_factor, 125 - (Reversed ? -mn.x : mn.x) * cam_factor}, brush<color::black>{}, 1.f);
-      fill_rectangle({vector{10, 225, 110, 245}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+      draw_rectangle({vector{10, 225, 110, 245}, 2.5f, 2.5f}, brush(get_color(mn.w)));
       draw_text({10, 225, 110, 245}, font<15>{}, std::format(L"{:.2f}", mn.w));
     }
     if (mx.y > 0) {
       draw_line({170, 235}, {115 - (Reversed ? -mx.z : mx.z) * cam_factor, 125 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
-      fill_rectangle({vector{120, 225, 220, 245}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+      draw_rectangle({vector{120, 225, 220, 245}, 2.5f, 2.5f}, brush(get_color(mx.w)));
       draw_text({120, 225, 220, 245}, font<15>{}, std::format(L"{:.2f}", mx.w));
     }
     cam.end_draw();
@@ -1312,12 +1310,12 @@ void show_result() {
     if (auto& t = MaxMin.mins[15]; t.y < 0 && t.w < mn.w) mn = t;
     if (mn.y < 0) {
       draw_line({60, 235}, {115 + (Reversed ? -mn.z : mn.z) * cam_factor, 125 - (Reversed ? -mn.x : mn.x) * cam_factor}, brush<color::black>{}, 1.f);
-      fill_rectangle({vector{10, 225, 110, 245}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+      draw_rectangle({vector{10, 225, 110, 245}, 2.5f, 2.5f}, brush(get_color(mn.w)));
       draw_text({10, 225, 110, 245}, font<15>{}, std::format(L"{:.2f}", mn.w));
     }
     if (mx.y < 0) {
       draw_line({170, 235}, {115 + (Reversed ? -mx.z : mx.z) * cam_factor, 125 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
-      fill_rectangle({vector{120, 225, 220, 245}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+      draw_rectangle({vector{120, 225, 220, 245}, 2.5f, 2.5f}, brush(get_color(mx.w)));
       draw_text({120, 225, 220, 245}, font<15>{}, std::format(L"{:.2f}", mx.w));
     }
     cam.end_draw();
@@ -1345,10 +1343,10 @@ void show_result() {
     if (MaxMin.maxs[24].w > mx.w) mx = MaxMin.maxs[24];
     if (MaxMin.mins[24].w < mn.w) mn = MaxMin.mins[24];
     draw_line({60, 235}, {115 + (Reversed ? -mn.z : mn.z) * cam_factor, 125 - (Reversed ? -mn.x : mn.x) * cam_factor}, brush<color::black>{}, 1.f);
-    fill_rectangle({vector{10, 225, 110, 245}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+    draw_rectangle({vector{10, 225, 110, 245}, 2.5f, 2.5f}, brush(get_color(mn.w)));
     draw_text({10, 225, 110, 245}, font<15>{}, std::format(L"{:.2f}", mn.w));
     // draw_line({170, 235}, {115 - (Reversed ? -mx.z : mx.z) * cam_factor, 125 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
-    // fill_rectangle({vector{120, 225, 220, 245}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+    // draw_rectangle({vector{120, 225, 220, 245}, 2.5f, 2.5f}, brush(get_color(mx.w)));
     // draw_text({120, 225, 220, 245}, font<15>{}, std::format(L"{:.2f}", mx.w));
     cam.end_draw();
     main::begin_draw();
@@ -1357,20 +1355,27 @@ void show_result() {
     main::end_draw();
   }
 
+  // 成績表のためのＵＩを表示する
   control::show(1);
-  while (ResultMode && main::update) {}
-  key::escape.down = []() { yes(L"終了しますか？") ? main::terminate() : void(); };
+  // メッセージループ
+  while (ResultMode && main::update) {
+    // エスケープキーが押されたら成績表モードを終了
+    if (key::escape.down) ResultMode = false;
+  }
+  // 成績表のためのＵＩを非表示にする
   control::hide(1);
+  // 画面サイズを元に戻す
   main::resize(app_width, app_height);
+  // 芯合わせモードのＵＩを表示する
   control::show(0);
+  // 再描画を行う
   render_all();
 }
 
 
-void ywmain() {
+int main() {
   main::rename(app_name);
   main::resize(app_width, app_height);
-  key::escape.down = []() { yes(L"終了しますか？") ? main::terminate() : void(); };
 
   Camera = camera(1920, 1080, 8);
   Camera.orthographic = true;
@@ -1381,98 +1386,103 @@ void ywmain() {
   Camera.begin_render(color::white);
   Camera.end_render();
 
+
   static_assert(vassignable<list<xmatrix, xmatrix>&, decltype(list<>::asref(Camera.view, Camera.view_proj))>);
   static_assert(constructible<constant_buffer<list<xmatrix, xmatrix>>, list<xmatrix&, xmatrix&>>);
   cb_camera = constant_buffer<list<xmatrix, xmatrix>>(list<>::asref(Camera.view, Camera.view_proj));
   cb_world = decltype(cb_world)(xv_identity);
-  cb_options = decltype(cb_options)(list<unsigned, float, nat8>{0, 1.f, 0});
+  cb_options = decltype(cb_options)(list<unsigned, float, unsigned long long>{0, 1.f, 0});
+
 
   ui_button_cmt = button(0, {5, 5, 45, 25}, L"CMT");
-  ui_button_cmt.input = [](const button& This) {
-    ywlib_try_begin;
-    if (AlignMode >= 0) AlignMode = -1, ok(L"自動芯合わせを中断しました。");
-    auto file = open_file(std::format(LR"(C:\Users\{}\Desktop\表面ポイント)", main::username));
-    if (file.empty()) return;
-    auto stl = ff::stl(file);
-    if (stl.empty()) return (void)ok(L"正しくないSTLファイルです。");
-    ui_label_cmt.text(file.filename().wstring());
-    ub_vertices = vertices_from_stl(stl);
-    sb_vertices = decltype(sb_vertices)(ub_vertices);
-    ub_margins = decltype(ub_margins)(ub_vertices.count);
-    sb_margins = decltype(sb_margins)(ub_vertices.count);
-    for (auto& e : ui_valuebox_off) e.text(L"0");
-    for (auto& e : ui_valuebox_rot) e.text(L"0");
-    update_world();
-    if (sb_facets) {
-      calc_margin(sb_facets, sb_vertices, cb_world, ub_margins);
-      sb_margins.from(ub_margins);
-      calc_maxmin(sb_vertices, ub_margins, cb_world, MaxMin);
-    }
-    render_all();
-    cmt_path = file;
-    ywlib_try_end;
+  ui_button_cmt.input = [](const button& This) noexcept {
+    try {
+      if (AlignMode >= 0) AlignMode = -1, ok(L"自動芯合わせを中断しました。");
+      auto file = open_file(std::format(LR"(C:\Users\{}\Desktop\表面ポイント)", main::username));
+      if (file.empty()) return;
+      auto stl = ff::stl(file);
+      if (stl.empty()) return (void)ok(L"正しくないSTLファイルです。");
+      ui_label_cmt.text(file.filename().wstring());
+      ub_vertices = vertices_from_stl(stl);
+      sb_vertices = decltype(sb_vertices)(ub_vertices);
+      ub_margins = decltype(ub_margins)(ub_vertices.count);
+      sb_margins = decltype(sb_margins)(ub_vertices.count);
+      for (auto& e : ui_valuebox_off) e.text(L"0");
+      for (auto& e : ui_valuebox_rot) e.text(L"0");
+      update_world();
+      if (sb_facets) {
+        calc_margin(sb_facets, sb_vertices, cb_world, ub_margins);
+        sb_margins.from(ub_margins);
+        calc_maxmin(sb_vertices, ub_margins, cb_world, MaxMin);
+      }
+      render_all();
+      cmt_path = file;
+    } catch (except E) { E.receive(); }
   };
 
+
   ui_button_cad = button(0, {5, 30, 45, 50}, L"CAD");
-  ui_button_cad.input = [](const button& This) {
-    ywlib_try_begin;
-    if (AlignMode >= 0) AlignMode = -1, ok(L"自動芯合わせを中断しました。");
-    auto file = open_file(LR"(\\Z1255101\apps\CMT\3Dモデル\組立型クランク軸\スロー\ACMA)");
-    if (file.empty()) return;
-    stl_facets = ff::stl(file);
-    if (stl_facets.empty()) return (void)ok(L"正しくないSTLファイルです。");
-    ui_label_cad.text(file.filename().wstring());
-    ub_facets = facets_from_stl(stl_facets, ui_checkbox_reverse.state);
-    sb_facets = decltype(sb_facets)(ub_facets);
-    if (sb_vertices) {
-      calc_margin(sb_facets, sb_vertices, cb_world, ub_margins);
-      sb_margins.from(ub_margins);
-      calc_maxmin(sb_vertices, ub_margins, cb_world, MaxMin);
-    }
-    render_all();
-    ywlib_try_end;
+  ui_button_cad.input = [](const button& This) noexcept {
+    try {
+      if (AlignMode >= 0) AlignMode = -1, ok(L"自動芯合わせを中断しました。");
+      auto file = open_file(LR"(\\Z1255101\apps\CMT\3Dモデル\組立型クランク軸\スロー\ACMA)");
+      if (file.empty()) return;
+      stl_facets = ff::stl(file);
+      if (stl_facets.empty()) return (void)ok(L"正しくないSTLファイルです。");
+      ui_label_cad.text(file.filename().wstring());
+      ub_facets = facets_from_stl(stl_facets, ui_checkbox_reverse.state);
+      sb_facets = decltype(sb_facets)(ub_facets);
+      if (sb_vertices) {
+        calc_margin(sb_facets, sb_vertices, cb_world, ub_margins);
+        sb_margins.from(ub_margins);
+        calc_maxmin(sb_vertices, ub_margins, cb_world, MaxMin);
+      }
+      render_all();
+    } catch (except E) { E.receive(); }
   };
+
 
   ui_label_cmt = label(0, {50, 5, 300, 25}, L"");
   ui_label_cad = label(0, {50, 30, 300, 50}, L"");
 
+
   ui_radiobutton_hide = radiobutton(0, {305, 5, 405, 75}, L"", list{L"全表示", L"＋Ｘ側を非表示", L"－Ｘ側を非表示"});
-  ui_radiobutton_hide.input = [](const radiobutton& This) {
-    ywlib_try_begin;
-    cb_options.from(list<>::asref(This.state, ui_checkbox_alpha.state ? 0.7f : 1.0f, 0));
-    render_all();
-    ywlib_try_end;
+  ui_radiobutton_hide.input = [](const radiobutton& This) noexcept {
+    try {
+      cb_options.from(list<>::asref(This.state, ui_checkbox_alpha.state ? 0.7f : 1.0f, 0));
+      render_all();
+    } catch (except E) { E.receive(); }
   };
+
 
   ui_checkbox_reverse = checkbox(0, {410, 5, 510, 25}, L"＋ＸがBOT側");
-  ui_checkbox_reverse.input = [](const checkbox& This) {
-    ywlib_try_begin;
-    Reversed = This.state;
-    if (AlignMode >= 0) AlignMode = -1, ok(L"自動芯合わせを中断しました。");
-    if (stl_facets.empty()) return;
-    ub_facets = facets_from_stl(stl_facets, This.state);
-    sb_facets.from(ub_facets);
-    calc_margin(sb_facets, sb_vertices, cb_world, ub_margins);
-    sb_margins.from(ub_margins);
-    calc_maxmin(sb_vertices, ub_margins, cb_world, MaxMin);
-    render_all();
-    // for (nat i{}; i < 26; ++i) std::cout << std::format("({}, {})\n", MaxMin.mins[i], MaxMin.maxs[i]);
-    // std::cout << std::endl;
-    ywlib_try_end;
+  ui_checkbox_reverse.input = [](const checkbox& This) noexcept {
+    try {
+      Reversed = This.state;
+      if (AlignMode >= 0) AlignMode = -1, ok(L"自動芯合わせを中断しました。");
+      if (stl_facets.empty()) return;
+      ub_facets = facets_from_stl(stl_facets, This.state);
+      sb_facets.from(ub_facets);
+      calc_margin(sb_facets, sb_vertices, cb_world, ub_margins);
+      sb_margins.from(ub_margins);
+      calc_maxmin(sb_vertices, ub_margins, cb_world, MaxMin);
+      render_all();
+    } catch (except E) { E.receive(); }
   };
 
+
   ui_checkbox_alpha = checkbox(0, {410, 30, 510, 50}, L"半透明");
-  ui_checkbox_alpha.input = [](const checkbox& This) {
-    ywlib_try_begin;
-    cb_options.from(list<>::asref(ui_radiobutton_hide.state, This.state ? 0.7f : 1.0f, 0));
-    render_all();
-    ywlib_try_end;
+  ui_checkbox_alpha.input = [](const checkbox& This) noexcept {
+    try {
+      cb_options.from(list<>::asref(ui_radiobutton_hide.state, This.state ? 0.7f : 1.0f, 0));
+      render_all();
+    } catch (except E) { E.receive(); }
   };
 
   ui_progressbar_align = progressbar(0, {820, 5, 945, 15});
 
   ui_button_align = button(0, {820, 20, 945, 75}, L"自動芯合わせ", WS_BORDER);
-  ui_button_align.input = [](const button& This) { AlignMode = AlignMode < 0 ? 0 : -2; };
+  ui_button_align.input = [](const button& This) noexcept { AlignMode = AlignMode < 0 ? 0 : -2; };
 
   ui_label_rotation = label(0, {810, 85, 955, 105}, L"回転 [deg]", SS_CENTER | SS_CENTERIMAGE);
   ui_label_rot_x = label(0, {810, 110, 850, 130}, L"X", SS_CENTER | SS_CENTERIMAGE);
@@ -1483,7 +1493,7 @@ void ywmain() {
   ui_valuebox_rot[1] = valuebox(0, {855, 135, 955, 155}, L"0", SS_RIGHT);
   ui_valuebox_rot[2] = valuebox(0, {855, 160, 955, 180}, L"0", SS_RIGHT);
 
-  ui_valuebox_rot[0].input = [](const valuebox& This) {
+  ui_valuebox_rot[0].input = [](const valuebox& This) noexcept {
     update_world();
     if (sb_facets && sb_vertices) {
       calc_margin(sb_facets, sb_vertices, cb_world, ub_margins);
@@ -1496,7 +1506,7 @@ void ywmain() {
   ui_valuebox_rot[0].killfocus = ui_valuebox_rot[0].input;
   ui_valuebox_rot[1].killfocus = ui_valuebox_rot[0].input;
   ui_valuebox_rot[2].killfocus = ui_valuebox_rot[0].input;
-  ui_valuebox_rot[0].intofocus = [](const valuebox& This) {
+  ui_valuebox_rot[0].intofocus = [](const valuebox& This) noexcept {
     if (AlignMode >= 0) AlignMode = -1, ok(L"自動芯合わせを中断しました。");
   };
   ui_valuebox_rot[1].intofocus = ui_valuebox_rot[0].intofocus;
@@ -1531,54 +1541,60 @@ void ywmain() {
   ui_label_margins[2] = label(0, {895, 345, 955, 365}, L"", SS_RIGHT);
   ui_label_margins[3] = label(0, {895, 370, 955, 390}, L"", SS_CENTER);
 
+
   ui_button_result = button(0, {820, 495, 945, 535}, L"成績表モード");
-  ui_button_result.input = [](const button&) {
+  ui_button_result.input = [](const button&) noexcept {
     if (!(sb_facets && sb_vertices)) return;
     ResultMode = true;
     control::hide(0);
   };
 
+
   control::show(0);
+
+
   render_all();
 
-  mouse::moved = [](int4 dx, int4 dy) { // マウス操作
-    if (ResultMode) return;
-    auto x = mouse::x - dx, y = mouse::y - dy;
-    if (5 <= x && x <= 805 && 85 <= y && y <= 535) {
-      bool b = false;
-      if (mouse::left) {
-        b = true;
-        Camera.rotation.y -= dx * 0.003f / Camera.factor;
-        Camera.rotation.x += dy * 0.003f / Camera.factor;
-        if (Camera.rotation.x < -pi / 2) Camera.rotation.x = float(-pi / 2);
-        else if (Camera.rotation.x > pi / 2) Camera.rotation.x = float(pi / 2);
-      } else if (mouse::middle) {
-        b = true;
-        Camera.offset.x += dx * 2.4f / Camera.factor;
-        Camera.offset.y += dy * 2.4f / Camera.factor;
-      }
-      if (b) {
-        Camera.update();
-        cb_camera.from(list<>::asref(Camera.view, Camera.view_proj));
-        render_all();
-      }
-    }
-  };
-
-  mouse::wheeled = [](int4 d) { // マウスホイール
-    if (ResultMode) return;
-    if (5 <= mouse::x && mouse::x <= 805 && 85 <= mouse::y && mouse::y <= 535) {
-      if (d > 0) Camera.factor *= 1.2f;
-      else Camera.factor /= 1.2f;
-      Camera.update();
-      cb_camera.from(list<>::asref(Camera.view, Camera.view_proj));
-      render_all();
-    }
-  };
 
   while (main::update) {
+    // エスケープキーで終了の確認
+    if (key::escape.down) yes(L"終了しますか？") ? main::terminate() : void();
     if (AlignMode != -1) align();
+
     if (ResultMode) show_result();
+    else {
+      if (mouse::dx || mouse::dy) { // マウスを動かしたとき
+        auto x = mouse::x - mouse::dx, y = mouse::y - mouse::dy;
+        if (5 <= x && x <= 805 && 85 <= y && y <= 535) {
+          bool b = false;
+          if (mouse::left) {
+            b = true;
+            Camera.rotation.y -= mouse::dx * 0.003f / Camera.factor;
+            Camera.rotation.x += mouse::dy * 0.003f / Camera.factor;
+            if (Camera.rotation.x < -pi / 2) Camera.rotation.x = float(-pi / 2);
+            else if (Camera.rotation.x > pi / 2) Camera.rotation.x = float(pi / 2);
+          } else if (mouse::middle) {
+            b = true;
+            Camera.offset.x += mouse::dx * 2.4f / Camera.factor;
+            Camera.offset.y += mouse::dy * 2.4f / Camera.factor;
+          }
+          if (b) {
+            Camera.update();
+            cb_camera.from(list<>::asref(Camera.view, Camera.view_proj));
+            render_all();
+          }
+        }
+      }
+      if (mouse::dw != 0) { // マウスホイール
+        if (5 <= mouse::x && mouse::x <= 805 && 85 <= mouse::y && mouse::y <= 535) {
+          if (mouse::dw > 0) Camera.factor *= 1.2f;
+          else Camera.factor /= 1.2f;
+          Camera.update();
+          cb_camera.from(list<>::asref(Camera.view, Camera.view_proj));
+          render_all();
+        }
+      }
+    }
   }
 
   main::terminate();
