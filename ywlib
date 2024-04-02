@@ -912,6 +912,14 @@ inline void tiff(const auto& Result, const std::string_view Message, const sourc
     throw std::runtime_error(text.data());
   }
 }
+
+inline void tiff(const auto& Result, const std::string_view Message, const source& Source, const source& Here)
+  requires requires { { !Result } -> std::convertible_to<bool>; } {
+  if (!Result) {
+    auto text = std::format("runtime error: {}\n at {}({},{})", Message, Here.file, Here.line, Here.column, Source.file, Source.line, Source.column);
+    throw std::runtime_error(text.data());
+  }
+}
 }
 
 namespace std { // clang-format off
@@ -2087,6 +2095,16 @@ inline void tiff(const HRESULT Result, const source& _ = {}) {
   throw std::runtime_error(text.data());
 }
 
+inline void tiff(const HRESULT Result, const source& Source, const source& Here) {
+  if (SUCCEEDED(Result)) return;
+  char* buffer = memo<char[128]>();
+  ::FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
+                   Result, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buffer, 128, nullptr);
+  auto text = std::format("runtime error: {}\n at {}({},{})\n at {}({},{})", buffer,
+                          Here.file, Here.line, Here.column, Source.file, Source.line, Source.column);
+  throw std::runtime_error(text.data());
+}
+
 
 /// @brief structure for measuring time
 class stopwatch {
@@ -2131,11 +2149,72 @@ public:
   }
 };
 
+
+namespace key {
+class key {
+  double last{};
+public:
+  void (*down)() = nullptr;
+  void (*up)(double Time) = nullptr;
+  explicit operator bool() const noexcept { return last; }
+};
+
+inline key keys[256]{};
+inline key &lbutton = keys[VK_LBUTTON], &rbutton = keys[VK_RBUTTON], &mbutton = keys[VK_MBUTTON];
+inline key &xbutton1 = keys[VK_XBUTTON1], &xbutton2 = keys[VK_XBUTTON2], &win = keys[VK_LWIN], &app = keys[VK_APPS];
+inline key &back = keys[VK_BACK], &tab = keys[VK_TAB], &enter = keys[VK_RETURN], &escape = keys[VK_ESCAPE];
+inline key &shift = keys[VK_SHIFT], &control = keys[VK_CONTROL], &alt = keys[VK_MENU], &space = keys[VK_SPACE];
+inline key &pageup = keys[VK_PRIOR], &pagedown = keys[VK_NEXT], &end = keys[VK_END], &home = keys[VK_HOME];
+inline key &left = keys[VK_LEFT], &up = keys[VK_UP], &right = keys[VK_RIGHT], &down = keys[VK_DOWN];
+inline key &screenshot = keys[VK_SNAPSHOT], &insert = keys[VK_INSERT], &delete_ = keys[VK_DELETE];
+inline key &n0 = keys['0'], &n1 = keys['1'], &n2 = keys['2'], &n3 = keys['3'], &n4 = keys['4'];
+inline key &n5 = keys['5'], &n6 = keys['6'], &n7 = keys['7'], &n8 = keys['8'], &n9 = keys['9'];
+inline key &a = keys['A'], &b = keys['B'], &c = keys['C'], &d = keys['D'], &e = keys['E'], &f = keys['F'], &g = keys['G'], &h = keys['H'], &i = keys['I'];
+inline key &j = keys['J'], &k = keys['K'], &l = keys['L'], &m = keys['M'], &n = keys['N'], &o = keys['O'], &p = keys['P'], &q = keys['Q'], &r = keys['R'];
+inline key &s = keys['S'], &t = keys['T'], &u = keys['U'], &v = keys['V'], &w = keys['W'], &x = keys['X'], &y = keys['Y'], &z = keys['Z'];
+inline key &np_0 = keys[VK_NUMPAD0], &np_1 = keys[VK_NUMPAD1], &np_2 = keys[VK_NUMPAD2], &np_3 = keys[VK_NUMPAD3], &np_4 = keys[VK_NUMPAD4];
+inline key &np_5 = keys[VK_NUMPAD5], &np_6 = keys[VK_NUMPAD6], &np_7 = keys[VK_NUMPAD7], &np_8 = keys[VK_NUMPAD8], &np_9 = keys[VK_NUMPAD9];
+inline key &np_mul = keys[VK_MULTIPLY], &np_add = keys[VK_ADD], &np_sub = keys[VK_SUBTRACT], &np_div = keys[VK_DIVIDE], &np_decimal = keys[VK_DECIMAL];
+inline key &f1 = keys[VK_F1], &f2 = keys[VK_F2], &f3 = keys[VK_F3], &f4 = keys[VK_F4], &f5 = keys[VK_F5], &f6 = keys[VK_F6];
+inline key &f7 = keys[VK_F7], &f8 = keys[VK_F8], &f9 = keys[VK_F9], &f10 = keys[VK_F10], &f11 = keys[VK_F11], &f12 = keys[VK_F12];
+inline key &minus = keys[VK_OEM_MINUS], &plus = keys[VK_OEM_PLUS], &comma = keys[VK_OEM_COMMA], &period = keys[VK_OEM_PERIOD];
+inline key &oem00 = keys[VK_OEM_7], &oem01 = keys[VK_OEM_5], &oem10 = keys[VK_OEM_3], &oem11 = keys[VK_OEM_4];
+inline key &oem20 = keys[VK_OEM_1], &oem21 = keys[VK_OEM_6], &oem30 = keys[VK_OEM_2], &oem31 = keys[VK_OEM_102];
+}
+
+
+namespace main::system {
+inline bool leave{true};
+inline RECT mpoint{};
+}
+
+
+/// @brief mouse structure
+/// @note `mouse::x`, `mouse::y` returns the position of the mouse
+/// @note `mouse::dx`, `mouse::dy` returns the movement of the mouse
+/// @note `mouse::dw` returns the delta of the mouse wheel
+/// @note `mouse::left`, `mouse::right`, `mouse::middle` returns the state of the mouse buttons
+/// @note `mouse(X, Y)` sets the new position of the mouse
+struct mouse {
+  inline static const auto& x = main::system::mpoint.left; // x-position of the mouse
+  inline static const auto& y = main::system::mpoint.top;  // y-position of the mouse
+  inline static const auto& left = key::lbutton;           // left mouse button
+  inline static const auto& right = key::rbutton;          // right mouse button
+  inline static const auto& middle = key::mbutton;         // middle mouse button
+  inline static const auto& extra1 = key::xbutton1;        // extra mouse button 1
+  inline static const auto& extra2 = key::xbutton2;        // extra mouse button 2
+  inline static const auto& leave = main::system::leave;   // whether the mouse is out of the window
+
+  inline static void (*wheeled)(int delta) = nullptr;    // callback function for mouse wheel
+  inline static void (*moved)(int dx, int dy) = nullptr; // callback function for mouse movement
+
+  /// @brief sets the new position of the mouse
+  mouse(const numerical auto X, const numerical auto Y) noexcept { ::SetCursorPos(int(X), int(Y)); }
+};
+
+
 namespace main {
-
-/// @brief user-defined window procedure
-inline bool (*userproc)(HWND hw, UINT msg, WPARAM wp, LPARAM lp) = nullptr;
-
+inline bool (*userproc)(HWND hw, UINT msg, WPARAM wp, LPARAM lp) = nullptr; // user-defined window procedure
 namespace system {
 inline stopwatch timer;
 inline std::wstring username;
@@ -2147,20 +2226,38 @@ inline std::vector<std::filesystem::path> dropped_files{};
 inline HINSTANCE hinstance{};
 inline HWND hwnd{};
 LRESULT CALLBACK wndproc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
+  static constexpr auto key_down = [](key::key& k) { if (reinterpret_cast<double&>(k) = timer(), k.down) k.down(); };
+  static constexpr auto key_up = [](key::key& k) { if (auto d = exchange(reinterpret_cast<double&>(k), 0.0); k.up) k.up(d); };
+  static TRACKMOUSEEVENT tme{.cbSize = sizeof(TRACKMOUSEEVENT), .dwFlags = TME_LEAVE};
   if (userproc && userproc(hw, msg, wp, lp)) return 0;
   switch (msg) {
-  case WM_MOUSEWHEEL: return (mouse_wheel_delta += GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA), 0;
+  case WM_MOUSEMOVE:
+    if (leave) ::TrackMouseEvent(&tme), leave = false;
+    _mm_storeu_epi32(&mpoint, [](auto a) { return xvpermute<0, 1, 4, 5>(a, xvsub(a, _mm_loadu_si128((xrect*)&mpoint))); }(_mm_cvtepi16_epi32(_mm_loadu_si128((xrect*)&lp))));
+    return (mouse::moved ? mouse::moved(mpoint.right, mpoint.bottom) : void(0)), 0;
+  case WM_MOUSEWHEEL: return (mouse::wheeled ? mouse::wheeled(short((wp & 0xffff0000) >> 16)) : void(0)), 0;
+  case WM_MOUSELEAVE:
+    for (auto& e : key::keys) reinterpret_cast<double&>(e) = 0.0;
+    return (leave = true), 0;
+  case WM_KEYDOWN: return key_down(key::keys[wp]), 0;
+  case WM_KEYUP: return key_up(key::keys[wp]), 0;
+  case WM_LBUTTONDOWN: return ::SetFocus(hw), key_down(key::keys[VK_LBUTTON]), 0;
+  case WM_RBUTTONDOWN: return ::SetFocus(hw), key_down(key::keys[VK_RBUTTON]), 0;
+  case WM_MBUTTONDOWN: return ::SetFocus(hw), key_down(key::keys[VK_MBUTTON]), 0;
+  case WM_LBUTTONUP: return key_up(key::keys[VK_LBUTTON]), 0;
+  case WM_RBUTTONUP: return key_up(key::keys[VK_RBUTTON]), 0;
+  case WM_MBUTTONUP: return key_up(key::keys[VK_MBUTTON]), 0;
   case WM_DROPFILES:
     dropped_files.resize(::DragQueryFileW((HDROP)wp, 0xFFFFFFFF, nullptr, 0));
     for (UINT i{}; i < dropped_files.size(); ++i) {
       auto temp = std::wstring(::DragQueryFileW((HDROP)wp, i, nullptr, 0), L'\0');
-      ::DragQueryFileW((HDROP)wp, i, temp.data(), UINT(temp.size() + 1));
-      dropped_files[i] = std::move(temp);
+      ::DragQueryFileW((HDROP)wp, i, temp.data(), (UINT)temp.size() + 1), dropped_files[i] = mv(temp);
     }
   case WM_CLOSE: return ::DestroyWindow(hw), 0;
   case WM_DESTROY: return ::PostQuitMessage(0), 0;
-  default: return ::DefWindowProcW(hw, msg, wp, lp);
+  case WM_CREATE: tme.hwndTrack = hw, ::TrackMouseEvent(&tme);
   }
+  return DefWindowProcW(hw, msg, wp, lp);
 }
 #ifdef ywlib_disable_main_window
 inline const bool main_window_initialized = false;
@@ -2185,7 +2282,7 @@ inline const bool main_window_initialized = [] {
     ::ShowWindow(hwnd, SW_SHOW), ::SetForegroundWindow(hwnd), ::SetFocus(hwnd);
     std::cout << "Win32API initialized in " << timer() << " seconds\n";
     return true;
-  } catch (except E) { return E.receive(), false; } }();
+  } catch (const std::exception& E) { return except(E).receive(), false; } }();
 #endif
 }
 
@@ -2215,9 +2312,23 @@ inline const bool direct3d_initialized = [] {
                             (ID3D11Device**)d3d_device.init(), nullptr, (ID3D11DeviceContext**)d3d_context.init()));
     tiff(::CreateDXGIFactory2(0, IID_PPV_ARGS(dxgi_factory.init())));
     if (hwnd) tiff(dxgi_factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER));
+    [&](comptr<ID3D11BlendState> state, D3D11_BLEND_DESC desc) {
+    desc.RenderTarget[0] = {true, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD,
+                            D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD, 0x0f};
+    tiff(d3d_device->CreateBlendState(&desc, state.init()));
+    d3d_context->OMSetBlendState(state, 0, 0xffffffff); }({}, {});
+    [&](comptr<ID3D11SamplerState> state, D3D11_SAMPLER_DESC desc) {
+      desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP, desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+      desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP, desc.MaxAnisotropy = 1;
+      desc.ComparisonFunc = D3D11_COMPARISON_ALWAYS, desc.MaxLOD = D3D11_FLOAT32_MAX;
+      tiff(d3d_device->CreateSamplerState(&desc, state.init()));
+      [&](auto p) { d3d_context->PSSetSamplers(0, 1, &p); }(state.get()); }({}, {D3D11_FILTER_MIN_MAG_MIP_LINEAR});
+    [&](comptr<ID3D11RasterizerState> state, D3D11_RASTERIZER_DESC desc) {
+    tiff(d3d_device->CreateRasterizerState(&desc, state.init()));
+    d3d_context->RSSetState(state); }({}, {D3D11_FILL_SOLID, D3D11_CULL_NONE, 1, 0, 0, 0, 1, 0, 1, 1});
     std::cout << "Direct3D initialized in " << timer() << " seconds\n";
     return true;
-  } catch (except E) { return E.receive(), false; } }();
+  } catch (const std::exception& E) { return except(E).receive(), false; } }();
 #endif
 }
 
@@ -2245,7 +2356,7 @@ inline const bool direct2d_initialized = [] {
     tiff(::CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(wic_factory.init())));
     std::cout << "Direct2D initialized in " << timer() << " seconds\n";
     return true;
-  } catch (except E) { return E.receive(), false; } }();
+  } catch (const std::exception& E) { return except(E).receive(), false; } }();
 #else
 inline comptr<IWICImagingFactory2> wic_factory{};
 inline const bool direct2d_initialized = [] {
@@ -2253,7 +2364,7 @@ inline const bool direct2d_initialized = [] {
     tiff(::CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(wic_factory.init())));
     DXGI_SWAP_CHAIN_DESC1 desc{UINT(width), UINT(height), DXGI_FORMAT_R8G8B8A8_UNORM};
     desc.SampleDesc.Count = 1, desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT, desc.BufferCount = 2;
-    desc.Scaling = DXGI_SCALING_STRETCH, desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+    desc.Scaling = DXGI_SCALING_STRETCH, desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
     tiff(dxgi_factory->CreateSwapChainForHwnd(d3d_device, hwnd, &desc, nullptr, nullptr, swapchain.init()));
     tiff(::D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, d2d_factory.init()));
     tiff(d3d_device.as(dxgi_device));
@@ -2269,7 +2380,7 @@ inline const bool direct2d_initialized = [] {
     tiff(::DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), (IUnknown**)dw_factory.init()));
     std::cout << "Direct2D initialized in " << timer() << " seconds\n";
     return true;
-  } catch (except E) { return E.receive(), false; } }();
+  } catch (const std::exception& E) { return except(E).receive(), false; } }();
 #endif
 inline void bitmap_to_png(convertible_to<ID2D1Bitmap*> auto&& b, const std::filesystem::path& p, const source& _ = {}) {
   if (!wic_factory) throw std::logic_error("logic error: WIC factory is not initialized");
@@ -2323,9 +2434,8 @@ struct terminator {
 };
 inline terminator termination{};
 inline MSG message{};
-inline BYTE keyboard_state[3][256]{};
-inline bool keyboard_new = true;
-inline RECT mpoint{};
+// inline BYTE keyboard_state[3][256]{};
+// inline bool keyboard_new = true;
 inline double spf{}, fps{};
 }
 
@@ -2363,20 +2473,21 @@ inline void topmost(bool TopMost = true, const source& _ = {}) {
 inline void resize(const auto Width, const auto Height, const source& _ = {}) {
   system::width = int(Width), system::height = int(Height);
   if (width <= 0 || height <= 0) throw std::logic_error(std::format("logic error: Invalid window size\n at {}({},{})", _.file, _.line, _.column));
-  tiff(hwnd, "Main window is not initialized", _);
+  tiff(hwnd, "Main window is not initialized", _, source{});
 #ifndef ywlib_disable_direct2d
-  tiff(system::swapchain && d2d_context, "Direct2D is not initialized", _);
+  tiff(system::swapchain && d2d_context, "Direct2D is not initialized", _, source{});
   system::rendertarget.reset();
-  tiff(system::swapchain->ResizeBuffers(2, UINT(width), UINT(height), DXGI_FORMAT_UNKNOWN, 0), _);
+  system::d2d_context->SetTarget(0);
+  tiff(system::swapchain->ResizeBuffers(2, UINT(width), UINT(height), DXGI_FORMAT_UNKNOWN, 0), _, source{});
   comptr<ID3D11Texture2D> tex;
-  tiff(system::swapchain->GetBuffer(0, IID_PPV_ARGS(tex.init())), _);
+  tiff(system::swapchain->GetBuffer(0, IID_PPV_ARGS(tex.init())), _, source{});
   comptr<IDXGISurface> surface;
-  tiff(tex->QueryInterface(IID_PPV_ARGS(surface.init())), _);
+  tiff(tex->QueryInterface(IID_PPV_ARGS(surface.init())), _, source{});
   auto props = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
                                        D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_PREMULTIPLIED));
-  tiff(d2d_context->CreateBitmapFromDxgiSurface(surface, props, system::rendertarget.init()), _);
+  tiff(d2d_context->CreateBitmapFromDxgiSurface(surface, props, system::rendertarget.init()), _, source{});
 #endif
-  tiff(::SetWindowPos(hwnd, 0, 0, 0, width + system::pad_width, height + system::pad_height, SWP_NOMOVE | SWP_NOZORDER), "SetWindowPos failed", _);
+  tiff(::SetWindowPos(hwnd, 0, 0, 0, width + system::pad_width, height + system::pad_height, SWP_NOMOVE | SWP_NOZORDER), "SetWindowPos failed", _, source{});
 }
 
 /// @brief captures the main window
@@ -2396,19 +2507,14 @@ inline constexpr caster update{[]() {
       ::TranslateMessage(&system::message), ::DispatchMessageW(&system::message);
       if (system::message.message == WM_QUIT) return false;
     } else {
-      ::GetKeyboardState(system::keyboard_state[system::keyboard_new ^= 1]);
-      for (int i{}; i < 256; i += 32) {
-        auto new_ = _mm256_loadu_si256((const __m256i*)(system::keyboard_state[system::keyboard_new] + i));
-        auto old_ = _mm256_loadu_si256((const __m256i*)(system::keyboard_state[system::keyboard_new ^ 1] + i));
-        old_ = _mm256_srli_epi64(_mm256_xor_si256(new_, old_), 4);
-        _mm256_storeu_si256((__m256i*)(system::keyboard_state[2] + i), _mm256_or_si256(new_, old_));
+      if (mouse::leave) {
+        auto mp_old = _mm_loadu_si128((const __m128i*)&system::mpoint);
+        ::GetCursorPos((LPPOINT)&system::mpoint);
+        ::ScreenToClient(system::hwnd, (LPPOINT)&system::mpoint);
+        auto mp = _mm_loadu_si128((const __m128i*)&system::mpoint);
+        mp_old = _mm_sub_epi32(mp, mp_old);
+        _mm_storeu_ps((float*)&system::mpoint, _mm_shuffle_ps(_mm_castsi128_ps(mp), _mm_castsi128_ps(mp_old), 0b01000100));
       }
-      auto mp_old = _mm_loadu_si128((const __m128i*)&system::mpoint);
-      ::GetCursorPos((LPPOINT)&system::mpoint);
-      ::ScreenToClient(system::hwnd, (LPPOINT)&system::mpoint);
-      auto mp = _mm_loadu_si128((const __m128i*)&system::mpoint);
-      mp_old = _mm_sub_epi32(mp, mp_old);
-      _mm_storeu_ps((float*)&system::mpoint, _mm_shuffle_ps(_mm_castsi128_ps(mp), _mm_castsi128_ps(mp_old), 0b01000100));
       system::spf = sw.split(), system::fps = 1.0f / system::spf;
       return true;
     }
@@ -2431,6 +2537,7 @@ inline void begin_draw(const color& Color) {
 inline void end_draw() { tiff(d2d_context->EndDraw()); }
 }
 
+/*
 namespace key {
 
 /// @brief structure for checking key states
@@ -2557,18 +2664,8 @@ inline constexpr key<VK_OEM_6> oem21{};   // `|K|L|;|oem20|THIS!|`
 inline constexpr key<VK_OEM_2> oem30{};   // `|M|,|.|THIS!|oem31|`
 inline constexpr key<VK_OEM_102> oem31{}; // `|M|,|.|oem30|THIS!|`
 }
+*/
 
-namespace mouse {
-
-inline const int& x = reinterpret_cast<const int&>(main::system::mpoint.left);    // gets the mouse position
-inline const int& y = reinterpret_cast<const int&>(main::system::mpoint.top);     // gets the mouse position
-inline const int& dx = reinterpret_cast<const int&>(main::system::mpoint.right);  // gets the mouse movement
-inline const int& dy = reinterpret_cast<const int&>(main::system::mpoint.bottom); // gets the mouse movement
-inline const int& dw = main::system::mouse_wheel_delta;                           // gets the mouse wheel delta
-inline const auto& left = key::lbutton;                                           // left mouse button
-inline const auto& right = key::rbutton;                                          // right mouse button
-inline const auto& middle = key::mbutton;                                         // middle mouse button
-}
 
 /// @brief shows a message box with an OK button
 /// @result `true` if the user clicks the OK button
@@ -2600,7 +2697,7 @@ inline constexpr auto open_file = [](const std::filesystem::path& Dir = {}) noex
     ofn.lpstrInitialDir = Dir.c_str();
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
     if (::GetOpenFileNameW(&ofn) == TRUE) return std::filesystem::path(ofn.lpstrFile);
-  } catch (except E) { E.receive(); }
+  } catch (const std::exception& E) { except(E).receive(); }
   return {};
 };
 
@@ -2613,12 +2710,12 @@ inline constexpr auto save_file = [](const std::filesystem::path& Dir = {}, cons
     ofn.lpstrInitialDir = Dir.c_str();
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
     if (::GetSaveFileNameW(&ofn) == TRUE) return std::filesystem::path(ofn.lpstrFile);
-  } catch (except E) { E.receive(); }
+  } catch (const std::exception& E) { except(E).receive(); }
   return {};
 };
 
 /// @brief static font structure
-template<value Size, literal<wchar_t> Name = L"Yu Gothic UI", int Alignment = -1, bool Bold = false, bool Italic = false> struct font {
+template<value Size, literal<wchar_t> Name = L"Yu Gothic UI", int Alignment = 0, bool Bold = false, bool Italic = false> struct font {
 protected:
   inline static comptr<IDWriteTextFormat> dw_format{};
 public:
@@ -2875,6 +2972,7 @@ template<typename T> class unordered_buffer : public buffer<T> {
 protected:
   comptr<ID3D11UnorderedAccessView> d3d_uav;
 public:
+  using buffer<T>::from;
   unordered_buffer() noexcept = default;
   operator ID3D11UnorderedAccessView*() const noexcept { return d3d_uav; }
   explicit unordered_buffer(const buffer<T>& Src) : unordered_buffer(Src.count) { buffer<T>::from(Src); }
@@ -2945,12 +3043,12 @@ public:
   }
   void operator()(nat VertexCounts, vs_resource_list VSResources, vs_cbuffer_list VSCBuffers,
                   gs_resource_list GSResources = {}, gs_cbuffer_list GSCBuffers = {}, ps_resource_list PSResources = {}, ps_cbuffer_list PSCbuffers = {}) const {
-    if constexpr (!same_as<vs_resource_list, none>) main::d3d_context->VSSetShaderResources(0, unsigned(VSResources.count), VSResources.data());
-    if constexpr (!same_as<gs_resource_list, none>) main::d3d_context->GSSetShaderResources(0, unsigned(VSResources.count), VSResources.data());
-    if constexpr (!same_as<ps_resource_list, none>) main::d3d_context->PSSetShaderResources(0, unsigned(VSResources.count), VSResources.data());
-    if constexpr (!same_as<vs_cbuffer_list, none>) main::d3d_context->VSSetConstantBuffers(0, unsigned(VSCBuffers.count), VSCBuffers.data());
-    if constexpr (!same_as<gs_cbuffer_list, none>) main::d3d_context->GSSetConstantBuffers(0, unsigned(GSCBuffers.count), GSCBuffers.data());
-    if constexpr (!same_as<ps_cbuffer_list, none>) main::d3d_context->PSSetConstantBuffers(0, unsigned(PSCbuffers.count), PSCbuffers.data());
+    if constexpr (!is_none<vs_resource_list>) main::d3d_context->VSSetShaderResources(0, extent<vs_resource_list>, VSResources.data());
+    if constexpr (!is_none<gs_resource_list>) main::d3d_context->GSSetShaderResources(0, extent<gs_resource_list>, GSResources.data());
+    if constexpr (!is_none<ps_resource_list>) main::d3d_context->PSSetShaderResources(0, extent<ps_resource_list>, PSResources.data());
+    if constexpr (!is_none<vs_cbuffer_list>) main::d3d_context->VSSetConstantBuffers(0, extent<vs_cbuffer_list>, VSCBuffers.data());
+    if constexpr (!is_none<gs_cbuffer_list>) main::d3d_context->GSSetConstantBuffers(0, extent<gs_cbuffer_list>, GSCBuffers.data());
+    if constexpr (!is_none<ps_cbuffer_list>) main::d3d_context->PSSetConstantBuffers(0, extent<ps_cbuffer_list>, PSCbuffers.data());
     main::d3d_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     main::d3d_context->IASetInputLayout(nullptr);
     main::d3d_context->IASetVertexBuffers(0, 0, nullptr, nullptr, nullptr);
@@ -2989,7 +3087,7 @@ public:
       auto hr = D3DCompile(Hlsl.data(), Hlsl.size(), 0, 0, 0, Entry, Target, D3D10_SHADER_ENABLE_STRICTNESS, 0, b.init(), r.init());
       if (0 > hr) throw std::logic_error(std::format("Compute shader compile error: {}\n at {}", (char*)r->GetBufferPointer(), _));
       tiff(main::d3d_device->CreateComputeShader(b->GetBufferPointer(), b->GetBufferSize(), nullptr, cs.init()));
-    } catch (except E) { E.receive(); }
+    } catch (const std::exception& E) { except(E).receive(); }
   }
 
   /// performs GPGPU
@@ -3014,7 +3112,7 @@ public:
       [&]<nat... Is>(ID3D11UnorderedAccessView* t, sequence<Is...>) { (main::d3d_context->CSSetUnorderedAccessViews(Is, 1, &t, 0), ...); }({}, ubseq{});
       [&]<nat... Is>(ID3D11ShaderResourceView* t, sequence<Is...>) { (main::d3d_context->CSSetShaderResources(Is, 1, &t), ...); }({}, sbseq{});
       [&]<nat... Is>(ID3D11Buffer* t, sequence<Is...>) { (main::d3d_context->CSSetConstantBuffers(Is, 1, &t), ...); }({}, cbseq{});
-    } catch (except E) { E.reray(); }
+    } catch (const std::exception& E) { except(E).reray(); }
   }
 
   /// @brief 一次元に並列化したGPGPUを実行する。
@@ -3023,7 +3121,7 @@ public:
   void operator()(nat Parallels, ub_list UBuffers, sb_list SBuffers, cb_list CBuffers) const {
     try {
       this->operator()(mv(UBuffers), mv(SBuffers), mv(CBuffers), unsigned(Parallels - 1) / 1024u + 1, 1, 1);
-    } catch (except E) { E.reray(); }
+    } catch (const std::exception& E) { except(E).reray(); }
   }
 };
 
@@ -3372,7 +3470,7 @@ public:
   virtual void show() const { ::ShowWindow(hwnd, SW_SHOW); }
   virtual void hide() const { ::ShowWindow(hwnd, SW_HIDE); }
   virtual void setfocus() const { ::SetFocus(hwnd); }
-  virtual void text(const null_terminated<wchar_t> Text) const { ::SetWindowTextW(hwnd, Text); }
+  virtual void text(const null_terminated<wchar_t> Text) { ::SetWindowTextW(hwnd, Text); }
 
   virtual std::wstring text() const {
     if (!hwnd) return {};
@@ -3557,12 +3655,11 @@ protected:
       }
       return CallWindowProcW(defproc, hw, msg, wp, lp);
     case WM_SETFOCUS:
+      SendMessageW(hw, EM_SETSEL, 0, -1);
       if (auto& t = get_control<textbox>(hw); t.intofocus) t.intofocus(t);
-      else SendMessageW(hw, EM_SETSEL, 0, -1);
       break;
     case WM_KILLFOCUS:
       if (auto& t = get_control<textbox>(hw); t.killfocus) t.killfocus(t);
-      else SendMessageW(hw, EM_SETSEL, 0, -1);
       break;
     }
     return CallWindowProcW(defproc, hw, msg, wp, lp);
@@ -3619,12 +3716,11 @@ protected:
       }
       return GetKeyState(VK_CONTROL) || ('0' <= wp && wp <= '9') || wp == '-' || wp == '.' ? CallWindowProcW(defproc, hw, msg, wp, lp) : 0;
     case WM_SETFOCUS:
+      SendMessageW(hw, EM_SETSEL, 0, -1);
       if (auto& t = get_control<valuebox>(hw); t.intofocus) t.intofocus(t);
-      else SendMessageW(hw, EM_SETSEL, 0, -1);
       break;
     case WM_KILLFOCUS:
       if (auto& t = get_control<valuebox>(hw); t.killfocus) t.killfocus(t);
-      else SendMessageW(hw, EM_SETSEL, 0, -1);
       break;
     }
     return CallWindowProcW(defproc, hw, msg, wp, lp);
@@ -3872,21 +3968,43 @@ public:
   }
 
   /// constructor for creating a radiobutton which is not attached to any group
-  template<tuple Tp> radiobutton(const rect& Rect, const null_terminated<wchar_t> Title, Tp&& Texts, unsigned BoxStyle = {})
+  template<tuple Tp> radiobutton(const rect& Rect, Tp&& Texts, unsigned BoxStyle = {})
     requires buildable<std::array<null_terminated<wchar_t>, extent<Tp>>, Tp>
-    : control(L"BUTTON", Title, BS_GROUPBOX, Rect, true), count(extent<Tp>) {
+    : control(L"BUTTON", L"", BS_GROUPBOX | BoxStyle, Rect, true), count(extent<Tp>) {
     initialize(Rect, build<std::array<null_terminated<wchar_t>, extent<Tp>>>(Texts));
   }
 
   /// constructor for creating a radiobutton which is attached to the specified group
-  template<tuple Tp> radiobutton(nat GroupNo, const rect& Rect, const null_terminated<wchar_t> Title, Tp&& Texts, unsigned BoxStyle = {})
+  template<tuple Tp> radiobutton(nat GroupNo, const rect& Rect, Tp&& Texts, unsigned BoxStyle = {})
     requires buildable<std::array<null_terminated<wchar_t>, extent<Tp>>, Tp>
-    : control(L"BUTTON", Title, BS_GROUPBOX, Rect, GroupNo, true), count(extent<Tp>) {
+    : control(L"BUTTON", L"", BS_GROUPBOX | BoxStyle, Rect, GroupNo, true), count(extent<Tp>) {
     initialize(Rect, build<std::array<null_terminated<wchar_t>, extent<Tp>>>(Texts));
   }
 
   /// sets the focus to this control
   virtual void setfocus() const override { SetFocus(buttons[state]); }
+
+  /// gets the text of the selected button
+  virtual std::wstring text() const override {
+    std::wstring out(::GetWindowTextLengthW(buttons[state]), wchar_t{});
+    ::GetWindowTextW(buttons[state], out.data(), int(out.size() + 1));
+    return out;
+   }
+
+  /// sets the text of the selected button
+  virtual void text(const null_terminated<wchar_t> Text) override {
+    ::SetWindowTextW(buttons[state], Text);
+  }
+
+  void font(const numerical auto Size) {
+    control::font(Size);
+    for (auto b : buttons) ::SendMessageW(b, WM_SETFONT, (WPARAM)hfont, true);
+  }
+
+  void font(const null_terminated<wchar_t> Name, const numerical auto Size) {
+    control::font(Name, Size);
+    for (auto b : buttons) ::SendMessageW(b, WM_SETFONT, (WPARAM)hfont, true);
+  }
 };
 
 /// @brief class for creating a progressbar control
@@ -3902,19 +4020,17 @@ public:
 /// @brief coordinator
 class coordinator {
 protected:
-  yw::texture texture;
-  yw::camera camera;
+  yw::texture tex;
+  yw::camera cam;
   coordinator(const coordinator&) = delete;
   coordinator& operator=(const coordinator&) = delete;
   void initialize() {
-    static constexpr auto ll = literal(L"Yu Gothic UI");
-    static constexpr auto vv = value(200);
-    static constexpr auto ff = font<vv, ll, 0>{};
+    static constexpr auto ff = font<200, L"Yu Gothic UI", 0, 1>{};
     static constexpr auto bb = brush<color::white>{};
-    camera.orthographic = true;
-    camera.offset.z = -10;
-    camera.factor = 0.3125f * min(camera.width, camera.height);
-    texture.begin_draw(color::black);
+    cam.orthographic = true;
+    cam.offset.z = -10;
+    cam.factor = 0.3125f * min(cam.width, cam.height);
+    tex.begin_draw(color::black);
     draw_rectangle(vector(0, 0, 1024, 512), brush<color::red>{});
     draw_rectangle(vector(1024, 0, 2048, 512), brush<color::blue>{});
     draw_rectangle(vector(2048, 0, 3072, 512), brush<color::green>{});
@@ -3924,15 +4040,15 @@ protected:
     draw_text(vector{1512, 100, 2048, 512}, ff, bb, L"-Y");
     draw_text(vector{2048, 100, 2512, 512}, ff, bb, L"+Z");
     draw_text(vector{2512, 100, 3072, 512}, ff, bb, L"-Z");
-    texture.end_draw();
-    operator()({});
+    tex.end_draw();
+    operator()(cam.rotation);
   }
 public:
   coordinator() noexcept = default;
   coordinator(coordinator&&) noexcept = default;
   coordinator& operator=(coordinator&&) noexcept = default;
   coordinator(numerical auto Width, numerical auto Height, numerical auto Msaa = {})
-    : texture(4096, 512), camera(Width, Height, Msaa) { initialize(); }
+    : tex(4096, 512), cam(Width, Height, Msaa) { initialize(); }
   void operator()(const vector& Radians, const color& Background = color::black) {
     static constexpr std::string_view hlsl = R"(
 #pragma pack_matrix(row_major)
@@ -3972,15 +4088,14 @@ void psmain(PSIN In, out float4 Out : SV_Target) {
     static auto sb = structured_buffer<list<vector, vector>>(vv.data(), 36);
     static constant_buffer<xmatrix> cb;
     try {
-      tiff(texture, "Texture creation failed");
-      camera.rotation = Radians, camera.update();
-      cb.from(camera.view_proj);
-      camera.begin_render(Background);
-      rd(36, {sb}, {cb}, {}, {}, {texture});
-      camera.end_render();
-    } catch (const std::exception& E) { throw except(E); }
+      cam.rotation = Radians, cam.update();
+      cb.from(cam.view_proj);
+      cam.begin_render(Background);
+      rd(36, {sb}, {cb}, {}, {}, {tex});
+      cam.end_render();
+    } catch (const std::exception& E) { except(E).receive(); }
   }
-  void operator()(const vector& Rect) const { draw_bitmap(Rect, camera); }
+  void draw(const vector& Rect) const { draw_bitmap(Rect, cam); }
 };
 }
 

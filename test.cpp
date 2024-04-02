@@ -39,6 +39,7 @@ label ui_label_cad{};
 radiobutton ui_radiobutton_hide{};
 checkbox ui_checkbox_reverse{};
 checkbox ui_checkbox_alpha{};
+checkbox ui_checkbox_autoalignmode{};
 progressbar ui_progressbar_align{};
 button ui_button_align{};
 label ui_label_align{}; // 計算時間
@@ -52,14 +53,17 @@ label ui_label_off_x{};
 label ui_label_off_y{};
 label ui_label_off_z{};
 valuebox ui_valuebox_off[3];
-label ui_label_min_whole{};
 label ui_label_min_over{};
-label ui_label_max_over{};
+label ui_label_min_side{};
+label ui_label_max_side{};
 label ui_label_timer{};
 label ui_label_margins[4];
 button ui_button_result{};
 
-textbox ui_textbox_result[8]; // Group 2
+// Group 2
+
+radiobutton ui_radiobutton_result[2];
+textbox ui_textbox_result[8];
 button ui_button_output;
 button ui_button_endresult;
 
@@ -78,6 +82,8 @@ float facets_y_center{};
 
 camera Camera{};
 maxmin MaxMin{};
+
+coordinator Coord{};
 
 bool Reversed = false;
 bool ResultMode = false;
@@ -147,8 +153,8 @@ StructuredBuffer<SB0> sb0 : register(t0);
     half_gap = *reinterpret_cast<const float*>(Stl.header().data() + 20);
     half_stroke = *reinterpret_cast<const float*>(Stl.header().data() + 24);
     return ub;
-  } catch (except E) {
-    E.receive();
+  } catch (const std::exception& E) {
+    except(E).receive();
     return {};
   }
 }
@@ -180,8 +186,8 @@ StructuredBuffer<SB0> sb0 : register(t0);
     structured_buffer sb(t);
     gp(t.size(), {ub}, {sb}, {});
     return ub;
-  } catch (except E) {
-    E.receive();
+  } catch (const std::exception& E) {
+    except(E).receive();
     return {};
   }
 }
@@ -239,7 +245,7 @@ float4 psmain(PSIN In) : SV_TARGET {
                             typepack<>, typepack<constant_buffer<list<xmatrix, xmatrix>>, constant_buffer<list<unsigned, unsigned, unsigned long long>>>>(hlsl);
   try {
     rd(Facets.count * 3, {Facets}, {}, {}, {Camera, Options});
-  } catch (except E) { E.receive(); }
+  } catch (const std::exception& E) { except(E).receive(); }
 }
 
 void render_vertices(const structured_buffer<vertex>& Vertices, const structured_buffer<margin>& Margins,
@@ -314,7 +320,7 @@ float4 psmain(PSIN In) : SV_TARGET {
                               typepack<constant_buffer<list<xmatrix, xmatrix>>,
                                        constant_buffer<list<unsigned, float, unsigned long long>>>>(hlsl);
     rd(Vertices.count, {Vertices, Margins}, {World}, {}, {Camera, Options});
-  } catch (except E) { E.receive(); }
+  } catch (const std::exception& E) { except(E).receive(); }
 }
 
 void calc_maxmin(const structured_buffer<vertex>& Vertices, const unordered_buffer<margin>& Margins,
@@ -383,7 +389,7 @@ cbuffer CB1 :register(b1) {
       }
     }
     MaxMin = mv(t[0]);
-  } catch (except E) { E.receive(); }
+  } catch (const std::exception& E) { except(E).receive(); }
 }
 
 void calc_margin(const structured_buffer<facet>& Facets, const structured_buffer<vertex>& Vertices,
@@ -458,7 +464,7 @@ cbuffer CB1 : register(b1) {
     static auto cb = constant_buffer(list<unsigned, unsigned, unsigned long long>{});
     cb.from(list<>::asref(Facets.count, Vertices.count, 0));
     gp(Vertices.count, {Margins}, {Facets, Vertices}, {World, cb});
-  } catch (except E) { E.receive(); }
+  } catch (const std::exception& E) { except(E).receive(); }
 }
 
 void update_world() {
@@ -475,12 +481,13 @@ void render_all() {
     if (sb_facets) render_facets(sb_facets, cb_camera, cb_options);
     if (sb_vertices) render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
     Camera.end_render();
-    throw std::exception("TESTてすと");
     main::begin_draw(color::yw);
-    // Camera.draw({5, 85, 805, 535});
+    Camera.draw({5, 85, 805, 535});
+    // Coord.texture.draw({5, 5, 805, 85});
+    Coord.draw({5, 85, 105, 185});
     main::end_draw();
     main::update(), main::update();
-  } catch (except E) { E.receive(); }
+  } catch (const std::exception& E) { except(E).receive(); }
 }
 
 template<nat I> bool checker(const maxmin& Now, const maxmin& New) {
@@ -496,7 +503,7 @@ template<nat I> bool checker(const maxmin& Now, const maxmin& New) {
   else if constexpr (I == 4) // 基準面+内股最小取代最大化 (yz軸回転、x軸移動)
     return min(Now.mins[0].w, Now.mins[2].w, Now.mins[12].w, Now.mins[14].w) <
            min(New.mins[0].w, New.mins[2].w, New.mins[12].w, New.mins[14].w);
-  else if constexpr (I == 5) // 面上最小取代最大化 (x軸回転、XYZ軸移動)
+  else if constexpr (I == 5) // 　　最小取代最大化 (x軸回転、XYZ軸移動)
     return apply(min, projector(Now.mins, &vector::w, make_sequence<25>{})) < apply(min, projector(New.mins, &vector::w, make_sequence<25>{}));
 }
 
@@ -613,6 +620,7 @@ void align() {
   static xmatrix matrix;
   static xvector theta;
   static double time;
+  static float minnow;
 
   if (!(sb_facets && sb_vertices)) return;
 
@@ -631,15 +639,22 @@ void align() {
   stopwatch sw;
 
   if (AlignMode == 0) {
+    minnow = -1e10;
     time = 0;
+    ++AlignMode;
+  } else if (AlignMode == 1) {
     xmatrix temp;
     xvworld(xvload(ui_valuebox_off[0].value<float>(), ui_valuebox_off[1].value<float>(), ui_valuebox_off[2].value<float>(), 0.f),
             xvneg(xvradian(xvload(ui_valuebox_rot[0].value<float>(), ui_valuebox_rot[1].value<float>(), ui_valuebox_rot[2].value<float>(), 0.f))), temp);
+    // std::cout << std::format("{}, {}, {}, {}\n", vector(temp[0]), vector(temp[1]), vector(temp[2]), vector(temp[3]));
     cb_world.from(temp);
     if (margins.count != sb_vertices.count) margins = unordered_buffer<margin>(sb_vertices.count);
     calc_margin(sb_facets, sb_vertices, cb_world, margins), calc_maxmin(sb_vertices, margins, cb_world, mm[12]);
-    theta = xvadd(xvmul(xvadd(mm[12].maxs[25], mm[12].mins[25]), xv_constant<-0.5f>), xvset<1>(xv_zero, facets_y_center));
-    xvworld(theta, matrix), xvdot<4>(matrix, temp);                                      // 中心座標を原点に移す行列
+    // theta = xvadd(xvmul(xvadd(mm[12].maxs[25], mm[12].mins[25]), xv_constant<-0.5f>), xvset<1>(xv_zero, facets_y_center));
+    theta = xvset<1>(xvmul(xvadd(mm[12].maxs[25], mm[12].mins[25]), xv_constant<-0.5f>), -1.2f * journal_hole_radius - mm[12].mins[25].y);
+    xvworld(theta, matrix);
+    xvdot<4>(matrix, temp); // 中心座標を原点に移す行列
+    // std::cout << std::format("{}, {}, {}, {}\n", vector(temp[0]), vector(temp[1]), vector(temp[2]), vector(temp[3]));
     theta = xvmax(xvadd(theta, mm[12].maxs[25]), xvsub(theta, mm[12].mins[25]));         // 原点から各軸方向の最大距離
     theta = xvmul(theta, theta);                                                         // 最大距離の二乗
     theta = xvsqrt(xvadd(xvpermute<1, 2, 0, -1>(theta), xvpermute<2, 0, 1, -1>(theta))); // 各断面での最大距離
@@ -649,54 +664,69 @@ void align() {
     calc_maxmin(sb_vertices, ub_margins, cb_world, mm[12]);
   }
 
-  else if (AlignMode == 1) {
+  else if (AlignMode == 2) {
     if (select_best<0>(margins, mm, matrix, theta, 25.f, 0b111001)) ++AlignMode;
-  } else if (AlignMode == 2) {
-    if (select_best<0>(margins, mm, matrix, theta, 5.f, 0b111001)) ++AlignMode;
   } else if (AlignMode == 3) {
+    if (select_best<0>(margins, mm, matrix, theta, 5.f, 0b111001)) ++AlignMode;
+  } else if (AlignMode == 4) {
     if (select_best<0>(margins, mm, matrix, theta, 1.f, 0b111001)) ++AlignMode;
   }
 
-  else if (AlignMode == 4) {
+  else if (AlignMode == 5) {
     if (select_best<1>(margins, mm, matrix, theta, 25.f, 0b001111)) ++AlignMode;
-  } else if (AlignMode == 5) {
-    if (select_best<1>(margins, mm, matrix, theta, 5.f, 0b001111)) ++AlignMode;
   } else if (AlignMode == 6) {
+    if (select_best<1>(margins, mm, matrix, theta, 5.f, 0b001111)) ++AlignMode;
+  } else if (AlignMode == 7) {
     if (select_best<1>(margins, mm, matrix, theta, 1.f, 0b001111)) ++AlignMode;
   }
 
-  else if (AlignMode == 7) {
+  else if (AlignMode == 8) {
     if (select_best<2>(margins, mm, matrix, theta, 25.f, 0b111110)) ++AlignMode;
-  } else if (AlignMode == 8) {
-    if (select_best<2>(margins, mm, matrix, theta, 5.f, 0b111110)) ++AlignMode;
   } else if (AlignMode == 9) {
+    if (select_best<2>(margins, mm, matrix, theta, 5.f, 0b111110)) ++AlignMode;
+  } else if (AlignMode == 10) {
     if (select_best<2>(margins, mm, matrix, theta, 1.f, 0b111110)) ++AlignMode;
   }
 
-  else if (AlignMode == 10) {
+  else if (AlignMode == 11) {
     if (select_best<3>(margins, mm, matrix, theta, 25.f, 0b110111)) ++AlignMode;
-  } else if (AlignMode == 11) {
-    if (select_best<3>(margins, mm, matrix, theta, 5.f, 0b110111)) ++AlignMode;
   } else if (AlignMode == 12) {
+    if (select_best<3>(margins, mm, matrix, theta, 5.f, 0b110111)) ++AlignMode;
+  } else if (AlignMode == 13) {
     if (select_best<3>(margins, mm, matrix, theta, 1.f, 0b110111)) ++AlignMode;
   }
 
-  else if (AlignMode == 13) {
+  else if (AlignMode == 14) {
     if (select_best<4>(margins, mm, matrix, theta, 25.f, 0b001110)) ++AlignMode;
-  } else if (AlignMode == 14) {
-    if (select_best<4>(margins, mm, matrix, theta, 5.f, 0b001110)) ++AlignMode;
   } else if (AlignMode == 15) {
-    if (select_best<4>(margins, mm, matrix, theta, 1.f, 0b001110)) ++AlignMode;
+    if (select_best<4>(margins, mm, matrix, theta, 5.f, 0b001110)) ++AlignMode;
   } else if (AlignMode == 16) {
+    if (select_best<4>(margins, mm, matrix, theta, 1.f, 0b001110)) ++AlignMode;
+  } else if (AlignMode == 17) {
     if (select_best<4>(margins, mm, matrix, theta, .2f, 0b001110)) ++AlignMode;
   }
 
-  else if (AlignMode == 17) {
-    if (select_best<5>(margins, mm, matrix, theta, 5.f, 0)) ++AlignMode;
-  } else if (AlignMode == 18) {
-    if (select_best<5>(margins, mm, matrix, theta, 1.f, 0)) ++AlignMode;
+  else if (AlignMode == 18) {
+    if (mm[12].minimum.w < 0) AlignMode = 21;
+    else if (select_best<5>(margins, mm, matrix, theta, 5.f, 0)) ++AlignMode;
   } else if (AlignMode == 19) {
+    if (select_best<5>(margins, mm, matrix, theta, 1.f, 0)) ++AlignMode;
+  } else if (AlignMode == 20) {
     if (select_best<5>(margins, mm, matrix, theta, .2f, 0)) ++AlignMode;
+  }
+
+  else if (AlignMode == 21) {
+    if (ui_checkbox_autoalignmode.state && minnow < mm[12].minimum.w) {
+      minnow = mm[12].minimum.w;
+      vector euler = xvneg(xvdegree(xveuler(matrix)));
+      ui_valuebox_rot[0].text(std::format(L"{:.4f}  ", euler.x));
+      ui_valuebox_rot[1].text(std::format(L"{:.4f}  ", euler.y));
+      ui_valuebox_rot[2].text(std::format(L"{:.4f}  ", euler.z));
+      ui_valuebox_off[0].text(std::format(L"{:.3f}  ", xvget<3>(matrix[0])));
+      ui_valuebox_off[1].text(std::format(L"{:.3f}  ", xvget<3>(matrix[1])));
+      ui_valuebox_off[2].text(std::format(L"{:.3f}  ", xvget<3>(matrix[2])));
+      AlignMode = 1;
+    } else ++AlignMode;
   }
 
   else {
@@ -708,14 +738,14 @@ void align() {
     ui_valuebox_off[0].text(std::format(L"{:.3f}  ", xvget<3>(matrix[0])));
     ui_valuebox_off[1].text(std::format(L"{:.3f}  ", xvget<3>(matrix[1])));
     ui_valuebox_off[2].text(std::format(L"{:.3f}  ", xvget<3>(matrix[2])));
-    MaxMin = mm[12];
+    update_world(), calc_margin(sb_facets, sb_vertices, cb_world, ub_margins), sb_margins.from(ub_margins), calc_maxmin(sb_vertices, ub_margins, cb_world, MaxMin);
   }
 
   time += sw();
   ui_progressbar_align.progress(AlignMode / 20.0);
-  ui_label_margins[0].text(std::format(L"{:.3f}  ", mm[12].minimum.w));
-  ui_label_margins[1].text(std::format(L"{:.3f}  ", apply(min, projector(mm[12].mins, &vector::w, make_sequence<25>{}))));
-  ui_label_margins[2].text(std::format(L"{:.3f}  ", apply(max, projector(mm[12].maxs, &vector::w, make_sequence<25>{}))));
+  ui_label_margins[0].text(std::format(L"{:.3f}  ", apply(min, projector(mm[12].mins, &vector::w, make_sequence<25>{}))));
+  ui_label_margins[1].text(std::format(L"{:.3f}  ", apply(min, projector(mm[12].mins, &vector::w, sequence<4, 6, 9, 16, 18, 21>{}))));
+  ui_label_margins[2].text(std::format(L"{:.3f}  ", apply(max, projector(mm[12].maxs, &vector::w, sequence<4, 6, 9, 16, 18, 21>{}))));
   ui_label_margins[3].text(std::format(L"{:.1f}", time));
   render_all();
 }
@@ -753,13 +783,13 @@ cbuffer CB0 : register(b0) {
     for (nat i{temp.size() / 2}; i != 0; i /= 2)
       for (nat j{0}; j < i; ++j) temp[j] += temp[j + i];
     return temp[0] * float(1e-9 / 6);
-  } catch (except E) { E.receive(); }
+  } catch (const std::exception& E) { except(E).receive(); }
   return {};
 }
 
 
 inline std::array<vector, 15> calc_punch(const structured_buffer<vertex>& Vertices, const std::array<vector, 15>& Ref) {
-  std::array<vector, 15> punches;
+  std::array<vector, 15> punches = Ref;
   unordered_buffer<std::array<float, 15>> ub0(nullptr, Vertices.count);
   unordered_buffer<std::array<float, 15>> ub1(nullptr, 1024);
   constant_buffer<list<unsigned, unsigned, unsigned long long, std::array<vector, 15>>> cb(list{
@@ -769,44 +799,48 @@ inline std::array<vector, 15> calc_punch(const structured_buffer<vertex>& Vertic
     #pragma pack_matrix(row_major)
     struct UB0 { float d[15]; };
     struct SB0 { float4 v, n; };
-    cbuffer CB0 : register(b0) {
-      uint m, n, _2, _3;
-      float4 cb[15];
-    };
-    cbuffer CB1 : register(b1) {
-      matrix mm;
-    };
+    cbuffer CB0 : register(b0) { float4 cad; };
+    cbuffer CB1 : register(b1) { matrix mm; };
     RWStructuredBuffer<UB0> ub0 : register(u0);
       StructuredBuffer<SB0> sb0 : register(t0);
     float f0(float3 a, float3 b, float3 c) {
       float t = a.x * b.y - a.y * b.x;
-      if (t < 0) {
-        t = b.x * c.y - b.y * c.x;
-        if (t > 0) return 0.0;
-        else if (t < 0) {
-          t = c.x * a.y - c.y * a.x;
-          if (t > 0) return 0.0;
-        }
-      } else if (t > 0) {
-        t = b.x * c.y - b.y * c.x;
-        if (t < 0) return 0.0;
-        else if (t > 0) {
-          t = c.x * a.y - c.y * a.x;
-          if (t < 0) return 0.0;
-        }
-      }
+      if (t < 0) { t = b.x * c.y - b.y * c.x;
+                   if (t > 0) return 0.0;
+                   else if (t < 0) { t = c.x * a.y - c.y * a.x;
+                                     if (t > 0) return 0.0; } }
+      else if (t > 0) { t = b.x * c.y - b.y * c.x;
+                        if (t < 0) return 0.0;
+                        else if (t > 0) { t = c.x * a.y - c.y * a.x;
+                                          if (t < 0) return 0.0; } }
       return dot(cross(a, b), c) / (a.x * b.y - a.y * b.x + b.x * c.y - b.y * c.x + c.x * a.y - c.y * a.x);
     }
+    struct Type { float4 a, b, c; };
     [numthreads(1024, 1, 1)] void csmain(uint i : SV_DispatchThreadID) {
-      uint j = 3 * i;
-      for (uint k{}; k < 15; ++k) {
-        if (abs(cb[k].w) == 1) ub0[i].d[k] = f0(sb0[j].v.yzx - cb[k].yzx, sb0[j + 1].v.yzx - cb[k].yzx, sb0[j + 2].v.yzx - cb[k].yzx);
-        else if (abs(cb[k].w) == 2) ub0[i].d[k] = f0(sb0[j].v.zxy - cb[k].zxy, sb0[j + 1].v.zxy - cb[k].zxy, sb0[j + 2].v.zxy - cb[k].zxy);
-        else ub0[i].d[k] = f0(sb0[j].v.xyz - cb[k].xyz, sb0[j + 1].v.xyz - cb[k].xyz, sb0[j + 2].v.xyz - cb[k].xyz);
-      }
+      const uint j = 3 * i;
+      Type t;
+      t.a = mul(mm, sb0[j].v);
+      t.b = mul(mm, sb0[j + 1].v);
+      t.c = mul(mm, sb0[j + 2].v);
+      ub0[i].d[0] = f0(float3(t.a.y+cad.x,t.a.z,t.a.x), float3(t.b.y+cad.x,t.b.z,t.b.x), float3(t.c.y+cad.x,t.c.z,t.c.x));
+      ub0[i].d[1] = f0(float3(t.a.y,t.a.z-cad.x,t.a.x), float3(t.b.y,t.b.z-cad.x,t.b.x), float3(t.c.y,t.c.z-cad.x,t.c.x));
+      ub0[i].d[2] = f0(float3(t.a.y-cad.x,t.a.z,t.a.x), float3(t.b.y-cad.x,t.b.z,t.b.x), float3(t.c.y-cad.x,t.c.z,t.c.x));
+      ub0[i].d[3] = f0(float3(t.a.y,t.a.z+cad.x,t.a.x), float3(t.b.y,t.b.z+cad.x,t.b.x), float3(t.c.y,t.c.z+cad.x,t.c.x));
+      ub0[i].d[4] = f0(float3(t.a.y-cad.z,t.a.z,t.a.x), float3(t.b.y-cad.z,t.b.z,t.b.x), float3(t.c.y-cad.z,t.c.z,t.c.x));
+      ub0[i].d[5] = f0(float3(t.a.x+cad.y,t.a.y,t.a.z), float3(t.b.x+cad.y,t.b.y,t.b.z), float3(t.c.x+cad.y,t.c.y,t.c.z));
+      ub0[i].d[6] = f0(float3(t.a.x+cad.y,t.a.y-cad.z,t.a.z), float3(t.b.x+cad.y,t.b.y-cad.z,t.b.z), float3(t.c.x+cad.y,t.c.y-cad.z,t.c.z));
+      ub0[i].d[7] = ub0[i].d[5];
+      ub0[i].d[8] = ub0[i].d[6];
+      ub0[i].d[9] = f0(float3(t.a.z,t.a.x+cad.y,t.a.y), float3(t.b.z,t.b.x+cad.y,t.b.y), float3(t.c.z,t.c.x+cad.y,t.c.y));
+      ub0[i].d[10] = f0(float3(t.a.z,t.a.x-cad.y,t.a.y), float3(t.b.z,t.b.x-cad.y,t.b.y), float3(t.c.z,t.c.x-cad.y,t.c.y));
+      ub0[i].d[11] = ub0[i].d[9];
+      ub0[i].d[12] = ub0[i].d[10];
+      ub0[i].d[13] = f0(float3(t.a.z-50,t.a.x+cad.y,t.a.y), float3(t.b.z-50,t.b.x+cad.y,t.b.y), float3(t.c.z-50,t.c.x+cad.y,t.c.y));
+      ub0[i].d[14] = f0(float3(t.a.z+50,t.a.x-cad.y,t.a.y), float3(t.b.z+50,t.b.x-cad.y,t.b.y), float3(t.c.z+50,t.c.x-cad.y,t.c.y));
     })";
-    static auto gp = gpgpu<typepack<std::array<float, 15>>, typepack<vertex>, typepack<decltype(cb)::value_type>>(hlsl);
-    gp(Vertices.count, {ub0}, {Vertices}, {cb});
+    static auto gp = gpgpu<typepack<std::array<float, 15>>, typepack<vertex>, typepack<vector, xmatrix>>(hlsl);
+    static auto cb0 = constant_buffer(vector{journal_hole_radius, half_gap, half_stroke});
+    gp(Vertices.count / 3, {ub0}, {Vertices}, {cb0, cb_world});
   } catch (const std::exception& E) { throw except(E); }
   try {
     static constexpr std::string_view hlsl = R"(
@@ -833,10 +867,10 @@ cbuffer CB0 : register(b0) {
   } catch (const std::exception& E) { throw except(E); }
   try {
     auto temp = ub1.to_cpu();
-    for (const auto& e : temp) {
-      for (const auto& f : e) std::cout << std::format("{}-", f);
-      std::cout << std::endl;
-    }
+    // for (const auto& e : temp) {
+    //   for (const auto& f : e) std::cout << std::format("{}-", f);
+    //   std::cout << std::endl;
+    // }
     for (nat i{512}; i != 0; i /= 2) {
       for (nat j{}; j < i; ++j) {
         for (nat k{}; k < 15; ++k) {
@@ -881,499 +915,528 @@ void output_punch(const path& Path, std::array<vector, 15> Points, const unsigne
 
 
 void show_result() {
+  try {
+    main::resize(1400, 980);
+    key::escape.down = [] { ResultMode = false; };
+    // if (key::escape.down) ResultMode = false;
 
-  main::resize(1400, 980);
-  if (key::escape.down) ResultMode = false;
+    ui_radiobutton_result[0] = radiobutton{1, rect_textbox_result[0], list{L"合格", L"不合格"}, WS_BORDER};
+    ui_radiobutton_result[1] = radiobutton{1, rect_textbox_result[1], list{L"打上後", L"熱処理後"}, WS_BORDER};
+    // ui_textbox_result[0] = textbox(1, rect_textbox_result[0], L"", WS_BORDER | ES_CENTER);
+    // ui_textbox_result[1] = textbox(1, rect_textbox_result[1], L"", WS_BORDER | ES_CENTER);
+    ui_textbox_result[2] = textbox(1, rect_textbox_result[2], L"", WS_BORDER | ES_CENTER);
+    ui_textbox_result[3] = textbox(1, rect_textbox_result[3], L"", WS_BORDER | ES_CENTER);
+    ui_textbox_result[4] = textbox(1, rect_textbox_result[4], L"", WS_BORDER | ES_CENTER);
+    ui_textbox_result[5] = textbox(1, rect_textbox_result[5], L"", WS_BORDER | ES_CENTER);
+    ui_textbox_result[6] = textbox(1, rect_textbox_result[6], L"", WS_BORDER | ES_CENTER);
+    ui_textbox_result[7] = textbox(1, rect_textbox_result[7], L"", WS_BORDER | ES_CENTER);
+    for (int i{}; i < 2; ++i) ui_radiobutton_result[i].font(25);
+    for (int i{2}; i < 8; ++i) ui_textbox_result[i].font(25);
 
-  ui_textbox_result[0] = textbox(1, rect_textbox_result[0], L"", WS_BORDER | ES_CENTER);
-  ui_textbox_result[1] = textbox(1, rect_textbox_result[1], L"", WS_BORDER | ES_CENTER);
-  ui_textbox_result[2] = textbox(1, rect_textbox_result[2], L"", WS_BORDER | ES_CENTER);
-  ui_textbox_result[3] = textbox(1, rect_textbox_result[3], L"", WS_BORDER | ES_CENTER);
-  ui_textbox_result[4] = textbox(1, rect_textbox_result[4], L"", WS_BORDER | ES_CENTER);
-  ui_textbox_result[5] = textbox(1, rect_textbox_result[5], L"", WS_BORDER | ES_CENTER);
-  ui_textbox_result[6] = textbox(1, rect_textbox_result[6], L"", WS_BORDER | ES_CENTER);
-  ui_textbox_result[7] = textbox(1, rect_textbox_result[7], L"", WS_BORDER | ES_CENTER);
-  for (auto& e : ui_textbox_result) e.font(25);
+    ui_button_output = button(1, {1240, 760, 1390, 800}, L"成績表出力", WS_BORDER);
+    ui_button_output.input = [](const button&) noexcept {
+      try {
+        main::begin_draw();
+        for (nat i{}; i < 2; ++i)
+          draw_text((rect_textbox_result[i] + rect(0, 10, 0, 0)).to_vector(), font<20, L"Yu Gothic UI", 0, true>{}, ui_radiobutton_result[i].text());
+        for (nat i{2}; i < 8; ++i)
+          draw_text((rect_textbox_result[i] + rect(0, 10, 0, 0)).to_vector(), font<20, L"Yu Gothic UI", 0, true>{}, ui_textbox_result[i].text());
+        main::end_draw();
+        auto p = save_file(cmt_path.parent_path(), std::format(L"{}.png", ui_textbox_result[5].text()));
+        if (!p.empty()) {
+          static constexpr unsigned arrange[] = {14, 13, 12, 15, 11, 9, 10, 4, 3, 2, 1, 8, 5, 7, 6};
+          std::array<vector, 15> ref{
+            vector(0.0f, -journal_hole_radius, 0.0f, 1.0f),
+            vector(0.0f, 0.0f, journal_hole_radius, 1.0f),
+            vector(0.0f, journal_hole_radius, 0.0f, 1.0f),
+            vector(0.0f, 0.0f, -journal_hole_radius, 1.0f),
+            vector(0.0f, half_stroke, 0.0f, 1.0f),
+            vector(-half_gap, 0.0f, 0.0f, -3.0f),
+            vector(-half_gap, half_stroke, 0.0f, -3.0f),
+            vector(-half_gap, 0.0f, 0.0f, 3.0f),
+            vector(-half_gap, half_stroke, 0.0f, 3.0f),
+            vector(-half_gap, 0.0f, 0.0f, 2.0f),
+            vector(half_gap, 0.0f, 0.0f, 2.0f),
+            vector(-half_gap, 0.0f, 0.0f, -2.0f),
+            vector(half_gap, 0.0f, 0.0f, -2.0f),
+            vector(-half_gap, 0.0f, 50.0f, -2.0f),
+            vector(half_gap, 0.0f, -50.0f, -2.0f)};
+          output_punch(cmt_path.parent_path() / cmt_path.stem().concat(L".csv"), calc_punch(sb_vertices, ref), arrange);
+          std::cout << p << std::endl;
+          main::screenshot(p);
+          if (std::filesystem::exists(p)) ok(L"出力に成功しました");
+          else ok(L"出力に失敗したかもしれません");
+        }
+      } catch (const except& E) { except(E).receive(); }
+    };
 
-  ui_button_output = button(1, {1240, 760, 1390, 800}, L"成績表出力", WS_BORDER);
-  ui_button_output.input = [](const button&) noexcept {
-    try {
+    ui_button_endresult = button(1, {1240, 805, 1390, 845}, L"芯合わせモード", WS_BORDER);
+    ui_button_endresult.input = [](const button&) noexcept { ResultMode = false; };
+
+    main::begin_draw(color::white);
+
+    // タイトル
+    draw_text({10, 50, 800, 90}, font<30, L"Yu Gothic UI", -1, true, true>{}, L"芯出成績表 ／ 株式会社 神戸製鋼所 高砂鋳鍛鋼工場");
+
+    // 素材重量
+    draw_text({900, 60, 1200, 90}, font<25, L"Yu Gothic UI", -1>{}, std::format(L"素材重量：{:.2f} Ton", calc_volume(sb_vertices) * 7.85));
+
+    // 判定基準
+    draw_rectangle({1200, 40, 1390, 65}, brush<color::black>{}, 1.f);
+    draw_text({1200, 40, 1390, 65}, font<18>{}, brush<color::red>{}, L"判定基準");
+    draw_rectangle({1200, 65, 1390, 90}, brush<color::black>{}, 1.f);
+    draw_text({1200, 65, 1390, 90}, font<18>{}, brush<color::red>{}, L"TRS-FP-TE-042. Rev.12");
+
+    // コンタースケール
+    draw_rectangle({940, 610, 965, 635}, brush<color::darkblue>{});
+    draw_rectangle({940, 610, 965, 635}, brush<color::black>{}, 1.f);
+    draw_rectangle({965, 610, 965 + (400 * 15) / 55, 635}, brush<color::royalblue>{});
+    draw_rectangle({965, 610, 965 + (400 * 15) / 55, 635}, brush<color::black>{}, 1.f);
+    draw_rectangle({965 + (400 * 15) / 55, 610, 965 + (400 * 36) / 55, 635}, brush<color::mediumseagreen>{});
+    draw_rectangle({965 + (400 * 15) / 55, 610, 965 + (400 * 36) / 55, 635}, brush<color::black>{}, 1.f);
+    draw_rectangle({965 + (400 * 36) / 55, 610, 965 + (400 * 50) / 55, 635}, brush<color::yellow>{});
+    draw_rectangle({965 + (400 * 36) / 55, 610, 965 + (400 * 50) / 55, 635}, brush<color::black>{}, 1.f);
+    draw_rectangle({965 + (400 * 50) / 55, 610, 965 + (400 * 55) / 55, 635}, brush<color::darkorange>{});
+    draw_rectangle({965 + (400 * 50) / 55, 610, 965 + (400 * 55) / 55, 635}, brush<color::black>{}, 1.f);
+    draw_rectangle({965 + (400 * 55) / 55, 610, 1390, 635}, brush<color::red>{});
+    draw_rectangle({965 + (400 * 55) / 55, 610, 1390, 635}, brush<color::black>{}, 1.f);
+    draw_text({965 - 20, 640, 965 + 20, 660}, font<18>{}, L"60");
+    draw_text({965 + (400 * 15) / 55 - 20, 640, 965 + (400 * 15) / 55 + 20, 660}, font<18>{}, L"45");
+    draw_text({965 + (400 * 36) / 55 - 20, 640, 965 + (400 * 36) / 55 + 20, 660}, font<18>{}, L"24");
+    draw_text({965 + (400 * 50) / 55 - 20, 640, 965 + (400 * 50) / 55 + 20, 660}, font<18>{}, L"10");
+    draw_text({965 + (400 * 55) / 55 - 20, 640, 965 + (400 * 55) / 55 + 20, 660}, font<18>{}, L"5");
+    draw_text({1315, 665, 1395, 685}, font<18, L"Yu Gothic UI", 1>{}, L"[mm]");
+
+    // 成績
+    draw_text({950, 680, 1250, 705}, font<20, L"Yu Gothic UI", -1>{}, std::format(L"　　最小取代： {:.2f} mm", apply(min, projector(MaxMin.mins, &vector::w, make_sequence<25>{}))));
+    if (has_second_side_chamfer) {
+      draw_text({950, 710, 1250, 735}, font<20, L"Yu Gothic UI", -1>{}, std::format(L"外周最小取代： {:.2f} mm", apply(min, projector(MaxMin.mins, &vector::w, sequence<4, 6, 7, 9, 10, 16, 18, 19, 21, 22>{}))));
+      draw_text({950, 740, 1250, 765}, font<20, L"Yu Gothic UI", -1>{}, std::format(L"外周最大取代： {:.2f} mm", apply(max, projector(MaxMin.maxs, &vector::w, sequence<4, 6, 7, 9, 10, 16, 18, 19, 21, 22>{}))));
+    } else {
+      draw_text({950, 710, 1250, 735}, font<20, L"Yu Gothic UI", -1>{}, std::format(L"外周最小取代： {:.2f} mm", apply(min, projector(MaxMin.mins, &vector::w, sequence<4, 6, 9, 16, 18, 21>{}))));
+      draw_text({950, 740, 1250, 765}, font<20, L"Yu Gothic UI", -1>{}, std::format(L"外周最大取代： {:.2f} mm", apply(max, projector(MaxMin.maxs, &vector::w, sequence<4, 6, 9, 16, 18, 21>{}))));
+    }
+
+    constexpr vector ui_label_result_title[8] = {
+      {10, 860, 110, 890},
+      {110, 860, 260, 890},
+      {260, 860, 410, 890},
+      {410, 860, 560, 890},
+      {560, 860, 760, 890},
+      {760, 860, 960, 890},
+      {960, 860, 1190, 890},
+      {1190, 860, 1390, 890}};
+    constexpr auto vector_frame_lower = std::array{
+      rect_textbox_result[0].to_vector(), rect_textbox_result[1].to_vector(), rect_textbox_result[2].to_vector(), rect_textbox_result[3].to_vector(),
+      rect_textbox_result[4].to_vector(), rect_textbox_result[5].to_vector(), rect_textbox_result[6].to_vector(), rect_textbox_result[7].to_vector()};
+    constexpr float frame_width = 1.f;
+
+    draw_text(ui_label_result_title[0], font<18>{}, L"判定");
+    draw_text(ui_label_result_title[1], font<18>{}, L"工程");
+    draw_text(ui_label_result_title[2], font<18>{}, L"型入鍛造");
+    draw_text(ui_label_result_title[3], font<18>{}, L"芯出");
+    draw_text(ui_label_result_title[4], font<18>{}, L"O. No.");
+    draw_text(ui_label_result_title[5], font<18>{}, L"Ch. No.");
+    draw_text(ui_label_result_title[6], font<18>{}, L"品名/型式");
+    draw_text(ui_label_result_title[7], font<18>{}, L"所内図面");
+    draw_rectangle(ui_label_result_title[0], brush<color::black>{}, frame_width);
+    draw_rectangle(ui_label_result_title[1], brush<color::black>{}, frame_width);
+    draw_rectangle(ui_label_result_title[2], brush<color::black>{}, frame_width);
+    draw_rectangle(ui_label_result_title[3], brush<color::black>{}, frame_width);
+    draw_rectangle(ui_label_result_title[4], brush<color::black>{}, frame_width);
+    draw_rectangle(ui_label_result_title[5], brush<color::black>{}, frame_width);
+    draw_rectangle(ui_label_result_title[6], brush<color::black>{}, frame_width);
+    draw_rectangle(ui_label_result_title[7], brush<color::black>{}, frame_width);
+    draw_rectangle(get<0>(vector_frame_lower), brush<color::black>{}, frame_width);
+    draw_rectangle(get<1>(vector_frame_lower), brush<color::black>{}, frame_width);
+    draw_rectangle(get<2>(vector_frame_lower), brush<color::black>{}, frame_width);
+    draw_rectangle(get<3>(vector_frame_lower), brush<color::black>{}, frame_width);
+    draw_rectangle(get<4>(vector_frame_lower), brush<color::black>{}, frame_width);
+    draw_rectangle(get<5>(vector_frame_lower), brush<color::black>{}, frame_width);
+    draw_rectangle(get<6>(vector_frame_lower), brush<color::black>{}, frame_width);
+    draw_rectangle(get<7>(vector_frame_lower), brush<color::black>{}, frame_width);
+
+    main::end_draw();
+
+    auto cam_factor = .9f * min(500 / (MaxMin.maxs[25].y - MaxMin.mins[25].y), 230 / max(MaxMin.maxs[25].x - MaxMin.mins[25].x, MaxMin.maxs[25].z - MaxMin.mins[25].z));
+    auto cam_offset_y = (MaxMin.maxs[25].y + MaxMin.mins[25].y) / 2;
+
+    static constexpr auto get_color = [](float f) {
+      if (f > 60.f) return color::darkblue;
+      else if (f > 45.f) return color::royalblue;
+      else if (f > 24.f) return color::mediumseagreen;
+      else if (f > 10.f) return color::yellow;
+      else if (f > 5.f) return color::darkorange;
+      else return color::red;
+    };
+
+    constant_buffer<list<unsigned, float, unsigned long long>> cb_options(list<>::asref(0, 1.f, 0));
+    constant_buffer<list<xmatrix, xmatrix>> cb_camera;
+
+    { // 右サイド
+      auto cam = camera(500, 230, 8);
+      cam.offset.x = -cam_offset_y;
+      cam.offset.z = -10000.f;
+      cam.rotation = Reversed ? vector{0, pi, pi / 2} : vector{0, 0, -pi / 2};
+      cam.orthographic = true;
+      cam.factor = cam_factor;
+      cam.update();
+      cb_camera.from(list<>::asref(cam.view, cam.view_proj));
+      cam.begin_render(color::white);
+      render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
+      cam.end_render();
+      cam.begin_draw();
+      // TOP
+      vector mx = MaxMin.maxs[21], mn = MaxMin.mins[21];
+      if (has_second_side_chamfer && MaxMin.maxs[22].w > mx.w) mx = MaxMin.maxs[22];
+      if (has_second_side_chamfer && MaxMin.mins[22].w < mn.w) mn = MaxMin.mins[22];
+      if ((Reversed ? MaxMin.maxs[16].z > journal_hole_radius : MaxMin.maxs[16].z < -journal_hole_radius) && MaxMin.maxs[16].w > mx.w) mx = MaxMin.maxs[16];
+      if ((Reversed ? MaxMin.mins[16].z > journal_hole_radius : MaxMin.mins[16].z < -journal_hole_radius) && MaxMin.mins[16].w < mn.w) mn = MaxMin.mins[16];
+      draw_line(vector{350, 15, 250 + (mx.y - cam_offset_y) * cam_factor, 115 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
+      draw_rectangle({vector{300, 5, 400, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+      draw_text({300, 5, 400, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
+      draw_line({150, 15}, {250 + (mn.y - cam_offset_y) * cam_factor, 115 - (Reversed ? -mn.x : mn.x) * cam_factor}, brush<color::black>{}, 1.f);
+      draw_rectangle({vector{100, 5, 200, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+      draw_text({100, 5, 200, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
+      // BOT
+      mx = MaxMin.maxs[9], mn = MaxMin.mins[9];
+      if (has_second_side_chamfer && MaxMin.maxs[10].w > mx.w) mx = MaxMin.maxs[10];
+      if (has_second_side_chamfer && MaxMin.mins[10].w < mn.w) mn = MaxMin.mins[10];
+      if ((Reversed ? MaxMin.maxs[4].z > journal_hole_radius : MaxMin.maxs[4].z < -journal_hole_radius) && MaxMin.maxs[4].w > mx.w) mx = MaxMin.maxs[4];
+      if ((Reversed ? MaxMin.mins[4].z > journal_hole_radius : MaxMin.mins[4].z < -journal_hole_radius) && MaxMin.mins[4].w < mn.w) mn = MaxMin.mins[4];
+      draw_line({350, 215}, {250 + (mx.y - cam_offset_y) * cam_factor, 115 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
+      draw_rectangle({vector{300, 205, 400, 225}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+      draw_text({300, 205, 400, 225}, font<15>{}, std::format(L"{:.2f}", mx.w));
+      draw_line({150, 215}, {250 + (mn.y - cam_offset_y) * cam_factor, 115 - (Reversed ? -mn.x : mn.x) * cam_factor}, brush<color::black>{}, 1.f);
+      draw_rectangle({vector{100, 205, 200, 225}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+      draw_text({100, 205, 200, 225}, font<15>{}, std::format(L"{:.2f}", mn.w));
+      // 矢印とか
+      draw_text({250, 5, 290, 25}, font<15>{}, L"↓A");
+      draw_text({250, 105, 290, 125}, font<15>{}, L"↑B");
+      draw_text({210, 105, 250, 125}, font<15>{}, L"↓C");
+      draw_text({210, 205, 250, 225}, font<15>{}, L"↑D");
+      draw_text({5, 105, 45, 125}, font<15>{}, L"E→");
+      draw_text({455, 105, 495, 125}, font<15>{}, L"←H");
+      draw_text({5, 50, 45, 70}, font<15>{}, L"Top");
+      draw_text({5, 160, 45, 180}, font<15>{}, L"Bot");
+      cam.end_draw();
+      bitmap bmp = cam.rotate(-90);
       main::begin_draw();
-      for (nat i{}; i < 8; ++i)
-        draw_text((rect_textbox_result[i] + rect(0, 10, 0, 0)).to_vector(), font<20, L"Yu Gothic UI", 0, true>{}, ui_textbox_result[i].text());
+      draw_bitmap({10, 100, 240, 600}, bmp);
+      draw_rectangle({10, 100, 240, 600}, brush<color::black>{}, 1.f);
       main::end_draw();
-      auto p = save_file(cmt_path.parent_path(), std::format(L"{}.png", ui_textbox_result[5].text()));
-      if (!p.empty()) {
-        static constexpr unsigned arrange[] = {14, 13, 12, 15, 11, 9, 10, 4, 3, 2, 1, 8, 5, 7, 6};
-        std::array<vector, 15> ref{
-          vector(0.0f, -journal_hole_radius, 0.0f, 1.0f),
-          vector(0.0f, 0.0f, journal_hole_radius, 1.0f),
-          vector(0.0f, journal_hole_radius, 0.0f, 1.0f),
-          vector(0.0f, 0.0f, -journal_hole_radius, 1.0f),
-          vector(0.0f, half_stroke, 0.0f, 1.0f),
-          vector(-half_gap, 0.0f, 0.0f, -3.0f),
-          vector(-half_gap, half_stroke, 0.0f, -3.0f),
-          vector(-half_gap, 0.0f, 0.0f, 3.0f),
-          vector(-half_gap, half_stroke, 0.0f, 3.0f),
-          vector(-half_gap, 0.0f, 0.0f, 2.0f),
-          vector(half_stroke, 0.0f, 0.0f, 2.0f),
-          vector(-half_stroke, 0.0f, 0.0f, -2.0f),
-          vector(half_stroke, 0.0f, 0.0f, -2.0f),
-          vector(-half_stroke, 0.0f, 50.0f, -2.0f),
-          vector(half_stroke, 0.0f, -50.0f, -2.0f)};
-        output_punch(cmt_path.parent_path() / cmt_path.stem().concat(L".csv"), calc_punch(sb_vertices, ref), arrange);
-        std::cout << p << std::endl;
-        main::screenshot(p);
-        if (std::filesystem::exists(p)) ok(L"出力に成功しました");
-        else ok(L"出力に失敗したかもしれません");
-      }
-    } catch (const except& E) { E.receive(); }
-  };
+    }
 
-  ui_button_endresult = button(1, {1240, 805, 1390, 845}, L"芯合わせモード", WS_BORDER);
-  ui_button_endresult.input = [](const button&) noexcept { ResultMode = false; };
+    { // 左サイド
+      auto cam = camera(500, 230, 8);
+      cam.offset.x = -cam_offset_y;
+      cam.offset.z = -10000.f;
+      cam.rotation = Reversed ? vector{0, 0, -pi / 2} : vector{0, pi, pi / 2};
+      cam.orthographic = true;
+      cam.factor = cam_factor;
+      cam.update();
+      cb_camera.from(list<>::asref(cam.view, cam.view_proj));
+      cam.begin_render(color::white);
+      render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
+      cam.end_render();
+      cam.begin_draw();
+      // TOP
+      vector mx = MaxMin.maxs[18], mn = MaxMin.mins[18];
+      if (has_second_side_chamfer && MaxMin.maxs[19].w > mx.w) mx = MaxMin.maxs[19];
+      if (has_second_side_chamfer && MaxMin.mins[19].w < mn.w) mn = MaxMin.mins[19];
+      if ((Reversed ? MaxMin.maxs[16].z < -journal_hole_radius : MaxMin.maxs[16].z > journal_hole_radius) && MaxMin.maxs[16].w > mx.w) mx = MaxMin.maxs[16];
+      if ((Reversed ? MaxMin.mins[16].z < -journal_hole_radius : MaxMin.mins[16].z > journal_hole_radius) && MaxMin.mins[16].w < mn.w) mn = MaxMin.mins[16];
+      draw_line({350, 215}, {250 + (mx.y - cam_offset_y) * cam_factor, 115 - (Reversed ? mx.x : -mx.x) * cam_factor}, brush<color::black>{}, 1.f);
+      draw_rectangle({vector{300, 205, 400, 225}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+      draw_text({300, 205, 400, 225}, font<15>{}, std::format(L"{:.2f}", mx.w));
+      draw_line({150, 215}, {250 + (mn.y - cam_offset_y) * cam_factor, 115 - (Reversed ? mn.x : -mn.x) * cam_factor}, brush<color::black>{}, 1.f);
+      draw_rectangle({vector{100, 205, 200, 225}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+      draw_text({100, 205, 200, 225}, font<15>{}, std::format(L"{:.2f}", mn.w));
+      // BOT
+      mx = MaxMin.maxs[6], mn = MaxMin.mins[6];
+      if (has_second_side_chamfer && MaxMin.maxs[7].w > mx.w) mx = MaxMin.maxs[7];
+      if (has_second_side_chamfer && MaxMin.mins[7].w < mn.w) mn = MaxMin.mins[7];
+      if ((Reversed ? MaxMin.maxs[4].z < -journal_hole_radius : MaxMin.maxs[4].z > journal_hole_radius) && MaxMin.maxs[4].w > mx.w) mx = MaxMin.maxs[4];
+      if ((Reversed ? MaxMin.mins[4].z < -journal_hole_radius : MaxMin.mins[4].z > journal_hole_radius) && MaxMin.mins[4].w < mn.w) mn = MaxMin.mins[4];
+      draw_line({350, 15}, {250 + (mx.y - cam_offset_y) * cam_factor, 115 - (Reversed ? mx.x : -mx.x) * cam_factor}, brush<color::black>{}, 1.f);
+      draw_rectangle({vector{300, 5, 400, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+      draw_text({300, 5, 400, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
+      draw_line({150, 15}, {250 + (mn.y - cam_offset_y) * cam_factor, 115 - (Reversed ? mn.x : -mn.x) * cam_factor}, brush<color::black>{}, 1.f);
+      draw_rectangle({vector{100, 5, 200, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+      draw_text({100, 5, 200, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
+      // 矢印とか
+      draw_text({5, 50, 45, 70}, font<15>{}, L"Bot");
+      draw_text({5, 160, 45, 180}, font<15>{}, L"Top");
+      cam.end_draw();
+      bitmap bmp = cam.rotate(-90);
+      main::begin_draw();
+      draw_bitmap({10 + 230 * 5, 100, 240 + 230 * 5, 600}, bmp);
+      draw_rectangle({10 + 230 * 5, 100, 240 + 230 * 5, 600}, brush<color::black>{}, 1.f);
+      main::end_draw();
+    }
 
-  main::begin_draw(color::white);
+    { // TOP基準面
+      auto cam = camera(230, 500, 8);
+      cam.offset.y = cam_offset_y;
+      cam.offset.z = -10000.f;
+      cam.rotation = Reversed ? vector{0, pi / 2, 0} : vector{0, -pi / 2, 0};
+      cam.orthographic = true;
+      cam.factor = cam_factor;
+      cam.update();
+      cb_camera.from(list<>::asref(cam.view, cam.view_proj));
+      cam.begin_render(color::white);
+      render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
+      cam.end_render();
+      cam.begin_draw();
+      vector mx = MaxMin.maxs[12], mn = MaxMin.mins[12];
+      if (MaxMin.mins[13].w < mn.w) mn = MaxMin.mins[13];
+      draw_line({60, 15}, {115 - (Reversed ? -mn.z : mn.z) * cam_factor, 250 - (mn.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
+      draw_rectangle({vector{10, 5, 110, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+      draw_text({10, 5, 110, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
+      draw_line({170, 15}, {115 - (Reversed ? -mx.z : mx.z) * cam_factor, 250 - (mx.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
+      draw_rectangle({vector{120, 5, 220, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+      draw_text({120, 5, 220, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
+      // 矢印とか
+      auto cy = 250 + cam_offset_y * cam_factor;
+      draw_text({95, cy - 40, 135, cy - 20}, font<15>(), L"↑F");
+      draw_text({95, cy + 20, 135, cy + 40}, font<15>(), L"↓G");
+      draw_text({5, 475, 65, 495}, font<15>{}, L"矢視Ａ");
+      cam.end_draw();
+      main::begin_draw();
+      draw_bitmap({10 + 230, 100, 240 + 230, 600}, cam);
+      draw_rectangle({10 + 230, 100, 240 + 230, 600}, brush<color::black>{}, 1.f);
+      main::end_draw();
+    }
 
-  // タイトル
-  draw_text({10, 50, 800, 90}, font<30, L"Yu Gothic UI", -1, true, true>{}, L"芯出成績表 ／ 株式会社 神戸製鋼所 高砂鋳鍛鋼工場");
+    { // TOP内股
+      auto cam = camera(230, 500, 8);
+      cam.offset.y = cam_offset_y;
+      cam.rotation = Reversed ? vector{0, -pi / 2, 0} : vector{0, pi / 2, 0};
+      cam.orthographic = true;
+      cam.factor = cam_factor;
+      cam.update();
+      cb_camera.from(list<>::asref(cam.view, cam.view_proj));
+      cam.begin_render(color::white);
+      render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
+      cam.end_render();
+      cam.begin_draw();
+      vector mx = MaxMin.maxs[14], mn = MaxMin.mins[14];
+      draw_line({60, 15}, {115 + (Reversed ? -mn.z : mn.z) * cam_factor, 250 - (mn.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
+      draw_rectangle({vector{10, 5, 110, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+      draw_text({10, 5, 110, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
+      draw_line({170, 15}, {115 + (Reversed ? -mx.z : mx.z) * cam_factor, 250 - (mx.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
+      draw_rectangle({vector{120, 5, 220, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+      draw_text({120, 5, 220, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
+      draw_text({5, 475, 65, 495}, font<15>{}, L"矢視Ｂ");
+      cam.end_draw();
+      main::begin_draw();
+      draw_bitmap({10 + 230 * 2, 100, 240 + 230 * 2, 600}, cam);
+      draw_rectangle({10 + 230 * 2, 100, 240 + 230 * 2, 600}, brush<color::black>{}, 1.f);
+      main::end_draw();
+    }
 
-  // 素材重量
-  draw_text({900, 60, 1200, 90}, font<25, L"Yu Gothic UI", -1>{}, std::format(L"素材重量：{:.2f} Ton", calc_volume(sb_vertices) * 7.85));
+    { // BOT内股
+      auto cam = camera(230, 500, 8);
+      cam.offset.y = cam_offset_y;
+      cam.rotation = Reversed ? vector{0, pi / 2, 0} : vector{0, -pi / 2, 0};
+      cam.orthographic = true;
+      cam.factor = cam_factor;
+      cam.update();
+      cb_camera.from(list<>::asref(cam.view, cam.view_proj));
+      cam.begin_render(color::white);
+      render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
+      cam.end_render();
+      cam.begin_draw();
+      vector mx = MaxMin.maxs[2], mn = MaxMin.mins[2];
+      draw_line({60, 15}, {115 - (Reversed ? -mn.z : mn.z) * cam_factor, 250 - (mn.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
+      draw_rectangle({vector{10, 5, 110, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+      draw_text({10, 5, 110, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
+      draw_line({170, 15}, {115 - (Reversed ? -mx.z : mx.z) * cam_factor, 250 - (mx.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
+      draw_rectangle({vector{120, 5, 220, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+      draw_text({120, 5, 220, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
+      draw_text({5, 475, 65, 495}, font<15>{}, L"矢視Ｃ");
+      cam.end_draw();
+      main::begin_draw();
+      draw_bitmap({10 + 230 * 3, 100, 240 + 230 * 3, 600}, cam);
+      draw_rectangle({10 + 230 * 3, 100, 240 + 230 * 3, 600}, brush<color::black>{}, 1.f);
+      main::end_draw();
+    }
 
-  // 判定基準
-  draw_rectangle({1200, 40, 1390, 65}, brush<color::black>{}, 1.f);
-  draw_text({1200, 40, 1390, 65}, font<18>{}, brush<color::red>{}, L"判定基準");
-  draw_rectangle({1200, 65, 1390, 90}, brush<color::black>{}, 1.f);
-  draw_text({1200, 65, 1390, 90}, font<18>{}, brush<color::red>{}, L"TRS-FP-TE-042. Rev.12");
+    { // BOT基準面
+      auto cam = camera(230, 500, 8);
+      cam.offset.y = cam_offset_y;
+      cam.offset.z = -10000.f;
+      cam.rotation = Reversed ? vector{0, -pi / 2, 0} : vector{0, pi / 2, 0};
+      cam.orthographic = true;
+      cam.factor = cam_factor;
+      cam.update();
+      cb_camera.from(list<>::asref(cam.view, cam.view_proj));
+      cam.begin_render(color::white);
+      render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
+      cam.end_render();
+      cam.begin_draw();
+      vector mx = MaxMin.maxs[0], mn = MaxMin.mins[0];
+      if (MaxMin.mins[1].w < mn.w) mn = MaxMin.mins[1];
+      draw_line({60, 15}, {115 + (Reversed ? -mn.z : mn.z) * cam_factor, 250 - (mn.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
+      draw_rectangle({vector{10, 5, 110, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+      draw_text({10, 5, 110, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
+      draw_line({170, 15}, {115 + (Reversed ? -mx.z : mx.z) * cam_factor, 250 - (mx.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
+      draw_rectangle({vector{120, 5, 220, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+      draw_text({120, 5, 220, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
+      draw_text({5, 475, 65, 495}, font<15>{}, L"矢視Ｄ");
+      cam.end_draw();
+      main::begin_draw();
+      draw_bitmap({10 + 230 * 4, 100, 240 + 230 * 4, 600}, cam);
+      draw_rectangle({10 + 230 * 4, 100, 240 + 230 * 4, 600}, brush<color::black>{}, 1.f);
+      main::end_draw();
+    }
 
-  // コンタースケール
-  draw_rectangle({940, 610, 965, 635}, brush<color::darkblue>{});
-  draw_rectangle({940, 610, 965, 635}, brush<color::black>{}, 1.f);
-  draw_rectangle({965, 610, 965 + (400 * 15) / 55, 635}, brush<color::royalblue>{});
-  draw_rectangle({965, 610, 965 + (400 * 15) / 55, 635}, brush<color::black>{}, 1.f);
-  draw_rectangle({965 + (400 * 15) / 55, 610, 965 + (400 * 36) / 55, 635}, brush<color::mediumseagreen>{});
-  draw_rectangle({965 + (400 * 15) / 55, 610, 965 + (400 * 36) / 55, 635}, brush<color::black>{}, 1.f);
-  draw_rectangle({965 + (400 * 36) / 55, 610, 965 + (400 * 50) / 55, 635}, brush<color::yellow>{});
-  draw_rectangle({965 + (400 * 36) / 55, 610, 965 + (400 * 50) / 55, 635}, brush<color::black>{}, 1.f);
-  draw_rectangle({965 + (400 * 50) / 55, 610, 965 + (400 * 55) / 55, 635}, brush<color::darkorange>{});
-  draw_rectangle({965 + (400 * 50) / 55, 610, 965 + (400 * 55) / 55, 635}, brush<color::black>{}, 1.f);
-  draw_rectangle({965 + (400 * 55) / 55, 610, 1390, 635}, brush<color::red>{});
-  draw_rectangle({965 + (400 * 55) / 55, 610, 1390, 635}, brush<color::black>{}, 1.f);
-  draw_text({965 - 20, 640, 965 + 20, 660}, font<18>{}, L"60");
-  draw_text({965 + (400 * 15) / 55 - 20, 640, 965 + (400 * 15) / 55 + 20, 660}, font<18>{}, L"45");
-  draw_text({965 + (400 * 36) / 55 - 20, 640, 965 + (400 * 36) / 55 + 20, 660}, font<18>{}, L"24");
-  draw_text({965 + (400 * 50) / 55 - 20, 640, 965 + (400 * 50) / 55 + 20, 660}, font<18>{}, L"10");
-  draw_text({965 + (400 * 55) / 55 - 20, 640, 965 + (400 * 55) / 55 + 20, 660}, font<18>{}, L"5");
-  draw_text({1315, 665, 1395, 685}, font<18, L"Yu Gothic UI", 1>{}, L"[mm]");
-
-  // 成績
-  draw_text({950, 680, 1250, 705}, font<20, L"Yu Gothic UI", -1>{}, std::format(L"面上最小取代： {:.2f} mm", apply(min, projector(MaxMin.mins, &vector::w, make_sequence<25>{}))));
-  if (has_second_side_chamfer) {
-    draw_text({950, 710, 1250, 735}, font<20, L"Yu Gothic UI", -1>{}, std::format(L"外周最小取代： {:.2f} mm", apply(min, projector(MaxMin.mins, &vector::w, sequence<4, 6, 7, 9, 10, 16, 18, 19, 21, 22>{}))));
-    draw_text({950, 740, 1250, 765}, font<20, L"Yu Gothic UI", -1>{}, std::format(L"外周最大取代： {:.2f} mm", apply(max, projector(MaxMin.maxs, &vector::w, sequence<4, 6, 7, 9, 10, 16, 18, 19, 21, 22>{}))));
-  } else {
-    draw_text({950, 710, 1250, 735}, font<20, L"Yu Gothic UI", -1>{}, std::format(L"外周最小取代： {:.2f} mm", apply(min, projector(MaxMin.mins, &vector::w, sequence<4, 6, 9, 16, 18, 21>{}))));
-    draw_text({950, 740, 1250, 765}, font<20, L"Yu Gothic UI", -1>{}, std::format(L"外周最大取代： {:.2f} mm", apply(max, projector(MaxMin.maxs, &vector::w, sequence<4, 6, 9, 16, 18, 21>{}))));
-  }
-
-  constexpr vector ui_label_result_title[8] = {
-    {10, 860, 110, 890},
-    {110, 860, 260, 890},
-    {260, 860, 410, 890},
-    {410, 860, 560, 890},
-    {560, 860, 760, 890},
-    {760, 860, 960, 890},
-    {960, 860, 1190, 890},
-    {1190, 860, 1390, 890}};
-  constexpr auto vector_frame_lower = std::array{
-    rect_textbox_result[0].to_vector(), rect_textbox_result[1].to_vector(), rect_textbox_result[2].to_vector(), rect_textbox_result[3].to_vector(),
-    rect_textbox_result[4].to_vector(), rect_textbox_result[5].to_vector(), rect_textbox_result[6].to_vector(), rect_textbox_result[7].to_vector()};
-  constexpr float frame_width = 1.f;
-
-  draw_text(ui_label_result_title[0], font<18>{}, L"判定");
-  draw_text(ui_label_result_title[1], font<18>{}, L"工程");
-  draw_text(ui_label_result_title[2], font<18>{}, L"型入鍛造");
-  draw_text(ui_label_result_title[3], font<18>{}, L"芯出");
-  draw_text(ui_label_result_title[4], font<18>{}, L"O. No.");
-  draw_text(ui_label_result_title[5], font<18>{}, L"Ch. No.");
-  draw_text(ui_label_result_title[6], font<18>{}, L"品名/型式");
-  draw_text(ui_label_result_title[7], font<18>{}, L"所内図面");
-  draw_rectangle(ui_label_result_title[0], brush<color::black>{}, frame_width);
-  draw_rectangle(ui_label_result_title[1], brush<color::black>{}, frame_width);
-  draw_rectangle(ui_label_result_title[2], brush<color::black>{}, frame_width);
-  draw_rectangle(ui_label_result_title[3], brush<color::black>{}, frame_width);
-  draw_rectangle(ui_label_result_title[4], brush<color::black>{}, frame_width);
-  draw_rectangle(ui_label_result_title[5], brush<color::black>{}, frame_width);
-  draw_rectangle(ui_label_result_title[6], brush<color::black>{}, frame_width);
-  draw_rectangle(ui_label_result_title[7], brush<color::black>{}, frame_width);
-  draw_rectangle(get<0>(vector_frame_lower), brush<color::black>{}, frame_width);
-  draw_rectangle(get<1>(vector_frame_lower), brush<color::black>{}, frame_width);
-  draw_rectangle(get<2>(vector_frame_lower), brush<color::black>{}, frame_width);
-  draw_rectangle(get<3>(vector_frame_lower), brush<color::black>{}, frame_width);
-  draw_rectangle(get<4>(vector_frame_lower), brush<color::black>{}, frame_width);
-  draw_rectangle(get<5>(vector_frame_lower), brush<color::black>{}, frame_width);
-  draw_rectangle(get<6>(vector_frame_lower), brush<color::black>{}, frame_width);
-  draw_rectangle(get<7>(vector_frame_lower), brush<color::black>{}, frame_width);
-
-  main::end_draw();
-
-  auto cam_factor = .9f * min(500 / (MaxMin.maxs[25].y - MaxMin.mins[25].y), 230 / max(MaxMin.maxs[25].x - MaxMin.mins[25].x, MaxMin.maxs[25].z - MaxMin.mins[25].z));
-  auto cam_offset_y = (MaxMin.maxs[25].y + MaxMin.mins[25].y) / 2;
-
-  static constexpr auto get_color = [](float f) {
-    if (f > 60.f) return color::darkblue;
-    else if (f > 45.f) return color::royalblue;
-    else if (f > 24.f) return color::mediumseagreen;
-    else if (f > 10.f) return color::yellow;
-    else if (f > 5.f) return color::darkorange;
-    else return color::red;
-  };
-
-  constant_buffer<list<unsigned, float, unsigned long long>> cb_options(list<>::asref(0, 1.f, 0));
-  constant_buffer<list<xmatrix, xmatrix>> cb_camera;
-
-  { // 右サイド
-    auto cam = camera(500, 230, 8);
-    cam.offset.x = -cam_offset_y;
-    cam.offset.z = -10000.f;
-    cam.rotation = Reversed ? vector{0, pi, pi / 2} : vector{0, 0, -pi / 2};
-    cam.orthographic = true;
-    cam.factor = cam_factor;
-    cam.update();
-    cb_camera.from(list<>::asref(cam.view, cam.view_proj));
-    cam.begin_render(color::white);
-    render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
-    cam.end_render();
-    cam.begin_draw();
-    // TOP
-    vector mx = MaxMin.maxs[21], mn = MaxMin.mins[21];
-    if (has_second_side_chamfer && MaxMin.maxs[22].w > mx.w) mx = MaxMin.maxs[22];
-    if (has_second_side_chamfer && MaxMin.mins[22].w < mn.w) mn = MaxMin.mins[22];
-    if ((Reversed ? MaxMin.maxs[16].z > journal_hole_radius : MaxMin.maxs[16].z < -journal_hole_radius) && MaxMin.maxs[16].w > mx.w) mx = MaxMin.maxs[16];
-    if ((Reversed ? MaxMin.mins[16].z > journal_hole_radius : MaxMin.mins[16].z < -journal_hole_radius) && MaxMin.mins[16].w < mn.w) mn = MaxMin.mins[16];
-    draw_line(vector{350, 15, 250 + (mx.y - cam_offset_y) * cam_factor, 115 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{300, 5, 400, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
-    draw_text({300, 5, 400, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
-    draw_line({150, 15}, {250 + (mn.y - cam_offset_y) * cam_factor, 115 - (Reversed ? -mn.x : mn.x) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{100, 5, 200, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
-    draw_text({100, 5, 200, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
-    // BOT
-    mx = MaxMin.maxs[9], mn = MaxMin.mins[9];
-    if (has_second_side_chamfer && MaxMin.maxs[10].w > mx.w) mx = MaxMin.maxs[10];
-    if (has_second_side_chamfer && MaxMin.mins[10].w < mn.w) mn = MaxMin.mins[10];
-    if ((Reversed ? MaxMin.maxs[4].z > journal_hole_radius : MaxMin.maxs[4].z < -journal_hole_radius) && MaxMin.maxs[4].w > mx.w) mx = MaxMin.maxs[4];
-    if ((Reversed ? MaxMin.mins[4].z > journal_hole_radius : MaxMin.mins[4].z < -journal_hole_radius) && MaxMin.mins[4].w < mn.w) mn = MaxMin.mins[4];
-    draw_line({350, 215}, {250 + (mx.y - cam_offset_y) * cam_factor, 115 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{300, 205, 400, 225}, 2.5f, 2.5f}, brush(get_color(mx.w)));
-    draw_text({300, 205, 400, 225}, font<15>{}, std::format(L"{:.2f}", mx.w));
-    draw_line({150, 215}, {250 + (mn.y - cam_offset_y) * cam_factor, 115 - (Reversed ? -mn.x : mn.x) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{100, 205, 200, 225}, 2.5f, 2.5f}, brush(get_color(mn.w)));
-    draw_text({100, 205, 200, 225}, font<15>{}, std::format(L"{:.2f}", mn.w));
-    cam.end_draw();
-    bitmap bmp = cam.rotate(-90);
-    main::begin_draw();
-    draw_bitmap({10, 100, 240, 600}, bmp);
-    draw_rectangle({10, 100, 240, 600}, brush<color::black>{}, 1.f);
-    main::end_draw();
-  }
-
-  { // 左サイド
-    auto cam = camera(500, 230, 8);
-    cam.offset.x = -cam_offset_y;
-    cam.offset.z = -10000.f;
-    cam.rotation = Reversed ? vector{0, 0, -pi / 2} : vector{0, pi, pi / 2};
-    cam.orthographic = true;
-    cam.factor = cam_factor;
-    cam.update();
-    cb_camera.from(list<>::asref(cam.view, cam.view_proj));
-    cam.begin_render(color::white);
-    render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
-    cam.end_render();
-    cam.begin_draw();
-    // TOP
-    vector mx = MaxMin.maxs[18], mn = MaxMin.mins[18];
-    if (has_second_side_chamfer && MaxMin.maxs[19].w > mx.w) mx = MaxMin.maxs[19];
-    if (has_second_side_chamfer && MaxMin.mins[19].w < mn.w) mn = MaxMin.mins[19];
-    if ((Reversed ? MaxMin.maxs[16].z < -journal_hole_radius : MaxMin.maxs[16].z > journal_hole_radius) && MaxMin.maxs[16].w > mx.w) mx = MaxMin.maxs[16];
-    if ((Reversed ? MaxMin.mins[16].z < -journal_hole_radius : MaxMin.mins[16].z > journal_hole_radius) && MaxMin.mins[16].w < mn.w) mn = MaxMin.mins[16];
-    draw_line({350, 215}, {250 + (mx.y - cam_offset_y) * cam_factor, 115 - (Reversed ? mx.x : -mx.x) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{300, 205, 400, 225}, 2.5f, 2.5f}, brush(get_color(mx.w)));
-    draw_text({300, 205, 400, 225}, font<15>{}, std::format(L"{:.2f}", mx.w));
-    draw_line({150, 215}, {250 + (mn.y - cam_offset_y) * cam_factor, 115 - (Reversed ? mn.x : -mn.x) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{100, 205, 200, 225}, 2.5f, 2.5f}, brush(get_color(mn.w)));
-    draw_text({100, 205, 200, 225}, font<15>{}, std::format(L"{:.2f}", mn.w));
-    // BOT
-    mx = MaxMin.maxs[6], mn = MaxMin.mins[6];
-    if (has_second_side_chamfer && MaxMin.maxs[7].w > mx.w) mx = MaxMin.maxs[7];
-    if (has_second_side_chamfer && MaxMin.mins[7].w < mn.w) mn = MaxMin.mins[7];
-    if ((Reversed ? MaxMin.maxs[4].z < -journal_hole_radius : MaxMin.maxs[4].z > journal_hole_radius) && MaxMin.maxs[4].w > mx.w) mx = MaxMin.maxs[4];
-    if ((Reversed ? MaxMin.mins[4].z < -journal_hole_radius : MaxMin.mins[4].z > journal_hole_radius) && MaxMin.mins[4].w < mn.w) mn = MaxMin.mins[4];
-    draw_line({350, 15}, {250 + (mx.y - cam_offset_y) * cam_factor, 115 - (Reversed ? mx.x : -mx.x) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{300, 5, 400, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
-    draw_text({300, 5, 400, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
-    draw_line({150, 15}, {250 + (mn.y - cam_offset_y) * cam_factor, 115 - (Reversed ? mn.x : -mn.x) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{100, 5, 200, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
-    draw_text({100, 5, 200, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
-    cam.end_draw();
-    bitmap bmp = cam.rotate(-90);
-    main::begin_draw();
-    draw_bitmap({10 + 230 * 5, 100, 240 + 230 * 5, 600}, bmp);
-    draw_rectangle({10 + 230 * 5, 100, 240 + 230 * 5, 600}, brush<color::black>{}, 1.f);
-    main::end_draw();
-  }
-
-  { // TOP基準面
-    auto cam = camera(230, 500, 8);
-    cam.offset.y = cam_offset_y;
-    cam.offset.z = -10000.f;
-    cam.rotation = Reversed ? vector{0, pi / 2, 0} : vector{0, -pi / 2, 0};
-    cam.orthographic = true;
-    cam.factor = cam_factor;
-    cam.update();
-    cb_camera.from(list<>::asref(cam.view, cam.view_proj));
-    cam.begin_render(color::white);
-    render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
-    cam.end_render();
-    cam.begin_draw();
-    vector mx = MaxMin.maxs[12], mn = MaxMin.mins[12];
-    if (MaxMin.mins[13].w < mn.w) mn = MaxMin.mins[13];
-    draw_line({60, 15}, {115 - (Reversed ? -mn.z : mn.z) * cam_factor, 250 - (mn.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{10, 5, 110, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
-    draw_text({10, 5, 110, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
-    draw_line({170, 15}, {115 - (Reversed ? -mx.z : mx.z) * cam_factor, 250 - (mx.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{120, 5, 220, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
-    draw_text({120, 5, 220, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
-    cam.end_draw();
-    main::begin_draw();
-    draw_bitmap({10 + 230, 100, 240 + 230, 600}, cam);
-    draw_rectangle({10 + 230, 100, 240 + 230, 600}, brush<color::black>{}, 1.f);
-    main::end_draw();
-  }
-
-  { // TOP内股
-    auto cam = camera(230, 500, 8);
-    cam.offset.y = cam_offset_y;
-    cam.rotation = Reversed ? vector{0, -pi / 2, 0} : vector{0, pi / 2, 0};
-    cam.orthographic = true;
-    cam.factor = cam_factor;
-    cam.update();
-    cb_camera.from(list<>::asref(cam.view, cam.view_proj));
-    cam.begin_render(color::white);
-    render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
-    cam.end_render();
-    cam.begin_draw();
-    vector mx = MaxMin.maxs[14], mn = MaxMin.mins[14];
-    draw_line({60, 15}, {115 + (Reversed ? -mn.z : mn.z) * cam_factor, 250 - (mn.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{10, 5, 110, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
-    draw_text({10, 5, 110, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
-    draw_line({170, 15}, {115 + (Reversed ? -mx.z : mx.z) * cam_factor, 250 - (mx.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{120, 5, 220, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
-    draw_text({120, 5, 220, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
-    cam.end_draw();
-    main::begin_draw();
-    draw_bitmap({10 + 230 * 2, 100, 240 + 230 * 2, 600}, cam);
-    draw_rectangle({10 + 230 * 2, 100, 240 + 230 * 2, 600}, brush<color::black>{}, 1.f);
-    main::end_draw();
-  }
-
-  { // BOT内股
-    auto cam = camera(230, 500, 8);
-    cam.offset.y = cam_offset_y;
-    cam.rotation = Reversed ? vector{0, pi / 2, 0} : vector{0, -pi / 2, 0};
-    cam.orthographic = true;
-    cam.factor = cam_factor;
-    cam.update();
-    cb_camera.from(list<>::asref(cam.view, cam.view_proj));
-    cam.begin_render(color::white);
-    render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
-    cam.end_render();
-    cam.begin_draw();
-    vector mx = MaxMin.maxs[2], mn = MaxMin.mins[2];
-    draw_line({60, 15}, {115 - (Reversed ? -mn.z : mn.z) * cam_factor, 250 - (mn.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{10, 5, 110, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
-    draw_text({10, 5, 110, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
-    draw_line({170, 15}, {115 - (Reversed ? -mx.z : mx.z) * cam_factor, 250 - (mx.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{120, 5, 220, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
-    draw_text({120, 5, 220, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
-    cam.end_draw();
-    main::begin_draw();
-    draw_bitmap({10 + 230 * 3, 100, 240 + 230 * 3, 600}, cam);
-    draw_rectangle({10 + 230 * 3, 100, 240 + 230 * 3, 600}, brush<color::black>{}, 1.f);
-    main::end_draw();
-  }
-
-  { // BOT基準面
-    auto cam = camera(230, 500, 8);
-    cam.offset.y = cam_offset_y;
-    cam.offset.z = -10000.f;
-    cam.rotation = Reversed ? vector{0, -pi / 2, 0} : vector{0, pi / 2, 0};
-    cam.orthographic = true;
-    cam.factor = cam_factor;
-    cam.update();
-    cb_camera.from(list<>::asref(cam.view, cam.view_proj));
-    cam.begin_render(color::white);
-    render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
-    cam.end_render();
-    cam.begin_draw();
-    vector mx = MaxMin.maxs[0], mn = MaxMin.mins[0];
-    if (MaxMin.mins[1].w < mn.w) mn = MaxMin.mins[1];
-    draw_line({60, 15}, {115 + (Reversed ? -mn.z : mn.z) * cam_factor, 250 - (mn.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{10, 5, 110, 25}, 2.5f, 2.5f}, brush(get_color(mn.w)));
-    draw_text({10, 5, 110, 25}, font<15>{}, std::format(L"{:.2f}", mn.w));
-    draw_line({170, 15}, {115 + (Reversed ? -mx.z : mx.z) * cam_factor, 250 - (mx.y - cam_offset_y) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{120, 5, 220, 25}, 2.5f, 2.5f}, brush(get_color(mx.w)));
-    draw_text({120, 5, 220, 25}, font<15>{}, std::format(L"{:.2f}", mx.w));
-    cam.end_draw();
-    main::begin_draw();
-    draw_bitmap({10 + 230 * 4, 100, 240 + 230 * 4, 600}, cam);
-    draw_rectangle({10 + 230 * 4, 100, 240 + 230 * 4, 600}, brush<color::black>{}, 1.f);
-    main::end_draw();
-  }
-
-  { // R面
-    auto cam = camera(230, 250, 8);
-    cam.offset.z = -10000.f;
-    cam.rotation = Reversed ? vector{-pi / 2, pi / 2, 0} : vector{-pi / 2, -pi / 2, 0};
-    cam.orthographic = true;
-    cam.factor = cam_factor;
-    cam.update();
-    cb_camera.from(list<>::asref(cam.view, cam.view_proj));
-    cam.begin_render(color::white);
-    render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
-    cam.end_render();
-    cam.begin_draw();
-    vector mx = MaxMin.maxs[4], mn = MaxMin.mins[4];
-    if (MaxMin.maxs[16].w > mx.w) mx = MaxMin.maxs[16];
-    if (MaxMin.mins[16].w < mn.w) mn = MaxMin.mins[16];
-    draw_line({60, 235}, {115 - (Reversed ? -mn.z : mn.z) * cam_factor, 125 - (Reversed ? -mn.x : mn.x) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{10, 225, 110, 245}, 2.5f, 2.5f}, brush(get_color(mn.w)));
-    draw_text({10, 225, 110, 245}, font<15>{}, std::format(L"{:.2f}", mn.w));
-    draw_line({170, 235}, {115 - (Reversed ? -mx.z : mx.z) * cam_factor, 125 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{120, 225, 220, 245}, 2.5f, 2.5f}, brush(get_color(mx.w)));
-    draw_text({120, 225, 220, 245}, font<15>{}, std::format(L"{:.2f}", mx.w));
-    cam.end_draw();
-    main::begin_draw();
-    draw_bitmap({10, 600, 240, 850}, cam);
-    draw_rectangle({10, 600, 240, 850}, brush<color::black>{}, 1.f);
-    main::end_draw();
-  }
-
-  { // J穴ピン側
-    auto cam = camera(230, 250, 8);
-    cam.rotation = Reversed ? vector{-pi / 2, pi / 2, 0} : vector{-pi / 2, -pi / 2, 0};
-    cam.orthographic = true;
-    cam.factor = cam_factor;
-    cam.update();
-    cb_camera.from(list<>::asref(cam.view, cam.view_proj));
-    cam.begin_render(color::white);
-    render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
-    cam.end_render();
-    cam.begin_draw();
-    vector mx = {-1, -1, -1, -1e10}, mn = {-1, -1, -1, 1e10};
-    if (auto& t = MaxMin.maxs[3]; t.y > 0 && t.w > mx.w) mx = t;
-    if (auto& t = MaxMin.mins[3]; t.y > 0 && t.w < mn.w) mn = t;
-    if (auto& t = MaxMin.maxs[15]; t.y > 0 && t.w > mx.w) mx = t;
-    if (auto& t = MaxMin.mins[15]; t.y > 0 && t.w < mn.w) mn = t;
-    if (mn.y > 0) {
+    { // R面
+      auto cam = camera(230, 250, 8);
+      cam.offset.z = -10000.f;
+      cam.rotation = Reversed ? vector{-pi / 2, pi / 2, 0} : vector{-pi / 2, -pi / 2, 0};
+      cam.orthographic = true;
+      cam.factor = cam_factor;
+      cam.update();
+      cb_camera.from(list<>::asref(cam.view, cam.view_proj));
+      cam.begin_render(color::white);
+      render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
+      cam.end_render();
+      cam.begin_draw();
+      vector mx = MaxMin.maxs[4], mn = MaxMin.mins[4];
+      if (MaxMin.maxs[16].w > mx.w) mx = MaxMin.maxs[16];
+      if (MaxMin.mins[16].w < mn.w) mn = MaxMin.mins[16];
       draw_line({60, 235}, {115 - (Reversed ? -mn.z : mn.z) * cam_factor, 125 - (Reversed ? -mn.x : mn.x) * cam_factor}, brush<color::black>{}, 1.f);
       draw_rectangle({vector{10, 225, 110, 245}, 2.5f, 2.5f}, brush(get_color(mn.w)));
       draw_text({10, 225, 110, 245}, font<15>{}, std::format(L"{:.2f}", mn.w));
-    }
-    if (mx.y > 0) {
       draw_line({170, 235}, {115 - (Reversed ? -mx.z : mx.z) * cam_factor, 125 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
       draw_rectangle({vector{120, 225, 220, 245}, 2.5f, 2.5f}, brush(get_color(mx.w)));
       draw_text({120, 225, 220, 245}, font<15>{}, std::format(L"{:.2f}", mx.w));
+      draw_text({5, 5, 65, 25}, font<15>{}, L"矢視Ｅ");
+      cam.end_draw();
+      main::begin_draw();
+      draw_bitmap({10, 600, 240, 850}, cam);
+      draw_rectangle({10, 600, 240, 850}, brush<color::black>{}, 1.f);
+      main::end_draw();
     }
-    cam.end_draw();
-    main::begin_draw();
-    draw_bitmap({10 + 230, 600, 240 + 230, 850}, cam);
-    draw_rectangle({10 + 230, 600, 240 + 230, 850}, brush<color::black>{}, 1.f);
-    main::end_draw();
-  }
 
-  { // J穴R側
-    auto cam = camera(230, 250, 8);
-    cam.rotation = Reversed ? vector{pi / 2, -pi / 2, 0} : vector{pi / 2, pi / 2, 0};
-    cam.orthographic = true;
-    cam.factor = cam_factor;
-    cam.update();
-    cb_camera.from(list<>::asref(cam.view, cam.view_proj));
-    cam.begin_render(color::white);
-    render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
-    cam.end_render();
-    cam.begin_draw();
-    vector mx = {1, 1, 1, -1e10}, mn = {1, 1, 1, 1e10};
-    if (auto& t = MaxMin.maxs[3]; t.y < 0 && t.w > mx.w) mx = t;
-    if (auto& t = MaxMin.mins[3]; t.y < 0 && t.w < mn.w) mn = t;
-    if (auto& t = MaxMin.maxs[15]; t.y < 0 && t.w > mx.w) mx = t;
-    if (auto& t = MaxMin.mins[15]; t.y < 0 && t.w < mn.w) mn = t;
-    if (mn.y < 0) {
+    { // J穴ピン側
+      auto cam = camera(230, 250, 8);
+      cam.rotation = Reversed ? vector{-pi / 2, pi / 2, 0} : vector{-pi / 2, -pi / 2, 0};
+      cam.orthographic = true;
+      cam.factor = cam_factor;
+      cam.update();
+      cb_camera.from(list<>::asref(cam.view, cam.view_proj));
+      cam.begin_render(color::white);
+      render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
+      cam.end_render();
+      cam.begin_draw();
+      vector mx = {-1, -1, -1, -1e10}, mn = {-1, -1, -1, 1e10};
+      if (auto& t = MaxMin.maxs[3]; t.y > 0 && t.w > mx.w) mx = t;
+      if (auto& t = MaxMin.mins[3]; t.y > 0 && t.w < mn.w) mn = t;
+      if (auto& t = MaxMin.maxs[15]; t.y > 0 && t.w > mx.w) mx = t;
+      if (auto& t = MaxMin.mins[15]; t.y > 0 && t.w < mn.w) mn = t;
+      if (mn.y > 0) {
+        draw_line({60, 235}, {115 - (Reversed ? -mn.z : mn.z) * cam_factor, 125 - (Reversed ? -mn.x : mn.x) * cam_factor}, brush<color::black>{}, 1.f);
+        draw_rectangle({vector{10, 225, 110, 245}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+        draw_text({10, 225, 110, 245}, font<15>{}, std::format(L"{:.2f}", mn.w));
+      }
+      if (mx.y > 0) {
+        draw_line({170, 235}, {115 - (Reversed ? -mx.z : mx.z) * cam_factor, 125 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
+        draw_rectangle({vector{120, 225, 220, 245}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+        draw_text({120, 225, 220, 245}, font<15>{}, std::format(L"{:.2f}", mx.w));
+      }
+      draw_text({5, 5, 65, 25}, font<15>{}, L"矢視Ｆ");
+      cam.end_draw();
+      main::begin_draw();
+      draw_bitmap({10 + 230, 600, 240 + 230, 850}, cam);
+      draw_rectangle({10 + 230, 600, 240 + 230, 850}, brush<color::black>{}, 1.f);
+      main::end_draw();
+    }
+
+    { // J穴R側
+      auto cam = camera(230, 250, 8);
+      cam.rotation = Reversed ? vector{pi / 2, -pi / 2, 0} : vector{pi / 2, pi / 2, 0};
+      cam.orthographic = true;
+      cam.factor = cam_factor;
+      cam.update();
+      cb_camera.from(list<>::asref(cam.view, cam.view_proj));
+      cam.begin_render(color::white);
+      render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
+      cam.end_render();
+      cam.begin_draw();
+      vector mx = {1, 1, 1, -1e10}, mn = {1, 1, 1, 1e10};
+      if (auto& t = MaxMin.maxs[3]; t.y < 0 && t.w > mx.w) mx = t;
+      if (auto& t = MaxMin.mins[3]; t.y < 0 && t.w < mn.w) mn = t;
+      if (auto& t = MaxMin.maxs[15]; t.y < 0 && t.w > mx.w) mx = t;
+      if (auto& t = MaxMin.mins[15]; t.y < 0 && t.w < mn.w) mn = t;
+      if (mn.y < 0) {
+        draw_line({60, 235}, {115 + (Reversed ? -mn.z : mn.z) * cam_factor, 125 - (Reversed ? -mn.x : mn.x) * cam_factor}, brush<color::black>{}, 1.f);
+        draw_rectangle({vector{10, 225, 110, 245}, 2.5f, 2.5f}, brush(get_color(mn.w)));
+        draw_text({10, 225, 110, 245}, font<15>{}, std::format(L"{:.2f}", mn.w));
+      }
+      if (mx.y < 0) {
+        draw_line({170, 235}, {115 + (Reversed ? -mx.z : mx.z) * cam_factor, 125 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
+        draw_rectangle({vector{120, 225, 220, 245}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+        draw_text({120, 225, 220, 245}, font<15>{}, std::format(L"{:.2f}", mx.w));
+      }
+      draw_text({5, 5, 65, 25}, font<15>{}, L"矢視Ｇ");
+      cam.end_draw();
+      main::begin_draw();
+      draw_bitmap({10 + 230 * 2, 600, 240 + 230 * 2, 850}, cam);
+      draw_rectangle({10 + 230 * 2, 600, 240 + 230 * 2, 850}, brush<color::black>{}, 1.f);
+      main::end_draw();
+    }
+
+    { // ピントップ
+      auto cam = camera(230, 250, 8);
+      cam.offset.z = -10000.f;
+      cam.rotation = Reversed ? vector{pi / 2, -pi / 2, 0} : vector{pi / 2, pi / 2, 0};
+      cam.orthographic = true;
+      cam.factor = cam_factor;
+      cam.update();
+      cb_camera.from(list<>::asref(cam.view, cam.view_proj));
+      cam.begin_render(color::white);
+      render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
+      cam.end_render();
+      cam.begin_draw();
+      vector mx = MaxMin.maxs[5], mn = MaxMin.mins[5];
+      if (MaxMin.maxs[17].w > mx.w) mx = MaxMin.maxs[17];
+      if (MaxMin.mins[17].w < mn.w) mn = MaxMin.mins[17];
+      if (MaxMin.maxs[24].w > mx.w) mx = MaxMin.maxs[24];
+      if (MaxMin.mins[24].w < mn.w) mn = MaxMin.mins[24];
       draw_line({60, 235}, {115 + (Reversed ? -mn.z : mn.z) * cam_factor, 125 - (Reversed ? -mn.x : mn.x) * cam_factor}, brush<color::black>{}, 1.f);
       draw_rectangle({vector{10, 225, 110, 245}, 2.5f, 2.5f}, brush(get_color(mn.w)));
       draw_text({10, 225, 110, 245}, font<15>{}, std::format(L"{:.2f}", mn.w));
+      // draw_line({170, 235}, {115 - (Reversed ? -mx.z : mx.z) * cam_factor, 125 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
+      // draw_rectangle({vector{120, 225, 220, 245}, 2.5f, 2.5f}, brush(get_color(mx.w)));
+      // draw_text({120, 225, 220, 245}, font<15>{}, std::format(L"{:.2f}", mx.w));
+      draw_text({5, 5, 65, 25}, font<15>{}, L"矢視Ｈ");
+      cam.end_draw();
+      main::begin_draw();
+      draw_bitmap({10 + 230 * 3, 600, 240 + 230 * 3, 850}, cam);
+      draw_rectangle({10 + 230 * 3, 600, 240 + 230 * 3, 850}, brush<color::black>{}, 1.f);
+      main::end_draw();
     }
-    if (mx.y < 0) {
-      draw_line({170, 235}, {115 + (Reversed ? -mx.z : mx.z) * cam_factor, 125 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
-      draw_rectangle({vector{120, 225, 220, 245}, 2.5f, 2.5f}, brush(get_color(mx.w)));
-      draw_text({120, 225, 220, 245}, font<15>{}, std::format(L"{:.2f}", mx.w));
-    }
-    cam.end_draw();
-    main::begin_draw();
-    draw_bitmap({10 + 230 * 2, 600, 240 + 230 * 2, 850}, cam);
-    draw_rectangle({10 + 230 * 2, 600, 240 + 230 * 2, 850}, brush<color::black>{}, 1.f);
-    main::end_draw();
-  }
 
-  { // ピントップ
-    auto cam = camera(230, 250, 8);
-    cam.offset.z = -10000.f;
-    cam.rotation = Reversed ? vector{pi / 2, -pi / 2, 0} : vector{pi / 2, pi / 2, 0};
-    cam.orthographic = true;
-    cam.factor = cam_factor;
-    cam.update();
-    cb_camera.from(list<>::asref(cam.view, cam.view_proj));
-    cam.begin_render(color::white);
-    render_vertices(sb_vertices, sb_margins, cb_world, cb_camera, cb_options);
-    cam.end_render();
-    cam.begin_draw();
-    vector mx = MaxMin.maxs[5], mn = MaxMin.mins[5];
-    if (MaxMin.maxs[17].w > mx.w) mx = MaxMin.maxs[17];
-    if (MaxMin.mins[17].w < mn.w) mn = MaxMin.mins[17];
-    if (MaxMin.maxs[24].w > mx.w) mx = MaxMin.maxs[24];
-    if (MaxMin.mins[24].w < mn.w) mn = MaxMin.mins[24];
-    draw_line({60, 235}, {115 + (Reversed ? -mn.z : mn.z) * cam_factor, 125 - (Reversed ? -mn.x : mn.x) * cam_factor}, brush<color::black>{}, 1.f);
-    draw_rectangle({vector{10, 225, 110, 245}, 2.5f, 2.5f}, brush(get_color(mn.w)));
-    draw_text({10, 225, 110, 245}, font<15>{}, std::format(L"{:.2f}", mn.w));
-    // draw_line({170, 235}, {115 - (Reversed ? -mx.z : mx.z) * cam_factor, 125 - (Reversed ? -mx.x : mx.x) * cam_factor}, brush<color::black>{}, 1.f);
-    // draw_rectangle({vector{120, 225, 220, 245}, 2.5f, 2.5f}, brush(get_color(mx.w)));
-    // draw_text({120, 225, 220, 245}, font<15>{}, std::format(L"{:.2f}", mx.w));
-    cam.end_draw();
-    main::begin_draw();
-    draw_bitmap({10 + 230 * 3, 600, 240 + 230 * 3, 850}, cam);
-    draw_rectangle({10 + 230 * 3, 600, 240 + 230 * 3, 850}, brush<color::black>{}, 1.f);
-    main::end_draw();
-  }
-
-  // 成績表のためのＵＩを表示する
-  control::show(1);
-  // メッセージループ
-  while (ResultMode && main::update) {
-    // エスケープキーが押されたら成績表モードを終了
-    if (key::escape.down) ResultMode = false;
-  }
-  // 成績表のためのＵＩを非表示にする
-  control::hide(1);
-  // 画面サイズを元に戻す
-  main::resize(app_width, app_height);
-  // 芯合わせモードのＵＩを表示する
-  control::show(0);
-  // 再描画を行う
-  render_all();
+    // 成績表のためのＵＩを表示する
+    control::show(1);
+    // メッセージループ
+    while (ResultMode && main::update) {}
+    // 成績表のためのＵＩを非表示にする
+    control::hide(1);
+    // 画面サイズを元に戻す
+    main::resize(app_width, app_height);
+    // 芯合わせモードのＵＩを表示する
+    control::show(0);
+    // 再描画を行う
+    render_all();
+    key::escape.down = [] { if (yes(L"終了しますか？")) main::terminate(); };
+  } catch (const std::exception& E) { except(E).receive(); }
 }
 
 
-int main() {
+int wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
   main::rename(app_name);
   main::resize(app_width, app_height);
 
@@ -1385,6 +1448,10 @@ int main() {
   Camera.update();
   Camera.begin_render(color::white);
   Camera.end_render();
+
+
+  Coord = coordinator(100, 100, 8);
+  Coord(Camera.rotation);
 
 
   static_assert(vassignable<list<xmatrix, xmatrix>&, decltype(list<>::asref(Camera.view, Camera.view_proj))>);
@@ -1414,10 +1481,13 @@ int main() {
         calc_margin(sb_facets, sb_vertices, cb_world, ub_margins);
         sb_margins.from(ub_margins);
         calc_maxmin(sb_vertices, ub_margins, cb_world, MaxMin);
+        ui_label_margins[0].text(std::format(L"{:.3f}  ", apply(min, projector(MaxMin.mins, &vector::w, make_sequence<25>{}))));
+        ui_label_margins[1].text(std::format(L"{:.3f}  ", apply(min, projector(MaxMin.mins, &vector::w, sequence<4, 6, 9, 16, 18, 21>{}))));
+        ui_label_margins[2].text(std::format(L"{:.3f}  ", apply(max, projector(MaxMin.maxs, &vector::w, sequence<4, 6, 9, 16, 18, 21>{}))));
       }
       render_all();
       cmt_path = file;
-    } catch (except E) { E.receive(); }
+    } catch (const std::exception& E) { except(E).receive(); }
   };
 
 
@@ -1436,9 +1506,12 @@ int main() {
         calc_margin(sb_facets, sb_vertices, cb_world, ub_margins);
         sb_margins.from(ub_margins);
         calc_maxmin(sb_vertices, ub_margins, cb_world, MaxMin);
+        ui_label_margins[0].text(std::format(L"{:.3f}  ", apply(min, projector(MaxMin.mins, &vector::w, make_sequence<25>{}))));
+        ui_label_margins[1].text(std::format(L"{:.3f}  ", apply(min, projector(MaxMin.mins, &vector::w, sequence<4, 6, 9, 16, 18, 21>{}))));
+        ui_label_margins[2].text(std::format(L"{:.3f}  ", apply(max, projector(MaxMin.maxs, &vector::w, sequence<4, 6, 9, 16, 18, 21>{}))));
       }
       render_all();
-    } catch (except E) { E.receive(); }
+    } catch (const std::exception& E) { except(E).receive(); }
   };
 
 
@@ -1446,12 +1519,12 @@ int main() {
   ui_label_cad = label(0, {50, 30, 300, 50}, L"");
 
 
-  ui_radiobutton_hide = radiobutton(0, {305, 5, 405, 75}, L"", list{L"全表示", L"＋Ｘ側を非表示", L"－Ｘ側を非表示"});
+  ui_radiobutton_hide = radiobutton(0, {305, 5, 405, 75}, list{L"全表示", L"＋Ｘ側を非表示", L"－Ｘ側を非表示"});
   ui_radiobutton_hide.input = [](const radiobutton& This) noexcept {
     try {
       cb_options.from(list<>::asref(This.state, ui_checkbox_alpha.state ? 0.7f : 1.0f, 0));
       render_all();
-    } catch (except E) { E.receive(); }
+    } catch (const std::exception& E) { except(E).receive(); }
   };
 
 
@@ -1467,7 +1540,7 @@ int main() {
       sb_margins.from(ub_margins);
       calc_maxmin(sb_vertices, ub_margins, cb_world, MaxMin);
       render_all();
-    } catch (except E) { E.receive(); }
+    } catch (const std::exception& E) { except(E).receive(); }
   };
 
 
@@ -1476,8 +1549,10 @@ int main() {
     try {
       cb_options.from(list<>::asref(ui_radiobutton_hide.state, This.state ? 0.7f : 1.0f, 0));
       render_all();
-    } catch (except E) { E.receive(); }
+    } catch (const std::exception& E) { except(E).receive(); }
   };
+
+  ui_checkbox_autoalignmode = checkbox(0, {410, 55, 510, 75}, L"オートリピート");
 
   ui_progressbar_align = progressbar(0, {820, 5, 945, 15});
 
@@ -1498,7 +1573,10 @@ int main() {
     if (sb_facets && sb_vertices) {
       calc_margin(sb_facets, sb_vertices, cb_world, ub_margins);
       sb_margins.from(ub_margins);
-      calc_maxmin(sb_vertices, ub_margins, cb_world,MaxMin);
+      calc_maxmin(sb_vertices, ub_margins, cb_world, MaxMin);
+      ui_label_margins[0].text(std::format(L"{:.3f}  ", apply(min, projector(MaxMin.mins, &vector::w, make_sequence<25>{}))));
+      ui_label_margins[1].text(std::format(L"{:.3f}  ", apply(min, projector(MaxMin.mins, &vector::w, sequence<4, 6, 9, 16, 18, 21>{}))));
+      ui_label_margins[2].text(std::format(L"{:.3f}  ", apply(max, projector(MaxMin.maxs, &vector::w, sequence<4, 6, 9, 16, 18, 21>{}))));
     }
     render_all(); };
   ui_valuebox_rot[1].input = ui_valuebox_rot[0].input;
@@ -1531,9 +1609,9 @@ int main() {
   ui_valuebox_off[1].intofocus = ui_valuebox_rot[0].intofocus;
   ui_valuebox_off[2].intofocus = ui_valuebox_rot[0].intofocus;
 
-  ui_label_min_whole = label(0, {810, 295, 890, 315}, L"全体最小取代", SS_CENTER | SS_CENTERIMAGE);
-  ui_label_min_over = label(0, {810, 320, 890, 340}, L"面上最小取代", SS_CENTER | SS_CENTERIMAGE);
-  ui_label_max_over = label(0, {810, 345, 890, 365}, L"面上最大取代", SS_CENTER | SS_CENTERIMAGE);
+  ui_label_min_over = label(0, {810, 295, 890, 315}, L"　　最小取代", SS_CENTER | SS_CENTERIMAGE);
+  ui_label_min_side = label(0, {810, 320, 890, 340}, L"外周最小取代", SS_CENTER | SS_CENTERIMAGE);
+  ui_label_max_side = label(0, {810, 345, 890, 365}, L"外周最大取代", SS_CENTER | SS_CENTERIMAGE);
   ui_label_timer = label(0, {810, 370, 890, 390}, L"計算時間", SS_CENTER | SS_CENTERIMAGE);
 
   ui_label_margins[0] = label(0, {895, 295, 955, 315}, L"", SS_RIGHT);
@@ -1552,49 +1630,54 @@ int main() {
 
   control::show(0);
 
-
+  ywlib_debug;
   render_all();
+  ywlib_debug;
 
+  mouse::moved = [](int dx, int dy) {
+    if (ResultMode) return;
+    auto x = mouse::x - dx, y = mouse::y - dy;
+    if (5 <= x && x < 805 && 85 <= y && y < 535) {
+      bool b = false;
+      if (mouse::left) {
+        Camera.rotation.y -= dx * 0.003f / Camera.factor;
+        Camera.rotation.x += dy * 0.003f / Camera.factor;
+        if (Camera.rotation.x < -pi / 2) Camera.rotation.x = float(-pi / 2);
+        else if (pi / 2 < Camera.rotation.x) Camera.rotation.x = float(pi / 2);
+        Coord(Camera.rotation);
+        b = true;
+      } else if (mouse::middle) {
+        Camera.offset.x += 2.4f * dx / Camera.factor;
+        Camera.offset.y += 2.4f * dy / Camera.factor;
+        b = true;
+      }
+      if (b) {
+        Camera.update();
+        cb_camera.from(list<>::asref(Camera.view, Camera.view_proj));
+        render_all();
+      }
+    }
+  };
+
+  mouse::wheeled = [](int delta) {
+    if (ResultMode) return;
+    if (5 <= mouse::x && mouse::x < 805 && 85 <= mouse::y && mouse::y < 535) {
+      if (delta > 0) Camera.factor *= 1.2f;
+      else Camera.factor /= 1.2f;
+      Camera.update();
+      cb_camera.from(list<>::asref(Camera.view, Camera.view_proj));
+      render_all();
+    }
+  };
+
+  key::escape.down = [] {
+    yes(L"終了しますか？") ? main::terminate() : void();
+  };
 
   while (main::update) {
     // エスケープキーで終了の確認
-    if (key::escape.down) yes(L"終了しますか？") ? main::terminate() : void();
     if (AlignMode != -1) align();
-
     if (ResultMode) show_result();
-    else {
-      if (mouse::dx || mouse::dy) { // マウスを動かしたとき
-        auto x = mouse::x - mouse::dx, y = mouse::y - mouse::dy;
-        if (5 <= x && x <= 805 && 85 <= y && y <= 535) {
-          bool b = false;
-          if (mouse::left) {
-            b = true;
-            Camera.rotation.y -= mouse::dx * 0.003f / Camera.factor;
-            Camera.rotation.x += mouse::dy * 0.003f / Camera.factor;
-            if (Camera.rotation.x < -pi / 2) Camera.rotation.x = float(-pi / 2);
-            else if (Camera.rotation.x > pi / 2) Camera.rotation.x = float(pi / 2);
-          } else if (mouse::middle) {
-            b = true;
-            Camera.offset.x += mouse::dx * 2.4f / Camera.factor;
-            Camera.offset.y += mouse::dy * 2.4f / Camera.factor;
-          }
-          if (b) {
-            Camera.update();
-            cb_camera.from(list<>::asref(Camera.view, Camera.view_proj));
-            render_all();
-          }
-        }
-      }
-      if (mouse::dw != 0) { // マウスホイール
-        if (5 <= mouse::x && mouse::x <= 805 && 85 <= mouse::y && mouse::y <= 535) {
-          if (mouse::dw > 0) Camera.factor *= 1.2f;
-          else Camera.factor /= 1.2f;
-          Camera.update();
-          cb_camera.from(list<>::asref(Camera.view, Camera.view_proj));
-          render_all();
-        }
-      }
-    }
   }
 
   main::terminate();
