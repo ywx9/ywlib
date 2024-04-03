@@ -26,7 +26,7 @@ struct maxmin {
 
 namespace {
 
-constexpr auto app_name = L"ACMA-TEST-V0.6";
+constexpr auto app_name = L"ACMA (20240403A)";
 
 constexpr nat app_width = 960, app_height = 540;
 
@@ -142,8 +142,8 @@ StructuredBuffer<SB0> sb0 : register(t0);
     float ymax, ymin;
     has_second_side_chamfer = false;
     for (nat i{}; i < t.size(); ++i)
-      ymax = max(ymax, Stl[i].vertex[0][1], Stl[i].vertex[1][1], Stl[i].vertex[2][2]),
-      ymin = min(ymin, Stl[i].vertex[0][1], Stl[i].vertex[1][1], Stl[i].vertex[2][2]),
+      ymax = max(ymax, Stl[i].vertex[0][1], Stl[i].vertex[1][1], Stl[i].vertex[2][1]),
+      ymin = min(ymin, Stl[i].vertex[0][1], Stl[i].vertex[1][1], Stl[i].vertex[2][1]),
       t[i].first = a[Reverse][Stl[i].attribute], memcpy(t[i].second.data(), Stl[i].vertex.data(), 36),
       has_second_side_chamfer |= t[i].first == 8;
     structured_buffer sb(t);
@@ -492,7 +492,7 @@ void render_all() {
 
 template<nat I> bool checker(const maxmin& Now, const maxmin& New) {
   if constexpr (I == 0) // ジャーナル穴最小取代最大化 (yz軸移動)
-    return min(Now.mins[3].w + Now.mins[15].w) < min(New.mins[3].w + New.mins[15].w);
+    return min(Now.mins[3].w + Now.mins[4].w + Now.mins[15].w + Now.mins[16].w) < min(New.mins[3].w + New.mins[4].w + New.mins[15].w + New.mins[16].w);
   else if constexpr (I == 1) // 基準面厚み最小化 (yz軸回転)
     return (Now.maxs[25].x - Now.mins[25].x) > (New.maxs[25].x - New.mins[25].x);
   else if constexpr (I == 2) // 基準面最大取代最小化 (x軸移動)
@@ -651,7 +651,8 @@ void align() {
     if (margins.count != sb_vertices.count) margins = unordered_buffer<margin>(sb_vertices.count);
     calc_margin(sb_facets, sb_vertices, cb_world, margins), calc_maxmin(sb_vertices, margins, cb_world, mm[12]);
     // theta = xvadd(xvmul(xvadd(mm[12].maxs[25], mm[12].mins[25]), xv_constant<-0.5f>), xvset<1>(xv_zero, facets_y_center));
-    theta = xvset<1>(xvmul(xvadd(mm[12].maxs[25], mm[12].mins[25]), xv_constant<-0.5f>), -1.2f * journal_hole_radius - mm[12].mins[25].y);
+    // theta = xvset<1>(xvmul(xvadd(mm[12].maxs[25], mm[12].mins[25]), xv_constant<-0.5f>), facets_y_center - (mm[12].maxs[25].y + mm[12].mins[25].y) * 0.5f);theta = xvset<1>(xvmul(xvadd(mm[12].maxs[25], mm[12].mins[25]), xv_constant<-0.5f>), facets_y_center - (mm[12].maxs[25].y + mm[12].mins[25].y) * 0.5f);
+    theta = xvset<1>(xvmul(xvadd(mm[12].maxs[25], mm[12].mins[25]), xv_constant<-0.5f>), -1.5f * journal_hole_radius - mm[12].mins[25].y);
     xvworld(theta, matrix);
     xvdot<4>(matrix, temp); // 中心座標を原点に移す行列
     // std::cout << std::format("{}, {}, {}, {}\n", vector(temp[0]), vector(temp[1]), vector(temp[2]), vector(temp[3]));
@@ -673,49 +674,51 @@ void align() {
   }
 
   else if (AlignMode == 5) {
-    if (select_best<1>(margins, mm, matrix, theta, 25.f, 0b001111)) ++AlignMode;
+    if (select_best<1>(margins, mm, matrix, theta, 125.f, 0b001111)) ++AlignMode;
   } else if (AlignMode == 6) {
-    if (select_best<1>(margins, mm, matrix, theta, 5.f, 0b001111)) ++AlignMode;
+    if (select_best<1>(margins, mm, matrix, theta, 25.f, 0b001111)) ++AlignMode;
   } else if (AlignMode == 7) {
+    if (select_best<1>(margins, mm, matrix, theta, 5.f, 0b001111)) ++AlignMode;
+  } else if (AlignMode == 8) {
     if (select_best<1>(margins, mm, matrix, theta, 1.f, 0b001111)) ++AlignMode;
   }
 
-  else if (AlignMode == 8) {
+  else if (AlignMode == 9) {
     if (select_best<2>(margins, mm, matrix, theta, 25.f, 0b111110)) ++AlignMode;
-  } else if (AlignMode == 9) {
-    if (select_best<2>(margins, mm, matrix, theta, 5.f, 0b111110)) ++AlignMode;
   } else if (AlignMode == 10) {
+    if (select_best<2>(margins, mm, matrix, theta, 5.f, 0b111110)) ++AlignMode;
+  } else if (AlignMode == 11) {
     if (select_best<2>(margins, mm, matrix, theta, 1.f, 0b111110)) ++AlignMode;
   }
 
-  else if (AlignMode == 11) {
+  else if (AlignMode == 12) {
     if (select_best<3>(margins, mm, matrix, theta, 25.f, 0b110111)) ++AlignMode;
-  } else if (AlignMode == 12) {
-    if (select_best<3>(margins, mm, matrix, theta, 5.f, 0b110111)) ++AlignMode;
   } else if (AlignMode == 13) {
+    if (select_best<3>(margins, mm, matrix, theta, 5.f, 0b110111)) ++AlignMode;
+  } else if (AlignMode == 14) {
     if (select_best<3>(margins, mm, matrix, theta, 1.f, 0b110111)) ++AlignMode;
   }
 
-  else if (AlignMode == 14) {
+  else if (AlignMode == 15) {
     if (select_best<4>(margins, mm, matrix, theta, 25.f, 0b001110)) ++AlignMode;
-  } else if (AlignMode == 15) {
-    if (select_best<4>(margins, mm, matrix, theta, 5.f, 0b001110)) ++AlignMode;
   } else if (AlignMode == 16) {
-    if (select_best<4>(margins, mm, matrix, theta, 1.f, 0b001110)) ++AlignMode;
+    if (select_best<4>(margins, mm, matrix, theta, 5.f, 0b001110)) ++AlignMode;
   } else if (AlignMode == 17) {
+    if (select_best<4>(margins, mm, matrix, theta, 1.f, 0b001110)) ++AlignMode;
+  } else if (AlignMode == 18) {
     if (select_best<4>(margins, mm, matrix, theta, .2f, 0b001110)) ++AlignMode;
   }
 
-  else if (AlignMode == 18) {
-    if (mm[12].minimum.w < 0) AlignMode = 21;
+  else if (AlignMode == 19) {
+    if (mm[12].minimum.w < 0) AlignMode = 22;
     else if (select_best<5>(margins, mm, matrix, theta, 5.f, 0)) ++AlignMode;
-  } else if (AlignMode == 19) {
-    if (select_best<5>(margins, mm, matrix, theta, 1.f, 0)) ++AlignMode;
   } else if (AlignMode == 20) {
+    if (select_best<5>(margins, mm, matrix, theta, 1.f, 0)) ++AlignMode;
+  } else if (AlignMode == 21) {
     if (select_best<5>(margins, mm, matrix, theta, .2f, 0)) ++AlignMode;
   }
 
-  else if (AlignMode == 21) {
+  else if (AlignMode == 22) {
     if (ui_checkbox_autoalignmode.state && minnow < mm[12].minimum.w) {
       minnow = mm[12].minimum.w;
       vector euler = xvneg(xvdegree(xveuler(matrix)));
@@ -742,7 +745,7 @@ void align() {
   }
 
   time += sw();
-  ui_progressbar_align.progress(AlignMode / 20.0);
+  ui_progressbar_align.progress(AlignMode / 23.0);
   ui_label_margins[0].text(std::format(L"{:.3f}  ", apply(min, projector(mm[12].mins, &vector::w, make_sequence<25>{}))));
   ui_label_margins[1].text(std::format(L"{:.3f}  ", apply(min, projector(mm[12].mins, &vector::w, sequence<4, 6, 9, 16, 18, 21>{}))));
   ui_label_margins[2].text(std::format(L"{:.3f}  ", apply(max, projector(mm[12].maxs, &vector::w, sequence<4, 6, 9, 16, 18, 21>{}))));

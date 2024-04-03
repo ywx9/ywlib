@@ -2215,6 +2215,7 @@ struct mouse {
 
 namespace main {
 inline bool (*userproc)(HWND hw, UINT msg, WPARAM wp, LPARAM lp) = nullptr; // user-defined window procedure
+inline void terminate();
 namespace system {
 inline stopwatch timer;
 inline std::wstring username;
@@ -2254,7 +2255,7 @@ LRESULT CALLBACK wndproc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
       ::DragQueryFileW((HDROP)wp, i, temp.data(), (UINT)temp.size() + 1), dropped_files[i] = mv(temp);
     }
   case WM_CLOSE: return ::DestroyWindow(hw), 0;
-  case WM_DESTROY: return ::PostQuitMessage(0), 0;
+  case WM_DESTROY: return ::PostQuitMessage(0), main::terminate(), 0;
   case WM_CREATE: tme.hwndTrack = hw, ::TrackMouseEvent(&tme);
   }
   return DefWindowProcW(hw, msg, wp, lp);
