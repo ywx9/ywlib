@@ -893,6 +893,12 @@ public:
     } else throw std::runtime_error(std::format("runtime error: the byte size of the output range is not equal to the file size ({})\n at {}({}, {})", this->string(), _.file, _.line, _.column));
   }
 
+  /// @brief reads the file content into std::string
+  std::string read(const source& _ = {}) const {
+    std::string a(file_size(), char{});
+    return read(a, _), mv(a);
+  }
+
   /// @brief writes the input range content to the file
   /// @exception `std::runtime_error` if the file cannot be opened
   void write(cnt_range auto&& In, const source& _ = {}) const {
@@ -4159,5 +4165,7 @@ public:
 
 }
 
+namespace yw {
+}
 
 #endif // ywlib
