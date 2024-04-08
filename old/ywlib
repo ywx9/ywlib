@@ -1756,7 +1756,7 @@ inline constexpr auto xveuler = []<tuple Tp>(Tp&& Matrix) noexcept {
 struct rect;
 
 /// vector structure
-struct alignas(16) vector {
+struct vector {
   float x{}, y{}, z{}, w{};
   constexpr vector() noexcept = default;
   explicit constexpr vector(const float Fill) noexcept : x(Fill), y(Fill), z(Fill), w(Fill) {}
