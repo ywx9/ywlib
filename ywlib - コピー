@@ -21,7 +21,7 @@
 
 namespace yw {
 
-using nat = unsigned long long;
+using nat = decltype(sizeof(int));
 
 struct none {
   constexpr none() noexcept = default;
@@ -630,28 +630,52 @@ template<typename Rg, typename U> concept cnt_sized_range_of = cnt_sized_range<R
 template<typename T, nat N = 0> class array {
 public:
   T _[N]{};
-  static constexpr nat count = N;
-  using value_type = T;
+  static constexpr nat count = N; // number of elements
+  using value_type = T;           // value type
 
-  template<typename Tp> requires vassignable<array&, Tp>
-  constexpr array& operator=(const Tp&& a) { return vassign(_, fwd<Tp>(a)), *this; }
+  /// copies the elements from `Array`
+  template<convertible_to<T>> constexpr array& operator=(const T (&Array)[N]) {
+    for (nat i{}; i < N; ++i) _[i] = Array[i];
+    return *this;
+  }
 
+  /// conversion operator to `T[N]`
   constexpr operator add_lvref<T[N]>() noexcept { return _; }
+
+  /// conversion operator to `const T[N]`
   constexpr operator add_lvref<const T[N]>() const noexcept { return _; }
-  constexpr nat size() const noexcept { return N; }
-  constexpr bool empty() const noexcept { return false; }
-  constexpr T* data() noexcept { return _; }
-  constexpr const T* data() const noexcept { return _; }
+
+  /// returns the `I`-th element
   constexpr T& operator[](nat I) { return _[I]; }
   constexpr const T& operator[](nat I) const { return _[I]; }
+
+  /// returns the number of elements
+  constexpr nat size() const noexcept { return N; }
+
+  /// returns `false`
+  constexpr bool empty() const noexcept { return false; }
+
+  /// returns the pointer to the first element
+  constexpr T* data() noexcept { return _; }
+  constexpr const T* data() const noexcept { return _; }
+
+  /// returns the iterator to the first element
   constexpr T* begin() noexcept { return _; }
   constexpr const T* begin() const noexcept { return _; }
+
+  /// returns the iterator to the last element
   constexpr T* end() noexcept { return _ + N; }
   constexpr const T* end() const noexcept { return _ + N; }
+
+  /// returns the first element
   constexpr T& front() noexcept { return *_; }
   constexpr const T& front() const noexcept { return *_; }
+
+  /// returns the last element
   constexpr T& back() noexcept { return _[N - 1]; }
   constexpr const T& back() const noexcept { return _[N - 1]; }
+
+  /// returns the `I`-th element
   template<nat I> requires(I < N) constexpr T& get() & noexcept { return _[I]; }
   template<nat I> requires(I < N) constexpr T&& get() && noexcept { return mv(_[I]); }
   template<nat I> requires(I < N) constexpr const T& get() const& noexcept { return _[I]; }
@@ -661,15 +685,23 @@ public:
 /// dynamic array class derived from `std::vector`
 template<typename T> class array<T, 0> : public std::vector<T> {
 public:
+  /// default constructor
   constexpr array() noexcept = default;
-  constexpr array(std::vector<T>&& v) : std::vector<T>(mv(v)) {}
-  constexpr explicit array(nat n) : std::vector<T>(n) {}
-  constexpr array(nat n, const T& v) : std::vector<T>(n, v) {}
-  template<iterator_for<T> It> constexpr array(It i, It s) : std::vector<T>(i, s) {}
-  template<range_for<T> Rg> constexpr array(Rg&& r) : std::vector<T>(yw::begin(r), yw::end(r)) {}
 
+  /// constructor taking rvalue reference to `std::vector`
+  constexpr array(std::vector<T>&& v) : std::vector<T>(mv(v)) {}
+
+  /// constructor taking the number of elements
+  constexpr explicit array(nat n) : std::vector<T>(n) {}
+
+  /// constructor taking the number of elements and the value to initialize
+  constexpr array(nat n, const T& v) : std::vector<T>(n, v) {}
+
+  /// constructor taking a range
+  template<iterator_for<T> It> constexpr array(It i, It s) : std::vector<T>(i, s) {}
   template<iterator_for<T> It, sentinel_for<It> Se> requires(!same_as<It, Se>)
   constexpr array(It i, Se s) : std::vector<T>(std::common_iterator<It, Se>(i), std::common_iterator<It, Se>(s)) {}
+  template<range_for<T> Rg> constexpr array(Rg&& r) : std::vector<T>(yw::begin(r), yw::end(r)) {}
 };
 
 /// deduction guide for `array`
@@ -790,11 +822,11 @@ template<character Ct> memo(const std::basic_string_view<Ct>&) -> memo<Ct>;
 
 /// @brief null-terminated string
 template<character Ct> struct null_terminated {
-  const Ct* const string;
-  constexpr null_terminated(const Ct* const P) noexcept : string(P) {}
-  constexpr null_terminated(const std::basic_string<Ct>& S) noexcept : string(S.c_str()) {}
-  constexpr null_terminated(const std::basic_string_view<Ct>& S) noexcept : string(memo(S)) {}
-  constexpr operator const Ct*() const noexcept { return string; }
+  const Ct* const p;
+  constexpr null_terminated(const Ct* const P) noexcept : p(P) {}
+  constexpr null_terminated(const std::basic_string<Ct>& S) noexcept : p(S.c_str()) {}
+  constexpr null_terminated(const std::basic_string_view<Ct>& S) noexcept : p(memo(S)) {}
+  constexpr operator const Ct*() const noexcept { return p; }
 };
 
 /// @brief short literal string for non-type template parameter
@@ -826,44 +858,57 @@ struct except {
   }
 };
 
-using path = std::filesystem::path;
+/// @brief file path
+class path : public std::filesystem::path {
+public:
+  path() noexcept = default;
+  path(const std::filesystem::path& p) : std::filesystem::path(p) {}
+  path(std::filesystem::path&& p) noexcept : std::filesystem::path(mv(p)) {}
+  path(string_type&& s) : std::filesystem::path(mv(s)) {}
+  template<range Rg> requires character<iter_value<Rg>> path(Rg&& r) : std::filesystem::path(yw::begin(r), yw::end(r)) {}
+  template<character Ct> path(const Ct* s) : std::filesystem::path(s) {}
+  bool exists() const { return std::filesystem::exists(*this); }
+  bool is_file() const { return std::filesystem::is_regular_file(*this); }
+  bool is_directory() const { return std::filesystem::is_directory(*this); }
+  nat file_size() const { return std::filesystem::file_size(*this); }
 
-namespace file {
-/// @brief returns file size
-inline nat size(const path& p) { return std::filesystem::file_size(p); }
-/// @brief checks if the file exists
-inline bool exists(const path& p) { return std::filesystem::exists(p); }
-/// @brief checks if the file is a regular file
-inline bool is_file(const path& p) { return std::filesystem::is_regular_file(p); }
-/// @brief checks if the file is a directory
-inline bool is_directory(const path& p) { return std::filesystem::is_directory(p); }
-/// @brief reads the file as a string
-template<character Ct> std::basic_string<Ct> read(const path& p) {
-  std::ifstream ifs(p, std::ios::binary);
-  if (!ifs) return {};
-  std::basic_string<Ct> a(size(p), Ct{});
-  ifs.read(reinterpret_cast<char*>(a.data()), a.size() * sizeof(Ct));
-  return a;
-}
-/// @brief reads the file as a binary data
-inline array<unsigned char> read(const path& p) {
-  std::ifstream ifs(p, std::ios::binary);
-  if (!ifs) return {};
-  array<unsigned char> a(size(p));
-  ifs.read(reinterpret_cast<char*>(a.data()), a.size());
-  return a;
-}
-/// @brief writes the data to a file
-inline bool write(const path& p, cnt_range auto&& r) {
-  std::ofstream ofs(p, std::ios::binary);
-  const auto n = size(r) * sizeof(iter_value<decltype(r)>);
-  if (!ofs) return false;
-  ofs.write(reinterpret_cast<const char*>(data(r)), n);
-  return ofs.good();
-}
-/// @brief removes the file
-inline bool remove(const path& p) { return std::filesystem::remove(p); }
-}
+  /// @brief lists the files in the directory
+  /// @param Recursive if true, lists the files recursively
+  std::vector<path> list(bool Recursive = false, const source& _ = {}) const {
+    if (!is_directory()) throw std::runtime_error(std::format("runtime error: the path is not a directory ({})\n at {}({},{})", this->string(), _.file, _.line, _.column));
+    std::vector<path> A;
+    if (Recursive)
+      for (const auto& E : std::filesystem::recursive_directory_iterator(*this)) A.push_back(E.path());
+    else
+      for (const auto& E : std::filesystem::directory_iterator(*this)) A.push_back(E.path());
+    return A;
+  }
+  /// @brief reads the file content into the output range
+  /// @exception `std::runtime_error` if the file cannot be opened
+  /// @exception `std::runtime_error` if the byte size of `Out` is not equal to the file size
+  void read(cnt_range auto& Out, const source& _ = {}) const requires(!is_const<decltype(yw::data(Out))>) {
+    if (const auto n = yw::size(Out) * sizeof(iter_value<decltype(Out)>); file_size() == n) {
+      if (std::ifstream ifs(*this, std::ios::binary); ifs) return void(ifs.read(reinterpret_cast<char*>(yw::data(Out)), n));
+      throw std::runtime_error(std::format("runtime error: failed to open the file ({})\n at {}({}, {})", this->string(), _.file, _.line, _.column));
+    } else throw std::runtime_error(std::format("runtime error: the byte size of the output range is not equal to the file size ({})\n at {}({}, {})", this->string(), _.file, _.line, _.column));
+  }
+
+  /// @brief reads the file content into std::string
+  std::string read(const source& _ = {}) const {
+    std::string a(file_size(), char{});
+    return read(a, _), mv(a);
+  }
+
+  /// @brief writes the input range content to the file
+  /// @exception `std::runtime_error` if the file cannot be opened
+  void write(cnt_range auto&& In, const source& _ = {}) const {
+    if (std::ofstream ofs(*this, std::ios::binary); ofs) ofs.write(reinterpret_cast<const char*>(yw::data(In)), yw::size(In) * sizeof(iter_value<decltype(In)>));
+    else throw std::runtime_error(std::format("runtime error: failed to open the file ({})\n at {}({}, {})", this->string(), _.file, _.line, _.column));
+  }
+
+  /// @brief removes the file
+  void remove() const { std::filesystem::remove(*this); }
+};
 
 /// @brief throws an exception if `Result` is `false`
 inline void tiff(const auto& Result, const std::string_view Message, const source& _ = {})
@@ -885,14 +930,7 @@ inline void tiff(const auto& Result, const std::string_view Message, const sourc
 
 namespace std { // clang-format off
 template<> struct formatter<yw::source> : formatter<string> {
-  template<typename FormatContext> auto format(const yw::source& s, FormatContext& c) const {
-    return formatter<std::string>::format(s.to_string(), c); } };
-template<typename Ct> struct formatter<yw::null_terminated<Ct>, Ct> : formatter<const Ct*, Ct> {
-  template<typename FormatContext> auto format(const yw::null_terminated<Ct>& s, FormatContext& c) const {
-    return formatter<const Ct*, Ct>::format(s.string, c); } };
-template<typename Ct> struct formatter<yw::literal<Ct>, Ct> : formatter<const Ct*, Ct> {
-  template<typename FormatContext> auto format(const yw::literal<Ct>& s, FormatContext& c) const {
-    return formatter<const Ct*, Ct>::format(s.string, c); }
+  template<typename FormatContext> auto format(const yw::source& s, FormatContext& c) const { return formatter<std::string>::format(s.to_string(), c); }
 };
 } // clang-format on
 
@@ -901,47 +939,52 @@ template<typename Ct> struct formatter<yw::literal<Ct>, Ct> : formatter<const Ct
 
 namespace yw {
 
-using matrix = array<__m128, 4>;
+using xvector = __m128;
+using xwector = __m256d;
+using xrect = __m128i;
+using xmatrix = array<xvector, 4>;
 
-inline __m128 xvload(const float a) noexcept { return _mm_set1_ps(a); }
-inline __m128 xvload(const float* a) noexcept { return _mm_loadu_ps(a); }
-inline __m128 xvload(const float x, const float y, const float z = {}, const float w = {}) noexcept { return _mm_set_ps(w, z, y, x); }
-inline __m256d xvload(const double a) noexcept { return _mm256_set1_pd(a); }
-inline __m256d xvload(const double* a) noexcept { return _mm256_loadu_pd(a); }
-inline __m256d xvload(const double x, const double y, const double z = {}, const double w = {}) noexcept { return _mm256_set_pd(w, z, y, x); }
-inline __m128i xvload(const int a) noexcept { return _mm_set1_epi32(a); }
-inline __m128i xvload(const int* a) noexcept { return _mm_loadu_epi32(a); }
-inline __m128i xvload(const int x, const int y, const int z = {}, const int w = {}) noexcept { return _mm_set_epi32(w, z, y, x); }
+inline xvector xvload(const float a) noexcept { return _mm_set1_ps(a); }
+inline xvector xvload(const float* a) noexcept { return _mm_loadu_ps(a); }
+inline xvector xvload(const float x, const float y, const float z = {}, const float w = {}) noexcept { return _mm_set_ps(w, z, y, x); }
 
-template<included_in<__m128, __m256d, __m128i> Xv> inline Xv xvcast(const __m128& a) noexcept {
-  if constexpr (same_as<Xv, __m128>) return a;
-  else if constexpr (same_as<Xv, __m256d>) return _mm256_cvtps_pd(a);
-  else if constexpr (same_as<Xv, __m128i>) return _mm_cvtps_epi32(a);
-}
-template<included_in<__m128, __m256d, __m128i> Xv> inline Xv xvcast(const __m256d& a) noexcept {
-  if constexpr (same_as<Xv, __m128>) return _mm256_cvtpd_ps(a);
-  else if constexpr (same_as<Xv, __m256d>) return a;
-  else if constexpr (same_as<Xv, __m128i>) return _mm256_cvtpd_epi32(a);
-}
-template<included_in<__m128, __m256d, __m128i> Xv> inline Xv xvcast(const __m128i& a) noexcept {
-  if constexpr (same_as<Xv, __m128>) return _mm_cvtepi32_ps(a);
-  else if constexpr (same_as<Xv, __m256d>) return _mm256_cvtepi32_pd(a);
-  else if constexpr (same_as<Xv, __m128i>) return a;
-}
+inline xwector xvload(const double a) noexcept { return _mm256_set1_pd(a); }
+inline xwector xvload(const double* a) noexcept { return _mm256_loadu_pd(a); }
+inline xwector xvload(const double x, const double y, const double z = {}, const double w = {}) noexcept { return _mm256_set_pd(w, z, y, x); }
 
-inline __m128i xvbitcast(const __m128& a) noexcept { return _mm_castps_si128(a); }
-inline __m128 xvbitcast(const __m128i& a) noexcept { return _mm_castsi128_ps(a); }
+inline xrect xvload(const int a) noexcept { return _mm_set1_epi32(a); }
+inline xrect xvload(const int* a) noexcept { return _mm_loadu_epi32(a); }
+inline xrect xvload(const int x, const int y, const int z = {}, const int w = {}) noexcept { return _mm_set_epi32(w, z, y, x); }
+
+template<included_in<xvector, xwector, xrect> Xv> inline constexpr overload xvcast{
+  [](const xvector& A) noexcept {
+    if constexpr (same_as<Xv, xvector>) return A;
+    else if constexpr (same_as<Xv, xwector>) return _mm256_cvtps_pd(A);
+    else if constexpr (same_as<Xv, xrect>) return _mm_cvtps_epi32(A); },
+  [](const xwector& A) noexcept {
+    if constexpr (same_as<Xv, xvector>) return _mm256_cvtpd_ps(A);
+    else if constexpr (same_as<Xv, xwector>) return A;
+    else if constexpr (same_as<Xv, xrect>) return _mm256_cvtpd_epi32(A); },
+  [](const xrect& A) noexcept {
+    if constexpr (same_as<Xv, xvector>) return _mm_cvtepi32_ps(A);
+    else if constexpr (same_as<Xv, xwector>) return _mm256_cvtepi32_pd(A);
+    else if constexpr (same_as<Xv, xrect>) return A; }};
+
+inline constexpr overload xvbitcast{
+  [](const xvector& A) noexcept -> xrect { return _mm_castps_si128(A); },
+  [](const xrect& A) noexcept -> xvector { return _mm_castsi128_ps(A); }};
 
 inline constexpr caster xv_zero{
   []() noexcept { return _mm_setzero_ps(); },
   []() noexcept { return _mm256_setzero_pd(); },
   []() noexcept { return _mm_setzero_si128(); },
-  []() noexcept -> const matrix& { static const matrix _{_mm_setzero_ps(), _mm_setzero_ps(), _mm_setzero_ps(), _mm_setzero_ps()}; return _; }};
+  []() noexcept -> const xmatrix& { static const xmatrix static_{_mm_setzero_ps(), _mm_setzero_ps(), _mm_setzero_ps(), _mm_setzero_ps()}; return static_; }};
+
 
 template<value X, value Y = X, value Z = Y, value W = Z> inline constexpr caster xv_constant{
-  []() noexcept -> const __m128& { static const __m128 _ = xvload(float(X), float(Y), float(Z), float(W)); return _; },
-  []() noexcept -> const __m256d& { static const __m256d _ = xvload(double(X), double(Y), double(Z), double(W)); return _; },
-  []() noexcept -> const __m128i& { static const __m128i _ = xvload(int(X), int(Y), int(Z), int(W)); return _; }};
+  []() noexcept -> const xvector& { static const xvector static_ = xvload(float(X), float(Y), float(Z), float(W)); return static_; },
+  []() noexcept -> const xwector& { static const xwector static_ = xvload(double(X), double(Y), double(Z), double(W)); return static_; },
+  []() noexcept -> const xrect& { static const xrect static_ = xvload(int(X), int(Y), int(Z), int(W)); return static_; }};
 
 inline constexpr auto xv_x = xv_constant<1, 0, 0, 0>;
 inline constexpr auto xv_y = xv_constant<0, 1, 0, 0>;
@@ -952,558 +995,523 @@ inline constexpr auto xv_neg_x = xv_constant<-1, 0, 0, 0>;
 inline constexpr auto xv_neg_y = xv_constant<0, -1, 0, 0>;
 inline constexpr auto xv_neg_z = xv_constant<0, 0, -1, 0>;
 inline constexpr auto xv_neg_w = xv_constant<0, 0, 0, -1>;
-inline constexpr caster xv_identity{[]() noexcept -> const matrix& { static const matrix m{xv_x, xv_y, xv_z, xv_w}; return m; }};
+inline constexpr caster xv_identity{[]() noexcept -> const xmatrix& { static const xmatrix m{xv_x, xv_y, xv_z, xv_w}; return m; }};
 
-template<nat I> requires(I < 4) float xvget(const __m128& a) noexcept {
-  if constexpr (I == 0) return _mm_cvtss_f32(a);
-  else return bitcast<float>(_mm_extract_ps(a, int(I)));
-}
-template<nat I> requires(I < 4) double xvget(const __m256d& a) noexcept {
-  return bitcast<double>(_mm256_extract_epi64(_mm256_castpd_si256(a), int(I)));
-}
-template<nat I> requires(I < 4) int xvget(const __m128i& a) noexcept {
-  if constexpr (I == 0) return _mm_cvtsi128_si32(a);
-  else return _mm_extract_epi32(a, int(I));
-}
+template<nat I> requires(I < 4) inline constexpr overload xvget{
+  [](const xvector& A) noexcept { if constexpr (I == 0) return _mm_cvtss_f32(A); else return bitcast<float>(_mm_extract_ps(A, int(I))); },
+  [](const xwector& A) noexcept { return bitcast<double>(_mm256_extract_epi64(_mm256_castpd_si256(A), int(I))); },
+  [](const xrect& A) noexcept { if constexpr (I == 0) return _mm_cvtsi128_si32(A); else return _mm_extract_epi32(A, int(I)); }};
 
-template<nat I> requires(I < 4) __m128& xvset(__m128& a, float b) noexcept {
-  if constexpr (I == 0) return a = _mm_move_ss(a, _mm_set_ss(b));
-  else return a = xvbitcast(_mm_insert_epi32(xvbitcast(a), bitcast<int>(b), int(I)));
-}
-template<nat I> requires(I < 4) __m128& xvset(__m256d& a, double b) noexcept {
-  if constexpr (I == 0) return a = _mm256_insert_epi64(_mm256_castpd_si256(a), bitcast<long long>(b), int(I));
-  else return a = _mm256_castsi256_pd(_mm256_insert_epi64(_mm256_castpd_si256(a), bitcast<long long>(b), int(I)));
-}
-template<nat I> requires(I < 4) __m128& xvset(__m128i& a, int b) noexcept { return a = _mm_insert_epi32(a, b, int(I)); }
+template<nat I> requires(I < 4) inline constexpr overload xvset{
+  [](const xvector& A, float B) noexcept { return xvbitcast(_mm_insert_epi32(xvbitcast(A), bitcast<int>(B), int(I))); },
+  [](const xwector& A, double B) noexcept { return _mm256_castsi256_pd(_mm256_insert_epi64(_mm256_castpd_si256(A), bitcast<long long>(B), int(I))); },
+  [](const xrect& A, int B) noexcept { return _mm_insert_epi32(A, B, int(I)); }};
 
-template<nat Flag> requires(Flag < 16) __m128 xvblend(const __m128& a, const __m128& b) noexcept {
-  if constexpr (Flag == 0) return a;
-  else if constexpr (Flag == 15) return b;
-  else return _mm_blend_ps(a, b, Flag);
-}
-template<nat Flag> requires(Flag < 16) __m256d xvblend(const __m256d& a, const __m256d& b) noexcept {
-  if constexpr (Flag == 0) return a;
-  else if constexpr (Flag == 15) return b;
-  else return _mm256_blend_pd(a, b, Flag);
-}
-template<nat Flag> requires(Flag < 16) __m128i xvblend(const __m128i& a, const __m128i& b) noexcept {
-  if constexpr (Flag == 0) return a;
-  else if constexpr (Flag == 15) return b;
-  else return _mm_blend_epi32(a, b, Flag);
-}
-template<bool X, bool Y, bool Z, bool W> __m128 xvblend(
-  const __m128& a, const __m128& b) noexcept { return xvblend<X + Y * 2 + Z * 4 + W * 8>(a, b); }
-template<bool X, bool Y, bool Z, bool W> __m256d xvblend(
-  const __m256d& a, const __m256d& b) noexcept { return xvblend<X + Y * 2 + Z * 4 + W * 8>(a, b); }
-template<bool X, bool Y, bool Z, bool W> __m128i xvblend(
-  const __m128i& a, const __m128i& b) noexcept { return xvblend<X + Y * 2 + Z * 4 + W * 8>(a, b); }
+template<bool X, bool Y, bool Z, bool W> inline constexpr overload xvblend{
+  [](const xvector& A, const xvector& B) noexcept {
+    if constexpr (!(X | Y | Z | W)) return A;
+    else if constexpr (X & Y & Z & W) return B;
+    else return _mm_blend_ps(A, B, int(X + Y * 2 + Z * 4 + W * 8)); },
+  [](const xwector& A, const xwector& B) noexcept {
+    if constexpr (!(X | Y | Z | W)) return A;
+    else if constexpr (X & Y & Z & W) return B;
+    else return _mm256_blend_pd(A, B, int(X + Y * 2 + Z * 4 + W * 8)); },
+  [](const xrect& A, const xrect& B) noexcept {
+    if constexpr (!(X | Y | Z | W)) return A;
+    else if constexpr (X & Y & Z & W) return B;
+    else return _mm_blend_epi32(A, B, int(X + Y * 2 + Z * 4 + W * 8)); }};
 
-template<bool X, bool Y, bool Z, bool W> __m128 xvsetzero(
-  const __m128& a) noexcept { return xvblend<X, Y, Z, W>(a, xv_zero); }
-template<bool X, bool Y, bool Z, bool W> __m256d xvsetzero(
-  const __m256d& a) noexcept { return xvblend<X, Y, Z, W>(a, xv_zero); }
-template<bool X, bool Y, bool Z, bool W> __m128i xvsetzero(
-  const __m128i& a) noexcept { return xvblend<X, Y, Z, W>(a, xv_zero); }
+template<bool X, bool Y, bool Z, bool W> inline constexpr auto xvsetzero = [](const included_in<xvector, xwector, xrect> auto& A) noexcept { return xvblend<X, Y, Z, W>(A, xv_zero); };
 
-template<int X, int Y, int Z, int W> requires(max(X, Y, Z, W) < 4) __m128 xvpermute(const __m128& a) noexcept {
-  constexpr auto f = [](int a, int b) { return a == b || a < 0; };
-  constexpr nat x = (f(X, 0) ? 0 : X), y = (f(Y, 1) ? 1 : Y), z = (f(Z, 2) ? 2 : Z), w = (f(W, 3) ? 3 : W);
-  if constexpr (f(X, 0) && f(Y, 1) && f(Z, 2) && f(W, 3)) return a;
-  else if constexpr (f(X, 0) && f(Y, 0) && f(Z, 2) && f(W, 2)) return _mm_moveldup_ps(a);
-  else if constexpr (f(X, 1) && f(Y, 1) && f(Z, 3) && f(W, 3)) return _mm_movehdup_ps(a);
-  else return _mm_permute_ps(a, int(x + y * 4 + z * 16 + w * 64));
-}
-template<int X, int Y, int Z, int W> requires(max(X, Y, Z, W) < 4) __m256d xvpermute(const __m256d& a) noexcept {
-  constexpr auto f = [](int a, int b) { return a == b || a < 0; };
-  constexpr nat x = (f(X, 0) ? 0 : X), y = (f(Y, 1) ? 1 : Y), z = (f(Z, 2) ? 2 : Z), w = (f(W, 3) ? 3 : W);
-  if constexpr (x == 0 && y == 1 && z == 2 && w == 3) return a;
-  else if constexpr ((x | y) < 2 && 2 <= (z & w)) return _mm256_permute_pd(a, int(x + y * 2 + (z - 2) * 4 + (w - 2) * 8));
-  else return _mm256_permute4x64_pd(a, int(x + y * 4 + z * 16 + w * 64));
-}
-template<int X, int Y, int Z, int W> requires(max(X, Y, Z, W) < 4) __m128i xvpermute(const __m128i& a) noexcept {
-  return xvbitcast(xvpermute<X, Y, Z, W>(xvbitcast(a)));
-}
-template<int X, int Y, int Z, int W> requires(max(X, Y, Z, W) < 8) __m128 xvpermute(const __m128& a, const __m128& b) noexcept {
-  constexpr auto f = [](int a, int b) noexcept { return a == b || a < 0; };
-  constexpr auto g = [](int a) noexcept { return a < 4 ? a : -1; };
-  constexpr int xa = (f(X, 0) ? 0 : X), ya = (f(Y, 1) ? 1 : Y), za = (f(Z, 2) ? 2 : Z), wa = (f(W, 3) ? 3 : W),
-                xb = (f(X, 4) ? 4 : X), yb = (f(Y, 5) ? 5 : Y), zb = (f(Z, 6) ? 6 : Z), wb = (f(W, 7) ? 7 : W);
-  if constexpr ((xa | ya | za | wa) < 4) return xvpermute<g(X), g(Y), g(Z), g(W)>(a);
-  else if constexpr (4 <= (xb & yb & zb & wb)) return xvpermute<X - 4, Y - 4, Z - 4, W - 4>(b);
-  else if constexpr ((xa & 3) == 0 && (ya & 3) == 1 && (za & 3) == 2 && (wa & 3) == 3) return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(b, a);
-  else if constexpr ((xa | ya) < 4 && 4 <= (zb & wb)) return _mm_shuffle_ps(a, b, xa + ya * 4 + (zb - 4) * 16 + (wb - 4) * 64);
-  else if constexpr (4 <= (xb & yb) && (za | wa) < 4) return _mm_shuffle_ps(b, a, xb - 4 | (yb - 4) * 4 | za * 16 | wa * 64);
-  else if constexpr ((xa == 0) + (ya == 1) + (za == 2) + (wa == 3) == 3) {
-    constexpr nat i = inspects<xa != 0, ya != 1, za != 2, wa != 3>;
-    return _mm_insert_ps(a, b, int((value_switch<i, xa, ya, za, wa> - 4) << 6 | i << 4));
-  } else if constexpr ((xb == 4) + (yb == 5) + (zb == 6) + (wb == 7) == 3) {
-    constexpr nat i = inspects<xb != 4, yb != 5, zb != 6, wb != 7>;
-    return _mm_insert_ps(a, b, int(value_switch<i, xb, yb, zb, wb> << 6 | i << 4));
-  } else if constexpr ((xa < 4 || xb == 4) && (ya < 4 || yb == 5) && (za < 4 || zb == 6) && (wa < 4 || wb == 7)) {
-    return xvblend<xb == 4, yb == 5, zb == 6, wb == 7>(xvpermute<g(X), g(Y), g(Z), g(W)>(a), b);
-  } else if constexpr ((4 <= xb || xa == 0) && (4 <= yb || ya == 1) && (4 <= zb || za == 2) && (4 <= wb || wa == 3)) {
-    return xvblend<xa == 0, ya == 1, za == 2, wa == 3>(xvpermute<X - 4, Y - 4, Z - 4, W - 4>(b), a);
-  } else if constexpr ((xa < 4) + (ya < 4) + (za < 4) + (wa < 4) == 3) {
-    constexpr nat i = inspects<ge(xa, 4), ge(ya, 4), ge(za, 4), ge(wa, 4)>;
-    return _mm_insert_ps(xvpermute<g(X), g(Y), g(Z), g(W)>(a), b, int((value_switch<i, xa, ya, za, wa> - 4) << 6 | i << 4));
-  } else if constexpr ((xb < 4) + (yb < 4) + (zb < 4) + (wb < 4) == 1) {
-    constexpr nat i = inspects<le(xb, 4), lt(yb, 4), lt(zb, 4), lt(wb, 4)>;
-    return _mm_insert_ps(xvpermute<X - 4, Y - 4, Z - 4, W - 4>(b), a, int(value_switch<i, xb, yb, zb, wb> << 6 | i << 4));
-  } else return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(xvpermute<X - 4, Y - 4, Z - 4, W - 4>(b), xvpermute<g(X), g(Y), g(Z), g(W)>(a));
-}
-template<int X, int Y, int Z, int W> requires(max(X, Y, Z, W) < 8) __m256d xvpermute(const __m256d& a, const __m256d& b) noexcept {
-  constexpr auto f = [](auto a, auto b) noexcept { return a == b || a < 0; };
-  constexpr auto g = [](auto a) noexcept { return a < 4 ? a : -1; };
-  constexpr int xa = (f(X, 0) ? 0 : X), ya = (f(Y, 1) ? 1 : Y), za = (f(Z, 2) ? 2 : Z), wa = (f(W, 3) ? 3 : W),
-                xb = (f(X, 4) ? 4 : X), yb = (f(Y, 5) ? 5 : Y), zb = (f(Z, 6) ? 6 : Z), wb = (f(W, 7) ? 7 : W);
-  if constexpr (xa == 0 && ya == 1 && za == 2 && wa == 3) return a;
-  else if constexpr (xb == 4 && yb == 5 && zb == 6 && wb == 7) return b;
-  else if constexpr ((xa & 3) == 0 && (ya & 3) == 1 && (za & 3) == 2 && (wa & 3) == 3)
-    return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(b, a);
-  else if constexpr (xa < 2 && (yb == 4 || yb == 5) && (za == 2 || zb == 3) && wb > 5)
-    return _mm256_shuffle_pd(a, b, (xa == 1) + (yb == 5) * 2 + (za == 3) * 4 + (wb == 7) * 8);
-  else if constexpr ((xb == 4 || xb == 5) && ya < 2 && zb > 5 && (wa == 2 || wa == 3))
-    return _mm256_shuffle_pd(b, a, (xb == 5) + (ya == 1) * 2 + (zb == 7) * 4 + (wa == 3) * 8);
-  else if constexpr ((xa | ya | za | wa) < 4) return xvpermute<g(X), g(Y), g(Z), g(W)>(a);
-  else if constexpr ((xb & yb & zb & wb) > 3) return xvpermute<X - 4, Y - 4, Z - 4, W - 4>(b);
-  else if constexpr (((xa == 0 && ya == 1) || (xa == 2 && ya == 3)) && ((zb == 4 && wb == 5) || (zb == 6 && wb == 7)))
-    return _mm256_shuffle_f64x2(a, b, (xa == 2) + (zb == 6) * 2);
-  else if constexpr (((xb == 4 && yb == 5) || (xb == 6 && yb == 7)) && ((za == 0 && wa == 1) || (za == 2 && wa == 3)))
-    return _mm256_shuffle_f64x2(b, a, (xb == 6) + (za == 2) * 2);
-  else return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>(b), xvpermute<g(xa), g(ya), g(za), g(wa)>(a));
-}
-template<int X, int Y, int Z, int W> requires(max(X, Y, Z, W) < 8) __m128i xvpermute(
-  const __m128i& a, const __m128i& b) noexcept { return xvbitcast(xvpermute<X, Y, Z, W>(xvbitcast(a), xvbitcast(b))); }
+template<int X, int Y, int Z, int W> struct t_xvpermute {
+private:
+  template<int A, int B, int C, int D> friend struct t_xvpermute;
+  static xvector call(const xvector& A) noexcept {
+    constexpr auto f = [](auto a, auto b) { return a == b || a < 0 || a >= 4; };
+    constexpr nat x = (f(X, 0) ? 0 : X), y = (f(Y, 1) ? 1 : Y), z = (f(Z, 2) ? 2 : Z), w = (f(W, 3) ? 3 : W);
+    if constexpr (f(X, 0) && f(Y, 1) && f(Z, 2) && f(W, 3)) return A;
+    else if constexpr (f(X, 0) && f(Y, 0) && f(Z, 2) && f(W, 2)) return _mm_moveldup_ps(A);
+    else if constexpr (f(X, 1) && f(Y, 1) && f(Z, 3) && f(W, 3)) return _mm_movehdup_ps(A);
+    else return _mm_permute_ps(A, int(x + y * 4 + z * 16 + w * 64));
+  }
+  static xwector call(const xwector& A) noexcept {
+    constexpr auto f = [](auto a, auto b) { return a == b || a < 0 || a >= 4; };
+    constexpr nat x = (f(X, 0) ? 0 : X), y = (f(Y, 1) ? 1 : Y), z = (f(Z, 2) ? 2 : Z), w = (f(W, 3) ? 3 : W);
+    if constexpr (x == 0 && y == 1 && z == 2 && w == 3) return A;
+    else if constexpr ((x | y) < 2 && 2 <= (z & w)) return _mm256_permute_pd(A, int(x + y * 2 + (z - 2) * 4 + (w - 2) * 8));
+    else return _mm256_permute4x64_pd(A, int(x + y * 4 + z * 16 + w * 64));
+  }
+public:
+  xvector operator()(const xvector& A) const noexcept requires(lt(max(X, Y, Z, W), 4)) { return call(A); }
+  xwector operator()(const xwector& A) const noexcept requires(lt(max(X, Y, Z, W), 4)) { return call(A); }
+  xrect operator()(const xrect& A) const noexcept requires(lt(max(X, Y, Z, W), 4)) { return xvbitcast(call(xvbitcast(A))); }
+  xvector operator()(const xvector& A, const xvector& B) const noexcept requires(lt(max(X, Y, Z, W), 8)) {
+    constexpr auto f = [](auto a, auto b) { return a == b || a < 0; };
+    constexpr int xa = (f(X, 0) ? 0 : X), ya = (f(Y, 1) ? 1 : Y), za = (f(Z, 2) ? 2 : Z), wa = (f(W, 3) ? 3 : W),
+                  xb = (f(X, 4) ? 4 : X), yb = (f(Y, 5) ? 5 : Y), zb = (f(Z, 6) ? 6 : Z), wb = (f(W, 7) ? 7 : W);
+    if constexpr ((xa | ya | za | wa) < 4) return t_xvpermute<xa, ya, za, wa>::call(A);
+    else if constexpr (4 <= (xb & yb & zb & wb)) return t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B);
+    else if constexpr ((xa & 3) == 0 && (ya & 3) == 1 && (za & 3) == 2 && (wa & 3) == 3) return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(B, A);
+    else if constexpr ((xa | ya) < 4 && 4 <= (zb & wb)) return _mm_shuffle_ps(A, B, xa + ya * 4 + (zb - 4) * 16 + (wb - 4) * 64);
+    else if constexpr (4 <= (xb & yb) && (za | wa) < 4) return _mm_shuffle_ps(B, A, xb - 4 | (yb - 4) * 4 | za * 16 | wa * 64);
+    else if constexpr ((xa == 0) + (ya == 1) + (za == 2) + (wa == 3) == 3) {
+      constexpr nat i = inspects<xa != 0, ya != 1, za != 2, wa != 3>;
+      return _mm_insert_ps(A, B, int((value_switch<i, xa, ya, za, wa> - 4) << 6 | i << 4));
+    } else if constexpr ((xb == 4) + (yb == 5) + (zb == 6) + (wb == 7) == 3) {
+      constexpr nat i = inspects<xb != 4, yb != 5, zb != 6, wb != 7>;
+      return _mm_insert_ps(A, B, int(value_switch<i, xb, yb, zb, wb> << 6 | i << 4));
+    } else if constexpr ((xa < 4 || xb == 4) && (ya < 4 || yb == 5) && (za < 4 || zb == 6) && (wa < 4 || wb == 7))
+      return xvblend<xb == 4, yb == 5, zb == 6, wb == 7>(t_xvpermute<xa, ya, za, wa>::call(A), B);
+    else if constexpr ((4 <= xb || xa == 0) && (4 <= yb || ya == 1) && (4 <= zb || za == 2) && (4 <= wb || wa == 3))
+      return xvblend<xa == 0, ya == 1, za == 2, wa == 3>(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), A);
+    else if constexpr ((xa < 4) + (ya < 4) + (za < 4) + (wa < 4) == 3) {
+      constexpr nat i = inspects<(xa > 3), (ya > 3), (za > 3), (wa > 3)>;
+      return _mm_insert_ps(t_xvpermute<xa, ya, za, wa>::call(A), B, int((value_switch<i, xa, ya, za, wa> - 4) << 6 | i << 4));
+    } else if constexpr ((xb < 4) + (yb < 4) + (zb < 4) + (wb < 4) == 1) {
+      constexpr nat i = inspects<(xb < 4), (yb < 4), (zb < 4), (wb < 4)>;
+      return _mm_insert_ps(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), A, int(value_switch<i, xb, yb, zb, wb> << 6 | i << 4));
+    } else return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), t_xvpermute<xa, ya, za, wa>::call(A));
+  };
+  xwector operator()(const xwector& A, const xwector& B) const noexcept requires(lt(max(X, Y, Z, W), 8)) {
+    constexpr auto f = [](auto a, auto b) noexcept { return a == b || a < 0; };
+    constexpr int xa = (f(X, 0) ? 0 : X), ya = (f(Y, 1) ? 1 : Y), za = (f(Z, 2) ? 2 : Z), wa = (f(W, 3) ? 3 : W),
+                  xb = (f(X, 4) ? 4 : X), yb = (f(Y, 5) ? 5 : Y), zb = (f(Z, 6) ? 6 : Z), wb = (f(W, 7) ? 7 : W);
+    if constexpr (xa == 0 && ya == 1 && za == 2 && wa == 3) return A;
+    else if constexpr (xb == 4 && yb == 5 && zb == 6 && wb == 7) return B;
+    else if constexpr ((xa & 3) == 0 && (ya & 3) == 1 && (za & 3) == 2 && (wa & 3) == 3) return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(B, A);
+    else if constexpr (xa < 2 && (yb == 4 || yb == 5) && (za == 2 || zb == 3) && wb > 5)
+      return _mm256_shuffle_pd(A, B, (xa == 1) + (yb == 5) * 2 + (za == 3) * 4 + (wb == 7) * 8);
+    else if constexpr ((xb == 4 || xb == 5) && ya < 2 && zb > 5 && (wa == 2 || wa == 3))
+      return _mm256_shuffle_pd(B, A, (xb == 5) + (ya == 1) * 2 + (zb == 7) * 4 + (wa == 3) * 8);
+    else if constexpr ((xa | ya | za | wa) < 4) return t_xvpermute<xa, ya, za, wa>::call(A);
+    else if constexpr ((xb & yb & zb & wb) > 3) return t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B);
+    else if constexpr (((xa == 0 && ya == 1) || (xa == 2 && ya == 3)) && ((zb == 4 && wb == 5) || (zb == 6 && wb == 7)))
+      return _mm256_shuffle_f64x2(A, B, (xa == 2) + (zb == 6) * 2);
+    else if constexpr (((xb == 4 && yb == 5) || (xb == 6 && yb == 7)) && ((za == 0 && wa == 1) || (za == 2 && wa == 3)))
+      return _mm256_shuffle_f64x2(B, A, (xb == 6) + (za == 2) * 2);
+    else return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), t_xvpermute<xa, ya, za, wa>::call(A));
+  }
+  xrect operator()(const xrect& A, const xrect& B) const noexcept requires(lt(max(X, Y, Z, W), 8)) { return xvbitcast((*this)(xvbitcast(A), xvbitcast(B))); }
+};
+template<int X, int Y, int Z, int W> inline constexpr t_xvpermute<X, Y, Z, W> xvpermute;
 
-template<nat To, nat From, nat Zero = 0> requires((To | From) < 4 && Zero < 16)
-__m128 xvinsert(const __m128& Inserted, const __m128& Extracted) noexcept {
-  constexpr auto f = [](auto a) noexcept { return To == a ? From + 4 : a; };
-  if constexpr (Zero == 0) return xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Extracted);
-  else return _mm_insert_ps(Inserted, Extracted, From << 6 | To << 4 | Zero);
-}
-template<nat To, nat From, nat Zero = 0> requires((To | From) < 4 && Zero < 16)
-__m256d xvinsert(const __m256d& Inserted, const __m256d& Extracted) noexcept {
-  constexpr auto f = [](auto a) noexcept { return To == a ? From + 4 : a; };
-  if constexpr (Zero == 0) return xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Extracted);
-  else return xvblend<Zero>(xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Extracted), xv_zero);
-}
-template<nat To, nat From, nat Zero = 0> requires((To | From) < 4 && Zero < 16)
-__m128i xvinsert(const __m128i& Inserted, const __m128i& Extracted) noexcept {
-  constexpr auto f = [](auto a) noexcept { return To == a ? From + 4 : a; };
-  if constexpr (Zero == 0) return xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Extracted);
-  else return xvbitcast(_mm_insert_ps(xvbitcast(Inserted), xvbitcast(Extracted), From << 6 | To << 4 | Zero));
-}
+template<nat To, nat From, nat Zero = 0b0000> requires((To | From) < 4 && Zero < 16) inline constexpr overload xvinsert{
+  [](const xvector& Inserted, const xvector& Picked) noexcept {
+  constexpr auto f = [](auto a) { return To == a ? From + 4 : a; };
+  if constexpr (Zero == 0) return xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Picked);
+  else return _mm_insert_ps(Inserted, Picked, From << 6 | To << 4 | Zero); },
+  [](const xwector& Inserted, const xwector& Picked) noexcept {
+  constexpr auto f = [](auto a) { return To == a ? From + 4 : a; };
+  if constexpr (Zero == 0) return xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Picked);
+  else return xvblend<!(Zero & 1), !(Zero & 2), !(Zero & 4), !(Zero & 8)>(xv_zero, xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Picked)); },
+  [](const xrect& Inserted, const xrect& Picked) noexcept {
+    constexpr auto f = [](auto a) { return To == a ? From + 4 : a; };
+    if constexpr (Zero == 0) return xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Picked);
+    else return xvbitcast(_mm_insert_ps(xvbitcast(Inserted), xvbitcast(Picked), From << 6 | To << 4 | Zero)); }};
 
-inline bool xveq(const __m128& a, const __m128& b) noexcept { return _mm_test_all_ones(xvbitcast(_mm_cmpeq_ps(a, b))); }
-inline bool xveq(const __m256d& a, const __m256d& b) noexcept { return _mm256_testc_pd(_mm256_cmp_pd(a, b, 0), xv_neg_zero); }
-inline bool xveq(const __m128i& a, const __m128i& b) noexcept { return _mm_test_all_ones(_mm_cmpeq_epi32(a, b)); }
-template<tuple TpA, same_size_tuple<TpA> TpB> bool xveq(TpA&& a, TpB&& b) {
-  return [&]<nat... Is>(sequence<Is...>) { return ((xveq(get<Is>(TpA), get<Is>(TpB)) && ...)); }(make_indices_for<TpA>);
-}
+inline constexpr overload xveq{
+  [](const xvector& A, const xvector& B) noexcept -> bool { return _mm_test_all_ones(xvbitcast(_mm_cmpeq_ps(A, B))); },
+  [](const xwector& A, const xwector& B) noexcept -> bool { return _mm256_testc_pd(_mm256_cmp_pd(A, B, 0), xv_neg_zero); },
+  [](const xrect& A, const xrect& B) noexcept -> bool { return _mm_test_all_ones(_mm_cmpeq_epi32(A, B)); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N]) noexcept -> bool { return xveq(A[0], B[0]) && xveq(A[1], B[1]); }};
 
-inline bool xvne(const __m128& a, const __m128& b) noexcept { return _mm_test_all_zeros(xvbitcast(_mm_cmpeq_ps(a, b)), xvbitcast(_mm_setzero_ps())); }
-inline bool xvne(const __m256d& a, const __m256d& b) noexcept { return _mm256_testz_pd(_mm256_cmp_pd(a, b, 0), xv_neg_zero); }
-inline bool xvne(const __m128i& a, const __m128i& b) noexcept { return _mm_test_all_zeros(_mm_cmpeq_epi32(a, b), _mm_setzero_si128()); }
-template<tuple TpA, same_size_tuple<TpA> TpB> bool xvne(TpA&& a, TpB&& b) {
-  return [&]<nat... Is>(sequence<Is...>) { return ((xvne(get<Is>(TpA), get<Is>(TpB)) || ...)); }(make_indices_for<TpA>);
-}
-
-inline bool xvlt(const __m128& a, const __m128& b) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(a, b)) < _mm_movemask_ps(_mm_cmplt_ps(a, b)); }
-inline bool xvlt(const __m256d& a, const __m256d& b) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(b, a, 17)) < _mm256_movemask_pd(_mm256_cmp_pd(a, b, 17)); }
-inline bool xvlt(const __m128i& a, const __m128i& b) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(a, b))) < _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(a, b))); }
-
+inline constexpr overload xvne{
+  [](const xvector& A, const xvector& B) noexcept -> bool { return !xveq(A, B); },
+  [](const xwector& A, const xwector& B) noexcept -> bool { return !xveq(A, B); },
+  [](const xrect& A, const xrect& B) noexcept -> bool { return !xveq(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N]) noexcept -> bool { return !xveq(A, B); }};
 
 inline constexpr overload xvlt{
-  [](const __m128& A, const __m128& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) < _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
-  [](const __m256d& A, const __m256d& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) < _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
-  [](const __m128i& A, const __m128i& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) < _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
+  [](const xvector& A, const xvector& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) < _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) < _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) < _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
 
 inline constexpr overload xvle{
-  [](const __m128& A, const __m128& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) <= _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
-  [](const __m256d& A, const __m256d& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) <= _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
-  [](const __m128i& A, const __m128i& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) <= _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
+  [](const xvector& A, const xvector& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) <= _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) <= _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) <= _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
 
 inline constexpr overload xvgt{
-  [](const __m128& A, const __m128& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) > _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
-  [](const __m256d& A, const __m256d& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) > _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
-  [](const __m128i& A, const __m128i& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) > _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
+  [](const xvector& A, const xvector& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) > _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) > _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) > _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
 
 inline constexpr overload xvge{
-  [](const __m128& A, const __m128& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) >= _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
-  [](const __m256d& A, const __m256d& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) >= _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
-  [](const __m128i& A, const __m128i& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) >= _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
+  [](const xvector& A, const xvector& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) >= _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) >= _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) >= _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
 
 inline constexpr overload xvtw{
-  [](const __m128& A, const __m128& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) <=> _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
-  [](const __m256d& A, const __m256d& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) <=> _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
-  [](const __m128i& A, const __m128i& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) <=> _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
+  [](const xvector& A, const xvector& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) <=> _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) <=> _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) <=> _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
 
 inline constexpr overload xvabs{
-  [](const __m128& A) noexcept { return _mm_andnot_ps(xv_neg_zero, A); },
-  [](const __m256d& A) noexcept { return _mm256_andnot_pd(xv_neg_zero, A); },
-  [](const __m128i& A) noexcept { return _mm_abs_epi32(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_andnot_ps(xv_neg_zero, A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_andnot_pd(xv_neg_zero, A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_abs_epi32(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_andnot_ps(xv_neg_zero, A); },
+  [](const xwector& A) noexcept { return _mm256_andnot_pd(xv_neg_zero, A); },
+  [](const xrect& A) noexcept { return _mm_abs_epi32(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_andnot_ps(xv_neg_zero, A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_andnot_pd(xv_neg_zero, A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_abs_epi32(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvneg{
-  [](const __m128& A) noexcept { return _mm_xor_ps(A, xv_neg_zero); },
-  [](const __m256d& A) noexcept { return _mm256_xor_pd(A, xv_neg_zero); },
-  [](const __m128i& A) noexcept { return _mm_xor_epi32(A, xv_neg_zero); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_xor_ps(A[Is], xv_neg_zero)), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_xor_pd(A[Is], xv_neg_zero)), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_xor_epi32(A[Is], xv_neg_zero)), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_xor_ps(A, xv_neg_zero); },
+  [](const xwector& A) noexcept { return _mm256_xor_pd(A, xv_neg_zero); },
+  [](const xrect& A) noexcept { return _mm_xor_epi32(A, xv_neg_zero); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_xor_ps(A[Is], xv_neg_zero)), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_xor_pd(A[Is], xv_neg_zero)), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_xor_epi32(A[Is], xv_neg_zero)), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvadd{
-  [](const __m128& A, const __m128& B) noexcept { return _mm_add_ps(A, B); },
-  [](const __m256d& A, const __m256d& B) noexcept { return _mm256_add_pd(A, B); },
-  [](const __m128i& A, const __m128i& B) noexcept { return _mm_add_epi32(A, B); },
-  []<nat N>(const __m128 (&A)[N], const __m128 (&B)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_add_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], const __m256d (&B)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_add_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], const __m128i (&B)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_add_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A, const xvector& B) noexcept { return _mm_add_ps(A, B); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_add_pd(A, B); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_add_epi32(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_add_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_add_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_add_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvsub{
-  [](const __m128& A, const __m128& B) noexcept { return _mm_sub_ps(A, B); },
-  [](const __m256d& A, const __m256d& B) noexcept { return _mm256_sub_pd(A, B); },
-  [](const __m128i& A, const __m128i& B) noexcept { return _mm_sub_epi32(A, B); },
-  []<nat N>(const __m128 (&A)[N], const __m128 (&B)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sub_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], const __m256d (&B)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_sub_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], const __m128i (&B)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sub_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A, const xvector& B) noexcept { return _mm_sub_ps(A, B); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_sub_pd(A, B); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_sub_epi32(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sub_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_sub_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sub_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvmul{
-  [](const __m128& A, const __m128& B) noexcept { return _mm_mul_ps(A, B); },
-  [](const __m256d& A, const __m256d& B) noexcept { return _mm256_mul_pd(A, B); },
-  [](const __m128i& A, const __m128i& B) noexcept { return _mm_mul_epi32(A, B); },
-  []<nat N>(const __m128 (&A)[N], const __m128 (&B)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_mul_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], const __m256d (&B)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_mul_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], const __m128i (&B)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_mul_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A, const xvector& B) noexcept { return _mm_mul_ps(A, B); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_mul_pd(A, B); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_mul_epi32(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_mul_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_mul_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_mul_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvdiv{
-  [](const __m128& A, const __m128& B) noexcept { return _mm_div_ps(A, B); },
-  [](const __m256d& A, const __m256d& B) noexcept { return _mm256_div_pd(A, B); },
-  [](const __m128i& A, const __m128i& B) noexcept { return _mm_div_epi32(A, B); },
-  []<nat N>(const __m128 (&A)[N], const __m128 (&B)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_div_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], const __m256d (&B)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_div_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], const __m128i (&B)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_div_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A, const xvector& B) noexcept { return _mm_div_ps(A, B); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_div_pd(A, B); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_div_epi32(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_div_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_div_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_div_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
 
 template<bool X, bool Y, bool Z, bool W> inline constexpr overload xvabsolute{
-  [](const __m128& A) noexcept { return xvblend<X, Y, Z, W>(A, xvabs(A)); },
-  [](const __m256d& A) noexcept { return xvblend<X, Y, Z, W>(A, xvabs(A)); },
-  [](const __m128i& A) noexcept { return xvblend<X, Y, Z, W>(A, xvabs(A)); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvabs(A[Is]))), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvabs(A[Is]))), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvabs(A[Is]))), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return xvblend<X, Y, Z, W>(A, xvabs(A)); },
+  [](const xwector& A) noexcept { return xvblend<X, Y, Z, W>(A, xvabs(A)); },
+  [](const xrect& A) noexcept { return xvblend<X, Y, Z, W>(A, xvabs(A)); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvabs(A[Is]))), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvabs(A[Is]))), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvabs(A[Is]))), ...); }(make_sequence<N>{}); }};
 
 template<bool X, bool Y, bool Z, bool W> inline constexpr overload xvnegate{
-  [](const __m128& A) noexcept { return xvblend<X, Y, Z, W>(A, xvneg(A)); },
-  [](const __m256d& A) noexcept { return xvblend<X, Y, Z, W>(A, xvneg(A)); },
-  [](const __m128i& A) noexcept { return xvblend<X, Y, Z, W>(A, xvneg(A)); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvneg(A[Is]))), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvneg(A[Is]))), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvneg(A[Is]))), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return xvblend<X, Y, Z, W>(A, xvneg(A)); },
+  [](const xwector& A) noexcept { return xvblend<X, Y, Z, W>(A, xvneg(A)); },
+  [](const xrect& A) noexcept { return xvblend<X, Y, Z, W>(A, xvneg(A)); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvneg(A[Is]))), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvneg(A[Is]))), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvneg(A[Is]))), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvfma{
-  [](const __m128& A, const __m128& B, const __m128& C) noexcept { return _mm_fmadd_ps(A, B, C); },
-  [](const __m256d& A, const __m256d& B, const __m256d& C) noexcept { return _mm256_fmadd_pd(A, B, C); },
-  [](const __m128i& A, const __m128i& B, const __m128i& C) noexcept { return xvadd(xvmul(A, B), C); },
-  []<nat N>(const __m128 (&A)[N], const __m128 (&B)[N], const __m128 (&C)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_fmadd_ps(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], const __m256d (&B)[N], const __m256d (&C)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_fmadd_pd(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], const __m128i (&B)[N], const __m128i (&C)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvadd(xvmul(A[Is], B[Is]), C[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A, const xvector& B, const xvector& C) noexcept { return _mm_fmadd_ps(A, B, C); },
+  [](const xwector& A, const xwector& B, const xwector& C) noexcept { return _mm256_fmadd_pd(A, B, C); },
+  [](const xrect& A, const xrect& B, const xrect& C) noexcept { return xvadd(xvmul(A, B), C); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], const xvector (&C)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_fmadd_ps(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], const xwector (&C)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_fmadd_pd(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], const xrect (&C)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvadd(xvmul(A[Is], B[Is]), C[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvfms{
-  [](const __m128& A, const __m128& B, const __m128& C) noexcept { return _mm_fmsub_ps(A, B, C); },
-  [](const __m256d& A, const __m256d& B, const __m256d& C) noexcept { return _mm256_fmsub_pd(A, B, C); },
-  [](const __m128i& A, const __m128i& B, const __m128i& C) noexcept { return xvsub(xvmul(A, B), C); },
-  []<nat N>(const __m128 (&A)[N], const __m128 (&B)[N], const __m128 (&C)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_fmsub_ps(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], const __m256d (&B)[N], const __m256d (&C)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_fmsub_pd(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], const __m128i (&B)[N], const __m128i (&C)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvsub(xvmul(A[Is], B[Is]), C[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A, const xvector& B, const xvector& C) noexcept { return _mm_fmsub_ps(A, B, C); },
+  [](const xwector& A, const xwector& B, const xwector& C) noexcept { return _mm256_fmsub_pd(A, B, C); },
+  [](const xrect& A, const xrect& B, const xrect& C) noexcept { return xvsub(xvmul(A, B), C); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], const xvector (&C)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_fmsub_ps(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], const xwector (&C)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_fmsub_pd(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], const xrect (&C)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvsub(xvmul(A[Is], B[Is]), C[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvfnma{
-  [](const __m128& A, const __m128& B, const __m128& C) noexcept { return _mm_fnmadd_ps(A, B, C); },
-  [](const __m256d& A, const __m256d& B, const __m256d& C) noexcept { return _mm256_fnmadd_pd(A, B, C); },
-  [](const __m128i& A, const __m128i& B, const __m128i& C) noexcept { return xvsub(xvmul(xvneg(A), B), C); },
-  []<nat N>(const __m128 (&A)[N], const __m128 (&B)[N], const __m128 (&C)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_fnmadd_ps(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], const __m256d (&B)[N], const __m256d (&C)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_fnmadd_pd(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], const __m128i (&B)[N], const __m128i (&C)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvsub(xvmul(xvneg(A[Is]), B[Is]), C[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A, const xvector& B, const xvector& C) noexcept { return _mm_fnmadd_ps(A, B, C); },
+  [](const xwector& A, const xwector& B, const xwector& C) noexcept { return _mm256_fnmadd_pd(A, B, C); },
+  [](const xrect& A, const xrect& B, const xrect& C) noexcept { return xvsub(xvmul(xvneg(A), B), C); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], const xvector (&C)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_fnmadd_ps(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], const xwector (&C)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_fnmadd_pd(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], const xrect (&C)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvsub(xvmul(xvneg(A[Is]), B[Is]), C[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvfnms{
-  [](const __m128& A, const __m128& B, const __m128& C) noexcept { return _mm_fnmsub_ps(A, B, C); },
-  [](const __m256d& A, const __m256d& B, const __m256d& C) noexcept { return _mm256_fnmsub_pd(A, B, C); },
-  [](const __m128i& A, const __m128i& B, const __m128i& C) noexcept { return xvsub(xvmul(xvneg(A), B), C); },
-  []<nat N>(const __m128 (&A)[N], const __m128 (&B)[N], const __m128 (&C)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_fnmsub_ps(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], const __m256d (&B)[N], const __m256d (&C)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_fnmsub_pd(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], const __m128i (&B)[N], const __m128i (&C)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvsub(xvmul(xvneg(A[Is]), B[Is]), C[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A, const xvector& B, const xvector& C) noexcept { return _mm_fnmsub_ps(A, B, C); },
+  [](const xwector& A, const xwector& B, const xwector& C) noexcept { return _mm256_fnmsub_pd(A, B, C); },
+  [](const xrect& A, const xrect& B, const xrect& C) noexcept { return xvsub(xvmul(xvneg(A), B), C); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], const xvector (&C)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_fnmsub_ps(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], const xwector (&C)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_fnmsub_pd(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], const xrect (&C)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvsub(xvmul(xvneg(A[Is]), B[Is]), C[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvceil{
-  [](const __m128& A) noexcept { return _mm_ceil_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_ceil_pd(A); },
-  [](const __m128i& A) noexcept { return A; },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_ceil_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_ceil_pd(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = A[Is]), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_ceil_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_ceil_pd(A); },
+  [](const xrect& A) noexcept { return A; },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_ceil_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_ceil_pd(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = A[Is]), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvfloor{
-  [](const __m128& A) noexcept { return _mm_floor_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_floor_pd(A); },
-  [](const __m128i& A) noexcept { return A; },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_floor_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_floor_pd(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = A[Is]), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_floor_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_floor_pd(A); },
+  [](const xrect& A) noexcept { return A; },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_floor_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_floor_pd(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = A[Is]), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvtrunc{
-  [](const __m128& A) noexcept { return _mm_trunc_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_trunc_pd(A); },
-  [](const __m128i& A) noexcept { return A; },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_trunc_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_trunc_pd(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = A[Is]), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_trunc_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_trunc_pd(A); },
+  [](const xrect& A) noexcept { return A; },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_trunc_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_trunc_pd(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = A[Is]), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvround{
-  [](const __m128& A) noexcept { return _mm_round_ps(A, 8); },
-  [](const __m256d& A) noexcept { return _mm256_round_pd(A, 8); },
-  [](const __m128i& A) noexcept { return A; },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_round_ps(A[Is], 8)), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_round_pd(A[Is]), 8), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = A[Is]), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_round_ps(A, 8); },
+  [](const xwector& A) noexcept { return _mm256_round_pd(A, 8); },
+  [](const xrect& A) noexcept { return A; },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_round_ps(A[Is], 8)), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_round_pd(A[Is]), 8), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = A[Is]), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvmax{
-  [](const __m128& A, const __m128& B) noexcept { return _mm_max_ps(A, B); },
-  [](const __m256d& A, const __m256d& B) noexcept { return _mm256_max_pd(A, B); },
-  [](const __m128i& A, const __m128i& B) noexcept { return _mm_max_epi32(A, B); },
-  []<nat N>(const __m128 (&A)[N], const __m128 (&B)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_max_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], const __m256d (&B)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_max_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], const __m128i (&B)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_max_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A, const xvector& B) noexcept { return _mm_max_ps(A, B); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_max_pd(A, B); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_max_epi32(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_max_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_max_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_max_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvmin{
-  [](const __m128& A, const __m128& B) noexcept { return _mm_min_ps(A, B); },
-  [](const __m256d& A, const __m256d& B) noexcept { return _mm256_min_pd(A, B); },
-  [](const __m128i& A, const __m128i& B) noexcept { return _mm_min_epi32(A, B); },
-  []<nat N>(const __m128 (&A)[N], const __m128 (&B)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_min_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], const __m256d (&B)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_min_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128i (&A)[N], const __m128i (&B)[N], __m128i (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_min_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A, const xvector& B) noexcept { return _mm_min_ps(A, B); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_min_pd(A, B); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_min_epi32(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_min_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_min_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_min_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvsin{
-  [](const __m128& A) noexcept { return _mm_sin_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_sin_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sin_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_sin_pd(A[Is])), ...); }(make_sequence<N>{}); },
-  [](const __m128& A, __m128& Cos) noexcept { return _mm_sincos_ps(&Cos, A); },
-  [](const __m256d& A, __m256d& Cos) noexcept { return _mm256_sincos_pd(&Cos, A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N], __m128 (&Cos)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sincos_ps(&Cos[Is], A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N], __m256d (&Cos)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_sin_pd(&Cos[Is], A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_sin_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_sin_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sin_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_sin_pd(A[Is])), ...); }(make_sequence<N>{}); },
+  [](const xvector& A, xvector& Cos) noexcept { return _mm_sincos_ps(&Cos, A); },
+  [](const xwector& A, xwector& Cos) noexcept { return _mm256_sincos_pd(&Cos, A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N], xvector (&Cos)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sincos_ps(&Cos[Is], A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N], xwector (&Cos)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_sin_pd(&Cos[Is], A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvasin{
-  [](const __m128& A) noexcept { return _mm_asin_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_asin_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_asin_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_asin_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_asin_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_asin_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_asin_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_asin_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvsinh{
-  [](const __m128& A) noexcept { return _mm_sinh_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_sinh_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sinh_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_sinh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_sinh_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_sinh_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sinh_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_sinh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvasinh{
-  [](const __m128& A) noexcept { return _mm_asinh_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_asinh_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_asinh_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_asinh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_asinh_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_asinh_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_asinh_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_asinh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvcos{
-  [](const __m128& A) noexcept { return _mm_cos_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_cos_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_cos_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_cos_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_cos_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_cos_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_cos_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_cos_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvacos{
-  [](const __m128& A) noexcept { return _mm_acos_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_acos_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_acos_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_acos_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_acos_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_acos_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_acos_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_acos_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvcosh{
-  [](const __m128& A) noexcept { return _mm_cosh_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_cosh_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_cosh_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_cosh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_cosh_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_cosh_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_cosh_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_cosh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvacosh{
-  [](const __m128& A) noexcept { return _mm_acosh_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_acosh_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_acosh_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_acosh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_acosh_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_acosh_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_acosh_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_acosh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvtan{
-  [](const __m128& A) noexcept { return _mm_tan_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_tan_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_tan_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_tan_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_tan_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_tan_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_tan_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_tan_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvatan{
-  [](const __m128& A) noexcept { return _mm_atan_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_atan_pd(A); },
-  [](const __m128& Sin, const __m128& Cos) noexcept { return _mm_atan2_ps(Sin, Cos); },
-  [](const __m256d& Sin, const __m256d& Cos) noexcept { return _mm256_atan2_pd(Sin, Cos); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_atan_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_atan_pd(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m128 (&Sin)[N], const __m128 (&Cos)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_atan2_ps(Sin[Is], Cos[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&Sin)[N], const __m256d (&Cos)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_atan2_pd(Sin[Is], Cos[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_atan_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_atan_pd(A); },
+  [](const xvector& Sin, const xvector& Cos) noexcept { return _mm_atan2_ps(Sin, Cos); },
+  [](const xwector& Sin, const xwector& Cos) noexcept { return _mm256_atan2_pd(Sin, Cos); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_atan_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_atan_pd(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xvector (&Sin)[N], const xvector (&Cos)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_atan2_ps(Sin[Is], Cos[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&Sin)[N], const xwector (&Cos)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_atan2_pd(Sin[Is], Cos[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvtanh{
-  [](const __m128& A) noexcept { return _mm_tanh_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_tanh_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_tanh_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_tanh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_tanh_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_tanh_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_tanh_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_tanh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvatanh{
-  [](const __m128& A) noexcept { return _mm_atanh_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_atanh_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_atanh_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_atanh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_atanh_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_atanh_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_atanh_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_atanh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvpow{
-  [](const __m128& A, const __m128& B) noexcept { return _mm_pow_ps(A, B); },
-  [](const __m256d& A, const __m256d& B) noexcept { return _mm256_pow_pd(A, B); },
-  []<nat N>(const __m128 (&A)[N], const __m128 (&B)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_pow_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], const __m256d (&B)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_pow_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A, const xvector& B) noexcept { return _mm_pow_ps(A, B); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_pow_pd(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_pow_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_pow_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvexp{
-  [](const __m128& A) noexcept { return _mm_exp_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_exp_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_exp_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_exp_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_exp_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_exp_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_exp_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_exp_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvexp2{
-  [](const __m128& A) noexcept { return _mm_exp2_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_exp2_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_exp2_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_exp2_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_exp2_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_exp2_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_exp2_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_exp2_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvexp10{
-  [](const __m128& A) noexcept { return _mm_exp10_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_exp10_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_exp10_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_exp10_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_exp10_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_exp10_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_exp10_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_exp10_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvexpm1{
-  [](const __m128& A) noexcept { return _mm_expm1_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_expm1_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_expm1_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_expm1_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_expm1_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_expm1_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_expm1_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_expm1_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvln{
-  [](const __m128& A) noexcept { return _mm_log_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_log_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_log_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_log_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_log_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_log_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_log_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_log_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvlog{
-  [](const __m128& A, const __m128& Base) noexcept { return xvdiv(xvln(A), xvln(Base)); },
-  [](const __m256d& A, const __m256d& Base) noexcept { return xvdiv(xvln(A), xvln(Base)); },
-  []<nat N>(const __m128 (&A)[N], const __m128 (&Base)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvdiv(xvln(A[Is]), xvln(Base[Is]))), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], const __m256d (&Base)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvdiv(xvln(A[Is]), xvln(Base[Is]))), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A, const xvector& Base) noexcept { return xvdiv(xvln(A), xvln(Base)); },
+  [](const xwector& A, const xwector& Base) noexcept { return xvdiv(xvln(A), xvln(Base)); },
+  []<nat N>(const xvector (&A)[N], const xvector (&Base)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvdiv(xvln(A[Is]), xvln(Base[Is]))), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&Base)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvdiv(xvln(A[Is]), xvln(Base[Is]))), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvlog2{
-  [](const __m128& A) noexcept { return _mm_log2_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_log2_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_log2_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_log2_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_log2_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_log2_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_log2_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_log2_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvlog10{
-  [](const __m128& A) noexcept { return _mm_log10_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_log10_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_log10_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_log10_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_log10_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_log10_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_log10_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_log10_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvlog1p{
-  [](const __m128& A) noexcept { return _mm_log1p_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_log1p_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_log1p_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_log1p_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_log1p_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_log1p_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_log1p_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_log1p_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvlogb{
-  [](const __m128& A) noexcept { return _mm_logb_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_logb_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_logb_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_logb_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_logb_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_logb_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_logb_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_logb_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvsqrt{
-  [](const __m128& A) noexcept { return _mm_sqrt_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_sqrt_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sqrt_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_sqrt_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_sqrt_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_sqrt_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sqrt_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_sqrt_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvcbrt{
-  [](const __m128& A) noexcept { return _mm_cbrt_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_cbrt_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_cbrt_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_cbrt_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_cbrt_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_cbrt_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_cbrt_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_cbrt_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvhypot{
-  [](const __m128& A, const __m128& B) noexcept { return _mm_hypot_ps(A, B); },
-  [](const __m256d& A, const __m256d& B) noexcept { return _mm256_hypot_pd(A, B); },
-  []<nat N>(const __m128 (&A)[N], const __m128 (&B)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_hypot_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], const __m256d (&B)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_hypot_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A, const xvector& B) noexcept { return _mm_hypot_ps(A, B); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_hypot_pd(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_hypot_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_hypot_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvsqrt_r{
-  [](const __m128& A) noexcept { return _mm_invsqrt_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_invsqrt_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_invsqrt_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_invsqrt_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_invsqrt_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_invsqrt_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_invsqrt_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_invsqrt_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xvcbrt_r{
-  [](const __m128& A) noexcept { return _mm_invcbrt_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_invcbrt_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_invcbrt_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_invcbrt_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_invcbrt_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_invcbrt_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_invcbrt_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_invcbrt_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xverf{
-  [](const __m128& A) noexcept { return _mm_erf_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_erf_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_erf_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_erf_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_erf_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_erf_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_erf_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_erf_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xverfc{
-  [](const __m128& A) noexcept { return _mm_erfc_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_erfc_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_erfc_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_erfc_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_erfc_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_erfc_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_erfc_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_erfc_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xverf_r{
-  [](const __m128& A) noexcept { return _mm_erfinv_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_erfinv_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_erfinv_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_erfinv_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_erfinv_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_erfinv_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_erfinv_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_erfinv_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 inline constexpr overload xverfc_r{
-  [](const __m128& A) noexcept { return _mm_erfcinv_ps(A); },
-  [](const __m256d& A) noexcept { return _mm256_erfcinv_pd(A); },
-  []<nat N>(const __m128 (&A)[N], __m128 (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_erfcinv_ps(A[Is])), ...); }(make_sequence<N>{}); },
-  []<nat N>(const __m256d (&A)[N], __m256d (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_erfcinv_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+  [](const xvector& A) noexcept { return _mm_erfcinv_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_erfcinv_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_erfcinv_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_erfcinv_pd(A[Is])), ...); }(make_sequence<N>{}); }};
 
 template<nat N, nat Zero = 0> requires(0 < N && N <= 4 && Zero < 16) struct t_xvdot {
-  __m128 operator()(const __m128& A, const __m128& B) const noexcept {
+  xvector operator()(const xvector& A, const xvector& B) const noexcept {
     if constexpr (N == 0 && (Zero == 0b1110 || Zero == 0b1101 || Zero == 0b1011 || Zero == 0b0111))
       return xvinsert<inspects<!(Zero & 1), !(Zero & 2), !(Zero & 4), !(Zero & 8)>, 0, Zero>(A, xvmul(A, B));
     else return _mm_dp_ps(A, B, value_switch<N, 0, 16, 48, 112, 240> | (15 ^ Zero));
   }
-  __m256d operator()(const __m256d& A, const __m256d& B) const noexcept {
+  xwector operator()(const xwector& A, const xwector& B) const noexcept {
     if constexpr (N == 0 || Zero == 0b1111) return xv_zero;
-    __m256d a;
+    xwector a;
     if constexpr (N == 1) a = xvmul(A, B);
     else if constexpr (N == 2) a = _mm256_hadd_pd(xvmul(A, B), A);
     else if constexpr (N == 3) (a = xvmul(A, B)), a = xvadd(_mm256_hadd_pd(a, A), _mm256_castpd128_pd256(_mm256_extractf128_pd(a, 1)));
     else if constexpr (N == 4) (a = _mm256_hadd_pd(xvmul(A, B), A)), a = xvadd(a, _mm256_castpd128_pd256(_mm256_extractf128_pd(a, 1)));
     return xvsetzero<Zero & 1, Zero & 2, Zero & 4, Zero & 8>(xvpermute<0, 0, 0, 0>(a));
   }
-  template<nat M> requires(M <= 4) void operator()(const __m128 (&A)[M], const __m128& B, __m128& Result) const noexcept {
+  template<nat M> requires(M <= 4) void operator()(const xvector (&A)[M], const xvector& B, xvector& Result) const noexcept {
     if constexpr (1 <= N) Result = t_xvdot<N, 0b1110>{}(A[0], B);
     if constexpr (2 <= N) Result = xvpermute<0, 5, 2, 3>(Result, t_xvdot<N>{}(A[1], B));
     if constexpr (3 <= N) Result = xvpermute<0, 1, 6, 3>(Result, t_xvdot<N>{}(A[2], B));
     if constexpr (4 == N) Result = xvpermute<0, 1, 2, 7>(Result, t_xvdot<N>{}(A[3], B));
   }
-  template<tuple TpB> void operator()(const __m128& A, TpB&& B, __m128& Result) const noexcept {
+  template<tuple TpB> void operator()(const xvector& A, TpB&& B, xvector& Result) const noexcept {
     constexpr nat m = extent<TpB>;
     if constexpr (1 <= m) Result = xvmul(xvpermute<0, 0, 0, 0>(A), get<0>(B));
     if constexpr (2 <= m) Result = xvfma(xvpermute<1, 1, 1, 1>(A), get<1>(B), Result);
@@ -1518,14 +1526,14 @@ template<nat N, nat Zero = 0> requires(0 < N && N <= 4 && Zero < 16) struct t_xv
     if constexpr (3 <= m) (*this)(get<2>(A), B, get<2>(Result));
     if constexpr (4 <= m) (*this)(get<3>(A), B, get<3>(Result));
   }
-  matrix& operator()(matrix& A, const matrix& B) const noexcept {
-    static constexpr auto f = [](__m128& A, const matrix& B, __m128& C) noexcept {
+  xmatrix& operator()(xmatrix& A, const xmatrix& B) const noexcept {
+    static constexpr auto f = [](xvector& A, const xmatrix& B, xvector& C) noexcept {
       C = xvmul(xvpermute<0, 0, 0, 0>(A), get<0>(B));
       C = xvfma(xvpermute<1, 1, 1, 1>(A), get<1>(B), C);
       C = xvfma(xvpermute<2, 2, 2, 2>(A), get<2>(B), C);
       A = xvfma(xvpermute<3, 3, 3, 3>(A), get<3>(B), C);
     };
-    __m128 C;
+    xvector C;
     f(A[0], B, C), f(A[1], B, C), f(A[2], B, C), f(A[3], B, C);
     return A;
   }
@@ -1533,36 +1541,36 @@ template<nat N, nat Zero = 0> requires(0 < N && N <= 4 && Zero < 16) struct t_xv
 template<nat N, nat Zero = 0> requires(0 < N && N <= 4 && Zero < 16) inline constexpr t_xvdot<N, Zero> xvdot;
 
 inline constexpr overload xvcross{
-  [](const __m128& A, const __m128& B) noexcept {
+  [](const xvector& A, const xvector& B) noexcept {
     auto a = xvpermute<2, 0, 1, 3>(A), b = xvpermute<1, 2, 0, 3>(B);
     return xvfms(xvpermute<1, 2, 0, 3>(A), xvpermute<2, 0, 1, 3>(B), xvmul(a, b)); },
-  [](const __m256d& A, const __m256d& B) noexcept {
+  [](const xwector& A, const xwector& B) noexcept {
     auto a = xvpermute<2, 0, 1, 3>(A), b = xvpermute<1, 2, 0, 3>(B);
     return xvfms(xvpermute<1, 2, 0, 3>(A), xvpermute<2, 0, 1, 3>(B), xvmul(a, b)); }};
 
 template<nat N, nat Zero = 0> requires(N <= 4 && Zero < 16) inline constexpr overload xvlength{
-  [](const __m128& A) noexcept { return xvsqrt(xvdot<N, Zero>(A, A)); },
-  [](const __m256d& A) noexcept { return xvsqrt(xvdot<N, Zero>(A, A)); }};
+  [](const xvector& A) noexcept { return xvsqrt(xvdot<N, Zero>(A, A)); },
+  [](const xwector& A) noexcept { return xvsqrt(xvdot<N, Zero>(A, A)); }};
 
 template<nat N, nat Zero = 0> requires(N <= 4 && Zero < 16) inline constexpr overload xvlength_r{
-  [](const __m128& A) noexcept { return xvsqrt_r(xvdot<N, Zero>(A, A)); },
-  [](const __m256d& A) noexcept { return xvsqrt_r(xvdot<N, Zero>(A, A)); }};
+  [](const xvector& A) noexcept { return xvsqrt_r(xvdot<N, Zero>(A, A)); },
+  [](const xwector& A) noexcept { return xvsqrt_r(xvdot<N, Zero>(A, A)); }};
 
 template<nat N> requires(N <= 4) inline constexpr overload xvnormalize{
-  [](const __m128& A) noexcept { return xvmul(A, xvlength_r<N>(A)); },
-  [](const __m256d& A) noexcept { return xvmul(A, xvlength_r<N>(A)); }};
+  [](const xvector& A) noexcept { return xvmul(A, xvlength_r<N>(A)); },
+  [](const xwector& A) noexcept { return xvmul(A, xvlength_r<N>(A)); }};
 
 inline constexpr overload xvradian{
-  [](const __m128& A) noexcept { return xvmul(A, xv_constant<pi / 180>); },
-  [](const __m256d& A) noexcept { return xvmul(A, xv_constant<pi / 180>); }};
+  [](const xvector& A) noexcept { return xvmul(A, xv_constant<pi / 180>); },
+  [](const xwector& A) noexcept { return xvmul(A, xv_constant<pi / 180>); }};
 
 inline constexpr overload xvdegree{
-  [](const __m128& A) noexcept { return xvmul(A, xv_constant<180 / pi>); },
-  [](const __m256d& A) noexcept { return xvmul(A, xv_constant<180 / pi>); }};
+  [](const xvector& A) noexcept { return xvmul(A, xv_constant<180 / pi>); },
+  [](const xwector& A) noexcept { return xvmul(A, xv_constant<180 / pi>); }};
 
 inline constexpr overload xvtranspose{
   []<typename T, typename U>(T&& A, U&& Result) noexcept
-  requires((nt_tuple_for<T, const __m128&> && nt_tuple_for<U, __m128&>) || (nt_tuple_for<T, const __m256d&> && nt_tuple_for<U, __m256d&>)) {
+  requires((nt_tuple_for<T, const xvector&> && nt_tuple_for<U, xvector&>) || (nt_tuple_for<T, const xwector&> && nt_tuple_for<U, xwector&>)) {
     constexpr nat M = extent<T>, N = extent<U>;
     if constexpr (1 == M) {
       if constexpr (1 <= N) get<0>(Result) = xvsetzero<0, 1, 1, 1>(get<0>(A));
@@ -1589,14 +1597,14 @@ inline constexpr overload xvtranspose{
         auto a = xvpermute<2, 3, 6, 7>(get<0>(A), get<1>(A)), b = xvpermute<2, 3, 6, 7>(get<2>(A), get<3>(A));
         get<2>(Result) = xvpermute<0, 2, 4, 6>(a, b), get<3>(Result) = xvpermute<1, 3, 5, 7>(a, b); } } }};
 
-inline constexpr auto xvtranslate = []<typename T>(const __m128& Offset, T&& Result) noexcept requires(nt_tuple_for<T, __m128&>) {
+inline constexpr auto xvtranslate = []<typename T>(const xvector& Offset, T&& Result) noexcept requires(nt_tuple_for<T, xvector&>) {
   constexpr nat N = extent<T>;
   if constexpr (N >= 1) get<0>(Result) = xvinsert<3, 0>(xv_x, Offset);
   if constexpr (N >= 2) get<1>(Result) = xvinsert<3, 1>(xv_y, Offset);
   if constexpr (N >= 3) get<2>(Result) = xvinsert<3, 2>(xv_z, Offset);
   if constexpr (N >= 4) get<3>(Result) = xv_w; };
 
-inline constexpr auto xvrotate = []<nt_tuple_for<__m128&> T>(const __m128& Radian, T&& Result) noexcept {
+inline constexpr auto xvrotate = []<nt_tuple_for<xvector&> T>(const xvector& Radian, T&& Result) noexcept {
   constexpr nat N = extent<T>;
   if constexpr (N == 2) {
     get<1>(Result) = xvsin(Radian, get<0>(Result));
@@ -1628,7 +1636,7 @@ inline constexpr auto xvrotate = []<nt_tuple_for<__m128&> T>(const __m128& Radia
     get<3>(Result) = xv_w;
   } else static_assert(1 < N && N < 5); };
 
-inline constexpr auto xvrotate_inv = []<nt_tuple_for<__m128&> T>(const __m128& Radian, T&& Result) noexcept {
+inline constexpr auto xvrotate_inv = []<nt_tuple_for<xvector&> T>(const xvector& Radian, T&& Result) noexcept {
   constexpr nat N = extent<T>;
   if constexpr (N == 2) {
     get<1>(Result) = xvsin(Radian, get<0>(Result));
@@ -1660,7 +1668,7 @@ inline constexpr auto xvrotate_inv = []<nt_tuple_for<__m128&> T>(const __m128& R
     get<3>(Result) = xv_w;
   } else static_assert(1 < N && N < 5); };
 
-inline constexpr auto xvscale = []<nt_tuple_for<__m128&> T>(const __m128& Scalar, T&& Result) noexcept {
+inline constexpr auto xvscale = []<nt_tuple_for<xvector&> T>(const xvector& Scalar, T&& Result) noexcept {
   constexpr nat N = extent<T>;
   if constexpr (N >= 2) { get<0>(Result) = xvinsert<0, 0, 0b1110>(Scalar, Scalar); get<1>(Result) = xvinsert<1, 1, 0b1101>(Scalar, Scalar); }
   if constexpr (N >= 3) get<2>(Result) = xvinsert<2, 2, 0b1011>(Scalar, Scalar);
@@ -1668,18 +1676,18 @@ inline constexpr auto xvscale = []<nt_tuple_for<__m128&> T>(const __m128& Scalar
   static_assert(1 < N && N < 5); };
 
 inline constexpr overload xvworld{
-  []<nt_tuple_for<__m128&> T>(T&& Result) noexcept {
+  []<nt_tuple_for<xvector&> T>(T&& Result) noexcept {
     constexpr nat N = extent<T>;
     if constexpr (N >= 2) Result[0] = xv_x, Result[1] = xv_y;
     if constexpr (N >= 3) Result[2] = xv_z;
     if constexpr (N == 4) Result[3] = xv_w;
     static_assert(1 < N && N < 5); },
-  []<nt_tuple_for<__m128&> T>(const __m128& Offset, T&& Result) noexcept { xvtranslate(Offset, Result); },
-  []<nt_tuple_for<__m128&> T>(const __m128& Offset, const __m128& Radian, T&& Result) noexcept {
+  []<nt_tuple_for<xvector&> T>(const xvector& Offset, T&& Result) noexcept { xvtranslate(Offset, Result); },
+  []<nt_tuple_for<xvector&> T>(const xvector& Offset, const xvector& Radian, T&& Result) noexcept {
     xvrotate(Radian, Result), Result[0] = xvinsert<3, 0>(Result[0], Offset), Result[1] = xvinsert<3, 1>(Result[1], Offset);
     if constexpr (extent<T> >= 3) Result[2] = xvinsert<3, 2>(Result[2], Offset);
     static_assert(1 < extent<T> && extent<T> < 5); },
-  []<nt_tuple_for<__m128&> T>(const __m128& Offset, const __m128& Radian, const __m128& Scalar, T&& Result) noexcept {
+  []<nt_tuple_for<xvector&> T>(const xvector& Offset, const xvector& Radian, const xvector& Scalar, T&& Result) noexcept {
     xvrotate(Radian, Result), Result[0] = xvinsert<3, 0>(Result[0], Offset), Result[1] = xvinsert<3, 1>(Result[1], Offset);
     if constexpr (extent<T> >= 3) Result[2] = xvinsert<3, 2>(Result[2], Offset);
     Result[0] = xvmul(Result[0], xvpermute<0, 0, 0, 0>(Scalar)), Result[1] = xvmul(Result[1], xvpermute<1, 1, 1, 1>(Scalar));
@@ -1689,8 +1697,8 @@ inline constexpr overload xvworld{
 // clang-format off
 
 inline constexpr overload xvview{
-  []<nt_tuple_for<__m128&> T, nat N = extent<T>>(const __m128& Radian, T&& Result) noexcept requires (le(2, N) && le(N, 4)) { xvrotate_inv(Radian, Result); },
-  []<nt_tuple_for<__m128&> T, nat N = extent<T>>(const __m128& Position, const __m128& Radian, T&& Result) noexcept requires (le(2, N) && le(N, 4)) {
+  []<nt_tuple_for<xvector&> T, nat N = extent<T>>(const xvector& Radian, T&& Result) noexcept requires (le(2, N) && le(N, 4)) { xvrotate_inv(Radian, Result); },
+  []<nt_tuple_for<xvector&> T, nat N = extent<T>>(const xvector& Position, const xvector& Radian, T&& Result) noexcept requires (le(2, N) && le(N, 4)) {
     xvrotate_inv(Radian, Result);
     if constexpr (N < 4) {
       auto temp = xvneg(Position);
@@ -1704,7 +1712,7 @@ inline constexpr overload xvview{
       Result[2] = xvinsert<3, 3>(Result[2], xvdot<3>(Result[2], Result[3]));
       Result[3] = xv_w;
     }},
-  []<nt_tuple_for<__m128&> T, nat N = extent<T>>(const __m128& Position, const __m128& Radian, const __m128& Offset, T&& Result) noexcept requires (le(2, N) && le(N, 4)) {
+  []<nt_tuple_for<xvector&> T, nat N = extent<T>>(const xvector& Position, const xvector& Radian, const xvector& Offset, T&& Result) noexcept requires (le(2, N) && le(N, 4)) {
     xvrotate_inv(Radian, Result);
     if constexpr (N < 4) {
       auto temp = xvneg(Position);
@@ -1720,13 +1728,13 @@ inline constexpr overload xvview{
     }}};
 
 inline constexpr overload xvcamera{
-  []<nat N>(const float Width, const float Height, const float Factor, __m128 (&Result)[N]) noexcept requires (le(3, N) && le(N, 4)) {
+  []<nat N>(const float Width, const float Height, const float Factor, xvector (&Result)[N]) noexcept requires (le(3, N) && le(N, 4)) {
     constexpr value f = 1048576.0, n = 0.25;
     Result[0] = xvset<0>(xv_zero, -Factor * Height / Width);
     Result[1] = xvset<1>(xv_zero, Factor);
     Result[2] = xv_constant<0, 0, f / (f - n), -f * n / (f - n)>;
     if constexpr (N == 4) Result[3] = xv_z; },
-  []<nat N>(const float Width, const float Height, const float Factor, none OrthgraphicMode, __m128 (&Result)[N]) noexcept requires (le(3, N) && le(N, 4)) {
+  []<nat N>(const float Width, const float Height, const float Factor, none OrthgraphicMode, xvector (&Result)[N]) noexcept requires (le(3, N) && le(N, 4)) {
     constexpr value f = 1048576.0, n = 0.25;
     Result[0] = xvset<0>(xv_zero, -2.0f * Factor / Width);
     Result[1] = xvset<1>(xv_zero, 2.0f * Factor / Height);
@@ -1738,7 +1746,7 @@ inline constexpr overload xvcamera{
 /// @brief converts a rotation matrix to euler angles
 inline constexpr auto xveuler = []<tuple Tp>(Tp&& Matrix) noexcept {
   if (extent<Tp> >= 3) {
-    __m128 v = xvneg(xvpermute<3, 0, 3, 3>(get<2>(Matrix)));
+    xvector v = xvneg(xvpermute<3, 0, 3, 3>(get<2>(Matrix)));
     if (xveq(v, xv_y)) return xvasin(xvpermute<5, 1, -1, -1>(v, get<0>(Matrix)));
     v = xvpermute<0, 1, 6, 3>(xvpermute<4, 1, -1, 3>(v, xvdiv(get<1>(Matrix), get<0>(Matrix))), xvdiv(xvpermute<-1, -1, 1, -1>(get<2>(Matrix)), get<2>(Matrix)));
     return xvpermute<6, 1, 4, 3>(xvasin(v), xvatan(xvpermute<0, -1, 5, -1>(get<1>(Matrix), get<2>(Matrix)), xvblend<0, 0, 1, 1>(get<0>(Matrix), get<2>(Matrix))));
@@ -1756,9 +1764,9 @@ struct alignas(16) vector {
   constexpr vector(const numerical auto X, const numerical auto Y, const numerical auto Z, const numerical auto W) noexcept : x(float(X)), y(float(Y)), z(float(Z)), w(float(W)) {}
   constexpr vector(const numerical auto X, const numerical auto Y, const numerical auto Z) noexcept : x(float(X)), y(float(Y)), z(float(Z)) {}
   constexpr vector(const numerical auto X, const numerical auto Y) noexcept : x(float(X)), y(float(Y)) {}
-  vector(const __m128& A) noexcept { _mm_storeu_ps(&x, A); }
-  vector& operator=(const __m128& A) noexcept { return _mm_storeu_ps(&x, A), *this; }
-  operator __m128() const noexcept { return xvload(&x); }
+  vector(const xvector& A) noexcept { _mm_storeu_ps(&x, A); }
+  vector& operator=(const xvector& A) noexcept { return _mm_storeu_ps(&x, A), *this; }
+  operator xvector() const noexcept { return xvload(&x); }
   constexpr nat size() const noexcept { return 4; }
   float* data() noexcept { return &x; }
   const float* data() const noexcept { return &x; }
@@ -1856,8 +1864,8 @@ struct color {
     if (is_cev) return (unsigned)(r * 255.f) << 16 | (unsigned)(g * 255.f) << 6 | (unsigned)(b * 255.f) | (unsigned)(a * 255.f) << 24;
     else return bitcast<unsigned>(_mm_cvtsi128_si32(_mm_shuffle_epi8(_mm_cvtps_epi32(xvmul(xvload(&r), xv_constant<255>)), xv_constant<0, 0, 0, 0x03020100>)));
   }
-  explicit color(const __m128& Xv) noexcept { _mm_storeu_ps(&r, Xv); }
-  operator __m128() const noexcept { return xvload(&r); }
+  explicit color(const xvector& Xv) noexcept { _mm_storeu_ps(&r, Xv); }
+  operator xvector() const noexcept { return xvload(&r); }
   friend constexpr bool operator==(const color& A, const color& B) noexcept {
     if (!is_cev) return xveq(A, B);
     else return A.r == B.r && A.g == B.g && A.b == B.b && A.a == B.a;
@@ -1924,9 +1932,9 @@ struct rect {
   template<castable_to<int> T0, castable_to<int> T1, castable_to<int> T2, castable_to<int> T3>
   constexpr rect(T0&& L, T1&& T, T2&& R, T3&& B) noexcept(nt_castable_to<T0, int> && nt_castable_to<T1, int> && nt_castable_to<T2, int> && nt_castable_to<T3, int>)
     : left(static_cast<int>(fwd<T0>(L))), top(static_cast<int>(fwd<T1>(T))), right(static_cast<int>(fwd<T2>(R))), bottom(static_cast<int>(fwd<T3>(B))) {}
-  rect(const __m128i& A) noexcept { _mm_storeu_epi32(&left, A); }
-  rect& operator=(const __m128i& A) noexcept { return _mm_storeu_epi32(&left, A), *this; }
-  operator __m128i() const noexcept { return xvload(&left); }
+  rect(const xrect& A) noexcept { _mm_storeu_epi32(&left, A); }
+  rect& operator=(const xrect& A) noexcept { return _mm_storeu_epi32(&left, A), *this; }
+  operator xrect() const noexcept { return xvload(&left); }
   constexpr nat size() const noexcept { return 4; }
   int* data() noexcept { return &left; }
   const int* data() const noexcept { return &left; }
@@ -2020,13 +2028,13 @@ struct rect {
   friend constexpr rect& operator/=(rect& A, const int& B) noexcept { return A = A / B; }
   constexpr vector to_vector() const noexcept {
     if (is_cev) return {float(left), float(top), float(right), float(bottom)};
-    else return {xvcast<__m128>(*this)};
+    else return {xvcast<xvector>(*this)};
   }
 };
 
 constexpr rect vector::to_rect() const noexcept {
   if (is_cev) return {int(x), int(y), int(z), int(w)};
-  else return {xvcast<__m128i>(*this)};
+  else return {xvcast<xrect>(*this)};
 }
 }
 
@@ -2213,7 +2221,6 @@ struct mouse {
 
 namespace main {
 inline bool (*userproc)(HWND hw, UINT msg, WPARAM wp, LPARAM lp) = nullptr; // user-defined window procedure
-inline void (*dropped)(std::vector<std::filesystem::path> Files) = nullptr; // callback function for dropped files
 inline void terminate();
 namespace system {
 inline stopwatch timer;
@@ -2222,7 +2229,7 @@ inline std::vector<std::wstring> args;
 inline int mouse_wheel_delta{};
 inline int width{200}, height{200};
 inline int pad_left{}, pad_top{}, pad_width{}, pad_height{};
-// inline std::vector<std::filesystem::path> dropped_files{};
+inline std::vector<std::filesystem::path> dropped_files{};
 inline HINSTANCE hinstance{};
 inline HWND hwnd{};
 LRESULT CALLBACK wndproc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
@@ -2233,7 +2240,7 @@ LRESULT CALLBACK wndproc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
   switch (msg) {
   case WM_MOUSEMOVE:
     if (leave) ::TrackMouseEvent(&tme), leave = false;
-    _mm_storeu_epi32(&mpoint, [](auto a) { return xvpermute<0, 1, 4, 5>(a, xvsub(a, _mm_loadu_si128((__m128i*)&mpoint))); }(_mm_cvtepi16_epi32(_mm_loadu_si128((__m128i*)&lp))));
+    _mm_storeu_epi32(&mpoint, [](auto a) { return xvpermute<0, 1, 4, 5>(a, xvsub(a, _mm_loadu_si128((xrect*)&mpoint))); }(_mm_cvtepi16_epi32(_mm_loadu_si128((xrect*)&lp))));
     return (mouse::moved ? mouse::moved(mpoint.right, mpoint.bottom) : void(0)), 0;
   case WM_MOUSEWHEEL: return (mouse::wheeled ? mouse::wheeled(short((wp & 0xffff0000) >> 16)) : void(0)), 0;
   case WM_MOUSELEAVE:
@@ -2248,13 +2255,11 @@ LRESULT CALLBACK wndproc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
   case WM_RBUTTONUP: return key_up(key::keys[VK_RBUTTON]), 0;
   case WM_MBUTTONUP: return key_up(key::keys[VK_MBUTTON]), 0;
   case WM_DROPFILES:
-    if (!dropped) return ::DragFinish((HDROP)wp), 0;
-    std::vector<std::filesystem::path> dropped_files(::DragQueryFileW((HDROP)wp, 0xFFFFFFFF, nullptr, 0));
+    dropped_files.resize(::DragQueryFileW((HDROP)wp, 0xFFFFFFFF, nullptr, 0));
     for (UINT i{}; i < dropped_files.size(); ++i) {
       auto temp = std::wstring(::DragQueryFileW((HDROP)wp, i, nullptr, 0), L'\0');
       ::DragQueryFileW((HDROP)wp, i, temp.data(), (UINT)temp.size() + 1), dropped_files[i] = mv(temp);
     }
-    ::DragFinish((HDROP)wp), dropped(mv(dropped_files));
   case WM_CLOSE: return ::DestroyWindow(hw), 0;
   case WM_DESTROY: return ::PostQuitMessage(0), main::terminate(), 0;
   case WM_CREATE: tme.hwndTrack = hw, ::TrackMouseEvent(&tme);
@@ -3363,8 +3368,8 @@ public:
 class camera : public canvas {
 public:
 
-  matrix view;       // view matrix
-  matrix view_proj;  // view * projection matrix
+  xmatrix view;      // view matrix
+  xmatrix view_proj; // view * projection matrix
   vector offset{};   // offsets of camera lens form the center of body
   vector rotation{}; // radians to rotate the camera around the x, y, z-axis
   vector position{}; // position of the camera
@@ -4086,9 +4091,9 @@ void psmain(PSIN In, out float4 Out : SV_Target) {
       list{vector{-1, -1, -1}, vector{0.75f, 1}}, list{vector{-1, 1, -1}, vector{0.75f, 0}}, list{vector{1, -1, -1}, vector{0.625f, 1}},
     }; // clang-format on
     static auto rd = renderer<typepack<structured_buffer<list<vector, vector>>>,
-                              typepack<constant_buffer<matrix>>, typepack<>, typepack<>, typepack<yw::texture>>(hlsl);
+                              typepack<constant_buffer<xmatrix>>, typepack<>, typepack<>, typepack<yw::texture>>(hlsl);
     static auto sb = structured_buffer<list<vector, vector>>(vv.data(), 36);
-    static constant_buffer<matrix> cb;
+    static constant_buffer<xmatrix> cb;
     try {
       cam.rotation = Radians, cam.update();
       cb.from(cam.view_proj);
