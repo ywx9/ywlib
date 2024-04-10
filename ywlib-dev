@@ -1,0 +1,19 @@
+/// @file ywlib-dev
+/// @brief header for testing.
+
+#pragma once
+#include "ywlib"
+
+namespace yw::dev {
+
+/// @brief floating point number pair.
+struct fpnp {
+  float major{}, minor{};
+  constexpr fpnp() noexcept = default;
+  constexpr fpnp(const float v) noexcept : major(v) {}
+  constexpr fpnp(const double v) noexcept : major(float(v)), minor(float(v - double(major))) {}
+  friend constexpr auto operator+(const fpnp& a) noexcept { return a; }
+  friend constexpr auto operator-(const fpnp& a) noexcept { return fpnp(-a.major, -a.minor); }
+};
+
+}

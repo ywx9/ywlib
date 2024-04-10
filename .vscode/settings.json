@@ -88,9 +88,9 @@
     "map": "cpp",
     "xtree": "cpp",
     "functional": "cpp",
-    "ywlib": "cpp",
     "commdlg.h": "c",
-    "ywlib2": "cpp"
+    "ywlib": "cpp",
+    "ywlib-dev": "cpp"
   },
   "svg.preview.background": "dark-transparent"
 }
