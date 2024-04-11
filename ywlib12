@@ -1,0 +1,200 @@
+/// @file ywlib12
+/// @brief C++ library for DirectX12.
+
+#pragma once
+
+#include <stdexcept>
+
+namespace yw {
+
+/// @brief 64 byte object
+struct lxiv {
+};
+
+}
+
+#include <immintrin.h>
+
+#include <Windows.h>
+
+namespace yw {
+/// @brief manages mouse events.
+struct mouse;
+/// @brief manages keyboard events.
+namespace key {
+class key {
+  double last{};
+public:
+  void (*down)() = nullptr;
+  void (*up)(const double Duration) = nullptr;
+  explicit operator bool() const noexcept { return last; }
+};
+}
+}
+
+namespace yw::main::system {
+/// @brief manages the main window.
+struct Window {
+  inline static bool success{};        // true if the window is created successfully.
+  inline static HINSTANCE hinstance{}; // instance of the window.
+  inline static HWND hwnd{};           // handle of the window.
+  inline static bool hover{};          // true if the mouse is hovering over the window.
+  inline static RECT mouse{};          // position of the mouse.
+  inline static key::key keys[256];    // array of keys on the keyboard.
+  static LRESULT CALLBACK wndproc(HWND hw, UINT msg, WPARAM wp, LPARAM lp);
+  Window() {
+    static constexpr auto title = L"ywlib12";
+    static constexpr auto width = 640;
+    static constexpr auto height = 480;
+    static constexpr auto style = WS_OVERLAPPED | WS_SYSMENU | WS_CLIPCHILDREN;
+    hinstance = GetModuleHandleW(nullptr);
+    if (!hinstance) return;
+    WNDCLASSEXW wc{sizeof(WNDCLASSEXW), CS_OWNDC, wndproc, 0, 0, hinstance};
+    wc.hCursor = ::LoadCursorW(nullptr, IDC_ARROW), wc.lpszClassName = title;
+    if (!::RegisterClassExW(&wc)) return;
+    RECT rc{0, 0, width, height};
+    ::AdjustWindowRect(&rc, style, false);
+    hwnd = ::CreateWindowExW(WS_EX_ACCEPTFILES, title, title, style, CW_USEDEFAULT, CW_USEDEFAULT,
+                             rc.right - rc.left, rc.bottom - rc.top, nullptr, nullptr, hinstance, nullptr);
+    if (!hwnd) return;
+    ::ShowWindow(hwnd, SW_SHOW);
+    ::SetForegroundWindow(hwnd);
+    ::SetFocus(hwnd);
+    success = true;
+  }
+};
+}
+
+/// @brief manages keyboard events.
+namespace yw::key {
+inline key& lbutton = main::system::Window::keys[VK_LBUTTON];
+inline key& rbutton = main::system::Window::keys[VK_RBUTTON];
+inline key& mbutton = main::system::Window::keys[VK_MBUTTON];
+inline key& xbutton1 = main::system::Window::keys[VK_XBUTTON1];
+inline key& xbutton2 = main::system::Window::keys[VK_XBUTTON2];
+inline key& win = main::system::Window::keys[VK_LWIN];
+inline key& app = main::system::Window::keys[VK_APPS];
+inline key& back = main::system::Window::keys[VK_BACK];
+inline key& tab = main::system::Window::keys[VK_TAB];
+inline key& enter = main::system::Window::keys[VK_RETURN];
+inline key& escape = main::system::Window::keys[VK_ESCAPE];
+inline key& shift = main::system::Window::keys[VK_SHIFT];
+inline key& control = main::system::Window::keys[VK_CONTROL];
+inline key& alt = main::system::Window::keys[VK_MENU];
+inline key& space = main::system::Window::keys[VK_SPACE];
+inline key& pageup = main::system::Window::keys[VK_PRIOR];
+inline key& pagedown = main::system::Window::keys[VK_NEXT];
+inline key& end = main::system::Window::keys[VK_END];
+inline key& home = main::system::Window::keys[VK_HOME];
+inline key& left = main::system::Window::keys[VK_LEFT];
+inline key& up = main::system::Window::keys[VK_UP];
+inline key& right = main::system::Window::keys[VK_RIGHT];
+inline key& down = main::system::Window::keys[VK_DOWN];
+inline key& screenshot = main::system::Window::keys[VK_SNAPSHOT];
+inline key& insert = main::system::Window::keys[VK_INSERT];
+inline key& del = main::system::Window::keys[VK_DELETE];
+inline key& n0 = main::system::Window::keys['0'];
+inline key& n1 = main::system::Window::keys['1'];
+inline key& n2 = main::system::Window::keys['2'];
+inline key& n3 = main::system::Window::keys['3'];
+inline key& n4 = main::system::Window::keys['4'];
+inline key& n5 = main::system::Window::keys['5'];
+inline key& n6 = main::system::Window::keys['6'];
+inline key& n7 = main::system::Window::keys['7'];
+inline key& n8 = main::system::Window::keys['8'];
+inline key& n9 = main::system::Window::keys['9'];
+inline key& a = main::system::Window::keys['A'];
+inline key& b = main::system::Window::keys['B'];
+inline key& c = main::system::Window::keys['C'];
+inline key& d = main::system::Window::keys['D'];
+inline key& e = main::system::Window::keys['E'];
+inline key& f = main::system::Window::keys['F'];
+inline key& g = main::system::Window::keys['G'];
+inline key& h = main::system::Window::keys['H'];
+inline key& i = main::system::Window::keys['I'];
+inline key& j = main::system::Window::keys['J'];
+inline key& k = main::system::Window::keys['K'];
+inline key& l = main::system::Window::keys['L'];
+inline key& m = main::system::Window::keys['M'];
+inline key& n = main::system::Window::keys['N'];
+inline key& o = main::system::Window::keys['O'];
+inline key& p = main::system::Window::keys['P'];
+inline key& q = main::system::Window::keys['Q'];
+inline key& r = main::system::Window::keys['R'];
+inline key& s = main::system::Window::keys['S'];
+inline key& t = main::system::Window::keys['T'];
+inline key& u = main::system::Window::keys['U'];
+inline key& v = main::system::Window::keys['V'];
+inline key& w = main::system::Window::keys['W'];
+inline key& x = main::system::Window::keys['X'];
+inline key& y = main::system::Window::keys['Y'];
+inline key& z = main::system::Window::keys['Z'];
+inline key& np_0 = main::system::Window::keys[VK_NUMPAD0];
+inline key& np_1 = main::system::Window::keys[VK_NUMPAD1];
+inline key& np_2 = main::system::Window::keys[VK_NUMPAD2];
+inline key& np_3 = main::system::Window::keys[VK_NUMPAD3];
+inline key& np_4 = main::system::Window::keys[VK_NUMPAD4];
+inline key& np_5 = main::system::Window::keys[VK_NUMPAD5];
+inline key& np_6 = main::system::Window::keys[VK_NUMPAD6];
+inline key& np_7 = main::system::Window::keys[VK_NUMPAD7];
+inline key& np_8 = main::system::Window::keys[VK_NUMPAD8];
+inline key& np_9 = main::system::Window::keys[VK_NUMPAD9];
+inline key& np_mul = main::system::Window::keys[VK_MULTIPLY];
+inline key& np_add = main::system::Window::keys[VK_ADD];
+inline key& np_sub = main::system::Window::keys[VK_SUBTRACT];
+inline key& np_div = main::system::Window::keys[VK_DIVIDE];
+inline key& np_decimal = main::system::Window::keys[VK_DECIMAL];
+inline key& f1 = main::system::Window::keys[VK_F1];
+inline key& f2 = main::system::Window::keys[VK_F2];
+inline key& f3 = main::system::Window::keys[VK_F3];
+inline key& f4 = main::system::Window::keys[VK_F4];
+inline key& f5 = main::system::Window::keys[VK_F5];
+inline key& f6 = main::system::Window::keys[VK_F6];
+inline key& f7 = main::system::Window::keys[VK_F7];
+inline key& f8 = main::system::Window::keys[VK_F8];
+inline key& f9 = main::system::Window::keys[VK_F9];
+inline key& f10 = main::system::Window::keys[VK_F10];
+inline key& f11 = main::system::Window::keys[VK_F11];
+inline key& f12 = main::system::Window::keys[VK_F12];
+inline key& minus = main::system::Window::keys[VK_OEM_MINUS];
+inline key& plus = main::system::Window::keys[VK_OEM_PLUS];
+inline key& comma = main::system::Window::keys[VK_OEM_COMMA];
+inline key& period = main::system::Window::keys[VK_OEM_PERIOD];
+inline key& oem00 = main::system::Window::keys[VK_OEM_7];
+inline key& oem01 = main::system::Window::keys[VK_OEM_5];
+inline key& oem10 = main::system::Window::keys[VK_OEM_3];
+inline key& oem11 = main::system::Window::keys[VK_OEM_4];
+inline key& oem20 = main::system::Window::keys[VK_OEM_1];
+inline key& oem21 = main::system::Window::keys[VK_OEM_6];
+inline key& oem30 = main::system::Window::keys[VK_OEM_2];
+inline key& oem31 = main::system::Window::keys[VK_OEM_102];
+}
+
+/// @brief manages mouse events.
+struct yw::mouse {
+  inline static const auto& x = main::system::Window::mouse.left; // x-position of the mouse
+  inline static const auto& y = main::system::Window::mouse.top;  // y-position of the mouse
+  inline static const auto& left = key::lbutton;                  // left mouse button
+  inline static const auto& right = key::rbutton;                 // right mouse button
+  inline static const auto& middle = key::mbutton;                // middle mouse button
+  inline static const auto& extra1 = key::xbutton1;               // extra mouse button 1
+  inline static const auto& extra2 = key::xbutton2;               // extra mouse button 2
+  inline static const auto& hover = main::system::Window::hover;  // true if the mouse is hovering over the window
+  inline static void (*wheeled)(int delta) = nullptr;             // callback function for mouse wheel
+  inline static void (*moved)(int dx, int dy) = nullptr;          // callback function for mouse movement
+  /// @brief sets the new position of the mouse
+  mouse(const numerical auto X, const numerical auto Y) noexcept { ::SetCursorPos(int(X), int(Y)); }
+};
+
+LRESULT CALLBACK yw::main::system::Window::wndproc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
+  static TRACKMOUSEEVENT tme{sizeof(TRACKMOUSEEVENT), TME_LEAVE};
+  switch (msg) {
+  case WM_MOUSEMOVE:
+    if (!hover) ::TrackMouseEvent(&tme), hover = true;
+    auto mm = _mm_cvtepi16_epi32(_mm_loadu_si128(reinterpret_cast<const __m128i*>(&lp)));
+    auto nn = _mm_sub_epi32(mm, _mm_loadu_si128(reinterpret_cast<const __m128i*>(&mouse)));
+    mm = _mm_castps_si128(_mm_shuffle_ps(_mm_castsi128_ps(mm), _mm_castsi128_ps(nn), 0b01000100));
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(&mouse), mm);
+  }
+  return ::DefWindowProcW(hw, msg, wp, lp);
+}

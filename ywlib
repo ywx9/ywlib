@@ -1,9 +1,7 @@
 /// @file ywlib
+/// @brief C++20 library for DirectX 11 programming.
 
 #pragma once
-#ifndef ywlib
-#define ywlib 1
-
 
 #define ywlib_wrapper(A) \
   noexcept(noexcept(A))->decltype(A) requires requires { A; } { return A; }
@@ -23,179 +21,404 @@ namespace yw {
 
 using nat = unsigned long long;
 
+using cat1 = char;
+using cat2 = wchar_t;
+using uct1 = char8_t;
+using uct2 = char16_t;
+using uct4 = char32_t;
+using int1 = signed char;
+using int2 = short;
+using int4 = int;
+using int8 = long long;
+using nat1 = unsigned char;
+using nat2 = unsigned short;
+using nat4 = unsigned int;
+using nat8 = unsigned long long;
+using fat4 = float;
+using fat8 = double;
+
+/// @brief structure for representing null value.
 struct none {
+  /// @brief default constructor.
   constexpr none() noexcept = default;
+  /// @brief constructor.
   constexpr none(auto&&...) noexcept {}
+  /// @brief assignment operator.
   constexpr none& operator=(auto&&) noexcept { return *this; }
+  /// @brief conversion to bool.
   explicit constexpr operator bool() const noexcept { return false; }
+  /// @brief function call operator.
   constexpr none operator()(auto&&...) const noexcept { return {}; }
+  /// @brief equality operator.
   friend constexpr bool operator==(none, none) noexcept { return false; }
+  /// @brief three-way comparison operator.
   friend constexpr auto operator<=>(none, none) noexcept { return std::partial_ordering::unordered; }
+  /// @brief unary plus operator.
   friend constexpr none operator+(none) noexcept { return {}; }
+  /// @brief unary minus operator.
   friend constexpr none operator-(none) noexcept { return {}; }
+  /// @brief addition operator.
   friend constexpr none operator+(none, none) noexcept { return {}; }
+  /// @brief subtraction operator.
   friend constexpr none operator-(none, none) noexcept { return {}; }
+  /// @brief multiplication operator.
   friend constexpr none operator*(none, none) noexcept { return {}; }
+  /// @brief division operator.
   friend constexpr none operator/(none, none) noexcept { return {}; }
+  /// @brief addition assignment operator.
   friend constexpr none& operator+=(none& a, none) noexcept { return a; }
+  /// @brief subtraction assignment operator.
   friend constexpr none& operator-=(none& a, none) noexcept { return a; }
+  /// @brief multiplication assignment operator.
   friend constexpr none& operator*=(none& a, none) noexcept { return a; }
+  /// @brief division assignment operator.
   friend constexpr none& operator/=(none& a, none) noexcept { return a; }
 };
 
-template<typename T, auto V = none{}> struct trait {
+/// @brief returns `T` as it.
+template<typename T> using type = std::type_identity_t<T>;
+/// @brief checks if `T` is valid.
+template<typename T> concept valid = requires { typename type<T>; };
+
+/// @brief checks if all of `Ts...` is same as `T`.
+template<typename T, typename... Ts> concept same_as = (std::same_as<T, Ts> && ...);
+/// @brief checks if any of `Ts...` is same as `T`.
+template<typename T, typename... Ts> concept included_in = (std::same_as<T, Ts> || ...);
+/// @brief checks if `T` is derived from all of `Ts...`.
+template<typename T, typename... Ts> concept derived_from = (std::derived_from<T, Ts> && ...);
+/// @brief checks if `T` is explicitly convertible to all of `Ts...`.
+template<typename T, typename... Ts> concept castable_to = requires(T (&f)()) { ((static_cast<Ts>(f())), ...); };
+/// @brief checks if `T` is explicitly convertible to all of `Ts...` without throwing exceptions.
+template<typename T, typename... Ts> concept nt_castable_to = requires(T (&f)() noexcept) {
+  requires castable_to<T, Ts...>; { ((static_cast<Ts>(f())), ...) } noexcept; };
+/// @brief checks if `T` is implicitly convertible to all of `Ts...`.
+template<typename T, typename... Ts> concept convertible_to = requires {
+  requires castable_to<T, Ts...>; requires(std::convertible_to<T, Ts> && ...); };
+/// @brief checks if `T` is implicitly convertible to all of `Ts...` without throwing exceptions.
+template<typename T, typename... Ts> concept nt_convertible_to = requires {
+  requires nt_castable_to<T, Ts...>; requires convertible_to<T, Ts...>; };
+
+/// @brief structure for representing constant.
+template<auto V, typename T = decltype(V)>
+requires convertible_to<decltype(V), T>
+struct constant {
+  /// @brief type of constant.
   using type = T;
-  static constexpr auto value = V;
-  constexpr operator auto() const noexcept { return value; }
-  constexpr auto operator()() const noexcept { return value; }
+  /// @brief constant value.
+  static constexpr T value = V;
+  /// @brief conversion to value.
+  constexpr operator T() const noexcept { return value; }
+  /// @brief function call operator.
+  constexpr T operator()() const noexcept { return value; }
 };
 
-template<typename T> using type = typename trait<T>::type;
-template<typename T> concept valid = requires { typename type<T>; };
-template<typename T, typename... Ts> concept same_as = (std::same_as<T, Ts> && ...);
-template<typename T, typename... Ts> concept included_in = (std::same_as<T, Ts> || ...);
-template<typename T, typename... Ts> concept derived_from = (std::derived_from<T, Ts> && ...);
-template<typename T, typename... Ts> concept castable_to = requires(T (&f)()) { ((static_cast<Ts>(f())), ...); };
-template<typename T, typename... Ts> concept nt_castable_to = requires(T (&f)() noexcept) { requires castable_to<T, Ts...>; { ((static_cast<Ts>(f())), ...) } noexcept; };
-template<typename T, typename... Ts> concept convertible_to = requires { requires castable_to<T, Ts...>; requires(std::convertible_to<T, Ts> && ...); };
-template<typename T, typename... Ts> concept nt_convertible_to = requires { requires nt_castable_to<T, Ts...>; requires convertible_to<T, Ts...>; requires (std::is_nothrow_convertible_v<T, Ts> && ...); };
-template<auto V, typename T = decltype(V)> requires convertible_to<decltype(V), T> struct constant : trait<T, static_cast<T>(V)> {};
-
+/// @brief checks if `T` has `const` qualifier.
 template<typename T> concept is_const = std::is_const_v<T>;
+/// @brief checks if `T` has `volatile` qualifier.
 template<typename T> concept is_volatile = std::is_volatile_v<T>;
+/// @brief checks if `T` has `const` and `volatile` qualifiers.
 template<typename T> concept is_cv = is_const<T> && is_volatile<T>;
+/// @brief checks if `T` is a lvalue reference.
 template<typename T> concept is_lvref = std::is_lvalue_reference_v<T>;
+/// @brief checks if `T` is a rvalue reference.
 template<typename T> concept is_rvref = std::is_rvalue_reference_v<T>;
+/// @brief checks if `T` is a reference.
 template<typename T> concept is_reference = is_lvref<T> || is_rvref<T>;
+/// @brief checks if `T` is a pointer.
 template<typename T> concept is_pointer = std::is_pointer_v<T>;
+/// @brief checks if `T` is a bounded array.
 template<typename T> concept is_bounded_array = std::is_bounded_array_v<T>;
+/// @brief checks if `T` is an unbounded array.
 template<typename T> concept is_unbounded_array = std::is_unbounded_array_v<T>;
+/// @brief checks if `T` is an array.
 template<typename T> concept is_array = is_bounded_array<T> || is_unbounded_array<T>;
+/// @brief checks if `T` is a function.
 template<typename T> concept is_function = std::is_function_v<T>;
 
+/// @brief removes `const` and `volatile` qualifier from `T`.
 template<typename T> using remove_cv = std::remove_cv_t<T>;
+/// @brief removes `const` qualifier from `T`.
 template<typename T> using remove_const = std::remove_const_t<T>;
+/// @brief removes `volatile` qualifier from `T`.
 template<typename T> using remove_volatile = std::remove_volatile_t<T>;
+/// @brief removes reference from `T`.
 template<typename T> using remove_ref = std::remove_reference_t<T>;
+/// @brief removes reference and `const` and `volatile` qualifier from `T`.
 template<typename T> using remove_cvref = std::remove_cvref_t<T>;
+/// @brief removes extent from `T`.
+template<typename T> using remove_extent = std::remove_extent_t<T>;
+/// @brief removes all extents from `T`.
+template<typename T> using remove_all_extents = std::remove_all_extents_t<T>;
+/// @brief removes pointer from `T`.
 template<typename T> using remove_pointer = std::remove_pointer_t<T>;
 
 namespace _ { // clang-format off
-template<typename T, typename U = remove_cv<T>> struct _remove_all_pointers : trait<T> {};
+template<typename T, typename U = remove_cv<T>> struct _remove_all_pointers { using type = T; };
 template<typename T, typename U> struct _remove_all_pointers<T, U*> : _remove_all_pointers<U> {};
 template<typename T, typename U = remove_cv<T>> struct _memptr;
 template<typename T, typename M, typename C> struct _memptr<T, M C::*> { using m = M; using c = C; };
-template<typename T> struct _add_cv { using c = const T; using v = volatile T; using cv = const volatile T; };
-template<typename T> struct _add_cv<T&> { using c = const T&; using v = volatile T&; using cv = const volatile T&; };
-template<typename T> struct _add_cv<T&&> { using c = const T&&; using v = volatile T&&; using cv = const volatile T&&; };
-template<typename T> struct _add_pointer : trait<T> {};
-template<typename T> requires valid<T*> struct _add_pointer<T> : trait<T*> {};
-template<typename T> requires valid<T*> struct _add_pointer<T&> : trait<T*&> {};
-template<typename T> requires valid<T*> struct _add_pointer<T&&> : trait<T*&&> {};
-template<typename T, nat N> struct _add_extent : trait<T> {};
-template<typename T> requires valid<T[]> struct _add_extent<T, 0> : trait<T[]> {};
-template<typename T> requires valid<T[]> struct _add_extent<T&, 0> : trait<T (&)[]> {};
-template<typename T> requires valid<T[]> struct _add_extent<T&&, 0> : trait<T (&&)[]> {};
-template<typename T, nat N> requires valid<T[N]> struct _add_extent<T, N> : trait<T[N]> {};
-template<typename T, nat N> requires valid<T[N]> struct _add_extent<T&, N> : trait<T (&)[N]> {};
-template<typename T, nat N> requires valid<T[N]> struct _add_extent<T&&, N> : trait<T (&&)[N]> {};
+} // clang-format on
+
+/// @brief removes all pointers from `T`.
+template<typename T> using remove_all_pointers = typename _::_remove_all_pointers<T>::type;
+/// @brief returns `std::decay_t<T>`.
+template<typename T> using decay = std::decay_t<T>;
+
+/// @brief checks if `T` is a member pointer.
+template<typename T> concept is_memptr = is_pointer<T> && std::is_member_pointer_v<T>;
+/// @brief returns the member type of `T`.
+template<is_memptr T> using member_type = typename _::_memptr<T>::m;
+/// @brief returns the class type of `T`.
+template<is_memptr T> using class_type = typename _::_memptr<T>::c;
+/// @brief checks if `T` is a member function pointer.
+template<typename T> concept is_member_function_pointer = is_memptr<T> && is_function<member_type<T>>;
+/// @brief checks if `T` is a member object pointer.
+template<typename T> concept is_member_object_pointer = is_memptr<T> && !is_member_function_pointer<T>;
+
+/// @brief checks if `T` is an enumeration.
+template<typename T> concept is_enum = std::is_enum_v<T>;
+/// @brief checks if `T` is a class.
+template<typename T> concept is_class = std::is_class_v<T>;
+/// @brief checks if `T` is a union.
+template<typename T> concept is_union = std::is_union_v<T>;
+/// @brief checks if `T` is an abstract class.
+template<typename T> concept is_abstract = is_class<T> && std::is_abstract_v<T>;
+/// @brief checks if `T` is an aggregate.
+template<typename T> concept is_aggregate = is_class<T> && std::is_aggregate_v<T>;
+/// @brief checks if `T` is a trivially copyable class.
+template<typename T> concept is_empty = is_class<T> && std::is_empty_v<T>;
+/// @brief checks if `T` is a final class.
+template<typename T> concept is_final = is_class<T> && std::is_final_v<T>;
+/// @brief checks if `T` is a polymorphic class.
+template<typename T> concept is_polymorphic = is_class<T> && std::is_polymorphic_v<T>;
+/// @brief checks if `T` has a virtual destructor.
+template<typename T> concept has_virtual_destructor = is_class<T> && std::has_virtual_destructor_v<T>;
+/// @brief checks if `T` is standard layout.
+template<typename T> concept is_standard_layout = std::is_standard_layout_v<T>;
+/// @brief checks if `T` is trivially copyable.
+template<typename T> concept trivial = std::is_trivially_copyable_v<T>;
+
+/// @brief checks if `T` is `void`.
+template<typename T> concept is_void = same_as<remove_cv<T>, void>;
+/// @brief checks if `T` is `bool`.
+template<typename T> concept is_bool = same_as<remove_cv<T>, bool>;
+/// @brief checks if `T` is `none`.
+template<typename T> concept is_none = same_as<remove_cv<T>, none>;
+/// @brief checks if `T` is a character type.
+template<typename T> concept character = included_in<remove_cv<T>, char, wchar_t, char8_t, char16_t, char32_t>;
+/// @brief checks if `T` is an integer type.
+template<typename T> concept integral = std::integral<remove_cv<T>>;
+/// @brief checks if `T` is a integer or floating point type.
+template<typename T> concept arithmetic = integral<T> || std::floating_point<T>;
+/// @brief checks if `T` is a numerical type.
+template<typename T> concept numerical = nt_castable_to<T, int4, nat4, int8, nat8, fat4, fat8>;
+
+namespace _ { // clang-format off
+template<typename T> struct _add_cv { using c = const T; using v = volatile T; };
+template<typename T> struct _add_cv<T&> { using c = const T&; using v = volatile T&; };
+template<typename T> struct _add_cv<T&&> { using c = const T&&; using v = volatile T&&; };
+template<typename T> struct _add_pointer { using type = T; };
+template<typename T> requires valid<T*> struct _add_pointer<T> { using type = T*; };
+template<typename T> requires valid<T*> struct _add_pointer<T&> { using type = T*&; };
+template<typename T> requires valid<T*> struct _add_pointer<T&&> { using type = T*&&; };
+template<typename T, nat N> struct _add_extent { using type = T; };
+template<typename T> requires valid<T[]> struct _add_extent<T, 0> { using type = T[]; };
+template<typename T> requires valid<T[]> struct _add_extent<T&, 0> { using type = T (&)[]; };
+template<typename T> requires valid<T[]> struct _add_extent<T&&, 0> { using type = T (&&)[]; };
+template<typename T, nat N> requires valid<T[N]> struct _add_extent<T, N> { using type = T[N]; };
+template<typename T, nat N> requires valid<T[N]> struct _add_extent<T&, N> { using type = T (&)[N]; };
+template<typename T, nat N> requires valid<T[N]> struct _add_extent<T&&, N> { using type = T (&&)[N]; };
+} // clang-format on
+
+/// @brief adds `const` qualifier to `T`.
+template<typename T> using add_const = typename _::_add_cv<T>::c;
+/// @brief adds `volatile` qualifier to `T`.
+template<typename T> using add_volatile = typename _::_add_cv<T>::v;
+/// @brief adds `const` and `volatile` qualifier to `T`.
+template<typename T> using add_cv = add_const<add_volatile<T>>;
+/// @brief adds lvalue reference to `T`.
+template<typename T> using add_lvref = std::add_lvalue_reference_t<T>;
+/// @brief adds rvalue reference to `T`.
+template<typename T> using add_rvref = std::add_rvalue_reference_t<remove_ref<T>>;
+/// @brief adds forward reference to `T`.
+template<typename T> using add_fwref = std::add_rvalue_reference_t<T>;
+/// @brief adds pointer to `T`.
+template<typename T> using add_pointer = typename _::_add_pointer<T>::type;
+/// @brief adds extent to `T`.
+template<typename T, nat N> using add_extent = typename _::_add_extent<T, N>::type;
+
+/// @brief returns address of `Ref`.
+inline constexpr auto addressof = []<is_lvref T>(T&& Ref) noexcept { return __builtin_addressof(Ref); };
+/// @brief returns `Ref` as `const`.
+inline constexpr auto asconst = []<typename T>(T&& Ref) noexcept -> add_const<T&&> { return Ref; };
+/// @brief returns `Ref` as rvalue reference.
+inline constexpr auto mv = []<typename T>(T&& Ref) noexcept
+  -> decltype(auto) { return static_cast<add_rvref<T>>(Ref); };
+/// @brief returns `Ref` as forward reference.
+template<typename T> inline constexpr auto fwd = [](auto&& Ref) noexcept
+  -> decltype(auto) { return static_cast<T&&>(Ref); };
+/// @brief returns `std::declval<T>()`.
+template<typename T> inline constexpr auto declval = []() noexcept -> add_fwref<T> {};
+/// @brief returns `std::bit_cast<T>(Ref)`.
+template<trivial T> inline constexpr auto bitcast = [](const trivial auto& Ref) noexcept
+  requires(sizeof(T) == sizeof(Ref)) { return __builtin_bit_cast(T, Ref); };
+/// @brief returns `std::bit_ceil(Value)`.
+inline constexpr auto bit_ceil = [](const nat Value) noexcept { return std::bit_ceil(Value); };
+/// @brief returns `std::bit_floor(Value)`.
+inline constexpr auto bit_floor = [](const nat Value) noexcept { return std::bit_floor(Value); };
+/// @brief returns `std::bit_width(Value)`.
+inline constexpr auto bit_count = [](const nat Value) noexcept { return std::popcount(Value); };
+
+/// @brief checks if `T` is destructible.
+template<typename T> concept destructible = std::is_destructible_v<T>;
+/// @brief checks if `T` is destructible without throwing exceptions.
+template<typename T> concept nt_destructible = destructible<T> && std::destructible<T>;
+/// @brief checks if `T` is assignable from `A`.
+template<typename T, typename A> concept assignable = std::is_assignable_v<T, A>;
+/// @brief checks if `T` is assignable from `A` without throwing exceptions.
+template<typename T, typename A> concept nt_assignable =
+  requires { requires assignable<T, A>; requires std::is_nothrow_assignable_v<T, A>; };
+/// @brief checks if `T` is constructible from `As...`.
+template<typename T, typename... As> concept constructible = requires { T{declval<As>()...}; };
+/// @brief checks if `T` is constructible from `As...` without throwing exceptions.
+template<typename T, typename... As> concept nt_constructible =
+  requires { requires constructible<T, As...>; { T{declval<As>()...} } noexcept; };
+
+namespace _ { // clang-format off
 template<typename T, T I, typename... Ts> struct _type_switch : _type_switch<nat, I, Ts...> {};
 template<bool B, typename Tt, typename Tf> struct _type_switch<bool, B, Tt, Tf> : std::conditional<B, Tt, Tf> {};
 template<nat I, typename T, typename... Ts> struct _type_switch<nat, I, T, Ts...> : _type_switch<nat, I - 1, Ts...> {};
-template<typename T, typename... Ts> struct _type_switch<nat, 0, T, Ts...> : trait<T> {};
+template<typename T, typename... Ts> struct _type_switch<nat, 0, T, Ts...> { using type = T; };
 } // clang-format on
-
-template<typename T> using remove_all_pointers = typename _::_remove_all_pointers<T>::type;
-template<typename T> using remove_extent = std::remove_extent_t<T>;
-template<typename T> using remove_all_extents = std::remove_all_extents_t<T>;
-template<typename T> using decay = std::decay_t<T>;
-template<typename T> concept is_memptr = is_pointer<T> && std::is_member_pointer_v<T>;
-template<is_memptr T> using member_type = typename _::_memptr<T>::m;
-template<is_memptr T> using class_type = typename _::_memptr<T>::c;
-template<typename T> concept is_member_function_pointer = is_memptr<T> && is_function<member_type<T>>;
-template<typename T> concept is_member_object_pointer = is_memptr<T> && !is_member_function_pointer<T>;
-template<typename T> concept is_enum = std::is_enum_v<T>;
-template<typename T> concept is_class = std::is_class_v<T>;
-template<typename T> concept is_union = std::is_union_v<T>;
-template<typename T> concept is_abstract = is_class<T> && std::is_abstract_v<T>;
-template<typename T> concept is_aggregate = is_class<T> && std::is_aggregate_v<T>;
-template<typename T> concept is_empty = is_class<T> && std::is_empty_v<T>;
-template<typename T> concept is_final = is_class<T> && std::is_final_v<T>;
-template<typename T> concept is_polymorphic = is_class<T> && std::is_polymorphic_v<T>;
-template<typename T> concept has_virtual_destructor = is_class<T> && std::has_virtual_destructor_v<T>;
-template<typename T> concept trivial = std::is_trivially_copyable_v<T>;
-
-template<typename T> concept is_void = same_as<remove_cv<T>, void>;
-template<typename T> concept is_bool = same_as<remove_cv<T>, bool>;
-template<typename T> concept is_none = same_as<remove_cv<T>, none>;
-template<typename T> concept character = included_in<remove_cv<T>, char, wchar_t, char8_t, char16_t, char32_t>;
-template<typename T> concept integral = std::integral<remove_cv<T>>;
-template<typename T> concept arithmetic = integral<T> || std::floating_point<T>;
-template<typename T> concept numerical = nt_castable_to<T, int, long long, unsigned, unsigned long long, float, double>;
-template<typename T> using add_cv = typename _::_add_cv<T>::cv;
-template<typename T> using add_const = typename _::_add_cv<T>::c;
-template<typename T> using add_volatile = typename _::_add_cv<T>::v;
-template<typename T> using add_lvref = std::add_lvalue_reference_t<T>;
-template<typename T> using add_rvref = std::add_rvalue_reference_t<remove_ref<T>>;
-template<typename T> using add_fwref = std::add_rvalue_reference_t<T>;
-template<typename T> using add_pointer = typename _::_add_pointer<T>::type;
-template<typename T, nat N> using add_extent = typename _::_add_extent<T, N>::type;
-
-inline constexpr auto addressof = []<is_lvref T>(T&& Ref) noexcept { return std::addressof(Ref); };
-inline constexpr auto asconst = []<typename T>(T&& Ref) noexcept -> add_const<T&&> { return Ref; };
-inline constexpr auto mv = []<typename T>(T&& Ref) noexcept -> decltype(auto) { return static_cast<add_rvref<T>>(Ref); };
-template<typename T> inline constexpr auto fwd = [](auto&& Ref) noexcept -> decltype(auto) { return static_cast<T&&>(Ref); };
-template<typename T> inline constexpr auto declval = []() noexcept -> add_fwref<T> {};
-template<trivial T> inline constexpr auto bitcast = [](const trivial auto& Src) noexcept requires(sizeof(T) == sizeof(Src)) { return std::bit_cast<T>(Src); };
-inline constexpr auto bit_ceil = [](const nat A) noexcept { return std::bit_ceil(A); };
-inline constexpr auto bit_floor = [](const nat A) noexcept { return std::bit_floor(A); };
-inline constexpr auto bit_count = [](const nat A) noexcept { return std::popcount(A); };
-
-template<typename T> concept destructible = std::is_destructible_v<T>;
-template<typename T> concept nt_destructible = destructible<T> && std::destructible<T>;
-template<typename T, typename A> concept assignable = std::is_assignable_v<T, A>;
-template<typename T, typename... As> concept constructible = requires { T{declval<As>()...}; };
-template<typename T, typename A> concept nt_assignable = requires { requires assignable<T, A>; requires std::is_nothrow_assignable_v<T, A>; };
-template<typename T, typename... As> concept nt_constructible = requires { requires constructible<T, As...>; { T{declval<As>()...} } noexcept; };
-inline constexpr auto exchange = []<typename T, typename U = T>(T& A, U&& B) noexcept(nt_constructible<T, T>&& nt_assignable<T&, U>)
-                                   requires constructible<T, T> && assignable<T&, U> { if (auto a = mv(A); 1) return A = fwd<U>(B), mv(a); };
-template<castable_to<nat> auto I, typename... Ts> requires((is_bool<decltype(I)> && sizeof...(Ts) == 2) || (!is_bool<decltype(I)> && static_cast<nat>(I) < sizeof...(Ts))) using type_switch = typename _::_type_switch<decltype(I), I, Ts...>::type;
-template<castable_to<nat> auto I, auto... Vs> requires((is_bool<decltype(I)> && sizeof...(Vs) == 2) || (!is_bool<decltype(I)> && static_cast<nat>(I) < sizeof...(Vs))) inline constexpr auto value_switch = type_switch<I, constant<Vs>...>::value;
 
 // clang-format off
 
-/// @brief extracts `I`-th parameter
-template<castable_to<nat> auto I> inline constexpr auto parameter_switch = []<typename A, typename... As>(A&& Arg, As&&... Args) noexcept
-  -> decltype(auto) requires ((is_bool<decltype(I)> && sizeof...(Args) == 1) || (!is_bool<decltype(I)> && static_cast<nat>(I) <= sizeof...(Args))) {
+/// @brief assigns `B` to `A` and returns old value of `A`.
+inline constexpr auto exchange = []<typename T, typename U = T>(T& A, U&& B)
+  noexcept(nt_constructible<T, T>&& nt_assignable<T&, U>)
+  requires constructible<T, T> && assignable<T&, U> {
+  auto a = mv(A); A = fwd<U>(B); return a; };
+
+/// @brief returns `I`-th type from `Ts...`.
+template<convertible_to<nat> auto I, typename... Ts>
+requires ((is_bool<decltype(I)> && sizeof...(Ts) == 2) ||
+          (!is_bool<decltype(I)> && static_cast<nat>(I) < sizeof...(Ts)))
+using type_switch = typename _::_type_switch<decltype(I), I, Ts...>::type;
+
+/// @brief returns `I`-th value from `Vs...`.
+template<convertible_to<nat> auto I, auto... Vs>
+requires ((is_bool<decltype(I)> && sizeof...(Vs) == 2) ||
+          (!is_bool<decltype(I)> && static_cast<nat>(I) < sizeof...(Vs)))
+inline constexpr auto value_switch = type_switch<I, constant<Vs>...>::value;
+
+/// @brief returns `I`-th parameter from `Arg, Args...`.
+template<convertible_to<nat> auto I>
+inline constexpr auto parameter_switch = []<typename A, typename... As>(A&& Arg, As&&... Args) noexcept
+  -> decltype(auto) requires ((is_bool<decltype(I)> && sizeof...(Args) == 1) ||
+                              (!is_bool<decltype(I)> && static_cast<nat>(I) <= sizeof...(Args))) {
   if constexpr (is_bool<decltype(I)>) return parameter_switch<nat(!I)>(fwd<A>(Arg), fwd<Args>(Args)...);
-  else if constexpr (same_as<decltype(I), nat>) { if constexpr (I == 0) return fwd<A>(Arg); else return parameter_switch<I - 1>(fwd<Args>(Args)...); }
+  else if constexpr (same_as<decltype(I), nat>) { if constexpr (I == 0) return fwd<A>(Arg);
+                                                  else return parameter_switch<I - 1>(fwd<Args>(Args)...); }
   else return parameter_switch<nat(I)>(fwd<A>(Arg), fwd<Args>(Args)...); };
 
+/// @brief returns the argument as it.
+/// @note `pass{}(T&&) -> T&&`
 struct pass { template<typename T> constexpr T&& operator()(T&& a) const noexcept { return static_cast<T&&>(a); } };
+/// @brief performs as overload of functions.
+/// @example `constexpr overload f{[](int) {}, [](double) {}}; f(1); f(3.0);`
 template<typename... Fs> struct overload : public Fs... { using Fs::operator()...; };
 
 // clang-format on
 
+/// @brief counts the number of `true` in `Bs`.
 template<bool... Bs> inline constexpr nat counts = (nat(0) + ... + Bs);
+
+/// @brief counts the number of `false` before the first `true` in `Bs`.
 template<bool... Bs> inline constexpr nat inspects = 0;
 template<bool B, bool... Bs> inline constexpr nat inspects<B, Bs...> = B ? 0 : 1 + inspects<Bs...>;
 
+/// @brief adds `const` qualifier to `T` if `Src` has.
 template<typename T, typename Src> using copy_const = type_switch<is_const<Src>, add_const<T>, T>;
+/// @brief adds `volatile` qualifier to `T` if `Src` has.
 template<typename T, typename Src> using copy_volatile = type_switch<is_volatile<Src>, add_volatile<T>, T>;
+/// @brief adds `const` and/or `volatile` qualifier to `T` if `Src` has.
 template<typename T, typename Src> using copy_cv = copy_const<copy_volatile<T, Src>, Src>;
 
 namespace _ { // clang-format off
-template<typename T, typename U> struct _copy_reference : trait<remove_ref<T>> {};
-template<typename T, typename U> struct _copy_reference<T, U&> : trait<add_lvref<T>> {};
-template<typename T, typename U> struct _copy_reference<T, U&&> : trait<add_rvref<T>> {};
-template<typename T, typename U> struct _copy_extent : trait<T> {};
-template<typename T, is_array U> struct _copy_extent<T, U> : trait<add_extent<T, std::extent_v<U>>> {};
-template<typename T, typename U> struct _copy_pointer : trait<T> {};
-template<typename T, is_pointer U> struct _copy_pointer<T, U> : trait<copy_cv<add_pointer<T>, U>> {};
-template<typename T, typename U> struct _copy_all_extents : trait<T> {};
-template<typename T, is_array U> struct _copy_all_extents<T, U> : _copy_extent<typename _copy_all_extents<T, remove_extent<U>>::type, U> {};
-template<typename T, typename U> struct _copy_all_pointers : trait<T> {};
-template<typename T, is_pointer U> struct _copy_all_pointers<T, U> : _copy_pointer<typename _copy_all_pointers<T, remove_pointer<U>>::type, U> {};
+template<typename T, typename U> struct _copy_reference { using type = remove_ref<T>; };
+template<typename T, typename U> struct _copy_reference<T, U&> { using type = add_lvref<T>; };
+template<typename T, typename U> struct _copy_reference<T, U&&> { using type = add_rvref<T>; };
+template<typename T, typename U> struct _copy_extent { using type = T; };
+template<typename T, is_array U> struct _copy_extent<T, U> { using type = add_extent<T, std::extent_v<U>>; };
+template<typename T, typename U> struct _copy_pointer { using type = T; };
+template<typename T, is_pointer U> struct _copy_pointer<T, U> { using type = copy_cv<add_pointer<T>, U>; };
+template<typename T, typename U> struct _copy_all_extents { using type = T; };
+template<typename T, is_array U> struct _copy_all_extents<T, U>
+  : _copy_extent<typename _copy_all_extents<T, remove_extent<U>>::type, U> {};
+template<typename T, typename U> struct _copy_all_pointers { using type = T; };
+template<typename T, is_pointer U> struct _copy_all_pointers<T, U>
+  : _copy_pointer<typename _copy_all_pointers<T, remove_pointer<U>>::type, U> {};
+} // clang-format on
+
+/// @brief adds reference to `T` if `Src` has; otherwise, removes reference from `T`.
+template<typename T, typename Src> using copy_reference = typename _::_copy_reference<T, Src>::type;
+/// @brief copies cv-quailfiers and reference of `Src` to `T`.
+template<typename T, typename Src> using copy_cvref = copy_reference<copy_cv<T, remove_ref<Src>>, Src>;
+/// @brief copies extent of `Src` to `T`.
+template<typename T, typename Src> using copy_extent = typename _::_copy_extent<T, Src>::type;
+/// @brief copies pointer of `Src` to `T`.
+template<typename T, typename Src> using copy_pointer = type_switch<is_pointer<T>, copy_cv<add_pointer<T>, Src>, T>;
+
+/// @brief checks if `F` is invocable with `As...`.
+template<typename F, typename... As> concept invocable = std::invocable<F, As...>;
+/// @brief checks if `F` is invocable with `As...` without throwing exceptions.
+template<typename F, typename... As> concept nt_invocable =
+  invocable<F, As...> && std::is_nothrow_invocable_v<F, As...>;
+
+/// @brief performs `std::invoke(Func, Args...)`.
+/// @return `none` if the result of `std::invoke(Func, Args...)` is `void`; otherwise, returns as it.
+inline constexpr auto invoke = []<typename F, typename... As>(F&& Func, As&&... Args) noexcept(nt_invocable<F, As...>)
+  -> decltype(auto) requires invocable<F, As...> {
+  if constexpr (is_void<std::invoke_result<F, As...>>) return std::invoke(fwd<F>(Func), fwd<As>(Args)...), none{};
+  else return std::invoke(fwd<F>(Func), fwd<As>(Args)...); };
+
+/// @brief returns the result type of `invoke(F, As...)`.
+template<typename F, typename... As> using invoke_result = decltype(invoke(declval<F>(), declval<As>()...));
+
+/// @brief checks if `F` is invocable with `As...` and the result is convertible to `R`.
+template<typename F, typename R, typename... As> concept invocable_r =
+  invocable<F, As...> && convertible_to<invoke_result<F, As...>, R>;
+
+/// @brief checks if `F` is invocable with `As...` and the result is convertible to `R` without throwing exceptions.
+template<typename F, typename R, typename... As> concept nt_invocable_r =
+  nt_invocable<F, As...> && nt_convertible_to<invoke_result<F, As...>, R>;
+
+/// @brief checks if `F` is a predicate with `As...`.
+template<typename F, typename... As> concept predicate = invocable_r<F, bool, As...>;
+
+/// @brief invokes `F` with `As...` and returns the result as `R`.
+template<typename R> inline constexpr auto invoke_r =
+  []<typename F, typename... As>(F&& f, As&&... as) noexcept(nt_invocable_r<F, R, As...>) -> R
+  requires invocable_r<F, R, As...> { return static_cast<R>(invoke(fwd<F>(f), fwd<As>(as)...)); };
+
+}
+
+
+namespace std { // clang-format off
+template<> struct hash<yw::none> { constexpr auto operator()(yw::none) const noexcept { return 0; } };
+template<> struct common_type<yw::none, yw::none> : type_identity<yw::none> {};
+template<typename T> struct common_type<yw::none, T> : type_identity<yw::none> {};
+template<typename T> struct common_type<T, yw::none> : type_identity<yw::none> {};
+template<> struct formatter<yw::none, char> : formatter<const char*> {
+  template<typename Context> auto format(yw::none, Context& Ctx) { return formatter<const char*>::format("none", Ctx); } };
+template<> struct formatter<yw::none, wchar_t> : formatter<const wchar_t*> {
+  template<typename Context> auto format(yw::none, Context& Ctx) { return formatter<const wchar_t*>::format(L"none", Ctx); } };
+} // clang-format on
+
+namespace yw {
+
+
+namespace _ { // clang-format off
 template<typename... Ts> struct _common_type : trait<none> {};
 template<typename... Ts> requires valid<std::common_reference_t<Ts...>> struct _common_type<Ts...> : trait<std::common_reference_t<Ts...>> {};
 template<class T, template<class...> class Tm> struct _specialization_of : constant<false> {};
@@ -207,24 +430,6 @@ template<template<class, auto...> class Tm, class T, class U, auto... Vs, auto..
 template<template<auto, class...> class Tm, auto V, auto W, class... Ts, class... Us> struct _variation_of<Tm<V, Ts...>, Tm<W, Us...>> : constant<true> {};
 } // clang-format on
 
-template<typename T, typename Src> using copy_reference = typename _::_copy_reference<T, Src>::type;
-template<typename T, typename Src> using copy_cvref = copy_reference<copy_cv<T, remove_ref<Src>>, Src>;
-template<typename T, typename Src> using copy_extent = typename _::_copy_extent<T, Src>::type;
-template<typename T, typename Src> using copy_pointer = type_switch<is_pointer<T>, copy_cv<add_pointer<T>, Src>, T>;
-
-template<typename F, typename... As> concept invocable = std::invocable<F, As...>;
-template<typename F, typename... As> concept nt_invocable = invocable<F, As...> && std::is_nothrow_invocable_v<F, As...>;
-
-inline constexpr auto invoke = []<typename F, typename... As>(F&& Func, As&&... Args) noexcept(nt_invocable<F, As...>)
-  -> decltype(auto) requires invocable<F, As...> {
-  if constexpr (is_void<std::invoke_result<F, As...>>) return std::invoke(fwd<F>(Func), fwd<As>(Args)...), none{};
-  else return std::invoke(fwd<F>(Func), fwd<As>(Args)...); };
-
-template<typename F, typename... As> using invoke_result = decltype(invoke(declval<F>(), declval<As>()...));
-template<typename F, typename R, typename... As> concept invocable_r = invocable<F, As...> && convertible_to<invoke_result<F, As...>, R>;
-template<typename F, typename R, typename... As> concept nt_invocable_r = nt_invocable<F, As...> && nt_convertible_to<invoke_result<F, As...>, R>;
-template<typename F, typename... As> concept predicate = invocable_r<F, bool, As...>;
-template<typename R> inline constexpr auto invoke_r = []<typename F, typename... As>(F&& f, As&&... as) noexcept(nt_invocable_r<F, R, As...>) -> R requires invocable_r<F, R, As...> { return static_cast<R>(invoke(fwd<F>(f), fwd<As>(as)...)); };
 
 template<typename... Ts> using common_type = typename _::_common_type<Ts...>::type;
 template<typename... Ts> concept common_with = requires { requires !is_none<common_type<Ts...>>; requires (std::common_reference_with<common_type<Ts...>, Ts> && ...); };
@@ -1111,12 +1316,6 @@ template<tuple TpA, same_size_tuple<TpA> TpB> bool xvne(TpA&& a, TpB&& b) {
 inline bool xvlt(const __m128& a, const __m128& b) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(a, b)) < _mm_movemask_ps(_mm_cmplt_ps(a, b)); }
 inline bool xvlt(const __m256d& a, const __m256d& b) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(b, a, 17)) < _mm256_movemask_pd(_mm256_cmp_pd(a, b, 17)); }
 inline bool xvlt(const __m128i& a, const __m128i& b) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(a, b))) < _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(a, b))); }
-
-
-inline constexpr overload xvlt{
-  [](const __m128& A, const __m128& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) < _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
-  [](const __m256d& A, const __m256d& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) < _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
-  [](const __m128i& A, const __m128i& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) < _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
 
 inline constexpr overload xvle{
   [](const __m128& A, const __m128& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) <= _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
@@ -4162,5 +4361,3 @@ public:
 
 namespace yw {
 }
-
-#endif // ywlib
