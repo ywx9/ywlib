@@ -887,15 +887,47 @@ template<typename... Ts> struct tuple_size<yw::list<Ts...>> : std::integral_cons
 namespace yw {
 
 /// @brief applies `Func` to arguments with expanding tuples.
-class t_apply {
-  template<nat I, typename... Ts> static constexpr decltype(auto) call(Ts&&... Args) {
-    if constexpr (I == 0) return invoke(fwd<Ts>(Args)...);
+/// @example `apply(max, 1, list{2, 3, 4}, -2) -> 4`
+struct t_apply {
+private: // clang-format off
+public:
+  template<nat... Is, typename F, typename Tp> static constexpr decltype(auto) call(
+    sequence<Is...>, F&& Func, Tp&& Tuple) noexcept(noexcept(invoke(fwd<F>(Func), get<Is>(Tuple)...)))
+    requires requires { invoke(fwd<F>(Func), get<Is>(Tuple)...); } { return invoke(fwd<F>(Func), get<Is>(Tuple)...); }
+  template<typename F, typename Tp> static constexpr decltype(auto) call(F&& Func, Tp&& Tuple)
+    noexcept(noexcept(call(make_sequence_for<Tp>{}, fwd<F>(Func), fwd<Tp>(Tuple))))
+    requires requires { call(make_sequence_for<Tp>{}, fwd<F>(Func), fwd<Tp>(Tuple)); }
+  { return call(make_sequence_for<Tp>{}, fwd<F>(Func), fwd<Tp>(Tuple)); }
+  template<typename... Ts> static constexpr auto proc(list<Ts...>&& List) noexcept {
+    static constexpr auto i = inspects<tuple<Ts>...>;
+    if constexpr (i == sizeof...(Ts)) return mv(List); // there is no tuple.
+    if constexpr (i == 0) return [&]<nat... Is, nat... Js>(sequence<Is...>, sequence<Js...>) {
+      return proc(list<>::asref(get<Is>(get<0>(List))..., get<Js>(List)...));
+    }(make_sequence_for<type_switch<0, Ts...>>{}, make_sequence<sizeof...(Ts), 1>{}); // the first is tuple.
+    else if constexpr (i == sizeof...(Ts) - 1) return [&]<nat... Is, nat... Js>(sequence<Is...>, sequence<Js...>) {
+      return proc(list<>::asref(get<Is>(List)..., get<Js>(get<i>(List))...));
+    }(make_sequence<i>{}, make_sequence_for<type_switch<i, Ts...>>{}); // the last is tuple.
+    else return [&]<nat... Is, nat... Js, nat... Ks>(sequence<Is...>, sequence<Js...>, sequence<Ks...>) {
+      return proc(list<>::asref(get<Is>(List)..., get<Js>(get<i>(List))..., get<Ks>(List)...));
+    }(make_sequence<i>{}, make_sequence_for<type_switch<i, Ts...>>{}, make_sequence<sizeof...(Ts), i + 1>{}); // other.
   }
 public:
   /// @brief applies `Func` to arguments.
-  template<typename F, typename... Ts> constexpr auto operator()(F&& Func, Ts&&... Args) const;
+  template<typename F, typename... Ts> constexpr decltype(auto) operator()(F&& Func, Ts&&... Args) const
+    noexcept(noexcept(call(fwd<F>(Func), proc(list<>::asref(fwd<Ts>(Args)...)))))
+    requires requires { call(fwd<F>(Func), proc(list<>::asref(fwd<Ts>(Args)...))); }
+  { return call(fwd<F>(Func), proc(list<>::asref(fwd<Ts>(Args)...))); }
 };
-
+/// @brief applies `Func` to arguments with expanding tuples.
+inline constexpr t_apply apply;
+/// @brief checks if `Func` can be applied to `Ts`.
+template<typename Fn, typename... Ts> concept applyable = requires { apply(declval<Fn>(), declval<Ts>()...); };
+/// @brief checks if `Func` can be applied to `Ts` without throwing exceptions.
+template<typename Fn, typename... Ts> concept nt_applyable = requires {
+  requires applyable<Fn, Ts...>; { apply(declval<Fn>(), declval<Ts>()...) } noexcept; };
+/// @brief returns `decltype(apply(Func, Args...))`.
+template<typename Fn, typename... Ts> requires applyable<Fn, Ts...>
+using apply_result = decltype(apply(declval<Fn>(), declval<Ts>()...));
 }
 
 // namespace yw {
@@ -924,8 +956,6 @@ public:
 // class t_apply {
 //   template<nat I, nat... Is, typename F, typename... Ts> static constexpr auto call
 // public:
-//   template<typename F, typename... Ts> constexpr auto operator()(F&& Func, Ts&&... Args) const;
-
 //   template<nat... Is, typename Fn, typename Tp> constexpr auto operator()(sequence<Is...>, Fn&& Func, Tp&& Tuple) const ywlib_wrapper(invoke(fwd<Fn>(Func), get<Is>(fwd<Tp>(Tuple))...));
 //   template<typename Sq, typename Fn, typename Tp> constexpr auto operator()(Sq, Fn&& Func, Tp&& Tuple) const ywlib_wrapper((*this)(to_sequence<Sq, nat>{}, fwd<Fn>(Func), fwd<Tp>(Tuple)));
 //   template<typename Fn, typename Tp> constexpr auto operator()(Fn&& Func, Tp&& Tuple) const ywlib_wrapper((*this)(make_indices_for<Tp>{}, fwd<Fn>(Func), fwd<Tp>(Tuple)));
