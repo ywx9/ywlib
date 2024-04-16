@@ -901,7 +901,7 @@ public:
   template<typename... Ts> static constexpr auto proc(list<Ts...>&& List) noexcept {
     static constexpr auto i = inspects<tuple<Ts>...>;
     if constexpr (i == sizeof...(Ts)) return mv(List); // there is no tuple.
-    if constexpr (i == 0) return [&]<nat... Is, nat... Js>(sequence<Is...>, sequence<Js...>) {
+    else if constexpr (i == 0) return [&]<nat... Is, nat... Js>(sequence<Is...>, sequence<Js...>) {
       return proc(list<>::asref(get<Is>(get<0>(List))..., get<Js>(List)...));
     }(make_sequence_for<type_switch<0, Ts...>>{}, make_sequence<sizeof...(Ts), 1>{}); // the first is tuple.
     else if constexpr (i == sizeof...(Ts) - 1) return [&]<nat... Is, nat... Js>(sequence<Is...>, sequence<Js...>) {

@@ -47,7 +47,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
-      <DisableSpecificWarnings>4819;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <DisableSpecificWarnings>4819;4068;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <AdditionalOptions>/source-charset:utf-8 /Fa %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
@@ -63,7 +63,7 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
-      <DisableSpecificWarnings>4819;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <DisableSpecificWarnings>4819;4068;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <AdditionalOptions>/source-charset:utf-8 /Fa /O2 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
