@@ -78,7 +78,8 @@ template<typename T, typename... Ts> concept derived_from = (std::derived_from<T
 /// @brief checks if `T` is explicitly convertible to all of `Ts...`.
 template<typename T, typename... Ts> concept castable_to = requires(T (&f)()) { ((static_cast<Ts>(f())), ...); };
 /// @brief checks if `T` is explicitly convertible to all of `Ts...` without throwing exceptions.
-template<typename T, typename... Ts> concept nt_castable_to = castable_to<T, Ts...> && requires(T (&f)() noexcept) { ((static_cast<Ts>(f())), ...); };
+template<typename T, typename... Ts> concept nt_castable_to =
+  castable_to<T, Ts...> && requires(T (&f)() noexcept) { ((static_cast<Ts>(f())), ...); };
 /// @brief checks if `T` is implicitly convertible to all of `Ts...`.
 template<typename T, typename... Ts> concept convertible_to = castable_to<T, Ts...> && (std::convertible_to<T, Ts> && ...);
 /// @brief checks if `T` is implicitly convertible to all of `Ts...` without throwing exceptions.
@@ -484,18 +485,85 @@ namespace _::_get {
 template<nat I> void get(auto&&) = delete;
 template<nat I, typename T> inline constexpr auto pattern = []() -> int {
   if constexpr (is_bounded_array<remove_ref<T>>) {
-    if constexpr (I < std::extent_v<remove_ref<T>>) return 8; else return 16; }
-  else if constexpr (requires { get<I>(declval<T>()); }) return 1 | noexcept(get<I>(declval<T>())) * 8;
-  else if constexpr (requires { declval<T>().template get<I>(); }) return 2 | noexcept(declval<T>().template get<I>()) * 8;
-  else return I == 0 ? 12 : 16; }();
-template<nat I, typename T, nat P = pattern<I, T>> requires(P != 16)
-constexpr decltype(auto) call(T&& A) noexcept(bool(P & 4)) {
+    if constexpr (I < std::extent_v<remove_ref<T>>) return 16; else return 8; }
+  else if constexpr (requires { get<I>(declval<T>()); }) return 1 | noexcept(get<I>(declval<T>())) * 16;
+  else if constexpr (requires { declval<T>().template get<I>(); }) return 2 | noexcept(declval<T>().template get<I>()) * 16;
+  else return I == 0 ? 20 : 8; }();
+template<nat I, typename T, nat P = pattern<I, T>> requires(P != 8)
+constexpr decltype(auto) call(T&& A) noexcept(bool(P & 16)) {
   if constexpr ((P & 7) == 0) return static_cast<T&&>(A)[I];
   else if constexpr ((P & 7) == 1) return get<I>(static_cast<T&&>(A));
-  else if constexpr ((P & 7) == 2) return static_cast<T&&>(A).template get<I>(); }
-template<typename T> using extent = type_switch<
-  inspects<is_array<T>, requires { std::tuple_size<T>::value; }>, std::extent<T>, std::tuple_size<T>, constant<nat(0)>>;
+  else if constexpr ((P & 7) == 2) return static_cast<T&&>(A).template get<I>();
+  else if constexpr ((P & 7) == 4) return static_cast<T&&>(A); }
+template<typename T, nat I = (pattern<0, T> & 15)> struct extent : std::tuple_size<T> {};
+template<typename T> struct extent<T, 0> : std::extent<remove_ref<T>> {};
+template<typename T> struct extent<T, 4> : constant<1> {};
 }
+
+/// @brief returns `I`-th element from `Tuple`.
+template<nat I> inline constexpr auto get = []<typename T>(Tp&& Ref)
+  noexcept(noexcept(_::_get::call<I>(static_cast<Tp&&>(Ref)))) -> decltype(auto)
+  requires requires { _::_get::call<I>(static_cast<Tp&&>(Ref)) } { return _::_get::call<I>(static_cast<Tp&&>(Ref)); };
+
+/// @brief checks if `yw::get<I>(Tp)` is valid.
+template<typename Tp, nat I> concept gettable = requires { get<I>(declval<Tp>()); };
+/// @brief checks if `yw::get<I>(Tp)` is valid and noexcept.
+template<typename Tp, nat I> concept nt_gettable = requires { requires gettable<Tp, I>; { get<I>(declval<Tp>()) } noexcept; };
+/// @brief `I`-th element from `Tuple`.
+template<typename Tp, nat I> requires gettable<Tp, I> using element_t = decltype(get<I>(declval<Tp>()));
+/// @brief number of elements in `Tp`.
+template<typename Tp> inline constexpr nat extent = _::_get::extent<remove_ref<Tp>>::value;
+/// @brief checks if `T` has the same extent as `Tp`.
+template<typename T, typename... Ts> concept same_extent = ((extent<T> == extent<Ts>) && ...);
+
+namespace _ {
+template<typename S, typename T = none> struct _to_sequence : t_type<none> {};
+template<template<auto...> typename Tm, typename T, auto... Vs> struct _to_sequence<Tm<Vs...>, T> : t_type<sequence<T(Vs)...>> {};
+template<template<typename, auto...> typename Tm, typename T, typename U, auto... Vs> struct _to_sequence<Tm<U, Vs...>, T> : t_type<sequence<T(Vs)...>> {};
+template<template<auto...> typename Tm, auto... Vs> struct _to_sequence<Tm<Vs...>, none> : t_type<sequence<Vs...>> {};
+template<template<typename, auto...> typename Tm, typename U, auto... Vs> struct _to_sequence<Tm<U, Vs...>, none> : t_type<sequence<Vs...>> {};
+}
+/// @brief converts a sequence-like type to `yw::sequence` with the elements converted to `T` if `T` is not `none`.
+template<typename S, typename T = none> using to_sequence = typename _::_to_sequence<S, T>::type;
+/// @brief checks if `S` is a sequence-like type whose elements are convertible to `T`.
+template<typename S, typename T = none> concept sequence_of = variation_of<to_sequence<S, T>, sequence<>>;
+
+namespace _ {
+template<typename S, nat N> struct _sequence_for : constant<false> {};
+template<nat... Is, nat N> struct _sequence_for<sequence<Is...>, N> : constant<(lt(Is, N) && ...)> {};
+}
+/// @brief checks if `S` is a sequence-like type and all elements are less than the extent of `T`.
+template<typename S, typename T> concept sequence_for = _::_sequence_for<to_sequence<S>, extent<T>>::value;
+
+//////////////////////////////////////////////////////////////////////////////// make_sequence
+namespace _ {
+template<nat End, nat Begin = 0, auto Proj, nat... Vs> struct _make_sequence : _make_sequence<End, Begin + 1, Proj, Vs..., Proj(Begin)> {};
+template<nat End, auto Proj, nat... Vs> struct _make_sequence<End, End, Proj, Vs...> : t_type<sequence<Vs...>> {};
+}
+/// @brief makes `sequence` with elements from `Proj(Begin)` to `Proj(End - 1)`.
+template<nat End, nat Begin = 0, invocable<nat> auto Proj = pass{}> requires (Begin <= End)
+using make_sequence = typename _::_make_sequence<End, Begin, Proj>::type;
+/// @brief makes `sequence` with elements from `0` to `extent<Tp> - 1`.
+template<typename Tp> using make_sequence_for = make_sequence<extent<Tp>>;
+
+//////////////////////////////////////////////////////////////////////////////// extract_sequence
+namespace _ {
+template<nat I, nat N, typename S, nat... Is> struct _extract_sequece;
+template<nat I, nat N, bool... Bs, nat... Is> struct _extract_sequece<I, N, sequence<Bs...>, Is...>
+  : type_switch<value_switch<I, Bs...>, _extract_sequece<I + 1, N, sequence<Bs...>, Is..., I>,
+                                        _extract_sequece<I + 1, N, sequence<Bs...>, Is...>> {};
+}
+/// @brief makes `sequence` with indices where `Bs...` are `true`.
+template<typename S> using extract_sequece = typename _::_extract_sequece<0, N, S>::type;
+
+//////////////////////////////////////////////////////////////////////////////// common_element
+namespace _ {
+template<typename T, typename S> struct _common_element;
+template<typename T, nat... Is> struct _common_element<T, sequence<Is...>> : t_type<common_type<element_t<T, Is>...>> {};
+}
+/// @brief returns the common type of elements in `T`
+template<typename T> using common_element = typename _::_common_element<T, make_sequence_for<T>>::type;
+
 
 // clang-format on
 }
