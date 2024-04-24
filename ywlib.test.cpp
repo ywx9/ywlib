@@ -16,5 +16,9 @@ bool value_test = []() {
   return std::cout << std::endl, true;
 }();
 
+bool type_test = []() {
+
+}();
+
 int main() {
 }
