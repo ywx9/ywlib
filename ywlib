@@ -19,230 +19,461 @@ namespace yw {
 // clang-format off
 
 static_assert(sizeof(int*) == 8, "ywlib requires 64-bit platform");
-#define nat size_t ///< natural number type.
 
-using cat1 = char;               ///< 1-byte character type.
-using cat2 = wchar_t;            ///< 2-byte character type.
-using uct1 = char8_t;            ///< 1-byte unicode character type.
-using uct2 = char16_t;           ///< 2-byte unicode character type.
-using uct4 = char32_t;           ///< 4-byte unicode character type.
-using int1 = signed char;        ///< 1-byte signed integer type.
-using int2 = short;              ///< 2-byte signed integer type.
-using int4 = int;                ///< 4-byte signed integer type.
-using int8 = long long;          ///< 8-byte signed integer type.
-using nat1 = unsigned char;      ///< 1-byte unsigned integer type.
-using nat2 = unsigned short;     ///< 2-byte unsigned integer type.
-using nat4 = unsigned int;       ///< 4-byte unsigned integer type.
-using nat8 = unsigned long long; ///< 8-byte unsigned integer type.
-using fat4 = float;              ///< 4-byte floating-point type.
-using fat8 = double;             ///< 8-byte floating-point type.
+/// natural number type.
+#define nat size_t
 
-using sl_t = long;          ///< signed long.
-using ul_t = unsigned long; ///< unsigned long.
-using ld_t = long double;   ///< long double.
+/// 1-byte character type.
+using cat1 = char;
 
-using po_t = std::partial_ordering; ///< comparison result type for partial ordering.
-using wo_t = std::weak_ordering;    ///< comparison result type for weak ordering.
-using st_t = std::strong_ordering;  ///< comparison result type for strong ordering.
+/// 2-byte character type.
+using cat2 = wchar_t;
 
-inline constexpr nat npos = nat(-1);                                ///< npos.
-inline constexpr po_t unordered = std::partial_ordering::unordered; ///< unordered.
+/// 1-byte unicode character type.
+using uct1 = char8_t;
 
-consteval cat1 operator""_c1(nat n) { return static_cast<cat1>(n); }  ///< literal operator for `cat1`.
-consteval cat2 operator""_c2(nat n) { return static_cast<cat2>(n); }  ///< literal operator for `cat2`.
-consteval uct1 operator""_u1(nat n) { return static_cast<uct1>(n); }  ///< literal operator for `uct1`.
-consteval uct2 operator""_u2(nat n) { return static_cast<uct2>(n); }  ///< literal operator for `uct2`.
-consteval uct4 operator""_u4(nat n) { return static_cast<uct4>(n); }  ///< literal operator for `uct4`.
-consteval int1 operator""_i1(nat n) { return static_cast<int1>(n); }  ///< literal operator for `int1`.
-consteval int2 operator""_i2(nat n) { return static_cast<int2>(n); }  ///< literal operator for `int2`.
-consteval int4 operator""_i4(nat n) { return static_cast<int4>(n); }  ///< literal operator for `int4`.
-consteval int8 operator""_i8(nat n) { return static_cast<int8>(n); }  ///< literal operator for `int8`.
-consteval nat1 operator""_n1(nat n) { return static_cast<nat1>(n); }  ///< literal operator for `nat1`.
-consteval nat2 operator""_n2(nat n) { return static_cast<nat2>(n); }  ///< literal operator for `nat2`.
-consteval nat4 operator""_n4(nat n) { return static_cast<nat4>(n); }  ///< literal operator for `nat4`.
-consteval nat8 operator""_n8(nat n) { return static_cast<nat8>(n); }  ///< literal operator for `nat8`.
-consteval fat4 operator""_f4(nat n) { return static_cast<fat4>(n); }  ///< literal operator for `fat4`.
-consteval fat8 operator""_f8(nat n) { return static_cast<fat8>(n); }  ///< literal operator for `fat8`.
-consteval fat4 operator""_f4(ld_t n) { return static_cast<fat4>(n); } ///< literal operator for `fat4`.
-consteval fat8 operator""_f8(ld_t n) { return static_cast<fat8>(n); } ///< literal operator for `fat8`.
+/// 2-byte unicode character type.
+using uct2 = char16_t;
 
-template<typename T> struct t_type { using type = T; };              ///< holds a member type `type` that represents `T`.
-template<typename T> using type = typename t_type<T>::type;          ///< indirectly represents `T`.
-template<typename T> concept valid = requires { typename type<T>; }; ///< checks if `T` is a valid type.
+/// 4-byte unicode character type.
+using uct4 = char32_t;
 
-/// @brief checks if all of `Ts...` are the same as `T`.
+/// 1-byte signed integer type.
+using int1 = signed char;
+
+/// 2-byte signed integer type.
+using int2 = short;
+
+/// 4-byte signed integer type.
+using int4 = int;
+
+/// 8-byte signed integer type.
+using int8 = long long;
+
+/// 1-byte unsigned integer type.
+using nat1 = unsigned char;
+
+/// 2-byte unsigned integer type.
+using nat2 = unsigned short;
+
+/// 4-byte unsigned integer type.
+using nat4 = unsigned int;
+
+/// 8-byte unsigned integer type.
+using nat8 = unsigned long long;
+
+/// 4-byte floating-point type.
+using fat4 = float;
+
+/// 8-byte floating-point type.
+using fat8 = double;
+
+/// signed long.
+using sl_t = long;
+
+/// unsigned long.
+using ul_t = unsigned long;
+
+/// long double.
+using ld_t = long double;
+
+/// comparison result type for partial ordering.
+using po_t = std::partial_ordering;
+
+/// comparison result type for weak ordering.
+using wo_t = std::weak_ordering;
+
+/// comparison result type for strong ordering.
+using so_t = std::strong_ordering;
+
+/// npos.
+inline constexpr nat npos = nat(-1);
+
+/// unordered.
+inline constexpr po_t unordered = std::partial_ordering::unordered;
+
+/// literal operator for `cat1`.
+consteval cat1 operator""_c1(nat n) { return static_cast<cat1>(n); }
+
+/// literal operator for `cat2`.
+consteval cat2 operator""_c2(nat n) { return static_cast<cat2>(n); }
+
+/// literal operator for `uct1`.
+consteval uct1 operator""_u1(nat n) { return static_cast<uct1>(n); }
+
+/// literal operator for `uct2`.
+consteval uct2 operator""_u2(nat n) { return static_cast<uct2>(n); }
+
+/// literal operator for `uct4`.
+consteval uct4 operator""_u4(nat n) { return static_cast<uct4>(n); }
+
+/// literal operator for `int1`.
+consteval int1 operator""_i1(nat n) { return static_cast<int1>(n); }
+
+/// literal operator for `int2`.
+consteval int2 operator""_i2(nat n) { return static_cast<int2>(n); }
+
+/// literal operator for `int4`.
+consteval int4 operator""_i4(nat n) { return static_cast<int4>(n); }
+
+/// literal operator for `int8`.
+consteval int8 operator""_i8(nat n) { return static_cast<int8>(n); }
+
+/// literal operator for `nat1`.
+consteval nat1 operator""_n1(nat n) { return static_cast<nat1>(n); }
+
+/// literal operator for `nat2`.
+consteval nat2 operator""_n2(nat n) { return static_cast<nat2>(n); }
+
+/// literal operator for `nat4`.
+consteval nat4 operator""_n4(nat n) { return static_cast<nat4>(n); }
+
+/// literal operator for `nat8`.
+consteval nat8 operator""_n8(nat n) { return static_cast<nat8>(n); }
+
+/// literal operator for `fat4`.
+consteval fat4 operator""_f4(nat n) { return static_cast<fat4>(n); }
+
+/// literal operator for `fat8`.
+consteval fat8 operator""_f8(nat n) { return static_cast<fat8>(n); }
+
+/// literal operator for `fat4`.
+consteval fat4 operator""_f4(ld_t n) { return static_cast<fat4>(n); }
+
+/// literal operator for `fat8`.
+consteval fat8 operator""_f8(ld_t n) { return static_cast<fat8>(n); }
+
+/// holds a member type `type` that represents `T`.
+template<typename T> struct t_type { using type = T; };
+
+/// indirectly represents `T`.
+template<typename T> using type = typename t_type<T>::type;
+
+/// checks if `T` is a valid type.
+template<typename T> concept valid = requires { typename type<T>; };
+
+/// checks if all of `Ts...` are the same as `T`.
 template<typename T, typename... Ts> concept same_as = (std::same_as<T, Ts> && ...);
-/// @brief checks if any of `Ts...` are the same as `T`.
+
+/// checks if any of `Ts...` are the same as `T`.
 template<typename T, typename... Ts> concept included_in = (std::same_as<T, Ts> || ...);
-/// @brief checks if `T` is derived from all of `Ts...`.
+
+/// checks if `T` is derived from all of `Ts...`.
 template<typename T, typename... Ts> concept derived_from = (std::derived_from<T, Ts> && ...);
-/// @brief checks if `T` is explicitly convertible to all of `Ts...`.
+
+/// checks if `T` is explicitly convertible to all of `Ts...`.
 template<typename T, typename... Ts> concept castable_to = requires(T (&f)()) { ((static_cast<Ts>(f())), ...); };
-/// @brief checks if `T` is explicitly convertible to all of `Ts...` without throwing exceptions.
+
+/// checks if `T` is explicitly convertible to all of `Ts...` without throwing exceptions.
 template<typename T, typename... Ts> concept nt_castable_to =
   castable_to<T, Ts...> && requires(T (&f)() noexcept) { ((static_cast<Ts>(f())), ...); };
-/// @brief checks if `T` is implicitly convertible to all of `Ts...`.
-template<typename T, typename... Ts> concept convertible_to = castable_to<T, Ts...> && (std::convertible_to<T, Ts> && ...);
-/// @brief checks if `T` is implicitly convertible to all of `Ts...` without throwing exceptions.
-template<typename T, typename... Ts> concept nt_convertible_to = nt_castable_to<T, Ts...> && (std::convertible_to<T, Ts> && ...);
-/// @brief checks if `T` is numerical value type.
+
+/// checks if `T` is implicitly convertible to all of `Ts...`.
+template<typename T, typename... Ts> concept convertible_to =
+  castable_to<T, Ts...> && (std::convertible_to<T, Ts> && ...);
+
+/// checks if `T` is implicitly convertible to all of `Ts...` without throwing exceptions.
+template<typename T, typename... Ts> concept nt_convertible_to =
+  nt_castable_to<T, Ts...> && (std::convertible_to<T, Ts> && ...);
+
+/// checks if `T` is numerical value type.
 template<typename T> concept numerical = nt_convertible_to<T, int4, int8, nat4, nat8, fat4, fat8>;
 
-/// @brief represents a constant value.
+
+/// represents a constant value.
 template<auto V, typename T = decltype(V)> requires convertible_to<decltype(V), T> struct constant {
-  /// @brief constant value.
+
+  /// constant value.
   static constexpr T value = V;
-  /// @brief conversion to value.
+
+  /// conversion to value.
   consteval operator T() const noexcept { return value; }
-  /// @brief function call operator.
+
+  /// function call operator.
   consteval T operator()() const noexcept { return value; }
 };
 
-/// @brief represents a null-value.
+
+/// represents a null-value.
 /// @details Correspondence with the standard library:
 /// - `std::common_type<none, T> -> none`.
 /// - `Ostream << none{} -> "none"`.
 /// - `std::format("{}", none{}) -> "none"`.
 struct none {
-  /// @brief default constructor.
+
+  /// default constructor.
   constexpr none() noexcept = default;
-  /// @brief constructor. `none` can be constructed from any arguments.
+
+  /// constructor. `none` can be constructed from any arguments.
   constexpr none(auto&&...) noexcept {}
-  /// @brief assignment operator. `none` can be assigned from any type.
+
+  /// assignment operator. `none` can be assigned from any type.
   constexpr none& operator=(auto&&) noexcept { return *this; }
-  /// @brief explicit conversion to bool. `none` always returns `false`.
+
+  /// explicit conversion to bool. `none` always returns `false`.
   explicit constexpr operator bool() const noexcept { return false; }
-  /// @brief function call operator. `none` can be called with any arguments.
+
+  /// function call operator. `none` can be called with any arguments.
   constexpr none operator()(auto&&...) const noexcept { return {}; }
-  /// @brief equality operator. `none` can be compared with any type and always returns `false`.
+
+  /// equality operator. `none` can be compared with any type and always returns `false`.
   [[nodiscard]] constexpr friend bool operator==(none, none) noexcept { return false; }
-  /// @brief three-way comparison operator. `none` can be compared with any type and always returns `unordered`.
+
+  /// three-way comparison operator. `none` can be compared with any type and always returns `unordered`.
   [[nodiscard]] constexpr friend auto operator<=>(none, none) noexcept { return unordered; }
-  /// @brief unary plus operator.
+
+  /// unary plus operator.
   [[nodiscard]] constexpr friend none operator+(none) noexcept { return {}; }
-  /// @brief unary minus operator.
+
+  /// unary minus operator.
   [[nodiscard]] constexpr friend none operator-(none) noexcept { return {}; }
-  /// @brief addition operator. `none` can be added with any type and always returns `none`.
+
+  /// addition operator. `none` can be added with any type and always returns `none`.
   [[nodiscard]] constexpr friend none operator+(none, none) noexcept { return {}; }
-  /// @brief subtraction operator. `none` can be subtracted from any type and always returns `none`.
+
+  /// subtraction operator. `none` can be subtracted from any type and always returns `none`.
   [[nodiscard]] constexpr friend none operator-(none, none) noexcept { return {}; }
-  /// @brief multiplication operator. `none` can be multiplied with any type and always returns `none`.
+
+  /// multiplication operator. `none` can be multiplied with any type and always returns `none`.
   [[nodiscard]] constexpr friend none operator*(none, none) noexcept { return {}; }
-  /// @brief division operator. `none` can be divided by any type and always returns `none`.
+
+  /// division operator. `none` can be divided by any type and always returns `none`.
   [[nodiscard]] constexpr friend none operator/(none, none) noexcept { return {}; }
-  /// @brief addition assignment operator. `none` can be added with any type and does nothing.
+
+  /// addition assignment operator. `none` can be added with any type and does nothing.
   constexpr none& operator+=(none) noexcept { return *this; }
-  /// @brief subtraction assignment operator. `none` can be subtracted from any type and does nothing.
+
+  /// subtraction assignment operator. `none` can be subtracted from any type and does nothing.
   constexpr none& operator-=(none) noexcept { return *this; }
-  /// @brief multiplication assignment operator. `none` can be multiplied with any type and does nothing.
+
+  /// multiplication assignment operator. `none` can be multiplied with any type and does nothing.
   constexpr none& operator*=(none) noexcept { return *this; }
-  /// @brief division assignment operator. `none` can be divided by any type and does nothing.
+
+  /// division assignment operator. `none` can be divided by any type and does nothing.
   constexpr none& operator/=(none) noexcept { return *this; }
 };
 
-/// @brief represents a value as a double-precision floating-point number.
+
+/// represents a value as a double-precision floating-point number.
 /// @details Correspondence with the standard library:
 /// - `std::common_type<value, common_with<fat8>> -> fat8`.
 /// - `std::format("{}", value) -> (std::format("{}", fat8))`.
 struct value {
-  /// @brief value.
   fat8 _{};
-  /// @brief default constructor.
+
+  /// default constructor.
   constexpr value() noexcept = default;
-  /// @brief constructor with `none`. This constructs a NaN value.
+
+  /// constructor with `none`. This constructs a NaN value.
   constexpr value(none) noexcept : _(std::numeric_limits<fat8>::quiet_NaN()) {}
-  /// @brief constructor with a value.
-  template<numerical T> requires(!same_as<T, value>) constexpr value(T&& Value) noexcept : _(fat8(static_cast<T&&>(Value))) {}
-  /// @brief conversion to `fat8`.
+
+  /// constructor with a value.
+  template<numerical T> requires(!same_as<T, value>)
+  constexpr value(T&& Value) noexcept : _(fat8(static_cast<T&&>(Value))) {}
+
+  /// conversion to `fat8`.
   constexpr operator fat8&() & noexcept { return _; }
-  /// @brief conversion to `fat8`.
+
+  /// conversion to `fat8`.
   constexpr operator const fat8&() const& noexcept { return _; }
-  /// @brief conversion to `fat8`.
+
+  /// conversion to `fat8`.
   constexpr operator fat8&&() && noexcept { return static_cast<fat8&&>(_); }
-  /// @brief conversion to `fat8`.
+
+  /// conversion to `fat8`.
   constexpr operator const fat8&&() const&& noexcept { return static_cast<const fat8&&>(_); }
-  /// @brief explicit conversion.
-  template<typename T> requires castable_to<fat8, T> explicit constexpr operator T() const noexcept(nt_castable_to<fat8, T>) { return T(_); }
-  /// @brief addition assignment.
-  template<numerical T> constexpr value& operator+=(T&& Value) noexcept { return _ += double(static_cast<T&&>(Value)), *this; }
-  /// @brief subtraction assignment.
-  template<numerical T> constexpr value& operator-=(T&& Value) noexcept { return _ -= double(static_cast<T&&>(Value)), *this; }
-  /// @brief multiplication assignment.
-  template<numerical T> constexpr value& operator*=(T&& Value) noexcept { return _ *= double(static_cast<T&&>(Value)), *this; }
-  /// @brief division assignment.
-  template<numerical T> constexpr value& operator/=(T&& Value) noexcept { return _ /= double(static_cast<T&&>(Value)), *this; }
+
+  /// explicit conversion.
+  template<typename T> requires castable_to<fat8, T>
+  explicit constexpr operator T() const noexcept(nt_castable_to<fat8, T>) { return T(_); }
+
+  /// addition assignment.
+  template<numerical T> constexpr value& operator+=(T&& Value)
+    noexcept { return _ += double(static_cast<T&&>(Value)), *this; }
+
+  /// subtraction assignment.
+  template<numerical T> constexpr value& operator-=(T&& Value)
+    noexcept { return _ -= double(static_cast<T&&>(Value)), *this; }
+
+  /// multiplication assignment.
+  template<numerical T> constexpr value& operator*=(T&& Value)
+    noexcept { return _ *= double(static_cast<T&&>(Value)), *this; }
+
+  /// division assignment.
+  template<numerical T> constexpr value& operator/=(T&& Value)
+    noexcept { return _ /= double(static_cast<T&&>(Value)), *this; }
 };
 
-inline constexpr value e = std::numbers::e_v<fat8>;                  ///< Euler's number.
-inline constexpr value pi = std::numbers::pi_v<fat8>;                ///< pi.
-inline constexpr value phi = std::numbers::phi_v<fat8>;              ///< golden ratio.
-inline constexpr value gamma = std::numbers::egamma_v<fat8>;         ///< Euler-Mascheroni constant.
-inline constexpr value ln2 = std::numbers::ln2_v<fat8>;              ///< natural logarithm of 2.
-inline constexpr value ln10 = std::numbers::ln10_v<fat8>;            ///< natural logarithm of 10.
-inline constexpr value sqrt2 = std::numbers::sqrt2_v<fat8>;          ///< square root of 2.
-inline constexpr value sqrt3 = std::numbers::sqrt3_v<fat8>;          ///< square root of 3.
-inline constexpr value inf = std::numeric_limits<fat8>::infinity();  ///< infinity.
-inline constexpr value nan = std::numeric_limits<fat8>::quiet_NaN(); ///< NaN.
 
-template<typename T> concept is_const = std::is_const_v<T>;                           ///< checks if `T` has `const` qualifier.
-template<typename T> concept is_volatile = std::is_volatile_v<T>;                     ///< checks if `T` has `volatile` qualifier.
-template<typename T> concept is_cv = is_const<T> && is_volatile<T>;                   ///< checks if `T` has both cv-qualifiers.
-template<typename T> concept is_lvref = std::is_lvalue_reference_v<T>;                ///< checks if `T` is a lvalue reference.
-template<typename T> concept is_rvref = std::is_rvalue_reference_v<T>;                ///< checks if `T` is a rvalue reference.
-template<typename T> concept is_reference = is_lvref<T> || is_rvref<T>;               ///< checks if `T` is a reference.
-template<typename T> concept is_pointer = std::is_pointer_v<T>;                       ///< checks if `T` is a pointer.
-template<typename T> concept is_bounded_array = std::is_bounded_array_v<T>;           ///< checks if `T` is a bounded array.
-template<typename T> concept is_unbounded_array = std::is_unbounded_array_v<T>;       ///< checks if `T` is an unbounded array.
-template<typename T> concept is_array = is_bounded_array<T> || is_unbounded_array<T>; ///< checks if `T` is an array.
-template<typename T> concept is_function = std::is_function_v<T>;                     ///< checks if `T` is a function.
+/// Euler's number.
+inline constexpr value e = std::numbers::e_v<fat8>;
+
+/// pi.
+inline constexpr value pi = std::numbers::pi_v<fat8>;
+
+/// golden ratio.
+inline constexpr value phi = std::numbers::phi_v<fat8>;
+
+/// Euler-Mascheroni constant.
+inline constexpr value gamma = std::numbers::egamma_v<fat8>;
+
+/// natural logarithm of 2.
+inline constexpr value ln2 = std::numbers::ln2_v<fat8>;
+
+/// natural logarithm of 10.
+inline constexpr value ln10 = std::numbers::ln10_v<fat8>;
+
+/// square root of 2.
+inline constexpr value sqrt2 = std::numbers::sqrt2_v<fat8>;
+
+/// square root of 3.
+inline constexpr value sqrt3 = std::numbers::sqrt3_v<fat8>;
+
+/// infinity.
+inline constexpr value inf = std::numeric_limits<fat8>::infinity();
+
+/// NaN.
+inline constexpr value nan = std::numeric_limits<fat8>::quiet_NaN();
+
+/// checks if `T` has `const` qualifier.
+template<typename T> concept is_const = std::is_const_v<T>;
+
+/// checks if `T` has `volatile` qualifier.
+template<typename T> concept is_volatile = std::is_volatile_v<T>;
+
+/// checks if `T` has both cv-qualifiers.
+template<typename T> concept is_cv = is_const<T> && is_volatile<T>;
+
+/// checks if `T` is a lvalue reference.
+template<typename T> concept is_lvref = std::is_lvalue_reference_v<T>;
+
+/// checks if `T` is a rvalue reference.
+template<typename T> concept is_rvref = std::is_rvalue_reference_v<T>;
+
+/// checks if `T` is a reference.
+template<typename T> concept is_reference = is_lvref<T> || is_rvref<T>;
+
+/// checks if `T` is a pointer.
+template<typename T> concept is_pointer = std::is_pointer_v<T>;
+
+/// checks if `T` is a bounded array.
+template<typename T> concept is_bounded_array = std::is_bounded_array_v<T>;
+
+/// checks if `T` is an unbounded array.
+template<typename T> concept is_unbounded_array = std::is_unbounded_array_v<T>;
+
+/// checks if `T` is an array.
+template<typename T> concept is_array = is_bounded_array<T> || is_unbounded_array<T>;
+
+/// checks if `T` is a function.
+template<typename T> concept is_function = std::is_function_v<T>;
 
 namespace _ {
+template<typename T1, typename T2 = T1, typename T3 = T2, typename T4 = T3, typename T5 = T4>
+struct _types { using t1 = T1; using t2 = T2; using t3 = T3; using t4 = T4; using t5 = T5; };
 template<typename T, typename U = std::remove_cv_t<T>> struct _remove_all_pointers : t_type<T> {};
 template<typename T, typename U> struct _remove_all_pointers<T, U*> : _remove_all_pointers<U> {};
-}
-template<typename T> using remove_cv = std::remove_cv_t<T>;                                 ///< removes cv-qualifiers from `T`.
-template<typename T> using remove_const = std::remove_const_t<T>;                           ///< removes `const` qualifier from `T`.
-template<typename T> using remove_volatile = std::remove_volatile_t<T>;                     ///< removes `volatile` qualifier from `T`.
-template<typename T> using remove_ref = std::remove_reference_t<T>;                         ///< removes reference from `T`.
-template<typename T> using remove_cvref = std::remove_cvref_t<T>;                           ///< removes reference and cv-qualifiers from `T`.
-template<typename T> using remove_extent = std::remove_extent_t<T>;                         ///< removes extent from `T`.
-template<typename T> using remove_all_extents = std::remove_all_extents_t<T>;               ///< removes all extents from `T`.
-template<typename T> using remove_pointer = std::remove_pointer_t<T>;                       ///< removes pointer from `T`.
-template<typename T> using remove_all_pointers = typename _::_remove_all_pointers<T>::type; ///< removes all pointers from `T`.
-
-namespace _ {
 template<typename T, typename U = remove_cv<T>> struct _member_type;
-template<typename T, typename M, typename C> struct _member_type<T, M C::*> { using m = M; using c = C; };
+template<typename T, typename M, typename C> struct _member_type<T, M C::*> : _types<M, C> {};
 }
-template<typename T> concept is_memptr = is_pointer<T> && std::is_member_pointer_v<T>;                  ///< checks if `T` is a member pointer.
-template<is_memptr Mp> using member_type = typename _::_member_type<Mp>::m;                             ///< member type of a member pointer.
-template<is_memptr Mp> using class_type = typename _::_member_type<Mp>::c;                              ///< class type of a member pointer.
-template<typename T> concept is_member_function_pointer = is_memptr<T> && is_function<member_type<T>>;  ///< checks if `T` is a member function pointer.
-template<typename T> concept is_member_object_pointer = is_memptr<T> && !is_member_function_pointer<T>; ///< checks if `T` is a member object pointer.
 
-template<typename T> concept is_enum = std::is_enum_v<T>;                                              ///< checks if `T` is an enumeration.
-template<typename T> concept is_class = std::is_class_v<T>;                                            ///< checks if `T` is a class.
-template<typename T> concept is_union = std::is_union_v<T>;                                            ///< checks if `T` is a union.
-template<typename T> concept is_abstract = is_class<T> && std::is_abstract_v<T>;                       ///< checks if `T` is an abstract class.
-template<typename T> concept is_aggregate = is_class<T> && std::is_aggregate_v<T>;                     ///< checks if `T` is an aggregate.
-template<typename T> concept is_empty = is_class<T> && std::is_empty_v<T>;                             ///< checks if `T` is a trivially copyable class.
-template<typename T> concept is_final = is_class<T> && std::is_final_v<T>;                             ///< checks if `T` is a final class.
-template<typename T> concept is_polymorphic = is_class<T> && std::is_polymorphic_v<T>;                 ///< checks if `T` is a polymorphic class.
-template<typename T> concept has_virtual_destructor = is_class<T> && std::has_virtual_destructor_v<T>; ///< checks if `T` has a virtual destructor.
-template<typename T> concept is_standard_layout = std::is_standard_layout_v<T>;                        ///< checks if `T` is standard layout.
-template<typename T> concept trivial = std::is_trivially_copyable_v<T>;                                ///< checks if `T` is trivially copyable.
+/// removes cv-qualifiers from `T`.
+template<typename T> using remove_cv = std::remove_cv_t<T>;
 
-template<typename T> concept is_void = same_as<remove_cv<T>, void>;                               ///< checks if `T` is `void`.
-template<typename T> concept is_bool = same_as<remove_cv<T>, bool>;                               ///< checks if `T` is `bool`.
-template<typename T> concept is_none = same_as<remove_cv<T>, none>;                               ///< checks if `T` is `none`.
-template<typename T> concept character = included_in<remove_cv<T>, cat1, cat2, uct1, uct2, uct4>; ///< checks if `T` is a character type.
-template<typename T> concept integral = std::integral<remove_cv<T>>;                              ///< checks if `T` is an integer type.
-template<typename T> concept arithmetic = integral<T> || std::floating_point<T>;                  ///< checks if `T` is a integer or floating point type.
+/// removes `const` qualifier from `T`.
+template<typename T> using remove_const = std::remove_const_t<T>;
+
+/// removes `volatile` qualifier from `T`.
+template<typename T> using remove_volatile = std::remove_volatile_t<T>;
+
+/// removes reference from `T`.
+template<typename T> using remove_ref = std::remove_reference_t<T>;
+
+/// removes reference and cv-qualifiers from `T`.
+template<typename T> using remove_cvref = std::remove_cvref_t<T>;
+
+/// removes extent from `T`.
+template<typename T> using remove_extent = std::remove_extent_t<T>;
+
+/// removes all extents from `T`.
+template<typename T> using remove_all_extents = std::remove_all_extents_t<T>;
+
+/// removes pointer from `T`.
+template<typename T> using remove_pointer = std::remove_pointer_t<T>;
+
+/// removes all pointers from `T`.
+template<typename T> using remove_all_pointers = typename _::_remove_all_pointers<T>::type;
+
+/// checks if `T` is a member pointer.
+template<typename T> concept is_memptr = is_pointer<T> && std::is_member_pointer_v<T>;
+
+/// member type of a member pointer.
+template<is_memptr Mp> using member_type = typename _::_member_type<Mp>::t1;
+
+/// class type of a member pointer.
+template<is_memptr Mp> using class_type = typename _::_member_type<Mp>::t2;
+
+/// checks if `T` is a member function pointer.
+template<typename T> concept is_member_function_pointer = is_memptr<T> && is_function<member_type<T>>;
+
+/// checks if `T` is a member object pointer.
+template<typename T> concept is_member_object_pointer = is_memptr<T> && !is_member_function_pointer<T>;
+
+/// checks if `T` is an enumeration.
+template<typename T> concept is_enum = std::is_enum_v<T>;
+
+/// checks if `T` is a class.
+template<typename T> concept is_class = std::is_class_v<T>;
+
+/// checks if `T` is a union.
+template<typename T> concept is_union = std::is_union_v<T>;
+
+/// checks if `T` is an abstract class.
+template<typename T> concept is_abstract = is_class<T> && std::is_abstract_v<T>;
+
+/// checks if `T` is an aggregate.
+template<typename T> concept is_aggregate = is_class<T> && std::is_aggregate_v<T>;
+
+/// checks if `T` is a trivially copyable class.
+template<typename T> concept is_empty = is_class<T> && std::is_empty_v<T>;
+
+/// checks if `T` is a final class.
+template<typename T> concept is_final = is_class<T> && std::is_final_v<T>;
+
+/// checks if `T` is a polymorphic class.
+template<typename T> concept is_polymorphic = is_class<T> && std::is_polymorphic_v<T>;
+
+/// checks if `T` has a virtual destructor.
+template<typename T> concept has_virtual_destructor = is_class<T> && std::has_virtual_destructor_v<T>;
+
+/// checks if `T` is standard layout.
+template<typename T> concept is_standard_layout = std::is_standard_layout_v<T>;
+
+/// checks if `T` is trivially copyable.
+template<typename T> concept trivial = std::is_trivially_copyable_v<T>;
+
+/// checks if `T` is `void`.
+template<typename T> concept is_void = same_as<remove_cv<T>, void>;
+
+/// checks if `T` is `bool`.
+template<typename T> concept is_bool = same_as<remove_cv<T>, bool>;
+
+/// checks if `T` is `none`.
+template<typename T> concept is_none = same_as<remove_cv<T>, none>;
+
+/// checks if `T` is a character type.
+template<typename T> concept character = included_in<remove_cv<T>, cat1, cat2, uct1, uct2, uct4>;
+
+/// checks if `T` is an integer type.
+template<typename T> concept integral = std::integral<remove_cv<T>>;
+
+/// checks if `T` is a integer or floating point type.
+template<typename T> concept arithmetic = integral<T> || std::floating_point<T>;
 
 namespace _{
-template<typename T> struct _add_cv { using c = const T; using v = volatile T; using cv = const volatile T; };
-template<typename T> struct _add_cv<T&> { using c = const T&; using v = volatile T&; using cv = const volatile T&; };
-template<typename T> struct _add_cv<T&&> { using c = const T&&; using v = volatile T&&; using cv = const volatile T&&; };
+template<typename T> struct _add_cv : _types<const T, volatile T, const volatile T> {};
+template<typename T> struct _add_cv<T&> : _types<const T&, volatile T&, const volatile T&> {};
+template<typename T> struct _add_cv<T&&> : _types<const T&&, volatile T&&, const volatile T&&> {};
 template<typename T> struct _add_pointer : t_type<T> {};
 template<typename T> requires valid<T*> struct _add_pointer<T> : t_type<T*> {};
 template<typename T> requires valid<T*> struct _add_pointer<T&> : t_type<T*&> {};
@@ -255,45 +486,77 @@ template<typename T> requires valid<T[]> struct _add_extent<T, 0> : t_type<T[]> 
 template<typename T> requires valid<T[]> struct _add_extent<T&, 0> : t_type<T(&)[]> {};
 template<typename T> requires valid<T[]> struct _add_extent<T&&, 0> : t_type<T(&&)[]> {};
 }
-template<typename T> using add_const = typename _::_add_cv<T>::c;                   ///< adds `const` qualifier to `T`.
-template<typename T> using add_volatile = typename _::_add_cv<T>::v;                ///< adds `volatile` qualifier to `T`.
-template<typename T> using add_cv = add_const<add_volatile<T>>;                     ///< adds `const` and `volatile` qualifier to `T`.
-template<typename T> using add_lvref = std::add_lvalue_reference_t<T>;              ///< adds lvalue reference to `T`.
-template<typename T> using add_rvref = std::add_rvalue_reference_t<remove_ref<T>>;  ///< adds rvalue reference to `T`.
-template<typename T> using add_fwref = std::add_rvalue_reference_t<T>;              ///< adds forward reference to `T`.
-template<typename T> using add_pointer = typename _::_add_pointer<T>::type;         ///< adds pointer to `T`.
-template<typename T, nat N> using add_extent = typename _::_add_extent<T, N>::type; ///< adds extent to `T`.
 
-inline consteval auto cev(auto a) noexcept { return a; }                               ///< forces constant evaluation.
-template<typename T> inline constexpr auto declval = []() noexcept -> add_fwref<T> {}; ///< returns a reference to `T`.
+/// adds `const` qualifier to `T`.
+template<typename T> using add_const = typename _::_add_cv<T>::t1;
 
-/// @brief checks if `T` is destructible.
+/// adds `volatile` qualifier to `T`.
+template<typename T> using add_volatile = typename _::_add_cv<T>::t2;
+
+/// adds `const` and `volatile` qualifier to `T`.
+template<typename T> using add_cv = typename _::_add_cv<T>::t3;
+
+/// adds lvalue reference to `T`.
+template<typename T> using add_lvref = std::add_lvalue_reference_t<T>;
+
+/// adds rvalue reference to `T`.
+template<typename T> using add_rvref = std::add_rvalue_reference_t<remove_ref<T>>;
+
+/// adds forward reference to `T`.
+template<typename T> using add_fwref = std::add_rvalue_reference_t<T>;
+
+/// adds pointer to `T`.
+template<typename T> using add_pointer = typename _::_add_pointer<T>::type;
+
+/// adds extent to `T`.
+template<typename T, nat N> using add_extent = typename _::_add_extent<T, N>::type;
+
+/// forces constant evaluation.
+inline consteval auto cev(auto a) noexcept { return a; }
+
+/// returns a reference to `T`.
+template<typename T> inline constexpr auto declval = []() noexcept -> add_fwref<T> {};
+
+/// checks if `T` is destructible.
 template<typename T> concept destructible = std::is_destructible_v<T>;
-/// @brief checks if `T` is destructible without throwing exceptions.
-template<typename T> concept nt_destructible = destructible<T> && std::destructible<T>;
-/// @brief checks if `T` is assignable from `A`.
-template<typename T, typename A> concept assignable = std::is_assignable_v<T, A>;
-/// @brief checks if `T` is assignable from `A` without throwing exceptions.
-template<typename T, typename A> concept nt_assignable =
-  requires { requires assignable<T, A>; requires std::is_nothrow_assignable_v<T, A>; };
-/// @brief checks if `T` is constructible from `As...`.
-template<typename T, typename... As> concept constructible = requires { T{declval<As>()...}; };
-/// @brief checks if `T` is constructible from `As...` without throwing exceptions.
-template<typename T, typename... As> concept nt_constructible =
-  requires { requires constructible<T, As...>; { T{declval<As>()...} } noexcept; };
 
-/// @brief returns address of `Ref`.
+/// checks if `T` is destructible without throwing exceptions.
+template<typename T> concept nt_destructible = destructible<T> && std::destructible<T>;
+
+/// checks if `T` is assignable from `A`.
+template<typename T, typename A> concept assignable = std::is_assignable_v<T, A>;
+
+/// checks if `T` is assignable from `A` without throwing exceptions.
+template<typename T, typename A> concept nt_assignable =
+  assignable<T, A> && requires { requires std::is_nothrow_assignable_v<T, A>; };
+
+/// checks if `T` is constructible from `As...`.
+template<typename T, typename... As> concept constructible = requires { T{declval<As>()...}; };
+
+/// checks if `T` is constructible from `As...` without throwing exceptions.
+template<typename T, typename... As> concept nt_constructible =
+  constructible<T, As...> && requires { { T{declval<As>()...} } noexcept; };
+
+/// returns address of `Ref`.
 inline constexpr auto addressof = []<is_lvref T>(T&& Ref) noexcept { return __builtin_addressof(Ref); };
-/// @brief returns `Ref` as `const`.
+
+/// returns `Ref` as `const`.
 inline constexpr auto asconst = []<typename T>(T&& Ref) noexcept -> add_const<T&&> { return Ref; };
-/// @brief returns `Ref` as rvalue reference.
-inline constexpr auto mv = []<typename T>(T&& Ref) noexcept -> decltype(auto) { return static_cast<add_rvref<T>>(Ref); };
-/// @brief returns `Ref` as forward reference.
-template<typename T> inline constexpr auto fwd = [](auto&& Ref) noexcept -> decltype(auto) { return static_cast<T&&>(Ref); };
-/// @brief assigns `B` to `A` and returns old value of `A`.
-inline constexpr auto exchange = []<typename T, typename U = T>(T& A, U&& B) noexcept(nt_constructible<T, T>&& nt_assignable<T&, U>)
+
+/// returns `Ref` as rvalue reference.
+inline constexpr auto mv = []<typename T>(T&& Ref) noexcept
+  -> decltype(auto) { return static_cast<add_rvref<T>>(Ref); };
+
+/// returns `Ref` as forward reference.
+template<typename T> inline constexpr auto fwd = [](auto&& Ref) noexcept
+  -> decltype(auto) { return static_cast<T&&>(Ref); };
+
+/// assigns `B` to `A` and returns old value of `A`.
+inline constexpr auto exchange = []<typename T, typename U = T>(T& A, U&& B)
+  noexcept(nt_constructible<T, T>&& nt_assignable<T&, U>)
   requires constructible<T, T> && assignable<T&, U> { auto a = mv(A); A = fwd<U>(B); return a; };
-/// @brief returns `std::bit_cast<T>(Ref)`.
+
+/// returns `std::bit_cast<T>(Ref)`.
 template<trivial T> inline constexpr auto bitcast = [](const trivial auto& Ref) noexcept
   requires (sizeof(T) == sizeof(Ref)) { return __builtin_bit_cast(T, Ref); };
 
@@ -303,43 +566,49 @@ template<bool B, typename Tt, typename Tf> struct _type_switch<bool, B, Tt, Tf> 
 template<nat I, typename T, typename... Ts> struct _type_switch<nat, I, T, Ts...> : _type_switch<nat, I - 1, Ts...> {};
 template<typename T, typename... Ts> struct _type_switch<nat, 0, T, Ts...> : t_type<T> {};
 }
-/// @brief returns `I`-th type from `Ts...`.
+
+/// returns `I`-th type from `Ts...`.
 template<convertible_to<nat> auto I, typename... Ts>
 requires ((is_bool<decltype(I)> && sizeof...(Ts) == 2) ||
           (!is_bool<decltype(I)> && static_cast<nat>(I) < sizeof...(Ts)))
 using type_switch = typename _::_type_switch<decltype(I), I, Ts...>::type;
-/// @brief returns `I`-th value from `Vs...`.
+
+/// returns `I`-th value from `Vs...`.
 template<convertible_to<nat> auto I, auto... Vs>
 requires ((is_bool<decltype(I)> && sizeof...(Vs) == 2) ||
           (!is_bool<decltype(I)> && static_cast<nat>(I) < sizeof...(Vs)))
 inline constexpr auto value_switch = type_switch<I, constant<Vs>...>::value;
-/// @brief returns `I`-th parameter from `Arg, Args...`.
-template<convertible_to<nat> auto I>
-inline constexpr auto parameter_switch = []<typename A, typename... As>(A&& Arg, As&&... Args) noexcept -> decltype(auto)
-  requires ((is_bool<decltype(I)> && sizeof...(As) == 1) || (!is_bool<decltype(I)> && static_cast<nat>(I) <= sizeof...(As))) {
+
+/// returns `I`-th parameter from `Arg, Args...`.
+template<convertible_to<nat> auto I> inline constexpr auto parameter_switch =
+  []<typename A, typename... As>(A&& Arg, As&&... Args) noexcept -> decltype(auto)
+  requires ((is_bool<decltype(I)> && sizeof...(As) == 1) ||
+            (!is_bool<decltype(I)> && static_cast<nat>(I) <= sizeof...(As))) {
   if constexpr (is_bool<decltype(I)>) return parameter_switch<nat(!I)>(fwd<A>(Arg), fwd<As>(Args)...);
   else if constexpr (same_as<decltype(I), nat>) {
     if constexpr (I == 0) return fwd<A>(Arg); else return parameter_switch<I - 1>(fwd<As>(Args)...); }
   else return parameter_switch<nat(I)>(fwd<A>(Arg), fwd<As>(Args)...); };
 
-/// @brief returns the argument as it.
+/// returns the argument as it.
 struct pass { template<typename T> constexpr T&& operator()(T&& a) const noexcept { return static_cast<T&&>(a); } };
 
-/// @brief overloads functions.
+/// overloads functions.
 template<typename... Fs> struct overload : public Fs... { using Fs::operator()...; };
 
-/// @brief counts the number of `true` in `Bs`.
+/// counts the number of `true` in `Bs`.
 template<bool... Bs> inline constexpr nat counts = (nat(0) + ... + Bs);
 
-/// @brief counts the number of `false` before the first `true` in `Bs`.
+/// counts the number of `false` before the first `true` in `Bs`.
 template<bool... Bs> inline constexpr nat inspects = 0;
 template<bool B, bool... Bs> inline constexpr nat inspects<B, Bs...> = B ? 0 : 1 + inspects<Bs...>;
 
-/// @brief adds `const` qualifier to `T` if `Src` has.
+/// adds `const` qualifier to `T` if `Src` has.
 template<typename T, typename Src> using copy_const = type_switch<is_const<Src>, add_const<T>, T>;
-/// @brief adds `volatile` qualifier to `T` if `Src` has.
+
+/// adds `volatile` qualifier to `T` if `Src` has.
 template<typename T, typename Src> using copy_volatile = type_switch<is_volatile<Src>, add_volatile<T>, T>;
-/// @brief adds `const` and/or `volatile` qualifier to `T` if `Src` has.
+
+/// adds `const` and/or `volatile` qualifier to `T` if `Src` has.
 template<typename T, typename Src> using copy_cv = copy_const<copy_volatile<T, Src>, Src>;
 
 namespace _ {
@@ -351,58 +620,56 @@ template<typename T, is_array U> struct _copy_extent<T, U> : t_type<add_extent<T
 template<typename T, typename U> struct _copy_pointer : t_type<T> {};
 template<typename T, is_pointer U> struct _copy_pointer<T, U> : t_type<copy_cv<add_pointer<T>, U>> {};
 }
-/// @brief adds reference to `T` if `Src` has; otherwise, removes reference from `T`.
+
+/// adds reference to `T` if `Src` has; otherwise, removes reference from `T`.
 template<typename T, typename Src> using copy_reference = typename _::_copy_reference<T, Src>::type;
-/// @brief copies cv-quailfiers and reference of `Src` to `T`.
+
+/// copies cv-quailfiers and reference of `Src` to `T`.
 template<typename T, typename Src> using copy_cvref = copy_reference<copy_cv<T, remove_ref<Src>>, Src>;
-/// @brief copies extent of `Src` to `T`.
+
+/// copies extent of `Src` to `T`.
 template<typename T, typename Src> using copy_extent = typename _::_copy_extent<T, Src>::type;
-/// @brief copies pointer of `Src` to `T`.
+
+/// copies pointer of `Src` to `T`.
 template<typename T, typename Src> using copy_pointer = type_switch<is_pointer<T>, copy_cv<add_pointer<T>, Src>, T>;
 
-/// @brief checks if `F` is invocable with `As...`.
+/// checks if `F` is invocable with `As...`.
 template<typename F, typename... As> concept invocable = std::invocable<F, As...>;
-/// @brief checks if `F` is invocable with `As...` without throwing exceptions.
-template<typename F, typename... As> concept nt_invocable = invocable<F, As...> && requires { requires std::is_nothrow_invocable_v<F, As...>; };
 
-/// @brief performs `std::invoke(Func, Args...)`.
+/// checks if `F` is invocable with `As...` without throwing exceptions.
+template<typename F, typename... As> concept nt_invocable =
+  invocable<F, As...> && requires { requires std::is_nothrow_invocable_v<F, As...>; };
+
+/// invokes `Func` with `Args...`.
 /// @return `none` if the result of `std::invoke(Func, Args...)` is `void`; otherwise, returns as it.
 inline constexpr auto invoke = []<typename F, typename... As>(F&& Func, As&&... Args) noexcept(nt_invocable<F, As...>)
   -> decltype(auto) requires invocable<F, As...> {
   if constexpr (is_void<std::invoke_result<F, As...>>) return std::invoke(fwd<F>(Func), fwd<As>(Args)...), none{};
   else return std::invoke(fwd<F>(Func), fwd<As>(Args)...); };
 
-/// @brief returns the result type of `invoke(F, As...)`.
+/// returns the result type of `invoke(F, As...)`.
 template<typename F, typename... As> using invoke_result = decltype(invoke(declval<F>(), declval<As>()...));
 
-/// @brief checks if `F` is invocable with `As...` and the result is convertible to `R`.
+/// checks if `F` is invocable with `As...` and the result is convertible to `R`.
 template<typename F, typename R, typename... As> concept invocable_r =
   invocable<F, As...> && convertible_to<invoke_result<F, As...>, R>;
 
-/// @brief checks if `F` is invocable with `As...` and the result is convertible to `R` without throwing exceptions.
+/// checks if `F` is invocable with `As...` and the result is convertible to `R` without throwing exceptions.
 template<typename F, typename R, typename... As> concept nt_invocable_r =
   nt_invocable<F, As...> && nt_convertible_to<invoke_result<F, As...>, R>;
 
-/// @brief checks if `F` is a predicate with `As...`.
+/// checks if `F` is a predicate with `As...`.
 template<typename F, typename... As> concept predicate = invocable_r<F, bool, As...>;
 
-/// @brief invokes `F` with `As...` and returns the result as `R`.
+/// invokes `F` with `As...` and returns the result as `R`.
 template<typename R> inline constexpr auto invoke_r =
   []<typename F, typename... As>(F&& f, As&&... as) noexcept(nt_invocable_r<F, R, As...>) -> R
   requires invocable_r<F, R, As...> { return static_cast<R>(invoke(fwd<F>(f), fwd<As>(as)...)); };
 
 namespace _ {
-template<typename... Ts> struct _common_type  { using type = none; };
+template<typename... Ts> struct _common_type : t_type<none> {};
 template<typename... Ts> requires valid<std::common_reference_t<Ts...>>
-struct _common_type<Ts...> { using type = std::common_reference_t<Ts...>; };
-}
-/// @brief returns the common type of `Ts...` if exists; otherwise, returns `none`.
-template<typename... Ts> using common_type = typename _::_common_type<Ts...>::type;
-/// @brief checks if `Ts...` has common type.
-template<typename... Ts> concept common_with = requires {
-  requires !is_none<common_type<Ts...>>; requires (std::common_reference_with<common_type<Ts...>, Ts> && ...); };
-
-namespace _ {
+struct _common_type<Ts...> : std::common_reference<Ts...> {};
 template<typename T, template<typename...> typename Tm> struct _specialization_of : constant<false> {};
 template<template<typename...> typename Tm, typename... Ts>
 struct _specialization_of<Tm<Ts...>, Tm> : constant<true> {};
@@ -416,79 +683,116 @@ struct _variation_of<Tm<T, Vs...>, Tm<U, Ws...>> : constant<true> {};
 template<template<auto, typename...> typename Tm, auto V, auto W, typename... Ts, typename... Us>
 struct _variation_of<Tm<V, Ts...>, Tm<W, Us...>> : constant<true> {};
 }
-/// @brief checks if `T` is a specialization of `Tm`.
-/// @note `specialization_of<std::vector<int>, std::vector> -> true`
+
+/// returns the common type of `Ts...` if exists; otherwise, returns `none`.
+template<typename... Ts> using common_type = typename _::_common_type<Ts...>::type;
+
+/// checks if `Ts...` has common type.
+template<typename... Ts> concept common_with = requires {
+  requires !is_none<common_type<Ts...>>; requires (std::common_reference_with<common_type<Ts...>, Ts> && ...); };
+
+/// checks if `T` is a specialization of `Tm`.
 template<typename T, template<typename...> typename Tm> concept specialization_of = _::_specialization_of<T, Tm>::value;
-/// @brief checks if `T` is a variation of `U`.
-/// @note `variation_of<std::vector<int>, std::vector<double>> -> true`
-/// @note `variation_of<yw::list<int, float>, yw::list<>> -> true`
+
+/// checks if `T` is a specialization of the same template as `U`.
 template<typename T, typename U> concept variation_of = _::_variation_of<T, U>::value;
 
-/// @brief checks if `a` is equal to `b`.
-struct equal {
-  /// @brief checks if `a` is equal to `b`.
-  constexpr bool operator()(auto&& a, auto&& b) const noexcept(noexcept(bool(a == b)))
-    requires requires { { a == b } -> convertible_to<bool>; } { return a == b; }
-};
-/// @brief checks if `a` is equal to `b`.
-inline constexpr equal eq{};
+/// checks if `a` is equal to `b`.
+inline constexpr auto eq = [](auto&& a, auto&& b) noexcept(noexcept(bool(a == b))) -> bool
+  requires requires { { a == b } -> convertible_to<bool>; } { return a == b; };
 
-/// @brief checks if `a` is not equal to `b`.
-struct not_equal {
-  /// @brief checks if `a` is not equal to `b`.
-  constexpr bool operator()(auto&& a, auto&& b) const noexcept(noexcept(bool(a != b)))
-    requires requires { { a != b } -> convertible_to<bool>; } { return a != b; }
-};
-/// @brief checks if `a` is not equal to `b`.
-inline constexpr not_equal ne{};
+/// checks if `a` is not equal to `b`.
+inline constexpr auto ne = [](auto&& a, auto&& b) noexcept(noexcept(bool(a != b))) -> bool
+  requires requires { { a != b } -> convertible_to<bool>; } { return a != b; };
 
-/// @brief checks if `a` is less than `b`.
-struct less {
-  /// @brief checks if `a` is less than `b`.
-  constexpr bool operator()(auto&& a, auto&& b) const noexcept(noexcept(bool(a < b)))
-    requires requires { { a < b } -> convertible_to<bool>; } { return a < b; }
-};
-/// @brief checks if `a` is less than `b`.
-inline constexpr less lt{};
+/// checks if `a` is less than `b`.
+inline constexpr auto lt = [](auto&& a, auto&& b) noexcept(noexcept(bool(std::less{}(a, b)))) -> bool
+  requires requires { { a < b } -> convertible_to<bool>; } { return a < b; };
 
-/// @brief checks if `a` is less than or equal to `b`.
-struct less_equal {
-  /// @brief checks if `a` is less than or equal to `b`.
-  constexpr bool operator()(auto&& a, auto&& b) const noexcept(noexcept(bool(a <= b)))
-    requires requires { { a <= b } -> convertible_to<bool>; } { return a <= b; }
-};
-/// @brief checks if `a` is less than or equal to `b`.
-inline constexpr less_equal le{};
+/// checks if `a` is less than or equal to `b`.
+inline constexpr auto le = [](auto&& a, auto&& b) noexcept(noexcept(bool(std::less_equal{}(a, b)))) -> bool
+  requires requires { { a <= b } -> convertible_to<bool>; } { return a <= b; };
 
-/// @brief checks if `a` is greater than `b`.
-struct greater {
-  /// @brief checks if `a` is greater than `b`.
-  constexpr bool operator()(auto&& a, auto&& b) const noexcept(noexcept(bool(a > b)))
-    requires requires { { a > b } -> convertible_to<bool>; } { return a > b; }
-};
-/// @brief checks if `a` is greater than `b`.
-inline constexpr greater gt{};
+/// checks if `a` is greater than `b`.
+inline constexpr auto gt = [](auto&& a, auto&& b) noexcept(noexcept(bool(a > b))) -> bool
+  requires requires { { a > b } -> convertible_to<bool>; } { return a > b; };
 
-/// @brief checks if `a` is greater than or equal to `b`.
-struct greater_equal {
-  /// @brief checks if `a` is greater than or equal to `b`.
-  constexpr bool operator()(auto&& a, auto&& b) const noexcept(noexcept(bool(a >= b)))
-    requires requires { { a >= b } -> convertible_to<bool>; } { return a >= b; }
-};
-/// @brief checks if `a` is greater than or equal to `b`.
-inline constexpr greater_equal ge{};
+/// checks if `a` is greater than or equal to `b`.
+inline constexpr auto ge = [](auto&& a, auto&& b) noexcept(noexcept(bool(a >= b))) -> bool
+  requires requires { { a >= b } -> convertible_to<bool>; } { return a >= b; };
+
+/// `decltype(eq)`
+using equal = decltype(eq);
+
+/// `decltype(ne)`
+using not_equal = decltype(ne);
+
+/// `decltype(lt)`
+using less = decltype(lt);
+
+/// `decltype(le)`
+using less_equal = decltype(le);
+
+/// `decltype(gt)`
+using greater = decltype(gt);
+
+/// `decltype(ge)`
+using greater_than = decltype(gt);
 
 template<auto... Vs> struct sequence;
 template<typename... Ts> struct typepack;
 template<typename... Ts> struct list;
 
+// clang-format on
+}
+
+namespace std {
+// clang-format off
+
+template<typename T> struct common_type<yw::none, T> : type_identity<yw::none> {};
+template<typename T> struct common_type<T, yw::none> : type_identity<yw::none> {};
+template<typename Tr> basic_ostream<char, Tr>& operator<<(
+  basic_ostream<char, Tr>& os, yw::none) { return os << "none"; }
+template<typename Tr> basic_ostream<wchar_t, Tr>& operator<<(
+  basic_ostream<wchar_t, Tr>& os, yw::none) { return os << L"none"; }
+template<> struct formatter<yw::none, char> : formatter<const char*, char> {
+  template<typename FormatContext> auto format(yw::none, FormatContext& ctx) const {
+    return formatter<const char*, char>::format("none", ctx); } };
+template<> struct formatter<yw::none, wchar_t> : formatter<const wchar_t*, wchar_t> {
+  template<typename FormatContext> auto format(yw::none, FormatContext& ctx) const {
+    return formatter<const wchar_t*, wchar_t>::format(L"none", ctx); } };
+
+template<common_with<double> T> struct common_type<yw::value, T> : type_identity<double> {};
+template<common_with<double> T> struct common_type<T, yw::value> : type_identity<double> {};
+template<typename Ct> struct formatter<yw::value, Ct> : formatter<double, Ct> {
+  template<typename FormatContext> auto format(yw::value v, FormatContext& ctx) const {
+    return formatter<double, Ct>::format(v, ctx); } };
+
+template<auto... Vs> struct tuple_size<yw::sequence<Vs...>> : integral_constant<size_t, sizeof...(Vs)> {};
+template<size_t I, auto... Vs> struct tuple_element<I, yw::sequence<Vs...>>
+  : type_identity<decltype(yw::value_switch<I, Vs...>)> {};
+
+template<typename... Ts> struct tuple_size<yw::typepack<Ts...>> : integral_constant<size_t, sizeof...(Ts)> {};
+template<size_t I, typename... Ts> struct tuple_element<I, yw::typepack<Ts...>>
+  : type_identity<yw::type_switch<I, Ts...>> {};
+
+template<typename... Ts> struct tuple_size<yw::list<Ts...>> : integral_constant<size_t, sizeof...(Ts)> {};
+template<size_t I, typename... Ts> struct tuple_element<I, yw::list<Ts...>>
+  : type_identity<yw::type_switch<I, Ts...>> {};
+
+// clang-format on
+}
+
+namespace yw {
+// clang-format off
+
 namespace _::_get {
 template<nat I> void get(auto&&) = delete;
 template<nat I, typename T> inline constexpr auto pattern = []() -> int {
-  if constexpr (is_bounded_array<remove_ref<T>>) {
-    if constexpr (I < std::extent_v<remove_ref<T>>) return 16; else return 8; }
+  if constexpr (is_bounded_array<remove_ref<T>>) return I < std::extent_v<remove_ref<T>> ? 16 : 8;
   else if constexpr (requires { get<I>(declval<T>()); }) return 1 | noexcept(get<I>(declval<T>())) * 16;
-  else if constexpr (requires { declval<T>().template get<I>(); }) return 2 | noexcept(declval<T>().template get<I>()) * 16;
+  else if constexpr (requires { declval<T>().template get<I>(); })
+    return 2 | noexcept(declval<T>().template get<I>()) * 16;
   else return I == 0 ? 20 : 8; }();
 template<nat I, typename T, nat P = pattern<I, T>> requires(P != 8)
 constexpr decltype(auto) call(T&& A) noexcept(bool(P & 16)) {
@@ -500,87 +804,93 @@ template<typename T, nat I = (pattern<0, T> & 15)> struct extent : std::tuple_si
 template<typename T> struct extent<T, 0> : std::extent<remove_ref<T>> {};
 template<typename T> struct extent<T, 4> : constant<1> {};
 }
-/// @brief chekcs if `T` is a tuple-like type.
+
+/// chekcs if `T` is a tuple-like type.
 template<typename T> concept tuple = requires { requires (_::_get::pattern<0, T> & 3) != 0; };
-/// @brief returns `I`-th element.
+
+/// returns `I`-th element.
 template<nat I> inline constexpr auto get = []<typename T>(T&& Ref)
   noexcept(noexcept(_::_get::call<I>(static_cast<T&&>(Ref)))) -> decltype(auto)
   requires requires { _::_get::call<I>(static_cast<T&&>(Ref)); } { return _::_get::call<I>(static_cast<T&&>(Ref)); };
-/// @brief checks if `yw::get<I>(T)` is valid.
+
+/// checks if `yw::get<I>(T)` is valid.
 template<typename T, nat I> concept gettable = requires { get<I>(declval<T>()); };
-/// @brief checks if `yw::get<I>(T)` is valid and noexcept.
-template<typename T, nat I> concept nt_gettable = requires { requires gettable<T, I>; { get<I>(declval<T>()) } noexcept; };
-/// @brief `I`-th element from `Tuple`.
+
+/// checks if `yw::get<I>(T)` is valid and noexcept.
+template<typename T, nat I> concept nt_gettable = gettable<T, I> && requires { { get<I>(declval<T>()) } noexcept; };
+
+/// `I`-th element from `Tuple`.
 template<typename T, nat I> requires gettable<T, I> using element_t = decltype(get<I>(declval<T>()));
-/// @brief number of elements in `T`.
+
+/// number of elements in `T`.
 template<typename T> inline constexpr nat extent = _::_get::extent<remove_ref<T>>::value;
-/// @brief checks if all of `Ts...` have the same extent as `T`.
+
+/// checks if all of `Ts...` have the same extent as `T`.
 template<typename T, typename... Ts> concept same_extent = ((extent<T> == extent<Ts>) && ...);
 
 namespace _ {
 template<typename S, typename T = none> struct _to_sequence : t_type<none> {};
-template<template<auto...> typename Tm, typename T, auto... Vs> struct _to_sequence<Tm<Vs...>, T> : t_type<sequence<T(Vs)...>> {};
-template<template<typename, auto...> typename Tm, typename T, typename U, auto... Vs> struct _to_sequence<Tm<U, Vs...>, T> : t_type<sequence<T(Vs)...>> {};
-template<template<auto...> typename Tm, auto... Vs> struct _to_sequence<Tm<Vs...>, none> : t_type<sequence<Vs...>> {};
-template<template<typename, auto...> typename Tm, typename U, auto... Vs> struct _to_sequence<Tm<U, Vs...>, none> : t_type<sequence<Vs...>> {};
-}
-/// @brief converts a sequence-like type to `yw::sequence` with the elements converted to `T` if `T` is not `none`.
-template<typename S, typename T = none> using to_sequence = typename _::_to_sequence<S, T>::type;
-/// @brief checks if `S` is a sequence-like type whose elements are convertible to `T`.
-template<typename S, typename T = none> concept sequence_of = variation_of<to_sequence<S, T>, sequence<>>;
-
-namespace _ {
+template<template<auto...> typename Tm, typename T, auto... Vs>
+struct _to_sequence<Tm<Vs...>, T> : t_type<sequence<T(Vs)...>> {};
+template<template<typename, auto...> typename Tm, typename T, typename U, auto... Vs>
+struct _to_sequence<Tm<U, Vs...>, T> : t_type<sequence<T(Vs)...>> {};
+template<template<auto...> typename Tm, auto... Vs>
+struct _to_sequence<Tm<Vs...>, none> : t_type<sequence<Vs...>> {};
+template<template<typename, auto...> typename Tm, typename U, auto... Vs>
+struct _to_sequence<Tm<U, Vs...>, none> : t_type<sequence<Vs...>> {};
 template<typename S, nat N> struct _sequence_for : constant<false> {};
 template<nat... Is, nat N> struct _sequence_for<sequence<Is...>, N> : constant<(lt(Is, N) && ...)> {};
-}
-/// @brief checks if `S` is a sequence-like type and all elements are less than the extent of `T`.
-template<typename S, typename T> concept sequence_for = _::_sequence_for<to_sequence<S>, extent<T>>::value;
-
-namespace _ {
 template<nat N, nat I, auto F, nat... Vs> struct _make_sequence : _make_sequence<N, I + 1, F, Vs..., F(I)> {};
 template<nat N, auto F, nat... Vs> struct _make_sequence<N, N, F, Vs...> : t_type<sequence<Vs...>> {};
-}
-/// @brief makes `sequence` with elements from `Proj(Begin)` to `Proj(End - 1)`.
-template<nat End, nat Begin = 0, invocable<nat> auto Proj = pass{}> requires (Begin <= End)
-using make_sequence = typename _::_make_sequence<End, Begin, Proj>::type;
-/// @brief makes `sequence` with elements from `0` to `extent<Tp> - 1`.
-template<typename Tp> using make_sequence_for = make_sequence<extent<Tp>>;
-
-namespace _ {
-template<nat I, nat N, typename S, nat... Is> struct _extracting_sequence;
-template<nat I, nat N, bool... Bs, nat... Is> struct _extracting_sequence<I, N, sequence<Bs...>, Is...>
-  : type_switch<value_switch<I, Bs...>, _extracting_sequence<I + 1, N, sequence<Bs...>, Is..., I>,
-                                        _extracting_sequence<I + 1, N, sequence<Bs...>, Is...>> {};
-template<nat N, bool... Bs, nat... Is> struct _extracting_sequence<N, N, sequence<Bs...>, Is...> : t_type<sequence<Is...>> {};
-}
-/// @brief makes `sequence` with indices where `Bs...` are `true`.
-template<typename S> using extracting_sequence = typename _::_extracting_sequence<0, extent<S>, S>::type;
-
-namespace _ {
+template<nat I, nat N, typename S, nat... Is> struct _extracting_seq;
+template<nat I, nat N, bool... Bs, nat... Is> struct _extracting_seq<I, N, sequence<Bs...>, Is...>
+  : type_switch<value_switch<I, Bs...>, _extracting_seq<I + 1, N, sequence<Bs...>, Is..., I>,
+                                        _extracting_seq<I + 1, N, sequence<Bs...>, Is...>> {};
+template<nat N, bool... B, nat... Is> struct _extracting_seq<N, N, sequence<B...>, Is...> : t_type<sequence<Is...>> {};
 template<typename T, typename S> struct _common_element;
-template<typename T, nat... Is> struct _common_element<T, sequence<Is...>> : t_type<common_type<element_t<T, Is>...>> {};
-}
-/// @brief returns the common type of elements in `T`
-template<typename T> using common_element = typename _::_common_element<T, make_sequence_for<T>>::type;
-
-namespace _ {
+template<typename T, nat... Is> struct _common_element<T, sequence<Is...>> : _common_type<element_t<T, Is>...> {};
 template<typename T, typename S> struct _to_typepack;
 template<typename T, nat... Is> struct _to_typepack<T, sequence<Is...>> : t_type<typepack<element_t<T, Is>...>> {};
+template<typename T, typename U, typename S> struct _tuple_for : _types<constant<false>, constant<false>> {};
+template<typename T, typename U, nat... Is> struct _tuple_for<T, U, sequence<Is...>> : _types<
+  constant<(convertible_to<element_t<T, Is>, U> && ...)>, constant<(nt_convertible_to<element_t<T, Is>, U> && ...)>> {};
 }
-/// @brief returns `typepack` with elements in `T`.
+
+/// converts a sequence-like type to `yw::sequence` with the elements converted to `T` if `T` is not `none`.
+template<typename S, typename T = none> using to_sequence = typename _::_to_sequence<S, T>::type;
+
+/// checks if `S` is a sequence-like type whose elements are convertible to `T`.
+template<typename S, typename T = none> concept sequence_of = variation_of<to_sequence<S, T>, sequence<>>;
+
+/// checks if `S` is a sequence-like type and all elements are less than the extent of `T`.
+template<typename S, typename T> concept sequence_for = _::_sequence_for<to_sequence<S>, extent<T>>::value;
+
+/// makes `sequence` with elements from `Proj(Begin)` to `Proj(End - 1)`.
+template<nat End, nat Begin = 0, invocable<nat> auto Proj = pass{}> requires (Begin <= End)
+using make_sequence = typename _::_make_sequence<End, Begin, Proj>::type;
+
+/// makes `sequence` with elements from `0` to `extent<Tp> - 1`.
+template<typename Tp> using make_sequence_for = make_sequence<extent<Tp>>;
+
+/// makes `sequence` with indices where `Bs...` are `true`.
+template<typename S> using extracting_sequence = typename _::_extracting_seq<0, extent<S>, S>::type;
+
+/// returns the common type of elements in `T`
+template<typename T> using common_element = typename _::_common_element<T, make_sequence_for<T>>::type;
+
+/// returns `typepack` with elements in `T`.
 template<typename T> using to_typepack = typename _::_to_typepack<T, make_sequence_for<T>>::type;
 
-namespace _ {
-template<typename T, typename U, typename S> struct _tuple_for : constant<false> { using nt = constant<false>; };
-template<typename T, typename U, nat... Is> struct _tuple_for<T, U, sequence<Is...>>
-  : constant<(convertible_to<element_t<T, Is>, U> && ...)> { using nt = constant<(nt_convertible_to<U, element_t<T, Is>> && ...)>;};
-}
-/// @brief checks if all elements in `T` are convertible to `U`.
-template<typename T, typename U> concept tuple_for = requires { requires  _::_tuple_for<T, U, make_sequence_for<T>>::value; };
-/// @brief checks if all elements in `T` are convertible to `U` without throwing exceptions.
-template<typename T, typename U> concept nt_tuple_for = tuple_for<T, U> && requires { requires _::_tuple_for<T, U, make_sequence_for<T>>::nt::value; };
+/// checks if all elements in `T` are convertible to `U`.
+template<typename T, typename U> concept tuple_for =
+  requires { requires _::_tuple_for<T, U, make_sequence_for<T>>::t1::value; };
 
-/// @brief value sequence structure.
+/// checks if all elements in `T` are convertible to `U` without throwing exceptions.
+template<typename T, typename U> concept nt_tuple_for =
+  tuple_for<T, U> && requires { requires _::_tuple_for<T, U, make_sequence_for<T>>::t2::value; };
+
+
+/// value sequence structure.
 template<auto... Vs> struct sequence {
 private:
   template<typename S> struct _append : _append<to_sequence<S, none>> {};
@@ -590,195 +900,229 @@ private:
   template<nat... Is> struct _extract<sequence<Is...>> : std::type_identity<sequence<value_switch<Is, Vs...>...>> {};
   template<> struct _extract<none> : std::type_identity<none> {};
 public:
-  /// @brief number of elements.
+
+  /// number of elements.
   static constexpr nat count = sizeof...(Vs);
-  /// @brief returns `I`-th value.
+
+  /// returns `I`-th value.
   template<nat I> requires(lt(I, count)) static constexpr auto at = value_switch<I, Vs...>;
-  /// @brief returns `I`-th type.
+
+  /// returns `I`-th type.
   template<nat I> requires(lt(I, count)) using type_at = type_switch<I, decltype(Vs)...>;
-  /// @brief appends `Sq`.
+
+  /// appends elements of another sequence-like type.
   template<sequence_of Sq> using append = typename _append<to_sequence<Sq>>::type;
-  /// @brief makes new sequence whose elements are extracted by `Sq`.
-  /// @note `sequence<1, 2, 4, 8, 16>::extract<sequence<3, 1, 4>> -> sequence<8, 2, 16>`
+
+  /// makes new sequence whose elements are extracted by `Sq`.
   template<sequence_for<sequence> Sq> using extract = typename _extract<to_sequence<Sq, nat>>::type;
-  /// @brief returns the first `N` elements.
+
+  /// returns the first `N` elements.
   template<nat N> requires(N < count) using fore = extract<make_sequence<N>>;
-  /// @brief returns the last `N` elements.
+
+  /// returns the last `N` elements.
   template<nat N> requires(N < count) using back = extract<make_sequence<count, count - N>>;
-  /// @brief inserts elements of `Sq` at `I`.
-  template<nat I, sequence_of Sq> requires(I < count) using insert = typename fore<I>::template append<Sq>::template append<back<count - I>>;
-  /// @brief returns `Tm<Vs...>`.
+
+  /// inserts elements of `Sq` at `I`.
+  template<nat I, sequence_of Sq> requires(I < count)
+  using insert = typename fore<I>::template append<Sq>::template append<back<count - I>>;
+
+  /// returns `Tm<Vs...>`.
   template<template<auto...> typename Tm> using expand = Tm<Vs...>;
-  /// @brief returns `I`-th value.
+
+  /// returns `I`-th value.
   template<nat I> requires(I < count) constexpr const auto&& get() const noexcept { return mv(at<I>); }
 };
 
-/// @brief type sequence structure.
+
+/// type sequence structure.
 template<typename... Ts> struct typepack {
 private:
   template<typename T, typename U> struct t_append {};
   template<typename... Us, typename... Vs> struct t_append<typepack<Us...>, typepack<Vs...>>
-    : std::type_identity<typepack<Us..., Vs...>> {};
+    : t_type<typepack<Us..., Vs...>> {};
   template<typename T, typename S> struct t_extract {};
   template<typename... Us, nat... Is> struct t_extract<typepack<Us...>, sequence<Is...>>
-    : std::type_identity<typepack<type_switch<Is, Us...>...>> {};
+    : t_type<typepack<type_switch<Is, Us...>...>> {};
 public:
-  /// @brief number of types.
+
+  /// number of types.
   static constexpr nat count = sizeof...(Ts);
-  /// @brief common type of `Ts...`.
+
+  /// common type of `Ts...`.
   using common = common_type<Ts...>;
-  /// @brief returns `I`-th type.
+
+  /// returns `I`-th type.
   template<nat I> requires(I < count) using at = type_switch<I, Ts...>;
-  /// @brief appends elements of `Tp` to the end.
+
+  /// appends elements of `Tp` to the end.
   template<tuple Tp> using append = typename t_append<typepack, to_typepack<Tp>>::type;
-  /// @brief makes new typepack whose elements are extracted by `Sq`.
+
+  /// makes new typepack whose elements are extracted by `Sq`.
   template<sequence_for<typepack> Sq> using extract = typename t_extract<typepack, to_sequence<Sq, nat>>::type;
-  /// @brief returns the first `N` types.
+
+  /// returns the first `N` types.
   template<nat N> requires(N <= count) using fore = extract<make_sequence<N>>;
-  /// @brief returns the last `N` types.
+
+  /// returns the last `N` types.
   template<nat N> requires(N <= count) using back = extract<make_sequence<count, count - N>>;
-  /// @brief inserts elements of `Tp` at `I`.
+
+  /// inserts elements of `Tp` at `I`.
   template<nat I, tuple T> requires(I < count) using insert =
     typename fore<I>::template append<T>::template append<back<count - I>>;
-  /// @brief returns `Tm<Ts...>`.
+
+  /// returns `Tm<Ts...>`.
   template<template<typename...> typename Tm> using expand = Tm<Ts...>;
-  /// @brief returns `I`-th type.
+
+  /// returns `I`-th type.
   /// @note this can be used in constant-evaluated context.
   template<nat I> requires(I < count) constexpr at<I> get() const noexcept;
 };
 
-/// @brief basic tuple structure.
+
+/// basic tuple-like structure.
 template<typename... Ts> struct list : typepack<Ts...>::template fore<sizeof...(Ts) - 1>::template expand<list> {
-  /// @brief base type.
+
+  /// base type.
   using base = typepack<Ts...>::template fore<sizeof...(Ts) - 1>::template expand<list>;
-  /// @brief number of elements.
+
+  /// number of elements.
   static constexpr nat count = sizeof...(Ts);
-  /// @brief last type.
+
+  /// last type.
   using last_type = type_switch<count - 1, Ts...>;
-  /// @brief last element.
+
+  /// last element.
   last_type last;
-  /// @brief returns `I`-th element.
-  template<nat I> constexpr auto get() & noexcept -> type_switch<I, Ts...>& {
-    if constexpr (I == count - 1) return last;
-    else return base::template get<I>();
-  }
-  /// @brief returns `I`-th element.
-  template<nat I> constexpr auto get() const& noexcept -> add_const<type_switch<I, Ts...>&> {
-    if constexpr (I == count - 1) return last;
-    else return base::template get<I>();
-  }
-  /// @brief returns `I`-th element.
+
+  /// returns `I`-th element.
+  template<nat I> constexpr auto get() & noexcept -> type_switch<I, Ts...>&
+  { if constexpr (I == count - 1) return last; else return base::template get<I>(); }
+
+  /// returns `I`-th element.
+  template<nat I> constexpr auto get() const& noexcept -> add_const<type_switch<I, Ts...>&>
+  { if constexpr (I == count - 1) return last; else return base::template get<I>(); }
+
+  /// returns `I`-th element.
   template<nat I> constexpr auto get() && noexcept -> type_switch<I, Ts...>&& {
-    if constexpr (I == count - 1) return fwd<type_switch<I, Ts...>>(last);
-    else return mv(*this).base::template get<I>();
-  }
-  /// @brief returns `I`-th element.
+    if constexpr (I == count - 1) return fwd<last_type>(last);
+    else return fwd<type_switch<I, Ts...>>(base::template get<I>()); }
+
+  /// returns `I`-th element.
   template<nat I> constexpr auto get() const&& noexcept -> add_const<type_switch<I, Ts...>&&> {
-    if constexpr (I == count - 1) return fwd<add_const<type_switch<I, Ts...>>>(last);
-    else return mv(*this).base::template get<I>();
-  }
+    if constexpr (I == count - 1) return fwd<add_const<last_type>>(last);
+    else return fwd<add_const<type_switch<I, Ts...>>>(base::template get<I>()); }
 };
 
-/// @brief basic tuple structure with three elements.
+/// basic tuple structure with three elements.
 template<typename T1, typename T2, typename T3> struct list<T1, T2, T3> : list<T1, T2> {
-  /// @brief base type.
+
+  /// base type.
   using base = list<T1, T2>;
-  /// @brief number of elements.
+
+  /// number of elements.
   static constexpr nat count = 3;
-  /// @brief third type.
+
+  /// third type.
   using third_type = T3;
-  /// @brief third element.
+
+  /// third element.
   third_type third;
-  /// @brief returns `I`-th element.
-  template<nat I> constexpr auto get() & noexcept -> type_switch<I, T1, T2, T3>& {
-    if constexpr (I == 2) return third;
-    else return base::template get<I>();
-  }
-  /// @brief returns `I`-th element.
-  template<nat I> constexpr auto get() const& noexcept -> add_const<type_switch<I, T1, T2, T3>&> {
-    if constexpr (I == 2) return third;
-    else return base::template get<I>();
-  }
-  /// @brief returns `I`-th element.
-  template<nat I> constexpr auto get() && noexcept -> type_switch<I, T1, T2, T3>&& {
-    if constexpr (I == 2) return fwd<type_switch<I, T1, T2, T3>>(third);
-    else return mv(*this).base::template get<I>();
-  }
-  /// @brief returns `I`-th element.
+
+  /// returns `I`-th element.
+  template<nat I> constexpr auto get() & noexcept -> type_switch<I, T1, T2, T3>&
+  { if constexpr (I == 2) return third; else return base::template get<I>(); }
+
+  /// returns `I`-th element.
+  template<nat I> constexpr auto get() const& noexcept -> add_const<type_switch<I, T1, T2, T3>&>
+  { if constexpr (I == 2) return third; else return base::template get<I>(); }
+
+  /// returns `I`-th element.
+  template<nat I> constexpr auto get() && noexcept -> type_switch<I, T1, T2, T3>&&
+  { if constexpr (I == 2) return fwd<T3>(third); else return fwd<type_switch<I, T1, T2>>(base::template get<I>()); }
+
+  /// returns `I`-th element.
   template<nat I> constexpr auto get() const&& noexcept -> add_const<type_switch<I, T1, T2, T3>&&> {
-    if constexpr (I == 2) return fwd<add_const<type_switch<I, T1, T2, T3>>>(third);
-    else return mv(*this).base::template get<I>();
-  }
+    if constexpr (I == 2) return fwd<add_const<T3>>(third);
+    else return fwd<add_const<type_switch<I, T1, T2>>(base::template get<I>()); }
 };
 
-/// @brief basic tuple structure with two elements.
+/// basic tuple structure with two elements.
 template<typename T1, typename T2> struct list<T1, T2> : public list<T1> {
-  /// @brief base type.
+
+  /// base type.
   using base = list<T1>;
-  /// @brief number of elements.
+
+  /// number of elements.
   static constexpr nat count = 2;
-  /// @brief second type.
+
+  /// second type.
   using second_type = T2;
-  /// @brief second element.
+
+  /// second element.
   second_type second;
-  /// @brief returns `I`-th element.
-  template<nat I> constexpr auto get() & noexcept -> type_switch<I, T1, T2>& {
-    if constexpr (I == 1) return second;
-    else return base::template get<I>();
-  }
-  /// @brief returns `I`-th element.
-  template<nat I> constexpr auto get() const& noexcept -> add_const<type_switch<I, T1, T2>&> {
-    if constexpr (I == 1) return second;
-    else return base::template get<I>();
-  }
-  /// @brief returns `I`-th element.
-  template<nat I> constexpr auto get() && noexcept -> type_switch<I, T1, T2>&& {
-    if constexpr (I == 1) return fwd<type_switch<I, T1, T2>>(second);
-    else return mv(*this).base::template get<I>();
-  }
-  /// @brief returns `I`-th element.
-  template<nat I> constexpr auto get() const&& noexcept -> add_const<type_switch<I, T1, T2>&&> {
-    if constexpr (I == 1) return fwd<add_const<type_switch<I, T1, T2>>>(second);
-    else return mv(*this).base::template get<I>();
-  }
+
+  /// returns `I`-th element.
+  template<nat I> constexpr auto get() & noexcept -> type_switch<I, T1, T2>&
+  { if constexpr (I == 1) return second; else return base::first; }
+
+  /// returns `I`-th element.
+  template<nat I> constexpr auto get() const& noexcept -> add_const<type_switch<I, T1, T2>&>
+  { if constexpr (I == 1) return second; else return base::first; }
+
+  /// returns `I`-th element.
+  template<nat I> constexpr auto get() && noexcept -> type_switch<I, T1, T2>&&
+  { if constexpr (I == 1) return fwd<T2>(second); else return fwd<T1>(base::first); }
+
+  /// returns `I`-th element.
+  template<nat I> constexpr auto get() const&& noexcept -> add_const<type_switch<I, T1, T2>&&>
+  { if constexpr (I == 1) return fwd<add_const<T2>>(second); else return fwd<add_const<T1>>(base::first); }
 };
 
-/// @brief basic tuple structure with one element.
-template<typename T1> struct list<T1> {
-  /// @brief number of elements.
+/// basic tuple structure with one element.
+template<typename T> struct list<T> {
+
+  /// number of elements.
   static constexpr nat count = 1;
-  /// @brief first type.
-  using first_type = T1;
-  /// @brief first element.
+
+  /// first type.
+  using first_type = T;
+
+  /// first element.
   first_type first;
-  /// @brief returns `I`-th element.
-  template<nat I> requires(I == 0) constexpr first_type& get() & noexcept { return first; }
-  /// @brief returns `I`-th element.
-  template<nat I> requires(I == 0) constexpr add_const<first_type&> get() const& noexcept { return first; }
-  /// @brief returns `I`-th element.
-  template<nat I> requires(I == 0) constexpr first_type&& get() && noexcept { return fwd<first_type&&>(first); }
-  /// @brief returns `I`-th element.
-  template<nat I> requires(I == 0) constexpr add_const<first_type&&>
-  get() const&& noexcept { return fwd<add_const<first_type&&>>(first); }
+
+  /// returns `I`-th element.
+  template<nat I> requires(I == 0) constexpr T& get() & noexcept { return first; }
+
+  /// returns `I`-th element.
+  template<nat I> requires(I == 0) constexpr add_const<T&> get() const& noexcept { return first; }
+
+  /// returns `I`-th element.
+  template<nat I> requires(I == 0) constexpr T&& get() && noexcept { return fwd<T>(first); }
+
+  /// returns `I`-th element.
+  template<nat I> requires(I == 0) constexpr add_const<T&&> get() const&& noexcept { return fwd<add_const<T>>(first); }
 };
 
-/// @brief basic tuple structure with no elements.
+/// basic tuple structure with no elements.
 template<> struct list<> {
 private:
   template<typename T, typename U, typename V> struct _from_typepack {};
   template<typename... Ts, typename U, template<typename...> typename Tm, typename... Vs>
-  struct _from_typepack<typepack<Ts...>, U, Tm<Vs...>> : std::type_identity<list<copy_cvref<Tm<Ts>, U>...>> {};
+  struct _from_typepack<typepack<Ts...>, U, Tm<Vs...>> : t_type<list<copy_cvref<Tm<Ts>, U>...>> {};
   template<typename... Ts, typename U, template<typename, auto...> typename Tm, typename V, auto... Vs>
-  struct _from_typepack<typepack<Ts...>, U, Tm<V, Vs...>> : std::type_identity<list<copy_cvref<Tm<Ts, Vs...>, U>...>> {};
+  struct _from_typepack<typepack<Ts...>, U, Tm<V, Vs...>> : t_type<list<copy_cvref<Tm<Ts, Vs...>, U>...>> {};
   template<typename... Ts, typename U, typename V>
-  struct _from_typepack<typepack<Ts...>, U, V> : std::type_identity<list<copy_cvref<Ts, U>...>> {};
+  struct _from_typepack<typepack<Ts...>, U, V> : t_type<list<copy_cvref<Ts, U>...>> {};
 public:
-  /// @brief number of elements.
+
+  /// number of elements.
   static constexpr nat count = 0;
-  /// @brief makes a reference list.
+
+  /// makes a reference list.
   template<typename... Ts> static constexpr auto
   asref(Ts&&... Args) noexcept { return list<Ts&&...>{fwd<Ts>(Args)...}; }
-  /// @brief makes a list from `typepack`
+
+  /// converts `typepack` to `list`.
   /// @note `list::from_typepack<typepack<int, float>> -> list<int, float>`
   /// @note `list::from_typepack<typepack<int, float>, const int&> -> list<const int&, const float&>`
   /// @note `list::from_typepack<typepack<int, float>, std::vector<char>&> -> list<std::vector<int>&, std::vector<float>&>`
@@ -786,74 +1130,34 @@ public:
   using from_typepack = _from_typepack<Tp, Template, remove_cvref<Template>>::type;
 };
 
-/// @brief deduction guide for `list`.
+/// deduction guide for `list`.
 template<typename... Ts> list(Ts...) -> list<Ts...>;
 
-// clang-format on
+
+namespace _ {
+template<nat I, typename... Ts> constexpr auto _apply_b(list<Ts...>&& l) noexcept {
+  if constexpr (I == sizeof...(Ts)) return mv(l);
+
+}
+template<typename F, typename... Ts> constexpr decltype(auto) _apply_a(F&& f, list<Ts...>&& l)
+  noexcept(nt_invocable<F, Ts...>) requires invocable<F, Ts...> {
+  return [&]<nat... Is>(sequence<Is...>) {
+    return invoke(fwd<F>(f), fwd<Ts>(get<Is>(l))...); }(make_sequence<sizeof...(Ts)>{}); }
+template<typename F, typename... Ts> constexpr decltype(auto) _apply(F&& f, list<Ts...>&& l)
+  noexcept(noexcept(_apply_a(fwd<F>(f), _apply_b<inspects<tuple<Ts>...>>(mv(l)))))
+  requires requires { { _apply_a(fwd<F>(f), _apply_b<inspects<tuple<Ts>...>>(mv(l))) }; }
+{ return _apply_a(fwd<F>(f), _apply_b<inspects<tuple<Ts>...>>(mv(l))); }
 }
 
-namespace std { // clang-format off
-// yw::none
-template<typename T> struct common_type<yw::none, T> { using type = yw::none; };
-template<typename T> struct common_type<T, yw::none> { using type = yw::none; };
-template<typename Tr> basic_ostream<char, Tr>& operator<<(basic_ostream<char, Tr>& os, yw::none) { return os << "none"; }
-template<typename Tr> basic_ostream<wchar_t, Tr>& operator<<(basic_ostream<wchar_t, Tr>& os, yw::none) { return os << L"none"; }
-template<> struct formatter<yw::none, char> : formatter<const char*, char> {
-  template<typename FormatContext> auto format(yw::none, FormatContext& ctx) const {
-    return formatter<const char*, char>::format("none", ctx); } };
-template<> struct formatter<yw::none, wchar_t> : formatter<const wchar_t*, wchar_t> {
-  template<typename FormatContext> auto format(yw::none, FormatContext& ctx) const {
-    return formatter<const wchar_t*, wchar_t>::format(L"none", ctx); } };
-// yw::value
-template<common_with<double> T> struct common_type<yw::value, T> { using type = double; };
-template<common_with<double> T> struct common_type<T, yw::value> { using type = double; };
-template<typename Ct> struct formatter<yw::value, Ct> : formatter<double, Ct> {
-  template<typename FormatContext> auto format(yw::value v, FormatContext& ctx) const {
-    return formatter<double, Ct>::format(v, ctx); } };
-// yw::sequence
-template<auto... Vs> struct tuple_size<yw::sequence<Vs...>> : integral_constant<size_t, sizeof...(Vs)> {};
-template<size_t I, auto... Vs> struct tuple_element<I, yw::sequence<Vs...>> { using type = decltype(yw::value_switch<I, Vs...>); };
-// yw::typepack
-template<typename... Ts> struct tuple_size<yw::typepack<Ts...>> : integral_constant<size_t, sizeof...(Ts)> {};
-template<size_t I, typename... Ts> struct tuple_element<I, yw::typepack<Ts...>> { using type = decltype(yw::type_switch<I, Ts...>); };
-// yw::list
-template<typename... Ts> struct tuple_size<yw::list<Ts...>> : integral_constant<size_t, sizeof...(Ts)> {};
-template<size_t I, typename... Ts> struct tuple_element<I, yw::list<Ts...>> { using type = decltype(yw::type_switch<I, Ts...>); };
-} // clang-format on
-
-namespace yw {
-// clang-format off
 
 /// @brief applies `Func` to arguments with expanding tuples.
 struct t_apply {
-private:
-  template<nat... Is, typename F, typename Tp> static constexpr decltype(auto) call(
-    sequence<Is...>, F&& Func, Tp&& Tuple) noexcept(noexcept(invoke(fwd<F>(Func), get<Is>(Tuple)...)))
-    requires requires { invoke(fwd<F>(Func), get<Is>(Tuple)...); } { return invoke(fwd<F>(Func), get<Is>(Tuple)...); }
-  template<typename F, typename Tp> static constexpr decltype(auto) call(F&& Func, Tp&& Tuple)
-    noexcept(noexcept(call(make_sequence_for<Tp>{}, fwd<F>(Func), fwd<Tp>(Tuple))))
-    requires requires { call(make_sequence_for<Tp>{}, fwd<F>(Func), fwd<Tp>(Tuple)); }
-  { return call(make_sequence_for<Tp>{}, fwd<F>(Func), fwd<Tp>(Tuple)); }
-  template<typename... Ts> static constexpr auto proc(list<Ts...>&& List) noexcept {
-    static constexpr auto i = inspects<tuple<Ts>...>;
-    if constexpr (i == sizeof...(Ts)) return mv(List); // there is no tuple.
-    else if constexpr (i == 0) return [&]<nat... Is, nat... Js>(sequence<Is...>, sequence<Js...>) {
-      return proc(list<>::asref(get<Is>(get<0>(List))..., get<Js>(List)...));
-    }(make_sequence_for<type_switch<0, Ts...>>{}, make_sequence<sizeof...(Ts), 1>{}); // the first is tuple.
-    else if constexpr (i == sizeof...(Ts) - 1) return [&]<nat... Is, nat... Js>(sequence<Is...>, sequence<Js...>) {
-      return proc(list<>::asref(get<Is>(List)..., get<Js>(get<i>(List))...));
-    }(make_sequence<i>{}, make_sequence_for<type_switch<i, Ts...>>{}); // the last is tuple.
-    else return [&]<nat... Is, nat... Js, nat... Ks>(sequence<Is...>, sequence<Js...>, sequence<Ks...>) {
-      return proc(list<>::asref(get<Is>(List)..., get<Js>(get<i>(List))..., get<Ks>(List)...));
-    }(make_sequence<i>{}, make_sequence_for<type_switch<i, Ts...>>{}, make_sequence<sizeof...(Ts), i + 1>{}); // other.
-  }
 
-public:
-  /// @brief applies `Func` to arguments.
+  /// @brief applies `Func` to arguments with expanding tuples.
   template<typename F, typename... Ts> constexpr decltype(auto) operator()(F&& Func, Ts&&... Args) const
-    noexcept(noexcept(call(fwd<F>(Func), proc(list<>::asref(fwd<Ts>(Args)...)))))
-    requires requires { call(fwd<F>(Func), proc(list<>::asref(fwd<Ts>(Args)...))); }
-  { return call(fwd<F>(Func), proc(list<>::asref(fwd<Ts>(Args)...))); }
+    noexcept(noexcept(_::_apply(fwd<F>(Func), proc(list<>::asref(fwd<Ts>(Args)...)))))
+    requires requires { _::_apply(fwd<F>(Func), proc(list<>::asref(fwd<Ts>(Args)...))); }
+  { return _::_apply(fwd<F>(Func), proc(list<>::asref(fwd<Ts>(Args)...))); }
 };
 // clang-format on
 }
