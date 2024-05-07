@@ -1135,18 +1135,25 @@ template<typename... Ts> list(Ts...) -> list<Ts...>;
 
 
 namespace _ {
-template<nat I, typename... Ts> constexpr auto _apply_b(list<Ts...>&& l) noexcept {
-  if constexpr (I == sizeof...(Ts)) return mv(l);
-
-}
+template<nat N, nat I, typename... Ts> constexpr auto _apply_b(list<Ts...>&& l) noexcept {
+  if constexpr (I == N) return mv(l);
+  else { constexpr auto s1 = make_sequence<I>{}; constexpr auto s2 = make_sequence<N, I + 1>{};
+         constexpr auto s3 = make_sequence_for<type_switch<I, Ts...>>{};
+         constexpr nat i = []<nat... Is>(sequence<Is...>) { return inspects<tuple<element_t<Ts, Is>>...>; }(s3);
+         if constexpr (i != decltype(s3)::count) return [&]<nat... Is, nat... Js, nat... Ks>(
+          sequence<Is...>, sequence<Js...>, sequence<Ks...>) { return _apply_b<N, I + i>(list<>::asref()) }
+         constexpr nat n = I + []<nat... Is, nat... Js>(sequence<Is...>, sequence<Js...>) {
+          return inspects<tuple<element_t<type_switch<I, Ts...>, Is>>..., tuple<type_switch<Js, Ts...>>...>; }(s3, s2); }
+    }
+template<typename... Ts> constexpr decltype(auto) _apply_b(Ts&&... as)
 template<typename F, typename... Ts> constexpr decltype(auto) _apply_a(F&& f, list<Ts...>&& l)
   noexcept(nt_invocable<F, Ts...>) requires invocable<F, Ts...> {
   return [&]<nat... Is>(sequence<Is...>) {
     return invoke(fwd<F>(f), fwd<Ts>(get<Is>(l))...); }(make_sequence<sizeof...(Ts)>{}); }
 template<typename F, typename... Ts> constexpr decltype(auto) _apply(F&& f, list<Ts...>&& l)
-  noexcept(noexcept(_apply_a(fwd<F>(f), _apply_b<inspects<tuple<Ts>...>>(mv(l)))))
-  requires requires { { _apply_a(fwd<F>(f), _apply_b<inspects<tuple<Ts>...>>(mv(l))) }; }
-{ return _apply_a(fwd<F>(f), _apply_b<inspects<tuple<Ts>...>>(mv(l))); }
+  noexcept(noexcept(_apply_a(fwd<F>(f), _apply_b<sizeof...(Ts), inspects<tuple<Ts>...>>(mv(l)))))
+  requires requires { { _apply_a(fwd<F>(f), _apply_b<sizeof...(Ts), inspects<tuple<Ts>...>>(mv(l))) }; }
+{ return _apply_a(fwd<F>(f), _apply_b<sizeof...(Ts), inspects<tuple<Ts>...>>(mv(l))); }
 }
 
 
