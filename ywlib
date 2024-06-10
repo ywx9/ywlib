@@ -8,6 +8,7 @@
 #include <compare>
 #include <limits>
 #include <numbers>
+#include <utility>
 
 namespace yw {
 #define nat size_t
@@ -59,9 +60,9 @@ template<typename T, typename... Ts> concept same_as = requires { requires (std:
 template<typename T, typename... Ts> concept included_in = requires { requires (std::same_as<T, Ts> || ...); };
 template<typename T, typename... Ts> concept derived_from = requires { requires (std::derived_from<T, Ts> && ...); };
 template<typename T, typename... Ts> concept castable_to = requires(T (&f)()) { ((static_cast<Ts>(f())), ...); };
-template<typename T, typename... Ts> concept nt_castable_to = castable_to<T, Ts...> && requires(T (&f)() noexcept) { ((static_cast<Ts>(f())), ...); };
+template<typename T, typename... Ts> concept nt_castable_to = castable_to<T, Ts...> && requires(T (&f)() noexcept) { { ((static_cast<Ts>(f())), ...) } noexcept; };
 template<typename T, typename... Ts> concept convertible_to = castable_to<T, Ts...> && requires { requires (std::convertible_to<T, Ts> && ...); };
-template<typename T, typename... Ts> concept nt_convertible_to = nt_castable_to<T, Ts...> && requires { requires (std::convertible_to<T, Ts> && ...); };
+template<typename T, typename... Ts> concept nt_convertible_to = nt_castable_to<T, Ts...> && requires { requires (std::is_nothrow_convertible_v<T, Ts> && ...); };
 template<typename T> concept numerical = nt_convertible_to<T, int4, int8, nat4, nat8, fat4, fat8>;
 
 template<auto V, typename T = decltype(V)> requires convertible_to<decltype(V), T> struct constant {
@@ -180,7 +181,10 @@ namespace _ { template<typename T, nat N> struct _add_extent : t_type<T> {}; }
 template<typename T, nat N> using add_extent = typename _::_add_extent<T, N>::type;
 
 inline consteval auto cev(auto a) noexcept { return a; }
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreturn-type"
 template<typename T> inline constexpr auto declval = []() noexcept -> add_fwref<T> {};
+#pragma clang diagnostic pop
 
 template<typename T> concept destructible = requires { requires std::is_destructible_v<T>; };
 template<typename T> concept nt_destructible = destructible<T> && std::destructible<T>;
@@ -195,7 +199,9 @@ inline constexpr auto addressof = []<is_lvref T>(T&& Ref) noexcept { return __bu
 inline constexpr auto asconst = []<typename T>(T&& Ref) noexcept -> add_const<T&&> { return Ref; };
 inline constexpr auto mv = []<typename T>(T&& Ref) noexcept -> decltype(auto) { return static_cast<add_rvref<T>>(Ref); };
 template<typename T> inline constexpr auto fwd = [](auto&& Ref) noexcept -> decltype(auto) { return static_cast<T&&>(Ref); };
-inline constexpr auto exchange = []<typename T, typename U = T>(T& A, U&& B) noexcept(nt_exchangeable<T&, U>) requires exchangeable<T&, U> { auto a = mv(A); A = fwd<U>(B); return a; };
+template<typename T> inline constexpr auto construct = []<typename... Ts>(Ts&&... Args) noexcept(nt_constructible<T, Ts...>) -> T requires constructible<T, Ts...> { return T{fwd<Ts>(Args)...}; };
+inline constexpr auto assign = []<typename L, typename R>(L&& Lhs, R&& Rhs) noexcept(nt_assignable<L, R>) -> decltype(auto) requires assignable<L, R> { return fwd<L>(Lhs) = fwd<R>(Rhs); };
+inline constexpr auto exchange = []<typename T, typename U = T>(T&& A, U&& B) noexcept(nt_exchangeable<T, U>) -> T requires exchangeable<T, U> { auto a = mv(A); A = fwd<U>(B); return a; };
 
 template<convertible_to<nat> auto I, nat N> inline constexpr bool selectable = (is_bool<decltype(I)> && N == 2) || (!is_bool<decltype(I)> && static_cast<nat>(I) < N);
 namespace _ { template<typename T, T I, typename... Ts> struct _select_type; }
@@ -226,14 +232,14 @@ template<typename T, typename Src> using copy_pointer = select_type<is_pointer<S
 
 template<typename F, typename... As> concept invocable = std::invocable<F, As...>;
 template<typename F, typename... As> concept nt_invocable = invocable<F, As...> && requires { requires std::is_nothrow_invocable_v<F, As...>; };
-template<typename F, typename... As> using invoke_result = select_type<is_void<std::invoke_result<F, As...>>, none, std::invoke_result<F, As...>>;
+template<typename F, typename... As> using invoke_result = select_type<is_void<std::invoke_result_t<F, As...>>, none, std::invoke_result_t<F, As...>>;
 template<typename F, typename R, typename... As> concept invocable_r = invocable<F, As...> && convertible_to<invoke_result<F, As...>, R>;
 template<typename F, typename R, typename... As> concept nt_invocable_r = nt_invocable<F, As...> && nt_convertible_to<invoke_result<F, As...>, R>;
 template<typename F, typename... As> concept predicate = invocable_r<F, bool, As...>;
 
 inline constexpr auto invoke = []<typename F, typename... As>(F&& Func, As&&... Args)
   noexcept(nt_invocable<F, As...>) -> invoke_result<F, As...> requires invocable<F, As...> {
-  if constexpr (is_void<std::invoke_result<F, As...>>) return std::invoke(fwd<F>(Func), fwd<As>(Args)...), none{};
+  if constexpr (is_void<std::invoke_result_t<F, As...>>) return std::invoke(fwd<F>(Func), fwd<As>(Args)...), none{};
   else return std::invoke(fwd<F>(Func), fwd<As>(Args)...); };
 
 template<typename R> inline constexpr auto invoke_r = []<typename F, typename... As>(F&& f, As&&... as)
@@ -250,8 +256,8 @@ template<typename T, typename U> concept variation_of = _::_variation_of<T, U>::
 
 inline constexpr auto eq = [](auto&& a, auto&& b) noexcept(noexcept(bool(a == b))) -> bool requires requires { { a == b } -> convertible_to<bool>; } { return a == b; };
 inline constexpr auto ne = [](auto&& a, auto&& b) noexcept(noexcept(bool(a != b))) -> bool requires requires { { a != b } -> convertible_to<bool>; } { return a != b; };
-inline constexpr auto lt = [](auto&& a, auto&& b) noexcept(noexcept(bool(std::less{}(a, b)))) -> bool requires requires { { a < b } -> convertible_to<bool>; } { return a < b; };
-inline constexpr auto le = [](auto&& a, auto&& b) noexcept(noexcept(bool(std::less_equal{}(a, b)))) -> bool requires requires { { a <= b } -> convertible_to<bool>; } { return a <= b; };
+inline constexpr auto lt = [](auto&& a, auto&& b) noexcept(noexcept(bool(a < b), 1 > 0)) -> bool requires requires { { a < b } -> convertible_to<bool>; } { return a < b; };
+inline constexpr auto le = [](auto&& a, auto&& b) noexcept(noexcept(bool(a <= b), 1 > 0)) -> bool requires requires { { a <= b } -> convertible_to<bool>; } { return a <= b; };
 inline constexpr auto gt = [](auto&& a, auto&& b) noexcept(noexcept(bool(a > b))) -> bool requires requires { { a > b } -> convertible_to<bool>; } { return a > b; };
 inline constexpr auto ge = [](auto&& a, auto&& b) noexcept(noexcept(bool(a >= b))) -> bool requires requires { { a >= b } -> convertible_to<bool>; } { return a >= b; };
 
@@ -347,7 +353,7 @@ template<typename T> inline constexpr nat extent = _::_get::extent<remove_ref<T>
 template<typename T, typename... Ts> concept same_extent = ((extent<T> == extent<Ts>) && ...);
 template<typename T> concept tuple = requires { requires (_::_get::pattern<0, T> & 3) != 0; };
 template<typename T, nat I> concept gettable = requires { _::_get::call<I>(declval<T>()); };
-template<typename T, nat I> concept nt_gettable = gettable<T, I> && requires { requires noexcept(_::_get::call<I>(declval<T>())); };
+template<typename T, nat I> concept nt_gettable = gettable<T, I> && requires { { _::_get::call<I>(declval<T>()) } noexcept; };
 template<typename T, nat I> requires gettable<T, I> using element_t = decltype(_::_get::call<I>(declval<T>()));
 template<nat I> inline constexpr auto get = []<gettable<I> T>(T&& Ref) noexcept(nt_gettable<T, I>) -> element_t<T, I> { return _::_get::call<I>(static_cast<T&&>(Ref)); };
 
@@ -365,9 +371,9 @@ namespace _ { template<typename T, typename S> struct _common_element; }
 template<typename T> using common_element = typename _::_common_element<T, make_sequence_for<T>>::type;
 namespace _ { template<typename T, typename S> struct _to_typepack; }
 template<typename T> using to_typepack = typename _::_to_typepack<T, make_sequence_for<T>>::type;
-namespace _ { template<typename T, typename U, typename S> struct _tuple_for : _types<constant<false>, constant<false>> {}; }
-template<typename T, typename U> concept tuple_for = requires { requires _::_tuple_for<T, U, make_sequence_for<T>>::t1::value; };
-template<typename T, typename U> concept nt_tuple_for = tuple_for<T, U> && requires { requires _::_tuple_for<T, U, make_sequence_for<T>>::t2::value; };
+namespace _ { template<typename T, typename U, typename S> struct _tuple_for : constant<0> {}; }
+template<typename T, typename U> concept tuple_for = requires { requires bool(_::_tuple_for<T, U, make_sequence_for<T>>::value & 1); };
+template<typename T, typename U> concept nt_tuple_for = tuple_for<T, U> && requires { requires bool(_::_tuple_for<T, U, make_sequence_for<T>>::value & 2); };
 
 template<auto... Vs> struct sequence {
 private:
@@ -383,7 +389,7 @@ public:
   template<nat I> requires(lt(I, count)) using type_at = select_type<I, decltype(Vs)...>;
   template<sequence_of Sq> using append = typename _append<to_sequence<Sq>>::type;
   template<sequence_for<sequence> Sq> using extract = typename _extract<to_sequence<Sq, nat>>::type;
-  template<nat N> requires(N < count) using fore = extract<make_sequence<N>>;
+  template<nat N> requires(N < count) using fore = extract<make_sequence<0, N>>;
   template<nat N> requires(N < count) using back = extract<make_sequence<count, count - N>>;
   template<nat I, sequence_of Sq> requires(I < count) using insert = typename fore<I>::template append<Sq>::template append<back<count - I>>;
   template<template<auto...> typename Tm> using expand = Tm<Vs...>;
@@ -402,7 +408,7 @@ public:
   template<nat I> requires(I < count) using at = select_type<I, Ts...>;
   template<tuple Tp> using append = typename t_append<typepack, to_typepack<Tp>>::type;
   template<sequence_for<typepack> Sq> using extract = typename t_extract<typepack, to_sequence<Sq, nat>>::type;
-  template<nat N> requires(N <= count) using fore = extract<make_sequence<N>>;
+  template<nat N> requires(N <= count) using fore = extract<make_sequence<0, N>>;
   template<nat N> requires(N <= count) using back = extract<make_sequence<count, count - N>>;
   template<nat I, tuple T> requires(I < count) using insert = typename fore<I>::template append<T>::template append<back<count - I>>;
   template<template<typename...> typename Tm> using expand = Tm<Ts...>;
@@ -428,7 +434,7 @@ template<typename T1, typename T2, typename T3> struct list<T1, T2, T3> : list<T
   template<nat I> constexpr auto get() & noexcept -> select_type<I, T1, T2, T3>& { if constexpr (I == 2) return third; else return base::template get<I>(); }
   template<nat I> constexpr auto get() const& noexcept -> add_const<select_type<I, T1, T2, T3>&> { if constexpr (I == 2) return third; else return base::template get<I>(); }
   template<nat I> constexpr auto get() && noexcept -> select_type<I, T1, T2, T3>&& { if constexpr (I == 2) return fwd<T3>(third); else return fwd<select_type<I, T1, T2>>(base::template get<I>()); }
-  template<nat I> constexpr auto get() const&& noexcept -> add_const<select_type<I, T1, T2, T3>&&> { if constexpr (I == 2) return fwd<add_const<T3>>(third); else return fwd<add_const<select_type<I, T1, T2>>(base::template get<I>()); }
+  template<nat I> constexpr auto get() const&& noexcept -> add_const<select_type<I, T1, T2, T3>&&> { if constexpr (I == 2) return fwd<add_const<T3>>(third); else return fwd<add_const<select_type<I, T1, T2>>>(base::template get<I>()); }
 };
 
 template<typename T1, typename T2> struct list<T1, T2> : public list<T1> {
@@ -479,37 +485,38 @@ template<nat I, nat N, bool... Bs, nat... Is> struct _extracting_sequence<I, N, 
 template<nat N, bool... B, nat... Is> struct _extracting_sequence<N, N, sequence<B...>, Is...> : t_type<sequence<Is...>> {};
 template<typename T, nat... Is> struct _common_element<T, sequence<Is...>> : _common_type<element_t<T, Is>...> {};
 template<typename T, nat... Is> struct _to_typepack<T, sequence<Is...>> : t_type<typepack<element_t<T, Is>...>> {};
-template<typename T, typename U, nat... Is> struct _tuple_for<T, U, sequence<Is...>> : _types<constant<(convertible_to<element_t<T, Is>, U> && ...)>, constant<(nt_convertible_to<element_t<T, Is>, U> && ...)>> {};
+template<typename T, typename U, nat... Is> struct _tuple_for<T, U, sequence<Is...>> : constant<int((convertible_to<element_t<T, Is>, U> && ...)) + 2 * int((nt_convertible_to<element_t<T, Is>, U> && ...))> {};
+}
+
+namespace yw::_ {
+template<typename F, typename... Ts> requires (!(tuple<Ts> || ...)) constexpr decltype(auto) _apply(F&& f, Ts&&... ts)
+  noexcept(nt_invocable<F, Ts...>) requires invocable<F, Ts...> { return invoke(fwd<F>(f), fwd<Ts>(ts)...); }
+template<nat I, nat... Is, nat... Js, nat... Ks, typename F, typename... Ts> constexpr decltype(auto) _apply_b(sequence<Is...>, sequence<Js...>, sequence<Ks...>, F&& f, Ts&&... ts)
+  noexcept(noexcept(_apply(fwd<F>(f), select_parameter<Is>(fwd<Ts>(ts)...)..., get<Js>(fwd<select_type<I, Ts...>>(select_parameter<I>(fwd<Ts>(ts)...)))..., select_parameter<Ks>(fwd<Ts>(ts)...)...)))
+  requires requires { _apply(fwd<F>(f), select_parameter<Is>(fwd<Ts>(ts)...)..., get<Js>(fwd<select_type<I, Ts...>>(select_parameter<I>(fwd<Ts>(ts)...)))..., select_parameter<Ks>(fwd<Ts>(ts)...)...); }
+  { return _apply(fwd<F>(f), select_parameter<Is>(fwd<Ts>(ts)...)..., get<Js>(fwd<select_type<I, Ts...>>(select_parameter<I>(fwd<Ts>(ts)...)))..., select_parameter<Ks>(fwd<Ts>(ts)...)...); }
+template<nat I, typename F, typename... Ts> constexpr decltype(auto) _apply_a(F&& f, Ts&&... ts)
+  noexcept(noexcept(_apply_b<I>(make_sequence<0, I>{}, make_sequence_for<select_type<I, Ts...>>{}, make_sequence<I + 1, sizeof...(Ts)>{}, fwd<F>(f), fwd<Ts>(ts)...)))
+  requires requires { _apply_b<I>(make_sequence<0, I>{}, make_sequence_for<select_type<I, Ts...>>{}, make_sequence<I + 1, sizeof...(Ts)>{}, fwd<F>(f), fwd<Ts>(ts)...); }
+  { return _apply_b<I>(make_sequence<0, I>{}, make_sequence_for<select_type<I, Ts...>>{}, make_sequence<I + 1, sizeof...(Ts)>{}, fwd<F>(f), fwd<Ts>(ts)...); }
+template<typename F, typename... Ts> requires (tuple<Ts> || ...) constexpr decltype(auto) _apply(F&& f, Ts&&... ts)
+  noexcept(noexcept(_apply_a<inspects<tuple<Ts>...>>(fwd<F>(f), fwd<Ts>(ts)...)))
+  requires requires { _apply_a<inspects<tuple<Ts>...>>(fwd<F>(f), fwd<Ts>(ts)...); }
+  { return _apply_a<inspects<tuple<Ts>...>>(fwd<F>(f), fwd<Ts>(ts)...); }
+// template<nat... Is, typename Fn, typename... Ts> constexpr static auto _vapply(sequence<Is...>, Fn&& f, Ts&&... ts)
+//   noexcept(noexcept())
 }
 
 namespace yw {
-
-
-
-namespace _ {
-template<nat I, typename... Ts> constexpr auto _apply_b(list<Ts...>&& l) noexcept {
-  if constexpr (I == sizeof...(Ts)) return mv(l);
-
-}
-template<typename F, typename... Ts> constexpr decltype(auto) _apply_a(F&& f, list<Ts...>&& l)
-  noexcept(nt_invocable<F, Ts...>) requires invocable<F, Ts...> {
-  return [&]<nat... Is>(sequence<Is...>) {
-    return invoke(fwd<F>(f), fwd<Ts>(get<Is>(l))...); }(make_sequence<sizeof...(Ts)>{}); }
-template<typename F, typename... Ts> constexpr decltype(auto) _apply(F&& f, list<Ts...>&& l)
-  noexcept(noexcept(_apply_a(fwd<F>(f), _apply_b<inspects<tuple<Ts>...>>(mv(l)))))
-  requires requires { { _apply_a(fwd<F>(f), _apply_b<inspects<tuple<Ts>...>>(mv(l))) }; }
-{ return _apply_a(fwd<F>(f), _apply_b<inspects<tuple<Ts>...>>(mv(l))); }
+template<typename F, typename... Ts> concept applyable = requires(F&& f, Ts&&... ts) { { _::_apply(fwd<F>(f), fwd<Ts>(ts)...) }; };
+template<typename F, typename... Ts> concept nt_applyable = applyable<F, Ts...> && requires(F&& f, Ts&&... ts) { { _::_apply(fwd<F>(f), fwd<Ts>(ts)...) } noexcept; };
+inline constexpr auto apply = []<typename F, typename... Ts>(F&& f, Ts&&... ts) noexcept(nt_applyable<F, Ts...>) requires applyable<F, Ts...> { return _::_apply(fwd<F>(f), fwd<Ts>(ts)...); };
+template<typename T, typename Tp> concept buildable = applyable<decltype(construct<T>), Tp>;
+template<typename T, typename Tp> concept nt_buildable = nt_applyable<decltype(construct<T>), Tp>;
+template<typename T> inline constexpr auto build = []<typename Tp>(Tp&& Tuple) noexcept(nt_buildable<T, Tp>) requires buildable<T, Tp> { return apply(construct<T>, fwd<Tp>(Tuple)); };
 }
 
+namespace yw::_ {
 
-/// @brief applies `Func` to arguments with expanding tuples.
-struct t_apply {
 
-  /// @brief applies `Func` to arguments with expanding tuples.
-  template<typename F, typename... Ts> constexpr decltype(auto) operator()(F&& Func, Ts&&... Args) const
-    noexcept(noexcept(_::_apply(fwd<F>(Func), proc(list<>::asref(fwd<Ts>(Args)...)))))
-    requires requires { _::_apply(fwd<F>(Func), proc(list<>::asref(fwd<Ts>(Args)...))); }
-  { return _::_apply(fwd<F>(Func), proc(list<>::asref(fwd<Ts>(Args)...))); }
-};
-// clang-format on
 }
