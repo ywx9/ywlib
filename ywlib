@@ -4,15 +4,17 @@
 #pragma once
 // clang-format off
 
+#define nat size_t
+static_assert(sizeof(nat) == 8, "ywlib requires 64-bit platform");
+#define ywlib_wrapper(...) noexcept(noexcept(__VA_ARGS__)) requires requires { __VA_ARGS__; } { return __VA_ARGS__; }
+
 #include <bit>
 #include <compare>
 #include <limits>
 #include <numbers>
-#include <utility>
+#include <ranges>
 
 namespace yw {
-#define nat size_t
-static_assert(sizeof(nat) == 8, "ywlib requires 64-bit platform");
 using cat1 = char;
 using cat2 = wchar_t;
 using uct1 = char8_t;
@@ -311,26 +313,6 @@ template<template<typename, auto...> typename Tm, typename T, typename U, auto..
 template<template<auto, typename...> typename Tm, auto V, auto W, typename... Ts, typename... Us> struct _variation_of<Tm<V, Ts...>, Tm<W, Us...>> : constant<true> {};
 }
 
-#include <format>
-
-namespace std {
-template<typename T> struct common_type<yw::none, T> : type_identity<yw::none> {};
-template<typename T> struct common_type<T, yw::none> : type_identity<yw::none> {};
-template<typename Tr> basic_ostream<char, Tr>& operator<<(basic_ostream<char, Tr>& os, yw::none) { return os << "none"; }
-template<typename Tr> basic_ostream<wchar_t, Tr>& operator<<(basic_ostream<wchar_t, Tr>& os, yw::none) { return os << L"none"; }
-template<> struct formatter<yw::none, char> : formatter<const char*, char> { auto format(yw::none, auto& ctx) const { return formatter<const char*, char>::format("none", ctx); } };
-template<> struct formatter<yw::none, wchar_t> : formatter<const wchar_t*, wchar_t> { auto format(yw::none, auto& ctx) const { return formatter<const wchar_t*, wchar_t>::format(L"none", ctx); } };
-template<common_with<double> T> struct common_type<yw::value, T> : type_identity<double> {};
-template<common_with<double> T> struct common_type<T, yw::value> : type_identity<double> {};
-template<typename Ct> struct formatter<yw::value, Ct> : formatter<double, Ct> { auto format(yw::value v, auto& ctx) const { return formatter<double, Ct>::format(v, ctx); } };
-template<auto... Vs> struct tuple_size<yw::sequence<Vs...>> : integral_constant<size_t, sizeof...(Vs)> {};
-template<size_t I, auto... Vs> struct tuple_element<I, yw::sequence<Vs...>> : type_identity<decltype(yw::select_value<I, Vs...>)> {};
-template<typename... Ts> struct tuple_size<yw::typepack<Ts...>> : integral_constant<size_t, sizeof...(Ts)> {};
-template<size_t I, typename... Ts> struct tuple_element<I, yw::typepack<Ts...>> : type_identity<yw::select_type<I, Ts...>> {};
-template<typename... Ts> struct tuple_size<yw::list<Ts...>> : integral_constant<size_t, sizeof...(Ts)> {};
-template<size_t I, typename... Ts> struct tuple_element<I, yw::list<Ts...>> : type_identity<yw::select_type<I, Ts...>> {};
-}
-
 namespace yw::_::_get {
 template<nat I> void get(auto&&) = delete;
 template<nat I, typename T> inline constexpr auto pattern = []() -> int {
@@ -351,7 +333,7 @@ template<typename T> struct extent<T, 4> : constant<1> {};
 namespace yw {
 template<typename T> inline constexpr nat extent = _::_get::extent<remove_ref<T>>::value;
 template<typename T, typename... Ts> concept same_extent = ((extent<T> == extent<Ts>) && ...);
-template<typename T> concept tuple = requires { requires (_::_get::pattern<0, T> & 3) != 0; };
+template<typename T> concept tuple = requires { requires (_::_get::pattern<0, T> & 15) < 3; };
 template<typename T, nat I> concept gettable = requires { _::_get::call<I>(declval<T>()); };
 template<typename T, nat I> concept nt_gettable = gettable<T, I> && requires { { _::_get::call<I>(declval<T>()) } noexcept; };
 template<typename T, nat I> requires gettable<T, I> using element_t = decltype(_::_get::call<I>(declval<T>()));
@@ -360,20 +342,20 @@ template<nat I> inline constexpr auto get = []<gettable<I> T>(T&& Ref) noexcept(
 namespace _ { template<typename S, typename T> struct _to_sequence : t_type<none> {}; }
 template<typename S, typename T = none> using to_sequence = typename _::_to_sequence<S, T>::type;
 template<typename S, typename T = none> concept sequence_of = variation_of<to_sequence<S, T>, sequence<>>;
-namespace _ { template<typename S, nat N> struct _sequence_for : constant<false> {}; }
-template<typename S, typename T> concept sequence_for = _::_sequence_for<to_sequence<S>, extent<T>>::value;
+namespace _ { template<typename S, nat N> struct _indices_for : constant<false> {}; }
+template<typename S, typename T> concept indices_for = _::_indices_for<to_sequence<S>, extent<T>>::value;
 namespace _ { template<nat I, nat N, auto F, nat... Vs> struct _make_sequence; }
 template<nat Begin, nat End, invocable<nat> auto Proj = pass{}> requires (Begin <= End) using make_sequence = typename _::_make_sequence<Begin, End, Proj>::type;
-template<typename Tp> using make_sequence_for = make_sequence<0, extent<Tp>>;
-namespace _ { template<nat I, nat N, typename S, nat... Is> struct _extracting_sequence; }
-template<typename S> using extracting_sequence = typename _::_extracting_sequence<0, extent<S>, S>::type;
+template<typename Tp> using make_indices_for = make_sequence<0, extent<Tp>>;
+namespace _ { template<nat I, nat N, typename S, nat... Is> struct _extracting_indices; }
+template<typename S> using extracting_indices = typename _::_extracting_indices<0, extent<S>, S>::type;
 namespace _ { template<typename T, typename S> struct _common_element; }
-template<typename T> using common_element = typename _::_common_element<T, make_sequence_for<T>>::type;
+template<typename T> using common_element = typename _::_common_element<T, make_indices_for<T>>::type;
 namespace _ { template<typename T, typename S> struct _to_typepack; }
-template<typename T> using to_typepack = typename _::_to_typepack<T, make_sequence_for<T>>::type;
+template<typename T> using to_typepack = typename _::_to_typepack<T, make_indices_for<T>>::type;
 namespace _ { template<typename T, typename U, typename S> struct _tuple_for : constant<0> {}; }
-template<typename T, typename U> concept tuple_for = requires { requires bool(_::_tuple_for<T, U, make_sequence_for<T>>::value & 1); };
-template<typename T, typename U> concept nt_tuple_for = tuple_for<T, U> && requires { requires bool(_::_tuple_for<T, U, make_sequence_for<T>>::value & 2); };
+template<typename T, typename U> concept tuple_for = requires { requires bool(_::_tuple_for<T, U, make_indices_for<T>>::value & 1); };
+template<typename T, typename U> concept nt_tuple_for = tuple_for<T, U> && requires { requires bool(_::_tuple_for<T, U, make_indices_for<T>>::value & 2); };
 
 template<auto... Vs> struct sequence {
 private:
@@ -388,7 +370,7 @@ public:
   template<nat I> requires(lt(I, count)) static constexpr auto at = select_value<I, Vs...>;
   template<nat I> requires(lt(I, count)) using type_at = select_type<I, decltype(Vs)...>;
   template<sequence_of Sq> using append = typename _append<to_sequence<Sq>>::type;
-  template<sequence_for<sequence> Sq> using extract = typename _extract<to_sequence<Sq, nat>>::type;
+  template<indices_for<sequence> Sq> using extract = typename _extract<to_sequence<Sq, nat>>::type;
   template<nat N> requires(N < count) using fore = extract<make_sequence<0, N>>;
   template<nat N> requires(N < count) using back = extract<make_sequence<count, count - N>>;
   template<nat I, sequence_of Sq> requires(I < count) using insert = typename fore<I>::template append<Sq>::template append<back<count - I>>;
@@ -407,7 +389,7 @@ public:
   using common = common_type<Ts...>;
   template<nat I> requires(I < count) using at = select_type<I, Ts...>;
   template<tuple Tp> using append = typename t_append<typepack, to_typepack<Tp>>::type;
-  template<sequence_for<typepack> Sq> using extract = typename t_extract<typepack, to_sequence<Sq, nat>>::type;
+  template<indices_for<typepack> Sq> using extract = typename t_extract<typepack, to_sequence<Sq, nat>>::type;
   template<nat N> requires(N <= count) using fore = extract<make_sequence<0, N>>;
   template<nat N> requires(N <= count) using back = extract<make_sequence<count, count - N>>;
   template<nat I, tuple T> requires(I < count) using insert = typename fore<I>::template append<T>::template append<back<count - I>>;
@@ -471,6 +453,30 @@ public:
 };
 
 template<typename... Ts> list(Ts...) -> list<Ts...>;
+
+template<typename T, typename Pj = pass, sequence_of<nat> Sq = make_indices_for<T>> struct projector {
+  static_assert(to_sequence<Sq, nat>::count > 0);
+  static_assert(!tuple<T> || indices_for<Sq, T>);
+  using indices = to_sequence<Sq, nat>;
+  static constexpr nat count = indices::count;
+  add_fwref<T> ref;
+  remove_ref<Pj> proj = {};
+  template<typename U = T> constexpr projector(U&& Ref, Pj p, Sq) noexcept(nt_constructible<Pj, Pj>) : ref(fwd<U>(Ref)), proj(mv(p)) {}
+  template<typename U = T> constexpr projector(U&& Ref, Pj p) noexcept(nt_constructible<Pj, Pj>) : ref(fwd<U>(Ref)), proj(mv(p)) {}
+  template<typename U = T> constexpr projector(U&& Ref, Sq) noexcept : ref(fwd<U>(Ref)) {}
+  template<typename U = T> constexpr projector(U&& Ref) noexcept : ref(fwd<U>(Ref)) {}
+  template<nat I> requires(I < count && tuple<T>) constexpr auto get() const
+    noexcept(nt_gettable<T, indices::template at<I>> && nt_invocable<Pj, element_t<T, indices::template at<I>>>)
+    requires gettable<T, indices::template at<I>> && invocable<Pj, element_t<T, indices::template at<I>>>
+  { return invoke(proj, yw::get<indices::template at<I>>(ref)); }
+  template<nat I> requires(I < count && !tuple<T>) constexpr auto get() const
+    noexcept(nt_invocable<Pj, T>) requires invocable<Pj, T> { return invoke(proj, ref); }
+};
+
+template<typename T, typename Pj, sequence_of<nat> Sq> projector(T&&, Pj, Sq) -> projector<T, Pj, Sq>;
+template<typename T, typename Pj> requires(!sequence_of<Pj, nat>) projector(T&&, Pj) -> projector<T, Pj>;
+template<typename T, sequence_of<nat> Sq> projector(T&&, Sq) -> projector<T, pass, Sq>;
+template<typename T> projector(T&&) -> projector<T>;
 }
 
 namespace yw::_ {
@@ -478,45 +484,297 @@ template<template<auto...> typename Tm, typename T, auto... Vs> struct _to_seque
 template<template<typename, auto...> typename Tm, typename T, typename U, auto... Vs> struct _to_sequence<Tm<U, Vs...>, T> : t_type<sequence<T(Vs)...>> {};
 template<template<auto...> typename Tm, auto... Vs> struct _to_sequence<Tm<Vs...>, none> : t_type<sequence<Vs...>> {};
 template<template<typename, auto...> typename Tm, typename U, auto... Vs> struct _to_sequence<Tm<U, Vs...>, none> : t_type<sequence<Vs...>> {};
-template<nat... Is, nat N> struct _sequence_for<sequence<Is...>, N> : constant<(lt(Is, N) && ...)> {};
+template<nat... Is, nat N> struct _indices_for<sequence<Is...>, N> : constant<(lt(Is, N) && ...)> {};
 template<nat I, nat N, auto F, nat... Vs> struct _make_sequence : _make_sequence<I + 1, N, F, Vs..., F(I)> {};
 template<nat N, auto F, nat... Vs> struct _make_sequence<N, N, F, Vs...> : t_type<sequence<Vs...>> {};
-template<nat I, nat N, bool... Bs, nat... Is> struct _extracting_sequence<I, N, sequence<Bs...>, Is...> : select_type<select_value<I, Bs...>, _extracting_sequence<I + 1, N, sequence<Bs...>, Is..., I>, _extracting_sequence<I + 1, N, sequence<Bs...>, Is...>> {};
-template<nat N, bool... B, nat... Is> struct _extracting_sequence<N, N, sequence<B...>, Is...> : t_type<sequence<Is...>> {};
+template<nat I, nat N, bool... Bs, nat... Is> struct _extracting_indices<I, N, sequence<Bs...>, Is...> : select_type<select_value<I, Bs...>, _extracting_indices<I + 1, N, sequence<Bs...>, Is..., I>, _extracting_indices<I + 1, N, sequence<Bs...>, Is...>> {};
+template<nat N, bool... B, nat... Is> struct _extracting_indices<N, N, sequence<B...>, Is...> : t_type<sequence<Is...>> {};
 template<typename T, nat... Is> struct _common_element<T, sequence<Is...>> : _common_type<element_t<T, Is>...> {};
 template<typename T, nat... Is> struct _to_typepack<T, sequence<Is...>> : t_type<typepack<element_t<T, Is>...>> {};
 template<typename T, typename U, nat... Is> struct _tuple_for<T, U, sequence<Is...>> : constant<int((convertible_to<element_t<T, Is>, U> && ...)) + 2 * int((nt_convertible_to<element_t<T, Is>, U> && ...))> {};
 }
 
 namespace yw::_ {
-template<typename F, typename... Ts> requires (!(tuple<Ts> || ...)) constexpr decltype(auto) _apply(F&& f, Ts&&... ts)
-  noexcept(nt_invocable<F, Ts...>) requires invocable<F, Ts...> { return invoke(fwd<F>(f), fwd<Ts>(ts)...); }
-template<nat I, nat... Is, nat... Js, nat... Ks, typename F, typename... Ts> constexpr decltype(auto) _apply_b(sequence<Is...>, sequence<Js...>, sequence<Ks...>, F&& f, Ts&&... ts)
-  noexcept(noexcept(_apply(fwd<F>(f), select_parameter<Is>(fwd<Ts>(ts)...)..., get<Js>(fwd<select_type<I, Ts...>>(select_parameter<I>(fwd<Ts>(ts)...)))..., select_parameter<Ks>(fwd<Ts>(ts)...)...)))
-  requires requires { _apply(fwd<F>(f), select_parameter<Is>(fwd<Ts>(ts)...)..., get<Js>(fwd<select_type<I, Ts...>>(select_parameter<I>(fwd<Ts>(ts)...)))..., select_parameter<Ks>(fwd<Ts>(ts)...)...); }
-  { return _apply(fwd<F>(f), select_parameter<Is>(fwd<Ts>(ts)...)..., get<Js>(fwd<select_type<I, Ts...>>(select_parameter<I>(fwd<Ts>(ts)...)))..., select_parameter<Ks>(fwd<Ts>(ts)...)...); }
-template<nat I, typename F, typename... Ts> constexpr decltype(auto) _apply_a(F&& f, Ts&&... ts)
-  noexcept(noexcept(_apply_b<I>(make_sequence<0, I>{}, make_sequence_for<select_type<I, Ts...>>{}, make_sequence<I + 1, sizeof...(Ts)>{}, fwd<F>(f), fwd<Ts>(ts)...)))
-  requires requires { _apply_b<I>(make_sequence<0, I>{}, make_sequence_for<select_type<I, Ts...>>{}, make_sequence<I + 1, sizeof...(Ts)>{}, fwd<F>(f), fwd<Ts>(ts)...); }
-  { return _apply_b<I>(make_sequence<0, I>{}, make_sequence_for<select_type<I, Ts...>>{}, make_sequence<I + 1, sizeof...(Ts)>{}, fwd<F>(f), fwd<Ts>(ts)...); }
-template<typename F, typename... Ts> requires (tuple<Ts> || ...) constexpr decltype(auto) _apply(F&& f, Ts&&... ts)
-  noexcept(noexcept(_apply_a<inspects<tuple<Ts>...>>(fwd<F>(f), fwd<Ts>(ts)...)))
-  requires requires { _apply_a<inspects<tuple<Ts>...>>(fwd<F>(f), fwd<Ts>(ts)...); }
-  { return _apply_a<inspects<tuple<Ts>...>>(fwd<F>(f), fwd<Ts>(ts)...); }
-// template<nat... Is, typename Fn, typename... Ts> constexpr static auto _vapply(sequence<Is...>, Fn&& f, Ts&&... ts)
-//   noexcept(noexcept())
+template<typename F, typename... Ts> requires (!(tuple<Ts> || ...)) constexpr decltype(auto) _apply(F&& f, Ts&&... ts) noexcept(nt_invocable<F, Ts...>) requires invocable<F, Ts...> { return invoke(fwd<F>(f), fwd<Ts>(ts)...); }
+template<nat I, nat... Is, nat... Js, nat... Ks, typename F, typename... Ts> constexpr decltype(auto) _apply_b(sequence<Is...>, sequence<Js...>, sequence<Ks...>, F&& f, Ts&&... ts) ywlib_wrapper(_apply(fwd<F>(f), select_parameter<Is>(fwd<Ts>(ts)...)..., get<Js>(fwd<select_type<I, Ts...>>(select_parameter<I>(fwd<Ts>(ts)...)))..., select_parameter<Ks>(fwd<Ts>(ts)...)...));
+template<nat I, typename F, typename... Ts> constexpr decltype(auto) _apply_a(F&& f, Ts&&... ts) ywlib_wrapper(_apply_b<I>(make_sequence<0, I>{}, make_indices_for<select_type<I, Ts...>>{}, make_sequence<I + 1, sizeof...(Ts)>{}, fwd<F>(f), fwd<Ts>(ts)...));
+template<typename F, typename... Ts> requires (tuple<Ts> || ...) constexpr decltype(auto) _apply(F&& f, Ts&&... ts) ywlib_wrapper(_apply_a<inspects<tuple<Ts>...>>(fwd<F>(f), fwd<Ts>(ts)...));
+
+template<nat I, typename F, typename... Ts> constexpr decltype(auto) _vapply_i(F&& f, Ts&&... ts) noexcept(nt_invocable<F, element_t<Ts, I>...>) requires invocable<F, element_t<Ts, I>...> { return invoke(fwd<F>(f), get<I>(fwd<Ts>(ts))...); }
+template<nat... Is, typename F, typename... Ts> constexpr decltype(auto) _vapply_is(sequence<Is...>, F&& f, Ts&&... ts) ywlib_wrapper(list{_vapply_i<Is>(fwd<F>(f), fwd<Ts>(ts)...)...});
+template<typename F, typename T, typename... Ts> requires same_extent<T, Ts...> constexpr decltype(auto) _vapply(F&& f, T&& t, Ts&&... ts) ywlib_wrapper(_vapply_is(make_indices_for<T>(), fwd<F>(f), fwd<T>(t), fwd<Ts>(ts)...));
+template<typename F, typename T, typename... Ts> requires (!same_extent<T, Ts...> && tuple<T> && (tuple<Ts> && ...)) void _vapply(F&& f, T&& t, Ts&&... ts) = delete;
+template<typename F, typename... Ts> requires (!(tuple<Ts> || ...)) void _vapply(F&& f, Ts&&... ts) = delete;
+template<nat I, nat N, nat... Is, nat... Js, typename F, typename... Ts> constexpr decltype(auto) _vapply_b(sequence<Is...>, sequence<Js...>, F&& f, Ts&&... ts) ywlib_wrapper(_vapply(fwd<F>(f), select_parameter<Is>(fwd<Ts>(ts)...)..., projector(select_parameter<I>(fwd<Ts>(ts)...), make_sequence<0, N>{}), select_parameter<Js>(fwd<Ts>(ts)...)...));
+template<nat I, nat J, typename F, typename... Ts> constexpr decltype(auto) _vapply_a(F&& f, Ts&&... ts) ywlib_wrapper(_vapply_b<I, extent<select_type<J, Ts...>>>(make_sequence<0, I>{}, make_sequence<I + 1, sizeof...(Ts)>{}, fwd<F>(f), fwd<Ts>(ts)...));
+template<typename F, typename... Ts> requires (!(tuple<Ts> && ...) && (tuple<Ts> || ...)) constexpr decltype(auto) _vapply(F&& f, Ts&&... ts) ywlib_wrapper(_vapply_a<inspects<!tuple<Ts>...>, inspects<tuple<Ts>...>>(fwd<F>(f), fwd<Ts>(ts)...));
 }
 
 namespace yw {
 template<typename F, typename... Ts> concept applyable = requires(F&& f, Ts&&... ts) { { _::_apply(fwd<F>(f), fwd<Ts>(ts)...) }; };
 template<typename F, typename... Ts> concept nt_applyable = applyable<F, Ts...> && requires(F&& f, Ts&&... ts) { { _::_apply(fwd<F>(f), fwd<Ts>(ts)...) } noexcept; };
+template<typename F, typename... Ts> using apply_result = decltype(_::_apply(declval<F>(), declval<Ts>()...));
 inline constexpr auto apply = []<typename F, typename... Ts>(F&& f, Ts&&... ts) noexcept(nt_applyable<F, Ts...>) requires applyable<F, Ts...> { return _::_apply(fwd<F>(f), fwd<Ts>(ts)...); };
 template<typename T, typename Tp> concept buildable = applyable<decltype(construct<T>), Tp>;
 template<typename T, typename Tp> concept nt_buildable = nt_applyable<decltype(construct<T>), Tp>;
 template<typename T> inline constexpr auto build = []<typename Tp>(Tp&& Tuple) noexcept(nt_buildable<T, Tp>) requires buildable<T, Tp> { return apply(construct<T>, fwd<Tp>(Tuple)); };
+template<typename T, typename... Ts> concept vapplyable = requires(T&& t, Ts&&... ts) { { _::_vapply(fwd<T>(t), fwd<Ts>(ts)...) }; };
+template<typename T, typename... Ts> concept nt_vapplyable = vapplyable<T, Ts...> && requires(T&& t, Ts&&... ts) { { _::_vapply(fwd<T>(t), fwd<Ts>(ts)...) } noexcept; };
+template<typename T, typename... Ts> using vapply_result = decltype(_::_vapply(declval<T>(), declval<Ts>()...));
+inline constexpr auto vapply = []<typename F, typename... Ts>(F&& f, Ts&&... ts) noexcept(nt_vapplyable<F, Ts...>) requires vapplyable<F, Ts...> { return _::_vapply(fwd<F>(f), fwd<Ts>(ts)...); };
+
+template<typename... Fs> struct caster : public Fs... {
+  template<typename T> static constexpr nat i = []<typename... Ts>(typepack<Ts...>) { return inspects<same_as<Ts, T>...>; }(typepack<invoke_result<Fs>...>{});
+  template<typename T> static constexpr nat j = i<T> < sizeof...(Fs) ? i<T> : []<typename... Ts>(typepack<Ts...>) { return inspects<convertible_to<Ts, T>...>; }(typepack<invoke_result<Fs>...>{});
+  template<typename... As> static constexpr nat k = inspects<invocable<Fs, As...>...>;
+public:
+  template<typename T> requires(j<T> < sizeof...(Fs)) constexpr operator T() const noexcept(nt_convertible_to<invoke_result<select_type<j<T>, Fs...>>, T>) { return select_type<j<T>, Fs...>::operator()(); }
+  template<typename... As> requires(k<As...> != sizeof...(Fs)) constexpr auto operator()(As&&... Args) const noexcept(nt_invocable<select_type<k<As...>, Fs...>, As...>) -> invoke_result<select_type<k<As...>, Fs...>> { return select_type<k<As...>, Fs...>::operator()(fwd<As>(Args)...); }
+};
+
+inline constexpr caster is_cev{[]() noexcept { return std::is_constant_evaluated(); }};
+
+template<bool Max> struct t_max {
+  constexpr none operator()() const noexcept { return {}; }
+  template<typename T> constexpr T operator()(T&& t) const noexcept { return t; }
+  template<typename T0, typename T1, typename... Ts> constexpr auto operator()(T0&& t0, T1&& t1, Ts&&... ts) const -> common_type<T0, T1, Ts...> { return (*this)(call<common_type<T0, T1, Ts...>>(t0, t1), ts...); }
+  template<typename F, typename T, typename... Ts> constexpr auto operator()(F&& f, T&& t, Ts&&... ts) const -> common_type<invoke_result<F&, T>, invoke_result<F&, Ts>...> { return (*this)(invoke(f, t), invoke(f, ts)...); }
+private:
+  template<typename R> static constexpr auto call(auto&& t, auto&& u) -> R { if constexpr (Max) return t < u ? u : t; else return u < t ? u : t; }
+};
+
+inline constexpr t_max<1> max;
+inline constexpr t_max<0> min;
+
+template<bool Max> struct t_maxi {
+  constexpr list<nat, none> operator()() const noexcept { return list<nat, none>{}; }
+  template<typename T> constexpr list<nat, remove_ref<T>> operator()(T&& t) const noexcept { return {0, fwd<T>(t)}; }
+  template<typename T0, typename T1, typename... Ts> constexpr list<nat, remove_ref<common_type<T0, T1, Ts...>>> operator()(T0&& t0, T1&& t1, Ts&&... ts)
+    const { return call<1>(list<>::asref(t0, t1, ts...), list<nat, remove_ref<common_type<T0, T1, Ts...>>>{0, fwd<T0>(t0)}); }
+private:
+  template<nat I, typename Tp, typename R> static constexpr auto call(Tp&& L, R M) {
+    if constexpr (I == extent<Tp>) return mv(M);
+    else { if constexpr (Max) { if (M.second < get<I>(L)) return call<I + 1>(fwd<Tp>(L), R{I, get<I>(L)}); else return call<I + 1>(fwd<Tp>(L), mv(M)); }
+           else {               if (M.second > get<I>(L)) return call<I + 1>(fwd<Tp>(L), R{I, get<I>(L)}); else return call<I + 1>(fwd<Tp>(L), mv(M)); } } }
+};
+
+inline constexpr t_maxi<1> maxi;
+inline constexpr t_maxi<0> mini;
+
+template<typename It> concept iterator = std::input_or_output_iterator<It>;
+template<typename Se, typename It> concept sentinel_for = std::sentinel_for<Se, It>;
+template<typename Se, typename It> concept sized_sentinel_for = std::sized_sentinel_for<Se, It>;
+template<typename Rg> concept range = std::ranges::range<Rg>;
+template<typename Rg> concept borrowed_range = std::ranges::borrowed_range<Rg>;
+template<typename Rg> concept sized_range = std::ranges::sized_range<Rg>;
+template<range Rg> using iterator_t = std::ranges::iterator_t<Rg>;
+template<range Rg> using borrowed_iterator_t = std::ranges::borrowed_iterator_t<Rg>;
+template<range Rg> using sentinel_t = std::ranges::sentinel_t<Rg>;
+namespace _ { template<typename T> struct _iter_t {}; }
+template<typename T> requires iterator<T> || range<T> using iter_value = typename _::_iter_t<T>::v;
+template<typename T> requires iterator<T> || range<T> using iter_difference = typename _::_iter_t<T>::d;
+template<typename T> requires iterator<T> || range<T> using iter_reference = typename _::_iter_t<T>::r;
+template<typename T> requires iterator<T> || range<T> using iter_rvref = typename _::_iter_t<T>::rr;
+template<typename T> requires iterator<T> || range<T> using iter_common = common_type<iter_reference<T>, iter_value<T>>;
+template<typename It, typename T> concept output_iterator = std::output_iterator<It, T>;
+template<typename It> concept input_iterator = std::input_iterator<It>;
+template<typename It> concept fwd_iterator = std::forward_iterator<It>;
+template<typename It> concept bid_iterator = std::bidirectional_iterator<It>;
+template<typename It> concept rnd_iterator = std::random_access_iterator<It>;
+template<typename It> concept cnt_iterator = std::contiguous_iterator<It>;
+template<typename It, typename U> concept iterator_for = iterator<It> && convertible_to<iter_reference<It>, U>;
+template<typename It, typename U> concept cnt_iterator_of = cnt_iterator<It> && same_as<remove_ref<iter_reference<It>>, U>;
+template<typename Rg, typename T> concept output_range = std::ranges::output_range<Rg, T>;
+template<typename Rg> concept input_range = std::ranges::input_range<Rg>;
+template<typename Rg> concept fwd_range = std::ranges::forward_range<Rg>;
+template<typename Rg> concept bid_range = std::ranges::bidirectional_range<Rg>;
+template<typename Rg> concept rnd_range = std::ranges::random_access_range<Rg>;
+template<typename Rg> concept cnt_range = std::ranges::contiguous_range<Rg>;
+template<typename Rg, typename U> concept range_for = iterator_for<iterator_t<Rg>, U>;
+template<typename Rg, typename U> concept cnt_range_of = cnt_range<Rg> && same_as<iter_value<iterator_t<Rg>>, U>;
+template<typename Rg> concept cnt_sized_range = cnt_range<Rg> && sized_range<Rg>;
+template<typename Rg, typename U> concept cnt_sized_range_of = cnt_sized_range<Rg> && cnt_range_of<Rg, U>;
+template<typename It, typename In> concept iter_copyable = iterator<It> && iterator<In> && std::indirectly_copyable<In, It>;
+template<typename It, typename In> concept iter_movable = iterator<It> && iterator<In> && std::indirectly_movable<In, It>;
+template<typename Fn, typename It> concept iter_unary_invocable = iterator<It> && std::indirectly_unary_invocable<Fn, It>;
+template<typename Fn, typename It> concept iter_unary_predicate = iterator<It> && std::indirect_unary_predicate<Fn, It>;
+inline constexpr auto begin = []<range Rg>(Rg&& r) ywlib_wrapper(std::ranges::begin(fwd<Rg>(r)));
+inline constexpr auto end = []<range Rg>(Rg&& r) ywlib_wrapper(std::ranges::end(fwd<Rg>(r)));
+inline constexpr auto rbegin = []<range Rg>(Rg&& r) ywlib_wrapper(std::ranges::rbegin(fwd<Rg>(r)));
+inline constexpr auto rend = []<range Rg>(Rg&& r) ywlib_wrapper(std::ranges::rend(fwd<Rg>(r)));
+inline constexpr auto size = []<range Rg>(Rg&& r) ywlib_wrapper(std::ranges::size(fwd<Rg>(r)));
+inline constexpr auto empty = []<range Rg>(Rg&& r) ywlib_wrapper(std::ranges::empty(fwd<Rg>(r)));
+inline constexpr auto data = []<range Rg>(Rg&& r) ywlib_wrapper(std::ranges::data(fwd<Rg>(r)));
+inline constexpr auto iter_move = []<iterator It>(It&& i) ywlib_wrapper(std::ranges::iter_move(fwd<It>(i)));
+inline constexpr auto iter_swap = []<iterator It, iterator Jt>(It&& i, Jt&& j) ywlib_wrapper(std::ranges::iter_swap(fwd<It>(i), fwd<Jt>(j)));
+
+template<typename T, nat N = 0> class array {
+public:
+  T _[N]{};
+  static constexpr nat count = N;
+  using value_type = T;
+  template<convertible_to<T>> constexpr array& operator=(const T (&Array)[N])
+  { for (nat i{}; i < N; ++i) _[i] = Array[i]; return *this; }
+  constexpr operator add_lvref<T[N]>() noexcept { return _; }
+  constexpr operator add_lvref<const T[N]>() const noexcept { return _; }
+  constexpr T& operator[](nat I) { return _[I]; }
+  constexpr const T& operator[](nat I) const { return _[I]; }
+  constexpr nat size() const noexcept { return N; }
+  constexpr bool empty() const noexcept { return false; }
+  constexpr T* data() noexcept { return _; }
+  constexpr const T* data() const noexcept { return _; }
+  constexpr T* begin() noexcept { return _; }
+  constexpr const T* begin() const noexcept { return _; }
+  constexpr T* end() noexcept { return _ + N; }
+  constexpr const T* end() const noexcept { return _ + N; }
+  constexpr T& front() noexcept { return *_; }
+  constexpr const T& front() const noexcept { return *_; }
+  constexpr T& back() noexcept { return _[N - 1]; }
+  constexpr const T& back() const noexcept { return _[N - 1]; }
+  template<nat I> requires(I < N) constexpr T& get() & noexcept { return _[I]; }
+  template<nat I> requires(I < N) constexpr T&& get() && noexcept { return mv(_[I]); }
+  template<nat I> requires(I < N) constexpr const T& get() const& noexcept { return _[I]; }
+  template<nat I> requires(I < N) constexpr const T&& get() const&& noexcept { return mv(_[I]); }
+};
+
+template<typename T> class array<T, 0> : public std::vector<T> {
+public:
+  constexpr array() noexcept = default;
+  constexpr array(std::vector<T>&& v) : std::vector<T>(mv(v)) {}
+  constexpr explicit array(nat n) : std::vector<T>(n) {}
+  constexpr array(nat n, const T& v) : std::vector<T>(n, v) {}
+  template<iterator_for<T> It> constexpr array(It i, It s) : std::vector<T>(i, s) {}
+  template<iterator_for<T> It, sentinel_for<It> Se> requires(!same_as<It, Se>)
+  constexpr array(It i, Se s) : std::vector<T>(std::common_iterator<It, Se>(i), std::common_iterator<It, Se>(s)) {}
+  template<range_for<T> Rg> constexpr array(Rg&& r) : std::vector<T>(yw::begin(r), yw::end(r)) {}
+};
+
+template<typename T, convertible_to<T>... Ts> array(T, Ts...) -> array<T, 1 + sizeof...(Ts)>;
+template<typename T> array(nat, const T&) -> array<T, 0>;
+template<iterator It, sentinel_for<It> Se> array(It, Se) -> array<iter_value<It>, 0>;
+template<range Rg> array(Rg&&) -> array<iter_value<Rg>, 0>;
 }
 
 namespace yw::_ {
-
-
+template<range Rg> struct _iter_t<Rg> : _iter_t<iterator_t<Rg>> {};
+template<iterator It> struct _iter_t<It> { using v = std::iter_value_t<It>; using d = std::iter_difference_t<It>; using r = std::iter_reference_t<It>; using rr = std::iter_rvalue_reference_t<It>; };
 }
+
+#include <filesystem>
+#include <format>
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <string_view>
+#include <utility>
+
+namespace yw {
+template<character Ct> using string = std::basic_string<Ct>;
+template<character Ct> using string_view = std::basic_string_view<Ct>;
+using str1 = string<cat1>;
+using str2 = string<cat2>;
+
+template<arithmetic T> struct t_stov {
+  T operator()(const str1& Str) const noexcept { return call(Str); }
+  T operator()(const str2& Str) const noexcept { return call(Str); }
+private:
+  static auto call(auto Str) noexcept {
+    for (; Str.size(); Str.erase(0, 1)) {
+      try {
+        if constexpr (same_as<remove_cv<T>, fat8>) return std::stod(Str);
+        else if constexpr (same_as<remove_cv<T>, fat4>) return std::stof(Str);
+        else if constexpr (same_as<remove_cv<T>, ld_t>) return std::stold(Str);
+        else if constexpr (same_as<remove_cv<T>, int8>) return std::stoll(Str);
+        else if constexpr (same_as<remove_cv<T>, int4>) return std::stoi(Str);
+        else if constexpr (same_as<remove_cv<T>, sl_t>) return std::stol(Str);
+        else if constexpr (same_as<remove_cv<T>, nat8>) return std::stoull(Str);
+        else if constexpr (same_as<remove_cv<T>, nat4>) return unsigned(std::stoul(Str));
+        else if constexpr (same_as<remove_cv<T>, ul_t>) return std::stoul(Str);
+        else return T(std::stoll(Str));
+      } catch (const std::exception&) { continue; }
+    }
+    return T{};
+  }
+};
+template<arithmetic T> inline constexpr t_stov<T> stov;
+
+template<included_in<cat1, cat2> Ct> inline constexpr auto vtos = []<arithmetic T>(const T v) noexcept { if constexpr (same_as<Ct, cat1>) return std::to_string(v); else return std::to_wstring(v); };
+inline constexpr overload strlen{[](const character auto* const Str) { return std::char_traits<remove_pointer<decltype(Str)>>::length(Str); }, []<range Rg>(Rg&& Str) requires character<iter_value<Rg>> { return std::ranges::distance(Str); }};
+
+struct source {
+  const char* const file;
+  const int line, column;
+  source(const char* const) = delete;
+  constexpr source(const char* const File = __builtin_FILE(), const int Line = __builtin_LINE(), const int Column = __builtin_COLUMN()) noexcept : file(mv(File)), line(Line), column(Column) {}
+  str1 to_string() const { return std::format("{}({},{})", file, line, column); }
+  template<typename Tr> friend std::basic_ostream<char, Tr>& operator<<(std::basic_ostream<char, Tr>& os, const source& s) { return os << s.to_string(); }
+};
+
+template<character Ct> struct literal {
+  Ct string[256]{};
+  nat count;
+  template<nat N> constexpr literal(const Ct (&S)[N]) noexcept : count(N - 1) { std::char_traits<Ct>::copy(string, S, N - 1); }
+  constexpr operator const Ct*() const noexcept { return string; }
+};
+template<character Ct, nat N> literal(const Ct (&)[N]) -> literal<Ct>;
+
+class path : public std::filesystem::path {
+public:
+  path() noexcept = default;
+  path(const std::filesystem::path& p) : std::filesystem::path(p) {}
+  path(std::filesystem::path&& p) noexcept : std::filesystem::path(mv(p)) {}
+  path(string_type&& s) : std::filesystem::path(mv(s)) {}
+  template<range Rg> requires character<iter_value<Rg>> path(Rg&& r) : std::filesystem::path(yw::begin(r), yw::end(r)) {}
+  template<character Ct> path(const Ct* s) : std::filesystem::path(s) {}
+  bool exists() const { return std::filesystem::exists(*this); }
+  bool is_file() const { return std::filesystem::is_regular_file(*this); }
+  bool is_directory() const { return std::filesystem::is_directory(*this); }
+  nat file_size() const { return std::filesystem::file_size(*this); }
+  std::vector<path> list(bool Recursive = false, const source& _ = {}) const {
+    if (!exists()) throw std::runtime_error(std::format("runtime error in path::list : the path does not exist ({})", this->string()));
+    if (!is_directory()) throw std::runtime_error(std::format("runtime error in path::list: the path is not a directory ({})", this->string()));
+    std::vector<path> A;
+    if (Recursive) for (const auto& E : std::filesystem::recursive_directory_iterator(*this)) A.push_back(E.path());
+    else for (const auto& E : std::filesystem::directory_iterator(*this)) A.push_back(E.path());
+    return A;
+  }
+  void read(cnt_range auto& Out, const source& _ = {}) const requires(!is_const<decltype(yw::data(Out))>) {
+    if (const auto n = yw::size(Out) * sizeof(iter_value<decltype(Out)>); file_size() == n) {
+      if (std::ifstream ifs(*this, std::ios::binary); ifs) return void(ifs.read(reinterpret_cast<char*>(yw::data(Out)), n));
+      else throw std::runtime_error(std::format("runtime error in path::read : failed to open the file ({})", this->string()));
+    } else throw std::runtime_error(std::format("runtime error in path::read : the byte size of the output range is not equal to the file size ({})", this->string()));
+  }
+  std::string read(const source& _ = {}) const { std::string a(file_size(), char{}); return read(a, _), mv(a); }
+  void write(cnt_range auto&& In, const source& _ = {}) const {
+    if (std::ofstream ofs(*this, std::ios::binary); ofs) ofs.write(reinterpret_cast<const char*>(yw::data(In)), yw::size(In) * sizeof(iter_value<decltype(In)>));
+    else throw std::runtime_error(std::format("runtime error in path::write : failed to open the file ({})", this->string()));
+  }
+  void remove() const { std::filesystem::remove(*this); }
+};
+}
+
+namespace std {
+template<typename T> struct common_type<yw::none, T> : type_identity<yw::none> {};
+template<typename T> struct common_type<T, yw::none> : type_identity<yw::none> {};
+template<typename Tr> basic_ostream<char, Tr>& operator<<(basic_ostream<char, Tr>& os, yw::none) { return os << "none"; }
+template<typename Tr> basic_ostream<wchar_t, Tr>& operator<<(basic_ostream<wchar_t, Tr>& os, yw::none) { return os << L"none"; }
+template<> struct formatter<yw::none, char> : formatter<const char*, char> { auto format(yw::none, auto& ctx) const { return formatter<const char*, char>::format("none", ctx); } };
+template<> struct formatter<yw::none, wchar_t> : formatter<const wchar_t*, wchar_t> { auto format(yw::none, auto& ctx) const { return formatter<const wchar_t*, wchar_t>::format(L"none", ctx); } };
+template<common_with<double> T> struct common_type<yw::value, T> : type_identity<double> {};
+template<common_with<double> T> struct common_type<T, yw::value> : type_identity<double> {};
+template<typename Ct> struct formatter<yw::value, Ct> : formatter<double, Ct> { auto format(yw::value v, auto& ctx) const { return formatter<double, Ct>::format(v, ctx); } };
+template<auto... Vs> struct tuple_size<yw::sequence<Vs...>> : integral_constant<nat, sizeof...(Vs)> {};
+template<nat I, auto... Vs> struct tuple_element<I, yw::sequence<Vs...>> : type_identity<decltype(yw::select_value<I, Vs...>)> {};
+template<typename... Ts> struct tuple_size<yw::typepack<Ts...>> : integral_constant<nat, sizeof...(Ts)> {};
+template<nat I, typename... Ts> struct tuple_element<I, yw::typepack<Ts...>> : type_identity<yw::select_type<I, Ts...>> {};
+template<typename... Ts> struct tuple_size<yw::list<Ts...>> : integral_constant<nat, sizeof...(Ts)> {};
+template<nat I, typename... Ts> struct tuple_element<I, yw::list<Ts...>> : type_identity<yw::select_type<I, Ts...>> {};
+template<typename T, typename Pj, yw::sequence_of<nat> Sq> struct tuple_size<yw::projector<T, Pj, Sq>> : integral_constant<nat, yw::projector<T, Pj, Sq>::count> {};
+template<nat I, typename T, typename Pj, yw::sequence_of<nat> Sq> struct tuple_element<I, yw::projector<T, Pj, Sq>> : type_identity<yw::element_t<yw::projector<T, Pj, Sq>, I>> {};
+template<typename T, size_t N> struct tuple_size<yw::array<T, N>> : integral_constant<size_t, N> {};
+template<size_t I, typename T, size_t N> struct tuple_element<I, yw::array<T, N>> : type_identity<T> {};
+template<> struct formatter<yw::source> : formatter<string> {
+  template<typename FormatContext> auto format(const yw::source& s, FormatContext& c) const { return formatter<std::string>::format(s.to_string(), c); } };
+}
+
+#include <immintrin.h>
