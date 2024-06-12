@@ -13,8 +13,10 @@ static_assert(sizeof(nat) == 8, "ywlib requires 64-bit platform");
 #include <limits>
 #include <numbers>
 #include <ranges>
+#include <vector>
 
 namespace yw {
+
 using cat1 = char;
 using cat2 = wchar_t;
 using uct1 = char8_t;
@@ -30,14 +32,17 @@ using nat4 = unsigned int;
 using nat8 = unsigned long long;
 using fat4 = float;
 using fat8 = double;
+
 using sl_t = long;
 using ul_t = unsigned long;
 using ld_t = long double;
 using po_t = std::partial_ordering;
 using wo_t = std::weak_ordering;
 using so_t = std::strong_ordering;
+
 inline constexpr nat npos = nat(-1);
 inline constexpr po_t unordered = std::partial_ordering::unordered;
+
 consteval cat1 operator""_c1(nat n) { return static_cast<cat1>(n); }
 consteval cat2 operator""_c2(nat n) { return static_cast<cat2>(n); }
 consteval uct1 operator""_u1(nat n) { return static_cast<uct1>(n); }
@@ -55,6 +60,7 @@ consteval fat4 operator""_f4(nat n) { return static_cast<fat4>(n); }
 consteval fat8 operator""_f8(nat n) { return static_cast<fat8>(n); }
 consteval fat4 operator""_f4(ld_t n) { return static_cast<fat4>(n); }
 consteval fat8 operator""_f8(ld_t n) { return static_cast<fat8>(n); }
+
 template<typename T> struct t_type { using type = T; };
 template<typename T> using type = typename t_type<T>::type;
 template<typename T> concept valid = requires { typename type<T>; };
@@ -245,11 +251,13 @@ inline constexpr auto invoke = []<typename F, typename... As>(F&& Func, As&&... 
   else return std::invoke(fwd<F>(Func), fwd<As>(Args)...); };
 
 template<typename R> inline constexpr auto invoke_r = []<typename F, typename... As>(F&& f, As&&... as)
-  noexcept(nt_invocable_r<F, R, As...>) -> R requires invocable_r<F, R, As...> { return static_cast<R>(invoke(fwd<F>(f), fwd<As>(as)...)); };
+  noexcept(nt_invocable_r<F, R, As...>) -> R requires invocable_r<F, R, As...> {
+  return static_cast<R>(invoke(fwd<F>(f), fwd<As>(as)...)); };
 
 namespace _ { template<typename... Ts> struct _common_type : t_type<none> {}; }
 template<typename... Ts> using common_type = typename _::_common_type<Ts...>::type;
-template<typename... Ts> concept common_with = requires { requires !is_none<common_type<Ts...>>; requires (std::common_reference_with<common_type<Ts...>, Ts> && ...); };
+template<typename... Ts> concept common_with = requires {
+  requires !is_none<common_type<Ts...>>; requires (std::common_reference_with<common_type<Ts...>, Ts> && ...); };
 
 namespace _ { template<typename T, template<typename...> typename Tm> struct _specialization_of : constant<false> {}; }
 template<typename T, template<typename...> typename Tm> concept specialization_of = _::_specialization_of<T, Tm>::value;
@@ -275,7 +283,6 @@ inline constexpr auto bitcount = [](const nat Value) noexcept -> nat { return st
 inline constexpr auto bitfloor = [](const nat Value) noexcept -> nat { return std::bit_floor(Value); };
 inline constexpr auto bitceil = [](const nat Value) noexcept -> nat { return std::bit_ceil(Value); };
 inline constexpr auto bitwidth = [](const nat Value) noexcept -> nat { return std::bit_width(Value); };
-
 
 template<auto... Vs> struct sequence;
 template<typename... Ts> struct typepack;
@@ -487,27 +494,38 @@ template<template<typename, auto...> typename Tm, typename U, auto... Vs> struct
 template<nat... Is, nat N> struct _indices_for<sequence<Is...>, N> : constant<(lt(Is, N) && ...)> {};
 template<nat I, nat N, auto F, nat... Vs> struct _make_sequence : _make_sequence<I + 1, N, F, Vs..., F(I)> {};
 template<nat N, auto F, nat... Vs> struct _make_sequence<N, N, F, Vs...> : t_type<sequence<Vs...>> {};
-template<nat I, nat N, bool... Bs, nat... Is> struct _extracting_indices<I, N, sequence<Bs...>, Is...> : select_type<select_value<I, Bs...>, _extracting_indices<I + 1, N, sequence<Bs...>, Is..., I>, _extracting_indices<I + 1, N, sequence<Bs...>, Is...>> {};
+template<nat I, nat N, bool... Bs, nat... Is> struct _extracting_indices<I, N, sequence<Bs...>, Is...>
+  : select_type<select_value<I, Bs...>, _extracting_indices<I + 1, N, sequence<Bs...>, Is..., I>, _extracting_indices<I + 1, N, sequence<Bs...>, Is...>> {};
 template<nat N, bool... B, nat... Is> struct _extracting_indices<N, N, sequence<B...>, Is...> : t_type<sequence<Is...>> {};
 template<typename T, nat... Is> struct _common_element<T, sequence<Is...>> : _common_type<element_t<T, Is>...> {};
 template<typename T, nat... Is> struct _to_typepack<T, sequence<Is...>> : t_type<typepack<element_t<T, Is>...>> {};
-template<typename T, typename U, nat... Is> struct _tuple_for<T, U, sequence<Is...>> : constant<int((convertible_to<element_t<T, Is>, U> && ...)) + 2 * int((nt_convertible_to<element_t<T, Is>, U> && ...))> {};
+template<typename T, typename U, nat... Is> struct _tuple_for<T, U, sequence<Is...>>
+  : constant<int((convertible_to<element_t<T, Is>, U> && ...)) + 2 * int((nt_convertible_to<element_t<T, Is>, U> && ...))> {};
 }
 
 namespace yw::_ {
-template<typename F, typename... Ts> requires (!(tuple<Ts> || ...)) constexpr decltype(auto) _apply(F&& f, Ts&&... ts) noexcept(nt_invocable<F, Ts...>) requires invocable<F, Ts...> { return invoke(fwd<F>(f), fwd<Ts>(ts)...); }
-template<nat I, nat... Is, nat... Js, nat... Ks, typename F, typename... Ts> constexpr decltype(auto) _apply_b(sequence<Is...>, sequence<Js...>, sequence<Ks...>, F&& f, Ts&&... ts) ywlib_wrapper(_apply(fwd<F>(f), select_parameter<Is>(fwd<Ts>(ts)...)..., get<Js>(fwd<select_type<I, Ts...>>(select_parameter<I>(fwd<Ts>(ts)...)))..., select_parameter<Ks>(fwd<Ts>(ts)...)...));
-template<nat I, typename F, typename... Ts> constexpr decltype(auto) _apply_a(F&& f, Ts&&... ts) ywlib_wrapper(_apply_b<I>(make_sequence<0, I>{}, make_indices_for<select_type<I, Ts...>>{}, make_sequence<I + 1, sizeof...(Ts)>{}, fwd<F>(f), fwd<Ts>(ts)...));
-template<typename F, typename... Ts> requires (tuple<Ts> || ...) constexpr decltype(auto) _apply(F&& f, Ts&&... ts) ywlib_wrapper(_apply_a<inspects<tuple<Ts>...>>(fwd<F>(f), fwd<Ts>(ts)...));
-
-template<nat I, typename F, typename... Ts> constexpr decltype(auto) _vapply_i(F&& f, Ts&&... ts) noexcept(nt_invocable<F, element_t<Ts, I>...>) requires invocable<F, element_t<Ts, I>...> { return invoke(fwd<F>(f), get<I>(fwd<Ts>(ts))...); }
-template<nat... Is, typename F, typename... Ts> constexpr decltype(auto) _vapply_is(sequence<Is...>, F&& f, Ts&&... ts) ywlib_wrapper(list{_vapply_i<Is>(fwd<F>(f), fwd<Ts>(ts)...)...});
-template<typename F, typename T, typename... Ts> requires same_extent<T, Ts...> constexpr decltype(auto) _vapply(F&& f, T&& t, Ts&&... ts) ywlib_wrapper(_vapply_is(make_indices_for<T>(), fwd<F>(f), fwd<T>(t), fwd<Ts>(ts)...));
+template<typename F, typename... Ts> requires (!(tuple<Ts> || ...)) constexpr decltype(auto) _apply(F&& f, Ts&&... ts)
+  noexcept(nt_invocable<F, Ts...>) requires invocable<F, Ts...> { return invoke(fwd<F>(f), fwd<Ts>(ts)...); }
+template<nat I, nat... Is, nat... Js, nat... Ks, typename F, typename... Ts> constexpr decltype(auto) _apply_b(sequence<Is...>, sequence<Js...>, sequence<Ks...>, F&& f, Ts&&... ts)
+  ywlib_wrapper(_apply(fwd<F>(f), select_parameter<Is>(fwd<Ts>(ts)...)..., get<Js>(fwd<select_type<I, Ts...>>(select_parameter<I>(fwd<Ts>(ts)...)))..., select_parameter<Ks>(fwd<Ts>(ts)...)...));
+template<nat I, typename F, typename... Ts> constexpr decltype(auto) _apply_a(F&& f, Ts&&... ts)
+  ywlib_wrapper(_apply_b<I>(make_sequence<0, I>{}, make_indices_for<select_type<I, Ts...>>{}, make_sequence<I + 1, sizeof...(Ts)>{}, fwd<F>(f), fwd<Ts>(ts)...));
+template<typename F, typename... Ts> requires (tuple<Ts> || ...) constexpr decltype(auto) _apply(F&& f, Ts&&... ts)
+  ywlib_wrapper(_apply_a<inspects<tuple<Ts>...>>(fwd<F>(f), fwd<Ts>(ts)...));
+template<nat I, typename F, typename... Ts> constexpr decltype(auto) _vapply_i(F&& f, Ts&&... ts)
+  noexcept(nt_invocable<F, element_t<Ts, I>...>) requires invocable<F, element_t<Ts, I>...> { return invoke(fwd<F>(f), get<I>(fwd<Ts>(ts))...); }
+template<nat... Is, typename F, typename... Ts> constexpr decltype(auto) _vapply_is(sequence<Is...>, F&& f, Ts&&... ts)
+  ywlib_wrapper(list{_vapply_i<Is>(fwd<F>(f), fwd<Ts>(ts)...)...});
+template<typename F, typename T, typename... Ts> requires same_extent<T, Ts...> constexpr decltype(auto) _vapply(F&& f, T&& t, Ts&&... ts)
+  ywlib_wrapper(_vapply_is(make_indices_for<T>(), fwd<F>(f), fwd<T>(t), fwd<Ts>(ts)...));
 template<typename F, typename T, typename... Ts> requires (!same_extent<T, Ts...> && tuple<T> && (tuple<Ts> && ...)) void _vapply(F&& f, T&& t, Ts&&... ts) = delete;
 template<typename F, typename... Ts> requires (!(tuple<Ts> || ...)) void _vapply(F&& f, Ts&&... ts) = delete;
-template<nat I, nat N, nat... Is, nat... Js, typename F, typename... Ts> constexpr decltype(auto) _vapply_b(sequence<Is...>, sequence<Js...>, F&& f, Ts&&... ts) ywlib_wrapper(_vapply(fwd<F>(f), select_parameter<Is>(fwd<Ts>(ts)...)..., projector(select_parameter<I>(fwd<Ts>(ts)...), make_sequence<0, N>{}), select_parameter<Js>(fwd<Ts>(ts)...)...));
-template<nat I, nat J, typename F, typename... Ts> constexpr decltype(auto) _vapply_a(F&& f, Ts&&... ts) ywlib_wrapper(_vapply_b<I, extent<select_type<J, Ts...>>>(make_sequence<0, I>{}, make_sequence<I + 1, sizeof...(Ts)>{}, fwd<F>(f), fwd<Ts>(ts)...));
-template<typename F, typename... Ts> requires (!(tuple<Ts> && ...) && (tuple<Ts> || ...)) constexpr decltype(auto) _vapply(F&& f, Ts&&... ts) ywlib_wrapper(_vapply_a<inspects<!tuple<Ts>...>, inspects<tuple<Ts>...>>(fwd<F>(f), fwd<Ts>(ts)...));
+template<nat I, nat N, nat... Is, nat... Js, typename F, typename... Ts> constexpr decltype(auto) _vapply_b(sequence<Is...>, sequence<Js...>, F&& f, Ts&&... ts)
+  ywlib_wrapper(_vapply(fwd<F>(f), select_parameter<Is>(fwd<Ts>(ts)...)..., projector(select_parameter<I>(fwd<Ts>(ts)...), make_sequence<0, N>{}), select_parameter<Js>(fwd<Ts>(ts)...)...));
+template<nat I, nat J, typename F, typename... Ts> constexpr decltype(auto) _vapply_a(F&& f, Ts&&... ts)
+  ywlib_wrapper(_vapply_b<I, extent<select_type<J, Ts...>>>(make_sequence<0, I>{}, make_sequence<I + 1, sizeof...(Ts)>{}, fwd<F>(f), fwd<Ts>(ts)...));
+template<typename F, typename... Ts> requires (!(tuple<Ts> && ...) && (tuple<Ts> || ...)) constexpr decltype(auto) _vapply(F&& f, Ts&&... ts)
+  ywlib_wrapper(_vapply_a<inspects<!tuple<Ts>...>, inspects<tuple<Ts>...>>(fwd<F>(f), fwd<Ts>(ts)...));
 }
 
 namespace yw {
@@ -522,14 +540,19 @@ template<typename T, typename... Ts> concept vapplyable = requires(T&& t, Ts&&..
 template<typename T, typename... Ts> concept nt_vapplyable = vapplyable<T, Ts...> && requires(T&& t, Ts&&... ts) { { _::_vapply(fwd<T>(t), fwd<Ts>(ts)...) } noexcept; };
 template<typename T, typename... Ts> using vapply_result = decltype(_::_vapply(declval<T>(), declval<Ts>()...));
 inline constexpr auto vapply = []<typename F, typename... Ts>(F&& f, Ts&&... ts) noexcept(nt_vapplyable<F, Ts...>) requires vapplyable<F, Ts...> { return _::_vapply(fwd<F>(f), fwd<Ts>(ts)...); };
+template<typename Lt, typename Rt> concept vassignable = tuple<Lt> && vapplyable<decltype(assign), Lt, Rt>;
+template<typename Lt, typename Rt> concept nt_vassignable = tuple<Lt> && nt_vapplyable<decltype(assign), Lt, Rt>;
+inline constexpr auto vassign = []<typename Lt, typename Rt>(Lt&& L, Rt&& R) noexcept(nt_vassignable<Lt, Rt>) requires vassignable<Lt, Rt> { return vapply(assign, fwd<Lt>(L), fwd<Rt>(R)); };
 
 template<typename... Fs> struct caster : public Fs... {
+private:
   template<typename T> static constexpr nat i = []<typename... Ts>(typepack<Ts...>) { return inspects<same_as<Ts, T>...>; }(typepack<invoke_result<Fs>...>{});
   template<typename T> static constexpr nat j = i<T> < sizeof...(Fs) ? i<T> : []<typename... Ts>(typepack<Ts...>) { return inspects<convertible_to<Ts, T>...>; }(typepack<invoke_result<Fs>...>{});
   template<typename... As> static constexpr nat k = inspects<invocable<Fs, As...>...>;
 public:
   template<typename T> requires(j<T> < sizeof...(Fs)) constexpr operator T() const noexcept(nt_convertible_to<invoke_result<select_type<j<T>, Fs...>>, T>) { return select_type<j<T>, Fs...>::operator()(); }
-  template<typename... As> requires(k<As...> != sizeof...(Fs)) constexpr auto operator()(As&&... Args) const noexcept(nt_invocable<select_type<k<As...>, Fs...>, As...>) -> invoke_result<select_type<k<As...>, Fs...>> { return select_type<k<As...>, Fs...>::operator()(fwd<As>(Args)...); }
+  template<typename... As> requires(k<As...> != sizeof...(Fs)) constexpr auto operator()(As&&... Args) const
+    noexcept(nt_invocable<select_type<k<As...>, Fs...>, As...>) -> invoke_result<select_type<k<As...>, Fs...>> { return select_type<k<As...>, Fs...>::operator()(fwd<As>(Args)...); }
 };
 
 inline constexpr caster is_cev{[]() noexcept { return std::is_constant_evaluated(); }};
@@ -537,8 +560,10 @@ inline constexpr caster is_cev{[]() noexcept { return std::is_constant_evaluated
 template<bool Max> struct t_max {
   constexpr none operator()() const noexcept { return {}; }
   template<typename T> constexpr T operator()(T&& t) const noexcept { return t; }
-  template<typename T0, typename T1, typename... Ts> constexpr auto operator()(T0&& t0, T1&& t1, Ts&&... ts) const -> common_type<T0, T1, Ts...> { return (*this)(call<common_type<T0, T1, Ts...>>(t0, t1), ts...); }
-  template<typename F, typename T, typename... Ts> constexpr auto operator()(F&& f, T&& t, Ts&&... ts) const -> common_type<invoke_result<F&, T>, invoke_result<F&, Ts>...> { return (*this)(invoke(f, t), invoke(f, ts)...); }
+  template<typename T0, typename T1, typename... Ts> constexpr auto operator()(T0&& t0, T1&& t1, Ts&&... ts) const
+    -> common_type<T0, T1, Ts...> { return (*this)(call<common_type<T0, T1, Ts...>>(t0, t1), ts...); }
+  template<typename F, typename T, typename... Ts> constexpr auto operator()(F&& f, T&& t, Ts&&... ts) const
+    -> common_type<invoke_result<F&, T>, invoke_result<F&, Ts>...> { return (*this)(invoke(f, t), invoke(f, ts)...); }
 private:
   template<typename R> static constexpr auto call(auto&& t, auto&& u) -> R { if constexpr (Max) return t < u ? u : t; else return u < t ? u : t; }
 };
@@ -657,7 +682,8 @@ template<range Rg> array(Rg&&) -> array<iter_value<Rg>, 0>;
 
 namespace yw::_ {
 template<range Rg> struct _iter_t<Rg> : _iter_t<iterator_t<Rg>> {};
-template<iterator It> struct _iter_t<It> { using v = std::iter_value_t<It>; using d = std::iter_difference_t<It>; using r = std::iter_reference_t<It>; using rr = std::iter_rvalue_reference_t<It>; };
+template<iterator It> struct _iter_t<It> { using v = std::iter_value_t<It>; using d = std::iter_difference_t<It>;
+                                           using r = std::iter_reference_t<It>; using rr = std::iter_rvalue_reference_t<It>; };
 }
 
 #include <filesystem>
@@ -691,16 +717,13 @@ private:
         else if constexpr (same_as<remove_cv<T>, nat4>) return unsigned(std::stoul(Str));
         else if constexpr (same_as<remove_cv<T>, ul_t>) return std::stoul(Str);
         else return T(std::stoll(Str));
-      } catch (const std::exception&) { continue; }
-    }
-    return T{};
-  }
-};
+      } catch (const std::exception&) { continue; } }
+    return T{}; } };
 template<arithmetic T> inline constexpr t_stov<T> stov;
-
-template<included_in<cat1, cat2> Ct> inline constexpr auto vtos = []<arithmetic T>(const T v) noexcept { if constexpr (same_as<Ct, cat1>) return std::to_string(v); else return std::to_wstring(v); };
-inline constexpr overload strlen{[](const character auto* const Str) { return std::char_traits<remove_pointer<decltype(Str)>>::length(Str); }, []<range Rg>(Rg&& Str) requires character<iter_value<Rg>> { return std::ranges::distance(Str); }};
-
+template<included_in<cat1, cat2> Ct> inline constexpr auto vtos =
+  []<arithmetic T>(const T v) noexcept { if constexpr (same_as<Ct, cat1>) return std::to_string(v); else return std::to_wstring(v); };
+inline constexpr overload strlen{[]<character Ct>(const Ct* const Str) { return std::char_traits<Ct>>::length(Str); },
+                                 []<range Rg>(Rg&& Str) requires character<iter_value<Rg>> { return std::ranges::distance(Str); }};
 struct source {
   const char* const file;
   const int line, column;
@@ -720,37 +743,55 @@ template<character Ct, nat N> literal(const Ct (&)[N]) -> literal<Ct>;
 
 class path : public std::filesystem::path {
 public:
+  using base = std::filesystem::path;
   path() noexcept = default;
-  path(const std::filesystem::path& p) : std::filesystem::path(p) {}
-  path(std::filesystem::path&& p) noexcept : std::filesystem::path(mv(p)) {}
-  path(string_type&& s) : std::filesystem::path(mv(s)) {}
-  template<range Rg> requires character<iter_value<Rg>> path(Rg&& r) : std::filesystem::path(yw::begin(r), yw::end(r)) {}
-  template<character Ct> path(const Ct* s) : std::filesystem::path(s) {}
-  bool exists() const { return std::filesystem::exists(*this); }
-  bool is_file() const { return std::filesystem::is_regular_file(*this); }
-  bool is_directory() const { return std::filesystem::is_directory(*this); }
-  nat file_size() const { return std::filesystem::file_size(*this); }
-  std::vector<path> list(bool Recursive = false, const source& _ = {}) const {
-    if (!exists()) throw std::runtime_error(std::format("runtime error in path::list : the path does not exist ({})", this->string()));
-    if (!is_directory()) throw std::runtime_error(std::format("runtime error in path::list: the path is not a directory ({})", this->string()));
-    std::vector<path> A;
-    if (Recursive) for (const auto& E : std::filesystem::recursive_directory_iterator(*this)) A.push_back(E.path());
-    else for (const auto& E : std::filesystem::directory_iterator(*this)) A.push_back(E.path());
-    return A;
-  }
-  void read(cnt_range auto& Out, const source& _ = {}) const requires(!is_const<decltype(yw::data(Out))>) {
-    if (const auto n = yw::size(Out) * sizeof(iter_value<decltype(Out)>); file_size() == n) {
-      if (std::ifstream ifs(*this, std::ios::binary); ifs) return void(ifs.read(reinterpret_cast<char*>(yw::data(Out)), n));
-      else throw std::runtime_error(std::format("runtime error in path::read : failed to open the file ({})", this->string()));
-    } else throw std::runtime_error(std::format("runtime error in path::read : the byte size of the output range is not equal to the file size ({})", this->string()));
-  }
-  std::string read(const source& _ = {}) const { std::string a(file_size(), char{}); return read(a, _), mv(a); }
-  void write(cnt_range auto&& In, const source& _ = {}) const {
-    if (std::ofstream ofs(*this, std::ios::binary); ofs) ofs.write(reinterpret_cast<const char*>(yw::data(In)), yw::size(In) * sizeof(iter_value<decltype(In)>));
-    else throw std::runtime_error(std::format("runtime error in path::write : failed to open the file ({})", this->string()));
-  }
-  void remove() const { std::filesystem::remove(*this); }
+  path(const base& p) : base(p) {}
+  path(base&& p) noexcept : base(mv(p)) {}
+  path(string_type&& s) : base(mv(s)) {}
+  template<range Rg> requires character<iter_value<Rg>> path(Rg&& r) : base(yw::begin(r), yw::end(r)) {}
+  template<character Ct> path(const Ct* s) : base(s) {}
+  static bool exists(const auto& p) ywlib_wrapper(std::filesystem::exists(p));
+  static bool remove(const auto& p) ywlib_wrapper(std::filesystem::remove(p));
+  static bool is_file(const auto& p) ywlib_wrapper(std::filesystem::is_regular_file(p));
+  static bool is_directory(const auto& p) ywlib_wrapper(std::filesystem::is_directory(p));
+  static nat file_size(const auto& p) ywlib_wrapper(std::filesystem::file_size(p));
+  static array<path> list(const convertible_to<base> auto& p, bool Recursive = false);
+  static void read(const convertible_to<base> auto& p, cnt_range auto&& Out) requires (!is_const<decltype(yw::data(Out))>);
+  static array<nat1> read(const convertible_to<base> auto& p) { array<nat1> a(file_size(p), nat1{}); read(p, a); return a; }
+  static void write(const convertible_to<base> auto& p, cnt_range auto&& In);
+  bool exists() const { return exists(*this); }
+  bool remove() const { return remove(*this); }
+  bool is_file() const { return is_file(*this); }
+  bool is_directory() const { return is_directory(*this); }
+  nat file_size() const { return file_size(*this); }
+  std::vector<path> list(bool Recursive = false) const { return list(*this, Recursive); }
+  void read(cnt_range auto&& Out) const requires(!is_const<decltype(yw::data(Out))>) { return read(*this, Out); }
+  array<nat1> read() const { return read(*this); }
+  void write(cnt_range auto&& In) const { return write(*this, In); }
 };
+
+array<path> path::list(const convertible_to<base> auto& p, bool Recursive) {
+  array<path> a;
+  if (!std::filesystem::exists(p)) throw std::runtime_error(std::format("runtime error in path::list : the path does not exist ({})", base(p)));
+  if (!std::filesystem::is_directory(p)) throw std::runtime_error(std::format("runtime error in path::list : the path is not a directory ({})", base(p)));
+  if (Recursive) for (const auto& e : std::filesystem::recursive_directory_iterator(p)) a.push_back(e.path());
+  else for (const auto& e : std::filesystem::directory_iterator(p)) a.push_back(e.path());
+  return a;
+}
+
+void path::read(const convertible_to<base> auto& p, cnt_range auto&& Out) requires (!is_const<decltype(yw::data(Out))>) {
+  if (const auto n = yw::size(Out) * sizeof(iter_value<decltype(Out)>); p.file_size() == n) {
+    if (std::ifstream ifs(p, std::ios::binary); ifs) return void(ifs.read(reinterpret_cast<char*>(yw::data(Out)), n));
+    else throw std::runtime_error(std::format("runtime error in path::read : failed to open the file ({})", p.string()));
+  } else throw std::runtime_error(std::format("runtime error in path::read : the byte size of the output range is not equal to the file size ({})", p.string()));
+}
+
+void path::write(const convertible_to<base> auto& p, cnt_range auto&& In) {
+  if (std::ofstream ofs(p, std::ios::binary); ofs) {
+    if (const auto n = yw::size(In) * sizeof(iter_value<decltype(In)>); ofs.write(reinterpret_cast<const char*>(yw::data(In)), n)) return;
+    else throw std::runtime_error(std::format("runtime error in path::write : failed to write to the file ({})", p.string()));
+  } else throw std::runtime_error(std::format("runtime error in path::write : failed to open the file ({})", p.string()));
+}
 }
 
 namespace std {
@@ -773,8 +814,1136 @@ template<typename T, typename Pj, yw::sequence_of<nat> Sq> struct tuple_size<yw:
 template<nat I, typename T, typename Pj, yw::sequence_of<nat> Sq> struct tuple_element<I, yw::projector<T, Pj, Sq>> : type_identity<yw::element_t<yw::projector<T, Pj, Sq>, I>> {};
 template<typename T, size_t N> struct tuple_size<yw::array<T, N>> : integral_constant<size_t, N> {};
 template<size_t I, typename T, size_t N> struct tuple_element<I, yw::array<T, N>> : type_identity<T> {};
-template<> struct formatter<yw::source> : formatter<string> {
-  template<typename FormatContext> auto format(const yw::source& s, FormatContext& c) const { return formatter<std::string>::format(s.to_string(), c); } };
+template<> struct formatter<yw::source> : formatter<string> { auto format(const yw::source& s, auto& c) const { return formatter<std::string>::format(s.to_string(), c); } };
+template<typename Ct> struct formatter<yw::path, Ct> : formatter<basic_string<Ct>, Ct> { auto format(const yw::path& p, auto& c) const {
+  if constexpr (same_as<remove_cv<Ct>, char>) return std::format("\"{}\"", formatter<basic_string<Ct>, Ct>::format(p.string<Ct>(), c));
+  else return std::format(L"\"{}\"", formatter<basic_string<Ct>, Ct>::format(p.string<Ct>(), c)) } };
 }
 
 #include <immintrin.h>
+
+namespace yw {
+using xvector = __m128;
+using xwector = __m256d;
+using xrect = __m128i;
+using xmatrix = array<xvector, 4>;
+
+inline xvector xvload(const float a) noexcept { return _mm_set1_ps(a); }
+inline xvector xvload(const float* a) noexcept { return _mm_loadu_ps(a); }
+inline xvector xvload(const float x, const float y, const float z = {}, const float w = {}) noexcept { return _mm_set_ps(w, z, y, x); }
+inline xwector xvload(const double a) noexcept { return _mm256_set1_pd(a); }
+inline xwector xvload(const double* a) noexcept { return _mm256_loadu_pd(a); }
+inline xwector xvload(const double x, const double y, const double z = {}, const double w = {}) noexcept { return _mm256_set_pd(w, z, y, x); }
+inline xrect xvload(const int a) noexcept { return _mm_set1_epi32(a); }
+inline xrect xvload(const int* a) noexcept { return _mm_loadu_epi32(a); }
+inline xrect xvload(const int x, const int y, const int z = {}, const int w = {}) noexcept { return _mm_set_epi32(w, z, y, x); }
+
+template<included_in<xvector, xwector, xrect> Xv> Xv xvcast(const xvector& A) noexcept {
+  if constexpr (same_as<Xv, xvector>) return A;
+  else if constexpr (same_as<Xv, xwector>) return _mm256_cvtps_pd(A);
+  else if constexpr (same_as<Xv, xrect>) return _mm_cvtps_epi32(A);
+}
+template<included_in<xvector, xwector, xrect> Xv> Xv xvcast(const xwector& A) noexcept {
+  if constexpr (same_as<Xv, xvector>) return _mm256_cvtpd_ps(A);
+  else if constexpr (same_as<Xv, xwector>) return A;
+  else if constexpr (same_as<Xv, xrect>) return _mm256_cvtpd_epi32(A);
+}
+template<included_in<xvector, xwector, xrect> Xv> Xv xvcast(const xrect& A) noexcept {
+  if constexpr (same_as<Xv, xvector>) return _mm_cvtepi32_ps(A);
+  else if constexpr (same_as<Xv, xwector>) return _mm256_cvtepi32_pd(A);
+  else if constexpr (same_as<Xv, xrect>) return A;
+}
+
+inline xrect xvbitcast(const xvector& A) noexcept { return _mm_castps_si128(A); }
+inline xvector xvbitcast(const xrect& A) noexcept { return _mm_castsi128_ps(A); }
+
+inline constexpr caster xv_zero{
+  []() noexcept { return _mm_setzero_ps(); }, []() noexcept { return _mm256_setzero_pd(); }, []() noexcept { return _mm_setzero_si128(); },
+  []() noexcept -> const xmatrix& { static const xmatrix static_{_mm_setzero_ps(), _mm_setzero_ps(), _mm_setzero_ps(), _mm_setzero_ps()}; return static_; }};
+
+inline constexpr caster xv_identity{[]() noexcept -> const xmatrix& { static const xmatrix m{xv_x, xv_y, xv_z, xv_w}; return m; }};
+
+template<value X, value Y = X, value Z = Y, value W = Z> inline constexpr caster xv_constant{
+  []() noexcept -> const xvector& { static const xvector static_ = xvload(float(X), float(Y), float(Z), float(W)); return static_; },
+  []() noexcept -> const xwector& { static const xwector static_ = xvload(double(X), double(Y), double(Z), double(W)); return static_; },
+  []() noexcept -> const xrect& { static const xrect static_ = xvload(int(X), int(Y), int(Z), int(W)); return static_; }};
+
+inline constexpr auto xv_x = xv_constant<1, 0, 0, 0>;
+inline constexpr auto xv_y = xv_constant<0, 1, 0, 0>;
+inline constexpr auto xv_z = xv_constant<0, 0, 1, 0>;
+inline constexpr auto xv_w = xv_constant<0, 0, 0, 1>;
+inline constexpr auto xv_neg_zero = xv_constant<-0.0, -0.0, -0.0, -0.0>;
+inline constexpr auto xv_neg_x = xv_constant<-1, 0, 0, 0>;
+inline constexpr auto xv_neg_y = xv_constant<0, -1, 0, 0>;
+inline constexpr auto xv_neg_z = xv_constant<0, 0, -1, 0>;
+inline constexpr auto xv_neg_w = xv_constant<0, 0, 0, -1>;
+
+template<nat I> requires(I < 4) struct t_xvget {
+  xvector operator()(const xvector& a) const noexcept { if constexpr (I == 0) return _mm_cvtss_f32(a); else return bitcast<float>(_mm_extract_ps(A, int(I))); }
+  xwector operator()(const xwector& a) const noexcept { return bitcast<double>(_mm256_extract_epi64(_mm256_castpd_si256(a), int(I))); }
+  xrect operator()(const xrect& a) const noexcept { if constexpr (I == 0) return _mm_cvtsi128_si32(a); else return _mm_extract_epi32(a, int(I)); }
+};
+template<nat I> requires(I < 4) inline constexpr t_xvget<I> xvget;
+
+template<nat I> requires(I < 4) inline constexpr overload xvset{
+  [](const xvector& A, float B) noexcept { return xvbitcast(_mm_insert_epi32(xvbitcast(A), bitcast<int>(B), int(I))); },
+  [](const xwector& A, double B) noexcept { return _mm256_castsi256_pd(_mm256_insert_epi64(_mm256_castpd_si256(A), bitcast<long long>(B), int(I))); },
+  [](const xrect& A, int B) noexcept { return _mm_insert_epi32(A, B, int(I)); }};
+
+template<bool X, bool Y, bool Z, bool W> inline constexpr overload xvblend{
+  [](const xvector& A, const xvector& B) noexcept {
+    if constexpr (!(X | Y | Z | W)) return A;
+    else if constexpr (X & Y & Z & W) return B;
+    else return _mm_blend_ps(A, B, int(X + Y * 2 + Z * 4 + W * 8)); },
+  [](const xwector& A, const xwector& B) noexcept {
+    if constexpr (!(X | Y | Z | W)) return A;
+    else if constexpr (X & Y & Z & W) return B;
+    else return _mm256_blend_pd(A, B, int(X + Y * 2 + Z * 4 + W * 8)); },
+  [](const xrect& A, const xrect& B) noexcept {
+    if constexpr (!(X | Y | Z | W)) return A;
+    else if constexpr (X & Y & Z & W) return B;
+    else return _mm_blend_epi32(A, B, int(X + Y * 2 + Z * 4 + W * 8)); }};
+
+template<bool X, bool Y, bool Z, bool W> inline constexpr auto xvsetzero = [](const included_in<xvector, xwector, xrect> auto& A) noexcept { return xvblend<X, Y, Z, W>(A, xv_zero); };
+
+template<int X, int Y, int Z, int W> struct t_xvpermute {
+private:
+  template<int A, int B, int C, int D> friend struct t_xvpermute;
+  static xvector call(const xvector& A) noexcept {
+    constexpr auto f = [](auto a, auto b) { return a == b || a < 0 || a >= 4; };
+    constexpr nat x = (f(X, 0) ? 0 : X), y = (f(Y, 1) ? 1 : Y), z = (f(Z, 2) ? 2 : Z), w = (f(W, 3) ? 3 : W);
+    if constexpr (f(X, 0) && f(Y, 1) && f(Z, 2) && f(W, 3)) return A;
+    else if constexpr (f(X, 0) && f(Y, 0) && f(Z, 2) && f(W, 2)) return _mm_moveldup_ps(A);
+    else if constexpr (f(X, 1) && f(Y, 1) && f(Z, 3) && f(W, 3)) return _mm_movehdup_ps(A);
+    else return _mm_permute_ps(A, int(x + y * 4 + z * 16 + w * 64));
+  }
+  static xwector call(const xwector& A) noexcept {
+    constexpr auto f = [](auto a, auto b) { return a == b || a < 0 || a >= 4; };
+    constexpr nat x = (f(X, 0) ? 0 : X), y = (f(Y, 1) ? 1 : Y), z = (f(Z, 2) ? 2 : Z), w = (f(W, 3) ? 3 : W);
+    if constexpr (x == 0 && y == 1 && z == 2 && w == 3) return A;
+    else if constexpr ((x | y) < 2 && 2 <= (z & w)) return _mm256_permute_pd(A, int(x + y * 2 + (z - 2) * 4 + (w - 2) * 8));
+    else return _mm256_permute4x64_pd(A, int(x + y * 4 + z * 16 + w * 64));
+  }
+public:
+  xvector operator()(const xvector& A) const noexcept requires(lt(max(X, Y, Z, W), 4)) { return call(A); }
+  xwector operator()(const xwector& A) const noexcept requires(lt(max(X, Y, Z, W), 4)) { return call(A); }
+  xrect operator()(const xrect& A) const noexcept requires(lt(max(X, Y, Z, W), 4)) { return xvbitcast(call(xvbitcast(A))); }
+  xvector operator()(const xvector& A, const xvector& B) const noexcept requires(lt(max(X, Y, Z, W), 8)) {
+    constexpr auto f = [](auto a, auto b) { return a == b || a < 0; };
+    constexpr int xa = (f(X, 0) ? 0 : X), ya = (f(Y, 1) ? 1 : Y), za = (f(Z, 2) ? 2 : Z), wa = (f(W, 3) ? 3 : W),
+                  xb = (f(X, 4) ? 4 : X), yb = (f(Y, 5) ? 5 : Y), zb = (f(Z, 6) ? 6 : Z), wb = (f(W, 7) ? 7 : W);
+    if constexpr ((xa | ya | za | wa) < 4) return t_xvpermute<xa, ya, za, wa>::call(A);
+    else if constexpr (4 <= (xb & yb & zb & wb)) return t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B);
+    else if constexpr ((xa & 3) == 0 && (ya & 3) == 1 && (za & 3) == 2 && (wa & 3) == 3) return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(B, A);
+    else if constexpr ((xa | ya) < 4 && 4 <= (zb & wb)) return _mm_shuffle_ps(A, B, xa + ya * 4 + (zb - 4) * 16 + (wb - 4) * 64);
+    else if constexpr (4 <= (xb & yb) && (za | wa) < 4) return _mm_shuffle_ps(B, A, xb - 4 | (yb - 4) * 4 | za * 16 | wa * 64);
+    else if constexpr ((xa == 0) + (ya == 1) + (za == 2) + (wa == 3) == 3) {
+      constexpr nat i = inspects<xa != 0, ya != 1, za != 2, wa != 3>;
+      return _mm_insert_ps(A, B, int((value_switch<i, xa, ya, za, wa> - 4) << 6 | i << 4));
+    } else if constexpr ((xb == 4) + (yb == 5) + (zb == 6) + (wb == 7) == 3) {
+      constexpr nat i = inspects<xb != 4, yb != 5, zb != 6, wb != 7>;
+      return _mm_insert_ps(A, B, int(value_switch<i, xb, yb, zb, wb> << 6 | i << 4));
+    } else if constexpr ((xa < 4 || xb == 4) && (ya < 4 || yb == 5) && (za < 4 || zb == 6) && (wa < 4 || wb == 7))
+      return xvblend<xb == 4, yb == 5, zb == 6, wb == 7>(t_xvpermute<xa, ya, za, wa>::call(A), B);
+    else if constexpr ((4 <= xb || xa == 0) && (4 <= yb || ya == 1) && (4 <= zb || za == 2) && (4 <= wb || wa == 3))
+      return xvblend<xa == 0, ya == 1, za == 2, wa == 3>(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), A);
+    else if constexpr ((xa < 4) + (ya < 4) + (za < 4) + (wa < 4) == 3) {
+      constexpr nat i = inspects<(xa > 3), (ya > 3), (za > 3), (wa > 3)>;
+      return _mm_insert_ps(t_xvpermute<xa, ya, za, wa>::call(A), B, int((value_switch<i, xa, ya, za, wa> - 4) << 6 | i << 4));
+    } else if constexpr ((xb < 4) + (yb < 4) + (zb < 4) + (wb < 4) == 1) {
+      constexpr nat i = inspects<(xb < 4), (yb < 4), (zb < 4), (wb < 4)>;
+      return _mm_insert_ps(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), A, int(value_switch<i, xb, yb, zb, wb> << 6 | i << 4));
+    } else return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), t_xvpermute<xa, ya, za, wa>::call(A));
+  };
+  xwector operator()(const xwector& A, const xwector& B) const noexcept requires(lt(max(X, Y, Z, W), 8)) {
+    constexpr auto f = [](auto a, auto b) noexcept { return a == b || a < 0; };
+    constexpr int xa = (f(X, 0) ? 0 : X), ya = (f(Y, 1) ? 1 : Y), za = (f(Z, 2) ? 2 : Z), wa = (f(W, 3) ? 3 : W),
+                  xb = (f(X, 4) ? 4 : X), yb = (f(Y, 5) ? 5 : Y), zb = (f(Z, 6) ? 6 : Z), wb = (f(W, 7) ? 7 : W);
+    if constexpr (xa == 0 && ya == 1 && za == 2 && wa == 3) return A;
+    else if constexpr (xb == 4 && yb == 5 && zb == 6 && wb == 7) return B;
+    else if constexpr ((xa & 3) == 0 && (ya & 3) == 1 && (za & 3) == 2 && (wa & 3) == 3) return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(B, A);
+    else if constexpr (xa < 2 && (yb == 4 || yb == 5) && (za == 2 || zb == 3) && wb > 5)
+      return _mm256_shuffle_pd(A, B, (xa == 1) + (yb == 5) * 2 + (za == 3) * 4 + (wb == 7) * 8);
+    else if constexpr ((xb == 4 || xb == 5) && ya < 2 && zb > 5 && (wa == 2 || wa == 3))
+      return _mm256_shuffle_pd(B, A, (xb == 5) + (ya == 1) * 2 + (zb == 7) * 4 + (wa == 3) * 8);
+    else if constexpr ((xa | ya | za | wa) < 4) return t_xvpermute<xa, ya, za, wa>::call(A);
+    else if constexpr ((xb & yb & zb & wb) > 3) return t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B);
+    else if constexpr (((xa == 0 && ya == 1) || (xa == 2 && ya == 3)) && ((zb == 4 && wb == 5) || (zb == 6 && wb == 7)))
+      return _mm256_shuffle_f64x2(A, B, (xa == 2) + (zb == 6) * 2);
+    else if constexpr (((xb == 4 && yb == 5) || (xb == 6 && yb == 7)) && ((za == 0 && wa == 1) || (za == 2 && wa == 3)))
+      return _mm256_shuffle_f64x2(B, A, (xb == 6) + (za == 2) * 2);
+    else return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), t_xvpermute<xa, ya, za, wa>::call(A));
+  }
+  xrect operator()(const xrect& A, const xrect& B) const noexcept requires(lt(max(X, Y, Z, W), 8)) { return xvbitcast((*this)(xvbitcast(A), xvbitcast(B))); }
+};
+template<int X, int Y, int Z, int W> inline constexpr t_xvpermute<X, Y, Z, W> xvpermute;
+
+template<nat To, nat From, nat Zero = 0b0000> requires((To | From) < 4 && Zero < 16) inline constexpr overload xvinsert{
+  [](const xvector& Inserted, const xvector& Picked) noexcept {
+  constexpr auto f = [](auto a) { return To == a ? From + 4 : a; };
+  if constexpr (Zero == 0) return xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Picked);
+  else return _mm_insert_ps(Inserted, Picked, From << 6 | To << 4 | Zero); },
+  [](const xwector& Inserted, const xwector& Picked) noexcept {
+  constexpr auto f = [](auto a) { return To == a ? From + 4 : a; };
+  if constexpr (Zero == 0) return xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Picked);
+  else return xvblend<!(Zero & 1), !(Zero & 2), !(Zero & 4), !(Zero & 8)>(xv_zero, xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Picked)); },
+  [](const xrect& Inserted, const xrect& Picked) noexcept {
+    constexpr auto f = [](auto a) { return To == a ? From + 4 : a; };
+    if constexpr (Zero == 0) return xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Picked);
+    else return xvbitcast(_mm_insert_ps(xvbitcast(Inserted), xvbitcast(Picked), From << 6 | To << 4 | Zero)); }};
+
+inline constexpr overload xveq{
+  [](const xvector& A, const xvector& B) noexcept -> bool { return _mm_test_all_ones(xvbitcast(_mm_cmpeq_ps(A, B))); },
+  [](const xwector& A, const xwector& B) noexcept -> bool { return _mm256_testc_pd(_mm256_cmp_pd(A, B, 0), xv_neg_zero); },
+  [](const xrect& A, const xrect& B) noexcept -> bool { return _mm_test_all_ones(_mm_cmpeq_epi32(A, B)); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N]) noexcept -> bool { return xveq(A[0], B[0]) && xveq(A[1], B[1]); }};
+
+inline constexpr overload xvne{
+  [](const xvector& A, const xvector& B) noexcept -> bool { return !xveq(A, B); },
+  [](const xwector& A, const xwector& B) noexcept -> bool { return !xveq(A, B); },
+  [](const xrect& A, const xrect& B) noexcept -> bool { return !xveq(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N]) noexcept -> bool { return !xveq(A, B); }};
+
+inline constexpr overload xvlt{
+  [](const xvector& A, const xvector& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) < _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) < _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) < _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
+
+inline constexpr overload xvle{
+  [](const xvector& A, const xvector& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) <= _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) <= _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) <= _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
+
+inline constexpr overload xvgt{
+  [](const xvector& A, const xvector& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) > _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) > _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) > _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
+
+inline constexpr overload xvge{
+  [](const xvector& A, const xvector& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) >= _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) >= _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) >= _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
+
+inline constexpr overload xvtw{
+  [](const xvector& A, const xvector& B) noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) <=> _mm_movemask_ps(_mm_cmplt_ps(A, B)); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) <=> _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) <=> _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }};
+
+inline constexpr overload xvabs{
+  [](const xvector& A) noexcept { return _mm_andnot_ps(xv_neg_zero, A); },
+  [](const xwector& A) noexcept { return _mm256_andnot_pd(xv_neg_zero, A); },
+  [](const xrect& A) noexcept { return _mm_abs_epi32(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_andnot_ps(xv_neg_zero, A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_andnot_pd(xv_neg_zero, A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_abs_epi32(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvneg{
+  [](const xvector& A) noexcept { return _mm_xor_ps(A, xv_neg_zero); },
+  [](const xwector& A) noexcept { return _mm256_xor_pd(A, xv_neg_zero); },
+  [](const xrect& A) noexcept { return _mm_xor_epi32(A, xv_neg_zero); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_xor_ps(A[Is], xv_neg_zero)), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_xor_pd(A[Is], xv_neg_zero)), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_xor_epi32(A[Is], xv_neg_zero)), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvadd{
+  [](const xvector& A, const xvector& B) noexcept { return _mm_add_ps(A, B); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_add_pd(A, B); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_add_epi32(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_add_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_add_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_add_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvsub{
+  [](const xvector& A, const xvector& B) noexcept { return _mm_sub_ps(A, B); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_sub_pd(A, B); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_sub_epi32(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sub_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_sub_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sub_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvmul{
+  [](const xvector& A, const xvector& B) noexcept { return _mm_mul_ps(A, B); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_mul_pd(A, B); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_mul_epi32(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_mul_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_mul_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_mul_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvdiv{
+  [](const xvector& A, const xvector& B) noexcept { return _mm_div_ps(A, B); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_div_pd(A, B); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_div_epi32(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_div_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_div_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_div_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
+
+template<bool X, bool Y, bool Z, bool W> inline constexpr overload xvabsolute{
+  [](const xvector& A) noexcept { return xvblend<X, Y, Z, W>(A, xvabs(A)); },
+  [](const xwector& A) noexcept { return xvblend<X, Y, Z, W>(A, xvabs(A)); },
+  [](const xrect& A) noexcept { return xvblend<X, Y, Z, W>(A, xvabs(A)); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvabs(A[Is]))), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvabs(A[Is]))), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvabs(A[Is]))), ...); }(make_sequence<N>{}); }};
+
+template<bool X, bool Y, bool Z, bool W> inline constexpr overload xvnegate{
+  [](const xvector& A) noexcept { return xvblend<X, Y, Z, W>(A, xvneg(A)); },
+  [](const xwector& A) noexcept { return xvblend<X, Y, Z, W>(A, xvneg(A)); },
+  [](const xrect& A) noexcept { return xvblend<X, Y, Z, W>(A, xvneg(A)); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvneg(A[Is]))), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvneg(A[Is]))), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvblend<X, Y, Z, W>(A[Is], xvneg(A[Is]))), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvfma{
+  [](const xvector& A, const xvector& B, const xvector& C) noexcept { return _mm_fmadd_ps(A, B, C); },
+  [](const xwector& A, const xwector& B, const xwector& C) noexcept { return _mm256_fmadd_pd(A, B, C); },
+  [](const xrect& A, const xrect& B, const xrect& C) noexcept { return xvadd(xvmul(A, B), C); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], const xvector (&C)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_fmadd_ps(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], const xwector (&C)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_fmadd_pd(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], const xrect (&C)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvadd(xvmul(A[Is], B[Is]), C[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvfms{
+  [](const xvector& A, const xvector& B, const xvector& C) noexcept { return _mm_fmsub_ps(A, B, C); },
+  [](const xwector& A, const xwector& B, const xwector& C) noexcept { return _mm256_fmsub_pd(A, B, C); },
+  [](const xrect& A, const xrect& B, const xrect& C) noexcept { return xvsub(xvmul(A, B), C); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], const xvector (&C)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_fmsub_ps(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], const xwector (&C)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_fmsub_pd(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], const xrect (&C)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvsub(xvmul(A[Is], B[Is]), C[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvfnma{
+  [](const xvector& A, const xvector& B, const xvector& C) noexcept { return _mm_fnmadd_ps(A, B, C); },
+  [](const xwector& A, const xwector& B, const xwector& C) noexcept { return _mm256_fnmadd_pd(A, B, C); },
+  [](const xrect& A, const xrect& B, const xrect& C) noexcept { return xvsub(xvmul(xvneg(A), B), C); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], const xvector (&C)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_fnmadd_ps(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], const xwector (&C)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_fnmadd_pd(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], const xrect (&C)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvsub(xvmul(xvneg(A[Is]), B[Is]), C[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvfnms{
+  [](const xvector& A, const xvector& B, const xvector& C) noexcept { return _mm_fnmsub_ps(A, B, C); },
+  [](const xwector& A, const xwector& B, const xwector& C) noexcept { return _mm256_fnmsub_pd(A, B, C); },
+  [](const xrect& A, const xrect& B, const xrect& C) noexcept { return xvsub(xvmul(xvneg(A), B), C); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], const xvector (&C)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_fnmsub_ps(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], const xwector (&C)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_fnmsub_pd(A[Is], B[Is], C[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], const xrect (&C)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvsub(xvmul(xvneg(A[Is]), B[Is]), C[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvceil{
+  [](const xvector& A) noexcept { return _mm_ceil_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_ceil_pd(A); },
+  [](const xrect& A) noexcept { return A; },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_ceil_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_ceil_pd(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = A[Is]), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvfloor{
+  [](const xvector& A) noexcept { return _mm_floor_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_floor_pd(A); },
+  [](const xrect& A) noexcept { return A; },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_floor_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_floor_pd(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = A[Is]), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvtrunc{
+  [](const xvector& A) noexcept { return _mm_trunc_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_trunc_pd(A); },
+  [](const xrect& A) noexcept { return A; },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_trunc_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_trunc_pd(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = A[Is]), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvround{
+  [](const xvector& A) noexcept { return _mm_round_ps(A, 8); },
+  [](const xwector& A) noexcept { return _mm256_round_pd(A, 8); },
+  [](const xrect& A) noexcept { return A; },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_round_ps(A[Is], 8)), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_round_pd(A[Is]), 8), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = A[Is]), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvmax{
+  [](const xvector& A, const xvector& B) noexcept { return _mm_max_ps(A, B); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_max_pd(A, B); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_max_epi32(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_max_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_max_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_max_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvmin{
+  [](const xvector& A, const xvector& B) noexcept { return _mm_min_ps(A, B); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_min_pd(A, B); },
+  [](const xrect& A, const xrect& B) noexcept { return _mm_min_epi32(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_min_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_min_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xrect (&A)[N], const xrect (&B)[N], xrect (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_min_epi32(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvsin{
+  [](const xvector& A) noexcept { return _mm_sin_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_sin_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sin_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_sin_pd(A[Is])), ...); }(make_sequence<N>{}); },
+  [](const xvector& A, xvector& Cos) noexcept { return _mm_sincos_ps(&Cos, A); },
+  [](const xwector& A, xwector& Cos) noexcept { return _mm256_sincos_pd(&Cos, A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N], xvector (&Cos)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sincos_ps(&Cos[Is], A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N], xwector (&Cos)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_sin_pd(&Cos[Is], A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvasin{
+  [](const xvector& A) noexcept { return _mm_asin_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_asin_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_asin_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_asin_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvsinh{
+  [](const xvector& A) noexcept { return _mm_sinh_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_sinh_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sinh_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_sinh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvasinh{
+  [](const xvector& A) noexcept { return _mm_asinh_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_asinh_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_asinh_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_asinh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvcos{
+  [](const xvector& A) noexcept { return _mm_cos_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_cos_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_cos_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_cos_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvacos{
+  [](const xvector& A) noexcept { return _mm_acos_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_acos_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_acos_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_acos_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvcosh{
+  [](const xvector& A) noexcept { return _mm_cosh_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_cosh_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_cosh_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_cosh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvacosh{
+  [](const xvector& A) noexcept { return _mm_acosh_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_acosh_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_acosh_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_acosh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvtan{
+  [](const xvector& A) noexcept { return _mm_tan_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_tan_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_tan_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_tan_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvatan{
+  [](const xvector& A) noexcept { return _mm_atan_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_atan_pd(A); },
+  [](const xvector& Sin, const xvector& Cos) noexcept { return _mm_atan2_ps(Sin, Cos); },
+  [](const xwector& Sin, const xwector& Cos) noexcept { return _mm256_atan2_pd(Sin, Cos); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_atan_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_atan_pd(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xvector (&Sin)[N], const xvector (&Cos)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_atan2_ps(Sin[Is], Cos[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&Sin)[N], const xwector (&Cos)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_atan2_pd(Sin[Is], Cos[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvtanh{
+  [](const xvector& A) noexcept { return _mm_tanh_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_tanh_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_tanh_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_tanh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvatanh{
+  [](const xvector& A) noexcept { return _mm_atanh_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_atanh_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_atanh_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_atanh_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvpow{
+  [](const xvector& A, const xvector& B) noexcept { return _mm_pow_ps(A, B); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_pow_pd(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_pow_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_pow_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvexp{
+  [](const xvector& A) noexcept { return _mm_exp_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_exp_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_exp_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_exp_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvexp2{
+  [](const xvector& A) noexcept { return _mm_exp2_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_exp2_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_exp2_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_exp2_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvexp10{
+  [](const xvector& A) noexcept { return _mm_exp10_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_exp10_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_exp10_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_exp10_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvexpm1{
+  [](const xvector& A) noexcept { return _mm_expm1_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_expm1_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_expm1_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_expm1_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvln{
+  [](const xvector& A) noexcept { return _mm_log_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_log_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_log_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_log_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvlog{
+  [](const xvector& A, const xvector& Base) noexcept { return xvdiv(xvln(A), xvln(Base)); },
+  [](const xwector& A, const xwector& Base) noexcept { return xvdiv(xvln(A), xvln(Base)); },
+  []<nat N>(const xvector (&A)[N], const xvector (&Base)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvdiv(xvln(A[Is]), xvln(Base[Is]))), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&Base)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = xvdiv(xvln(A[Is]), xvln(Base[Is]))), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvlog2{
+  [](const xvector& A) noexcept { return _mm_log2_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_log2_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_log2_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_log2_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvlog10{
+  [](const xvector& A) noexcept { return _mm_log10_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_log10_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_log10_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_log10_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvlog1p{
+  [](const xvector& A) noexcept { return _mm_log1p_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_log1p_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_log1p_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_log1p_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvlogb{
+  [](const xvector& A) noexcept { return _mm_logb_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_logb_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_logb_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_logb_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvsqrt{
+  [](const xvector& A) noexcept { return _mm_sqrt_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_sqrt_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_sqrt_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_sqrt_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvcbrt{
+  [](const xvector& A) noexcept { return _mm_cbrt_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_cbrt_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_cbrt_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_cbrt_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvhypot{
+  [](const xvector& A, const xvector& B) noexcept { return _mm_hypot_ps(A, B); },
+  [](const xwector& A, const xwector& B) noexcept { return _mm256_hypot_pd(A, B); },
+  []<nat N>(const xvector (&A)[N], const xvector (&B)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_hypot_ps(A[Is], B[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], const xwector (&B)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_hypot_pd(A[Is], B[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvsqrt_r{
+  [](const xvector& A) noexcept { return _mm_invsqrt_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_invsqrt_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_invsqrt_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_invsqrt_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xvcbrt_r{
+  [](const xvector& A) noexcept { return _mm_invcbrt_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_invcbrt_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_invcbrt_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_invcbrt_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xverf{
+  [](const xvector& A) noexcept { return _mm_erf_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_erf_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_erf_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_erf_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xverfc{
+  [](const xvector& A) noexcept { return _mm_erfc_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_erfc_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_erfc_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_erfc_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xverf_r{
+  [](const xvector& A) noexcept { return _mm_erfinv_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_erfinv_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_erfinv_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_erfinv_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+inline constexpr overload xverfc_r{
+  [](const xvector& A) noexcept { return _mm_erfcinv_ps(A); },
+  [](const xwector& A) noexcept { return _mm256_erfcinv_pd(A); },
+  []<nat N>(const xvector (&A)[N], xvector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm_erfcinv_ps(A[Is])), ...); }(make_sequence<N>{}); },
+  []<nat N>(const xwector (&A)[N], xwector (&Result)[N]) noexcept { return [&]<nat... Is>(sequence<Is...>) noexcept { return ((Result[Is] = _mm256_erfcinv_pd(A[Is])), ...); }(make_sequence<N>{}); }};
+
+template<nat N, nat Zero = 0> requires(0 < N && N <= 4 && Zero < 16) struct t_xvdot {
+  xvector operator()(const xvector& A, const xvector& B) const noexcept {
+    if constexpr (N == 0 && (Zero == 0b1110 || Zero == 0b1101 || Zero == 0b1011 || Zero == 0b0111))
+      return xvinsert<inspects<!(Zero & 1), !(Zero & 2), !(Zero & 4), !(Zero & 8)>, 0, Zero>(A, xvmul(A, B));
+    else return _mm_dp_ps(A, B, value_switch<N, 0, 16, 48, 112, 240> | (15 ^ Zero));
+  }
+  xwector operator()(const xwector& A, const xwector& B) const noexcept {
+    if constexpr (N == 0 || Zero == 0b1111) return xv_zero;
+    xwector a;
+    if constexpr (N == 1) a = xvmul(A, B);
+    else if constexpr (N == 2) a = _mm256_hadd_pd(xvmul(A, B), A);
+    else if constexpr (N == 3) (a = xvmul(A, B)), a = xvadd(_mm256_hadd_pd(a, A), _mm256_castpd128_pd256(_mm256_extractf128_pd(a, 1)));
+    else if constexpr (N == 4) (a = _mm256_hadd_pd(xvmul(A, B), A)), a = xvadd(a, _mm256_castpd128_pd256(_mm256_extractf128_pd(a, 1)));
+    return xvsetzero<Zero & 1, Zero & 2, Zero & 4, Zero & 8>(xvpermute<0, 0, 0, 0>(a));
+  }
+  template<nat M> requires(M <= 4) void operator()(const xvector (&A)[M], const xvector& B, xvector& Result) const noexcept {
+    if constexpr (1 <= N) Result = t_xvdot<N, 0b1110>{}(A[0], B);
+    if constexpr (2 <= N) Result = xvpermute<0, 5, 2, 3>(Result, t_xvdot<N>{}(A[1], B));
+    if constexpr (3 <= N) Result = xvpermute<0, 1, 6, 3>(Result, t_xvdot<N>{}(A[2], B));
+    if constexpr (4 == N) Result = xvpermute<0, 1, 2, 7>(Result, t_xvdot<N>{}(A[3], B));
+  }
+  template<tuple TpB> void operator()(const xvector& A, TpB&& B, xvector& Result) const noexcept {
+    constexpr nat m = extent<TpB>;
+    if constexpr (1 <= m) Result = xvmul(xvpermute<0, 0, 0, 0>(A), get<0>(B));
+    if constexpr (2 <= m) Result = xvfma(xvpermute<1, 1, 1, 1>(A), get<1>(B), Result);
+    if constexpr (3 <= m) Result = xvfma(xvpermute<2, 2, 2, 2>(A), get<2>(B), Result);
+    if constexpr (4 == m) Result = xvfma(xvpermute<3, 3, 3, 3>(A), get<3>(B), Result);
+    if constexpr (4 <= m) Result = _mm_blend_ps(xv_zero, Result, (1 << N) - 1);
+  }
+  template<tuple TpA, tuple TpB, same_size_tuple<TpA> TpR> void operator()(TpA&& A, TpB&& B, TpR&& Result) const noexcept {
+    constexpr nat m = extent<TpA>;
+    if constexpr (1 <= m) (*this)(get<0>(A), B, get<0>(Result));
+    if constexpr (2 <= m) (*this)(get<1>(A), B, get<1>(Result));
+    if constexpr (3 <= m) (*this)(get<2>(A), B, get<2>(Result));
+    if constexpr (4 <= m) (*this)(get<3>(A), B, get<3>(Result));
+  }
+  xmatrix& operator()(xmatrix& A, const xmatrix& B) const noexcept {
+    static constexpr auto f = [](xvector& A, const xmatrix& B, xvector& C) noexcept {
+      C = xvmul(xvpermute<0, 0, 0, 0>(A), get<0>(B));
+      C = xvfma(xvpermute<1, 1, 1, 1>(A), get<1>(B), C);
+      C = xvfma(xvpermute<2, 2, 2, 2>(A), get<2>(B), C);
+      A = xvfma(xvpermute<3, 3, 3, 3>(A), get<3>(B), C);
+    };
+    xvector C;
+    f(A[0], B, C), f(A[1], B, C), f(A[2], B, C), f(A[3], B, C);
+    return A;
+  }
+};
+template<nat N, nat Zero = 0> requires(0 < N && N <= 4 && Zero < 16) inline constexpr t_xvdot<N, Zero> xvdot;
+
+inline constexpr overload xvcross{
+  [](const xvector& A, const xvector& B) noexcept {
+    auto a = xvpermute<2, 0, 1, 3>(A), b = xvpermute<1, 2, 0, 3>(B);
+    return xvfms(xvpermute<1, 2, 0, 3>(A), xvpermute<2, 0, 1, 3>(B), xvmul(a, b)); },
+  [](const xwector& A, const xwector& B) noexcept {
+    auto a = xvpermute<2, 0, 1, 3>(A), b = xvpermute<1, 2, 0, 3>(B);
+    return xvfms(xvpermute<1, 2, 0, 3>(A), xvpermute<2, 0, 1, 3>(B), xvmul(a, b)); }};
+
+template<nat N, nat Zero = 0> requires(N <= 4 && Zero < 16) inline constexpr overload xvlength{
+  [](const xvector& A) noexcept { return xvsqrt(xvdot<N, Zero>(A, A)); },
+  [](const xwector& A) noexcept { return xvsqrt(xvdot<N, Zero>(A, A)); }};
+
+template<nat N, nat Zero = 0> requires(N <= 4 && Zero < 16) inline constexpr overload xvlength_r{
+  [](const xvector& A) noexcept { return xvsqrt_r(xvdot<N, Zero>(A, A)); },
+  [](const xwector& A) noexcept { return xvsqrt_r(xvdot<N, Zero>(A, A)); }};
+
+template<nat N> requires(N <= 4) inline constexpr overload xvnormalize{
+  [](const xvector& A) noexcept { return xvmul(A, xvlength_r<N>(A)); },
+  [](const xwector& A) noexcept { return xvmul(A, xvlength_r<N>(A)); }};
+
+inline constexpr overload xvradian{
+  [](const xvector& A) noexcept { return xvmul(A, xv_constant<pi / 180>); },
+  [](const xwector& A) noexcept { return xvmul(A, xv_constant<pi / 180>); }};
+
+inline constexpr overload xvdegree{
+  [](const xvector& A) noexcept { return xvmul(A, xv_constant<180 / pi>); },
+  [](const xwector& A) noexcept { return xvmul(A, xv_constant<180 / pi>); }};
+
+inline constexpr overload xvtranspose{
+  []<typename T, typename U>(T&& A, U&& Result) noexcept
+  requires((nt_tuple_for<T, const xvector&> && nt_tuple_for<U, xvector&>) || (nt_tuple_for<T, const xwector&> && nt_tuple_for<U, xwector&>)) {
+    constexpr nat M = extent<T>, N = extent<U>;
+    if constexpr (1 == M) {
+      if constexpr (1 <= N) get<0>(Result) = xvsetzero<0, 1, 1, 1>(get<0>(A));
+      if constexpr (2 <= N) get<1>(Result) = xvinsert<0, 1, 0b1110>(get<0>(A), get<0>(A));
+      if constexpr (3 <= N) get<2>(Result) = xvinsert<0, 2, 0b1110>(get<0>(A), get<0>(A));
+      if constexpr (4 == N) get<3>(Result) = xvinsert<0, 3, 0b1110>(get<0>(A), get<0>(A));
+    } else if constexpr (2 == M) {
+      if constexpr (1 <= N) get<0>(Result) = xvinsert<1, 0, 0b1100>(get<0>(A), get<1>(A));
+      if constexpr (2 <= N) get<1>(Result) = xvinsert<0, 1, 0b1100>(get<1>(A), get<0>(A));
+      if constexpr (3 <= N) get<2>(Result) = xvinsert<1, 2, 0b1100>(xvpermute<2, -1, -1, -1>(get<0>(A)), get<1>(A));
+      if constexpr (4 == N) get<3>(Result) = xvinsert<1, 3, 0b1100>(xvpermute<3, -1, -1, -1>(get<0>(A)), get<1>(A));
+    } else if constexpr (3 == M) {
+      if constexpr (1 <= N) get<0>(Result) = xvinsert<2, 0, 0b1000>(xvpermute<0, 4, -1, -1>(get<0>(A), get<1>(A)), get<2>(A));
+      if constexpr (2 <= N) get<1>(Result) = xvinsert<2, 1, 0b1000>(xvpermute<1, 5, -1, -1>(get<0>(A), get<1>(A)), get<2>(A));
+      if constexpr (3 <= N) get<2>(Result) = xvinsert<2, 2, 0b1000>(xvpermute<2, 6, -1, -1>(get<0>(A), get<1>(A)), get<2>(A));
+      if constexpr (4 == N) get<3>(Result) = xvinsert<2, 3, 0b1000>(xvpermute<3, 7, -1, -1>(get<0>(A), get<1>(A)), get<2>(A));
+    } else {
+      if constexpr (N == 1) get<0>(Result) = xvpermute<0, 1, 4, 5>(xvpermute<0, 4, -1, -1>(get<0>(A), get<1>(A)), xvpermute<0, 4, -1, -1>(get<2>(A), get<3>(A)));
+      if constexpr (N >= 2) {
+        auto a = xvpermute<0, 1, 4, 5>(get<0>(A), get<1>(A)), b = xvpermute<0, 1, 4, 5>(get<2>(A), get<3>(A));
+        get<0>(Result) = xvpermute<0, 2, 4, 6>(a, b), get<1>(Result) = xvpermute<1, 3, 5, 7>(a, b); }
+      if constexpr (N == 3) get<3>(Result) = xvpermute<0, 1, 4, 5>(xvpermute<2, 6, -1, -1>(get<0>(A), get<1>(A)), xvpermute<2, 6, -1, -1>(get<2>(A), get<3>(A)));
+      if constexpr (N == 4) {
+        auto a = xvpermute<2, 3, 6, 7>(get<0>(A), get<1>(A)), b = xvpermute<2, 3, 6, 7>(get<2>(A), get<3>(A));
+        get<2>(Result) = xvpermute<0, 2, 4, 6>(a, b), get<3>(Result) = xvpermute<1, 3, 5, 7>(a, b); } } }};
+
+inline constexpr auto xvtranslate = []<typename T>(const xvector& Offset, T&& Result) noexcept requires(nt_tuple_for<T, xvector&>) {
+  constexpr nat N = extent<T>;
+  if constexpr (N >= 1) get<0>(Result) = xvinsert<3, 0>(xv_x, Offset);
+  if constexpr (N >= 2) get<1>(Result) = xvinsert<3, 1>(xv_y, Offset);
+  if constexpr (N >= 3) get<2>(Result) = xvinsert<3, 2>(xv_z, Offset);
+  if constexpr (N >= 4) get<3>(Result) = xv_w; };
+
+inline constexpr auto xvrotate = []<nt_tuple_for<xvector&> T>(const xvector& Radian, T&& Result) noexcept {
+  constexpr nat N = extent<T>;
+  if constexpr (N == 2) {
+    get<1>(Result) = xvsin(Radian, get<0>(Result));
+    get<0>(Result) = xvinsert<1, 0, 0b1100>(get<0>(Result), get<1>(Result));
+    get<1>(Result) = xvinsert<1, 0, 0b1100>(get<1>(Result), get<0>(Result));
+    get<0>(Result) = xvnegate<0, 1, 0, 0>(get<0>(Result));
+  } else if constexpr (N == 3) {
+    get<0>(Result) = xvsin(Radian, get<1>(Result));
+    get<2>(Result) = xvpermute<4, 6, 0, 2>(get<0>(Result), get<1>(Result));
+    auto temp = xvpermute<3, 0, 1, 2>(get<2>(Result));
+    get<2>(Result) = xvmul(get<2>(Result), temp);
+    get<1>(Result) = xvmul(xvpermute<1, 1, 1, 1>(get<1>(Result)), temp);
+    get<0>(Result) = xvpermute<1, 1, 1, 1>(get<0>(Result));
+    temp = _mm_addsub_ps(xvpermute<2, 3, 0, 1>(xvmul(get<0>(Result), get<2>(Result))), get<2>(Result));
+    get<2>(Result) = xvinsert<0, 0, 0b1000>(xvpermute<-1, 3, 1, -1>(get<1>(Result)), xvneg(get<0>(Result)));
+    get<0>(Result) = xvinsert<0, 2, 0b1000>(xvpermute<-1, 0, 3, -1>(temp), get<1>(Result));
+    get<1>(Result) = xvinsert<0, 0, 0b1000>(temp, get<1>(Result));
+  } else if constexpr (N == 4) {
+    get<0>(Result) = xvsin(Radian, get<1>(Result));
+    get<2>(Result) = xvpermute<4, 6, 0, 2>(get<0>(Result), get<1>(Result));
+    get<3>(Result) = xvpermute<3, 0, 1, 2>(get<2>(Result));
+    get<2>(Result) = xvmul(get<2>(Result), get<3>(Result));
+    get<1>(Result) = xvmul(xvpermute<1, 1, 1, 1>(get<1>(Result)), get<3>(Result));
+    get<0>(Result) = xvpermute<1, 1, 1, 1>(get<0>(Result));
+    get<3>(Result) = _mm_addsub_ps(xvpermute<2, 3, 0, 1>(xvmul(get<0>(Result), get<2>(Result))), get<2>(Result));
+    get<2>(Result) = xvinsert<0, 0, 0b1000>(xvpermute<-1, 3, 1, -1>(get<1>(Result)), xvneg(get<0>(Result)));
+    get<0>(Result) = xvinsert<0, 2, 0b1000>(xvpermute<-1, 0, 3, -1>(get<3>(Result)), get<1>(Result));
+    get<1>(Result) = xvinsert<0, 0, 0b1000>(get<3>(Result), get<1>(Result));
+    get<3>(Result) = xv_w;
+  } else static_assert(1 < N && N < 5); };
+
+inline constexpr auto xvrotate_inv = []<nt_tuple_for<xvector&> T>(const xvector& Radian, T&& Result) noexcept {
+  constexpr nat N = extent<T>;
+  if constexpr (N == 2) {
+    get<1>(Result) = xvsin(Radian, get<0>(Result));
+    get<0>(Result) = xvinsert<1, 0, 0b1100>(get<0>(Result), get<1>(Result));
+    get<1>(Result) = xvinsert<1, 0, 0b1100>(get<1>(Result), get<0>(Result));
+    get<1>(Result) = xvnegate<0, 1, 0, 0>(get<1>(Result));
+  } else if constexpr (N == 3) {
+    get<0>(Result) = xvsin(Radian, get<1>(Result));
+    get<2>(Result) = xvpermute<4, 6, 0, 2>(get<0>(Result), get<1>(Result));
+    auto temp = xvpermute<3, 0, 1, 2>(get<2>(Result));
+    get<2>(Result) = xvmul(get<2>(Result), temp);
+    get<1>(Result) = xvmul(xvpermute<1, 1, 1, 1>(get<1>(Result)), temp);
+    get<0>(Result) = xvpermute<1, 1, 1, 1>(get<0>(Result));
+    temp = _mm_addsub_ps(xvpermute<2, 3, 0, 1>(xvmul(get<0>(Result), get<2>(Result))), get<2>(Result));
+    get<2>(Result) = xvinsert<2, 1, 0b1000>(xvpermute<3, 2, -1, -1>(temp), get<1>(Result));
+    get<0>(Result) = xvinsert<2, 2, 0b1000>(xvpermute<2, 0, -1, -1>(get<1>(Result)), xvneg(get<0>(Result)));
+    get<1>(Result) = xvinsert<2, 3, 0b1000>(temp, get<1>(Result));
+  } else if constexpr (N == 4) {
+    get<0>(Result) = xvsin(Radian, get<1>(Result));
+    get<2>(Result) = xvpermute<4, 6, 0, 2>(get<0>(Result), get<1>(Result));
+    get<3>(Result) = xvpermute<3, 0, 1, 2>(get<2>(Result));
+    get<2>(Result) = xvmul(get<2>(Result), get<3>(Result));
+    get<1>(Result) = xvmul(xvpermute<1, 1, 1, 1>(get<1>(Result)), get<3>(Result));
+    get<0>(Result) = xvpermute<1, 1, 1, 1>(get<0>(Result));
+    get<3>(Result) = _mm_addsub_ps(xvpermute<2, 3, 0, 1>(xvmul(get<0>(Result), get<2>(Result))), get<2>(Result));
+    get<2>(Result) = xvinsert<2, 1, 0b1000>(xvpermute<3, 2, -1, -1>(get<3>(Result)), get<1>(Result));
+    get<0>(Result) = xvinsert<2, 2, 0b1000>(xvpermute<2, 0, -1, -1>(get<1>(Result)), xvneg(get<0>(Result)));
+    get<1>(Result) = xvinsert<2, 3, 0b1000>(get<3>(Result), get<1>(Result));
+    get<3>(Result) = xv_w;
+  } else static_assert(1 < N && N < 5); };
+
+inline constexpr auto xvscale = []<nt_tuple_for<xvector&> T>(const xvector& Scalar, T&& Result) noexcept {
+  constexpr nat N = extent<T>;
+  if constexpr (N >= 2) { get<0>(Result) = xvinsert<0, 0, 0b1110>(Scalar, Scalar); get<1>(Result) = xvinsert<1, 1, 0b1101>(Scalar, Scalar); }
+  if constexpr (N >= 3) get<2>(Result) = xvinsert<2, 2, 0b1011>(Scalar, Scalar);
+  if constexpr (N == 4) get<3>(Result) = xv_w;
+  static_assert(1 < N && N < 5); };
+
+inline constexpr overload xvworld{
+  []<nt_tuple_for<xvector&> T>(T&& Result) noexcept {
+    constexpr nat N = extent<T>;
+    if constexpr (N >= 2) Result[0] = xv_x, Result[1] = xv_y;
+    if constexpr (N >= 3) Result[2] = xv_z;
+    if constexpr (N == 4) Result[3] = xv_w;
+    static_assert(1 < N && N < 5); },
+  []<nt_tuple_for<xvector&> T>(const xvector& Offset, T&& Result) noexcept { xvtranslate(Offset, Result); },
+  []<nt_tuple_for<xvector&> T>(const xvector& Offset, const xvector& Radian, T&& Result) noexcept {
+    xvrotate(Radian, Result), Result[0] = xvinsert<3, 0>(Result[0], Offset), Result[1] = xvinsert<3, 1>(Result[1], Offset);
+    if constexpr (extent<T> >= 3) Result[2] = xvinsert<3, 2>(Result[2], Offset);
+    static_assert(1 < extent<T> && extent<T> < 5); },
+  []<nt_tuple_for<xvector&> T>(const xvector& Offset, const xvector& Radian, const xvector& Scalar, T&& Result) noexcept {
+    xvrotate(Radian, Result), Result[0] = xvinsert<3, 0>(Result[0], Offset), Result[1] = xvinsert<3, 1>(Result[1], Offset);
+    if constexpr (extent<T> >= 3) Result[2] = xvinsert<3, 2>(Result[2], Offset);
+    Result[0] = xvmul(Result[0], xvpermute<0, 0, 0, 0>(Scalar)), Result[1] = xvmul(Result[1], xvpermute<1, 1, 1, 1>(Scalar));
+    if constexpr (extent<T> >= 3) Result[2] = xvmul(Result[2], xvpermute<2, 2, 2, 2>(Scalar));
+    static_assert(1 < extent<T> && extent<T> < 5); }};
+
+// clang-format off
+
+inline constexpr overload xvview{
+  []<nt_tuple_for<xvector&> T, nat N = extent<T>>(const xvector& Radian, T&& Result) noexcept requires (le(2, N) && le(N, 4)) { xvrotate_inv(Radian, Result); },
+  []<nt_tuple_for<xvector&> T, nat N = extent<T>>(const xvector& Position, const xvector& Radian, T&& Result) noexcept requires (le(2, N) && le(N, 4)) {
+    xvrotate_inv(Radian, Result);
+    if constexpr (N < 4) {
+      auto temp = xvneg(Position);
+      Result[0] = xvinsert<3, 3>(Result[0], xvdot<3>(Result[0], temp));
+      Result[1] = xvinsert<3, 3>(Result[1], xvdot<3>(Result[1], temp));
+      if constexpr (N == 3) Result[2] = xvinsert<3, 3>(Result[2], xvdot<3>(Result[2], temp));
+    } else {
+      Result[3] = xvneg(Position);
+      Result[0] = xvinsert<3, 3>(Result[0], xvdot<3>(Result[0], Result[3]));
+      Result[1] = xvinsert<3, 3>(Result[1], xvdot<3>(Result[1], Result[3]));
+      Result[2] = xvinsert<3, 3>(Result[2], xvdot<3>(Result[2], Result[3]));
+      Result[3] = xv_w;
+    }},
+  []<nt_tuple_for<xvector&> T, nat N = extent<T>>(const xvector& Position, const xvector& Radian, const xvector& Offset, T&& Result) noexcept requires (le(2, N) && le(N, 4)) {
+    xvrotate_inv(Radian, Result);
+    if constexpr (N < 4) {
+      auto temp = xvneg(Position);
+      Result[0] = xvsub(xvinsert<3, 3>(Result[0], xvdot<3>(Result[0], temp)), xvinsert<3, 0, 0b0111>(Offset, Offset));
+      Result[1] = xvsub(xvinsert<3, 3>(Result[1], xvdot<3>(Result[1], temp)), xvinsert<3, 1, 0b0111>(Offset, Offset));
+      if constexpr (N == 3) Result[2] = xvsub(xvinsert<3, 3>(Result[2], xvdot<3>(Result[2], temp)), xvinsert<3, 2, 0b0111>(Offset, Offset));
+    } else {
+      Result[3] = xvneg(Position);
+      Result[0] = xvsub(xvinsert<3, 3>(Result[0], xvdot<3>(Result[0], Result[3])), xvinsert<3, 0, 0b0111>(Offset, Offset));
+      Result[1] = xvsub(xvinsert<3, 3>(Result[1], xvdot<3>(Result[1], Result[3])), xvinsert<3, 1, 0b0111>(Offset, Offset));
+      Result[2] = xvsub(xvinsert<3, 3>(Result[2], xvdot<3>(Result[2], Result[3])), xvinsert<3, 2, 0b0111>(Offset, Offset));
+      Result[3] = xv_w;
+    }}};
+
+inline constexpr overload xvcamera{
+  []<nat N>(const float Width, const float Height, const float Factor, xvector (&Result)[N]) noexcept requires (le(3, N) && le(N, 4)) {
+    constexpr value f = 1048576.0, n = 0.25;
+    Result[0] = xvset<0>(xv_zero, -Factor * Height / Width);
+    Result[1] = xvset<1>(xv_zero, Factor);
+    Result[2] = xv_constant<0, 0, f / (f - n), -f * n / (f - n)>;
+    if constexpr (N == 4) Result[3] = xv_z; },
+  []<nat N>(const float Width, const float Height, const float Factor, none OrthgraphicMode, xvector (&Result)[N]) noexcept requires (le(3, N) && le(N, 4)) {
+    constexpr value f = 1048576.0, n = 0.25;
+    Result[0] = xvset<0>(xv_zero, -2.0f * Factor / Width);
+    Result[1] = xvset<1>(xv_zero, 2.0f * Factor / Height);
+    Result[2] = xv_constant<0, 0, 1 / (f - n), -n / (f - n)>;
+    if constexpr (N == 4) Result[3] = xv_w; }};
+
+// clang-format on
+
+/// @brief converts a rotation matrix to euler angles
+inline constexpr auto xveuler = []<tuple Tp>(Tp&& Matrix) noexcept {
+  if (extent<Tp> >= 3) {
+    xvector v = xvneg(xvpermute<3, 0, 3, 3>(get<2>(Matrix)));
+    if (xveq(v, xv_y)) return xvasin(xvpermute<5, 1, -1, -1>(v, get<0>(Matrix)));
+    v = xvpermute<0, 1, 6, 3>(xvpermute<4, 1, -1, 3>(v, xvdiv(get<1>(Matrix), get<0>(Matrix))), xvdiv(xvpermute<-1, -1, 1, -1>(get<2>(Matrix)), get<2>(Matrix)));
+    return xvpermute<6, 1, 4, 3>(xvasin(v), xvatan(xvpermute<0, -1, 5, -1>(get<1>(Matrix), get<2>(Matrix)), xvblend<0, 0, 1, 1>(get<0>(Matrix), get<2>(Matrix))));
+  }
+};
+
+struct rect;
+
+/// vector structure
+struct vector {
+  float x{}, y{}, z{}, w{};
+  constexpr vector() noexcept = default;
+  explicit constexpr vector(const float Fill) noexcept : x(Fill), y(Fill), z(Fill), w(Fill) {}
+  explicit constexpr vector(const numerical auto Fill) noexcept : vector(float(Fill)) {}
+  constexpr vector(const numerical auto X, const numerical auto Y, const numerical auto Z, const numerical auto W) noexcept : x(float(X)), y(float(Y)), z(float(Z)), w(float(W)) {}
+  constexpr vector(const numerical auto X, const numerical auto Y, const numerical auto Z) noexcept : x(float(X)), y(float(Y)), z(float(Z)) {}
+  constexpr vector(const numerical auto X, const numerical auto Y) noexcept : x(float(X)), y(float(Y)) {}
+  vector(const xvector& A) noexcept { _mm_storeu_ps(&x, A); }
+  vector& operator=(const xvector& A) noexcept { return _mm_storeu_ps(&x, A), *this; }
+  operator xvector() const noexcept { return xvload(&x); }
+  constexpr nat size() const noexcept { return 4; }
+  float* data() noexcept { return &x; }
+  const float* data() const noexcept { return &x; }
+  float* begin() noexcept { return &x; }
+  const float* begin() const noexcept { return &x; }
+  float* end() noexcept { return &x + 4; }
+  const float* end() const noexcept { return &x + 4; }
+  float& operator[](nat i) { return *(&x + i); }
+  const float& operator[](nat i) const { return *(&x + i); }
+  template<nat Ix> requires(Ix < 4) constexpr float& get() noexcept { return parameter_switch<Ix>(x, y, z, w); }
+  template<nat Ix> requires(Ix < 4) constexpr float get() const noexcept { return parameter_switch<Ix>(x, y, z, w); }
+  friend constexpr bool operator==(const vector& A, const vector& B) noexcept {
+    if (!is_cev) return xveq(A, B);
+    return A.x == B.x && A.y == B.y && A.z == B.z && A.w == B.w;
+  }
+  friend constexpr auto operator<=>(const vector& A, const vector& B) noexcept {
+    if (!is_cev) return std::partial_ordering(xvtw(A, B));
+    if (auto a = A.x <=> B.x; a != 0) return a;
+    else if (a = A.y <=> B.y; a != 0) return a;
+    else if (a = A.z <=> B.z; a != 0) return a;
+    else return A.w <=> B.w;
+  }
+  friend constexpr vector operator+(const vector& A) noexcept { return A; }
+  friend constexpr vector operator-(const vector& A) noexcept {
+    if (!is_cev) return xvneg(A);
+    else return {-A.x, -A.y, -A.z, -A.w};
+  }
+  friend constexpr vector operator+(const vector& A, const vector& B) noexcept {
+    if (!is_cev) return xvadd(A, B);
+    else return {A.x + B.x, A.y + B.y, A.z + B.z, A.w + B.w};
+  }
+  friend constexpr vector operator-(const vector& A, const vector& B) noexcept {
+    if (!is_cev) return xvsub(A, B);
+    else return {A.x - B.x, A.y - B.y, A.z - B.z, A.w - B.w};
+  }
+  friend constexpr vector operator*(const vector& A, const vector& B) noexcept {
+    if (!is_cev) return xvmul(A, B);
+    else return {A.x * B.x, A.y * B.y, A.z * B.z, A.w * B.w};
+  }
+  friend constexpr vector operator/(const vector& A, const vector& B) noexcept {
+    if (!is_cev) return xvdiv(A, B);
+    else return {A.x / B.x, A.y / B.y, A.z / B.z, A.w / B.w};
+  }
+  friend constexpr vector operator+(const vector& A, const float& B) noexcept {
+    if (!is_cev) return xvadd(A, xvload(B));
+    else return {A.x + B, A.y + B, A.z + B, A.w + B};
+  }
+  friend constexpr vector operator-(const vector& A, const float& B) noexcept {
+    if (!is_cev) return xvsub(A, xvload(B));
+    else return {A.x - B, A.y - B, A.z - B, A.w - B};
+  }
+  friend constexpr vector operator*(const vector& A, const float& B) noexcept {
+    if (!is_cev) return xvmul(A, xvload(B));
+    else return {A.x * B, A.y * B, A.z * B, A.w * B};
+  }
+  friend constexpr vector operator/(const vector& A, const float& B) noexcept {
+    if (!is_cev) return xvdiv(A, xvload(B));
+    else return {A.x / B, A.y / B, A.z / B, A.w / B};
+  }
+  friend constexpr vector operator+(const float& A, const vector& B) noexcept {
+    if (!is_cev) return xvadd(xvload(A), B);
+    else return {A + B.x, A + B.y, A + B.z, A + B.w};
+  }
+  friend constexpr vector operator-(const float& A, const vector& B) noexcept {
+    if (!is_cev) return xvsub(xvload(A), B);
+    else return {A - B.x, A - B.y, A - B.z, A - B.w};
+  }
+  friend constexpr vector operator*(const float& A, const vector& B) noexcept {
+    if (!is_cev) return xvmul(xvload(A), B);
+    else return {A * B.x, A * B.y, A * B.z, A * B.w};
+  }
+  friend constexpr vector operator/(const float& A, const vector& B) noexcept {
+    if (!is_cev) return xvdiv(xvload(A), B);
+    else return {A / B.x, A / B.y, A / B.z, A / B.w};
+  }
+  friend constexpr vector& operator+=(vector& A, const vector& B) noexcept { return A = A + B; }
+  friend constexpr vector& operator-=(vector& A, const vector& B) noexcept { return A = A - B; }
+  friend constexpr vector& operator*=(vector& A, const vector& B) noexcept { return A = A * B; }
+  friend constexpr vector& operator/=(vector& A, const vector& B) noexcept { return A = A / B; }
+  friend constexpr vector& operator+=(vector& A, const float& B) noexcept { return A = A + B; }
+  friend constexpr vector& operator-=(vector& A, const float& B) noexcept { return A = A - B; }
+  friend constexpr vector& operator*=(vector& A, const float& B) noexcept { return A = A * B; }
+  friend constexpr vector& operator/=(vector& A, const float& B) noexcept { return A = A / B; }
+  constexpr rect to_rect() const noexcept;
+};
+
+/// color structure
+struct color {
+  float r{}, g{}, b{}, a = 1.f;
+  constexpr color() noexcept = default;
+  constexpr color(const numerical auto R, const numerical auto G, const numerical auto B) noexcept : r(float(R)), g(float(G)), b(float(B)) {}
+  constexpr color(const numerical auto R, const numerical auto G, const numerical auto B, const numerical auto A) noexcept : r(float(R)), g(float(G)), b(float(B)), a(float(A)) {}
+  explicit constexpr color(unsigned xRRGGBB, float A = 1.f) noexcept : color(from_code(xRRGGBB)) { a = A; }
+  explicit constexpr operator unsigned() const noexcept {
+    if (is_cev) return (unsigned)(r * 255.f) << 16 | (unsigned)(g * 255.f) << 6 | (unsigned)(b * 255.f) | (unsigned)(a * 255.f) << 24;
+    else return bitcast<unsigned>(_mm_cvtsi128_si32(_mm_shuffle_epi8(_mm_cvtps_epi32(xvmul(xvload(&r), xv_constant<255>)), xv_constant<0, 0, 0, 0x03020100>)));
+  }
+  explicit color(const xvector& Xv) noexcept { _mm_storeu_ps(&r, Xv); }
+  operator xvector() const noexcept { return xvload(&r); }
+  friend constexpr bool operator==(const color& A, const color& B) noexcept {
+    if (!is_cev) return xveq(A, B);
+    else return A.r == B.r && A.g == B.g && A.b == B.b && A.a == B.a;
+  }
+  static const color black, dimgray, gray, darkgray, silver, lightgray, gainsboro, whitesmoke, white, snow, ghostwhite,
+    floralwhite, linen, antiquewhite, papayawhip, blanchedalmond, bisque, moccasin, navajowhite, peachpuff, mistyrose,
+    lavenderblush, seashell, oldlace, ivory, honeydew, mintcream, azure, aliceblue, lavender, lightsteelblue,
+    lightslategray, slategray, steelblue, royalblue, midnightblue, navy, darkblue, mediumblue, blue, dodgerblue,
+    cornflowerblue, deepskyblue, lightskyblue, skyblue, lightblue, powderblue, paleturquoise, lightcyan, cyan, aqua,
+    turquoise, mediumturquoise, darkturquoise, lightseagreen, cadetblue, darkcyan, teal, darkslategray, darkgreen,
+    green, forestgreen, seagreen, mediumseagreen, mediumaquamarine, darkseagreen, aquamarine, palegreen, lightgreen,
+    springgreen, mediumspringgreen, lawngreen, chartreuse, greenyellow, lime, limegreen, yellowgreen, darkolivegreen,
+    olivedrab, olive, darkkhaki, palegoldenrod, cornsilk, beige, lightyellow, lightgoldenrodyellow, lemonchiffon, wheat,
+    burlywood, tan, khaki, yellow, gold, orange, sandybrown, darkorange, goldenrod, peru, darkgoldenrod, chocolate,
+    sienna, saddlebrown, maroon, darkred, brown, firebrick, indianred, rosybrown, darksalmon, lightcoral, salmon,
+    lightsalmon, coral, tomato, orangered, red, crimson, mediumvioletred, deeppink, hotpink, palevioletred, pink,
+    lightpink, thistle, magenta, fuchsia, violet, plum, orchid, mediumorchid, darkorchid, darkviolet, darkmagenta,
+    purple, indigo, darkslateblue, blueviolet, mediumpurple, slateblue, mediumslateblue, transparent, undefined, yw;
+private:
+  static constexpr color from_code(const unsigned& a) noexcept {
+    if (is_cev) return color(float((0xff0000 & a) >> 16) / 255.f, float((0xff00 & a) >> 8) / 255.f, float(0xff & a) / 255.f, float((0xff000000 & a) >> 24) / 255.f);
+    else return color(xvmul(xv_constant<1.0 / 255.0>, _mm_cvtepi32_ps(_mm_cvtepu8_epi32(xvbitcast(_mm_broadcast_ss((const float*)&a))))));
+  }
+};
+
+inline constexpr color color::black{0x000000}, color::dimgray{0x696969}, color::gray{0x808080}, color::darkgray{0xa9a9a9}, color::silver{0xc0c0c0},
+  color::lightgray{0xd3d3d3}, color::gainsboro{0xdcdcdc}, color::whitesmoke{0xf5f5f5}, color::white{0xffffff}, color::snow{0xfffafa},
+  color::ghostwhite{0xf8f8ff}, color::floralwhite{0xfffaf0}, color::linen{0xfaf0e6}, color::antiquewhite{0xfaebd7}, color::papayawhip{0xffefd5},
+  color::blanchedalmond{0xffebcd}, color::bisque{0xffe4c4}, color::moccasin{0xffe4b5}, color::navajowhite{0xffdead}, color::peachpuff{0xffdab9},
+  color::mistyrose{0xffe4e1}, color::lavenderblush{0xfff0f5}, color::seashell{0xfff5ee}, color::oldlace{0xfdf5e6}, color::ivory{0xfffff0},
+  color::honeydew{0xf0fff0}, color::mintcream{0xf5fffa}, color::azure{0xf0ffff}, color::aliceblue{0xf0f8ff}, color::lavender{0xe6e6fa},
+  color::lightsteelblue{0xb0c4de}, color::lightslategray{0x778899}, color::slategray{0x708090}, color::steelblue{0x4682b4}, color::royalblue{0x4169e1},
+  color::midnightblue{0x191970}, color::navy{0x000080}, color::darkblue{0x00008b}, color::mediumblue{0x0000cd}, color::blue{0x0000ff},
+  color::dodgerblue{0x1e90ff}, color::cornflowerblue{0x6495ed}, color::deepskyblue{0x00bfff}, color::lightskyblue{0x87cefa}, color::skyblue{0x87ceeb},
+  color::lightblue{0xadd8e6}, color::powderblue{0xb0e0e6}, color::paleturquoise{0xafeeee}, color::lightcyan{0xe0ffff}, color::cyan{0x00ffff},
+  color::aqua{0x00ffff}, color::turquoise{0x40e0d0}, color::mediumturquoise{0x48d1cc}, color::darkturquoise{0x00ced1}, color::lightseagreen{0x20b2aa},
+  color::cadetblue{0x5f9ea0}, color::darkcyan{0x008b8b}, color::teal{0x008080}, color::darkslategray{0x2f4f4f}, color::darkgreen{0x006400},
+  color::green{0x008000}, color::forestgreen{0x228b22}, color::seagreen{0x2e8b57}, color::mediumseagreen{0x3cb371}, color::mediumaquamarine{0x66cdaa},
+  color::darkseagreen{0x8fbc8f}, color::aquamarine{0x7fffd4}, color::palegreen{0x98fb98}, color::lightgreen{0x90ee90}, color::springgreen{0x00ff7f},
+  color::mediumspringgreen{0x00fa9a}, color::lawngreen{0x7cfc00}, color::chartreuse{0x7fff00}, color::greenyellow{0xadff2f}, color::lime{0x00ff00},
+  color::limegreen{0x32cd32}, color::yellowgreen{0x9acd32}, color::darkolivegreen{0x556b2f}, color::olivedrab{0x6b8e23}, color::olive{0x808000},
+  color::darkkhaki{0xbdb76b}, color::palegoldenrod{0xeee8aa}, color::cornsilk{0xfff8dc}, color::beige{0xf5f5dc}, color::lightyellow{0xffffe0},
+  color::lightgoldenrodyellow{0xfafad2}, color::lemonchiffon{0xfffacd}, color::wheat{0xf5deb3}, color::burlywood{0xdeb887}, color::tan{0xd2b48c},
+  color::khaki{0xf0e68c}, color::yellow{0xffff00}, color::gold{0xffd700}, color::orange{0xffa500}, color::sandybrown{0xf4a460}, color::darkorange{0xff8c00},
+  color::goldenrod{0xdaa520}, color::peru{0xcd853f}, color::darkgoldenrod{0xb8860b}, color::chocolate{0xd2691e}, color::sienna{0xa0522d},
+  color::saddlebrown{0x8b4513}, color::maroon{0x800000}, color::darkred{0x8b0000}, color::brown{0xa52a2a}, color::firebrick{0xb22222},
+  color::indianred{0xcd5c5c}, color::rosybrown{0xbc8f8f}, color::darksalmon{0xe9967a}, color::lightcoral{0xf08080}, color::salmon{0xfa8072},
+  color::lightsalmon{0xffa07a}, color::coral{0xff7f50}, color::tomato{0xff6347}, color::orangered{0xff4500}, color::red{0xff0000}, color::crimson{0xdc143c},
+  color::mediumvioletred{0xc71585}, color::deeppink{0xff1493}, color::hotpink{0xff69b4}, color::palevioletred{0xdb7093}, color::pink{0xffc0cb},
+  color::lightpink{0xffb6c1}, color::thistle{0xd8bfd8}, color::magenta{0xff00ff}, color::fuchsia{0xff00ff}, color::violet{0xee82ee}, color::plum{0xdda0dd},
+  color::orchid{0xda70d6}, color::mediumorchid{0xba55d3}, color::darkorchid{0x9932cc}, color::darkviolet{0x9400d3}, color::darkmagenta{0x8b008b},
+  color::purple{0x800080}, color::indigo{0x4b0082}, color::darkslateblue{0x483d8b}, color::blueviolet{0x8a2be2}, color::mediumpurple{0x9370db},
+  color::slateblue{0x6a5acd}, color::mediumslateblue{0x7b68ee}, color::transparent = color(0x0, 0.0f), color::undefined = color(0x0, -1.f), color::yw{0x081020};
+
+/// rectangle structure (left, top, right, bottom)
+struct rect {
+  int left{}, top{}, right{}, bottom{};
+  constexpr int width() const noexcept { return right - left; }
+  constexpr int height() const noexcept { return bottom - top; }
+  constexpr rect() noexcept = default;
+  explicit constexpr rect(const int Fill) noexcept : left(Fill), top(Fill), right(Fill), bottom(Fill) {}
+  template<castable_to<int> T> requires(!same_as<remove_cvref<T>, int>)
+  explicit constexpr rect(T&& Fill) noexcept(nt_castable_to<T, int>) : rect(static_cast<int>(fwd<T>(Fill))) {}
+  template<castable_to<int> T0, castable_to<int> T1, castable_to<int> T2, castable_to<int> T3>
+  constexpr rect(T0&& L, T1&& T, T2&& R, T3&& B) noexcept(nt_castable_to<T0, int> && nt_castable_to<T1, int> && nt_castable_to<T2, int> && nt_castable_to<T3, int>)
+    : left(static_cast<int>(fwd<T0>(L))), top(static_cast<int>(fwd<T1>(T))), right(static_cast<int>(fwd<T2>(R))), bottom(static_cast<int>(fwd<T3>(B))) {}
+  rect(const xrect& A) noexcept { _mm_storeu_epi32(&left, A); }
+  rect& operator=(const xrect& A) noexcept { return _mm_storeu_epi32(&left, A), *this; }
+  operator xrect() const noexcept { return xvload(&left); }
+  constexpr nat size() const noexcept { return 4; }
+  int* data() noexcept { return &left; }
+  const int* data() const noexcept { return &left; }
+  int* begin() noexcept { return &left; }
+  const int* begin() const noexcept { return &left; }
+  int* end() noexcept { return &left + 4; }
+  const int* end() const noexcept { return &left + 4; }
+  template<nat Ix> requires(Ix < 4) constexpr int& get() noexcept {
+    if constexpr (Ix == 0) return left;
+    else if constexpr (Ix == 1) return top;
+    else if constexpr (Ix == 2) return right;
+    else return bottom;
+  }
+  template<nat Ix> requires(Ix < 4) constexpr int get() const noexcept {
+    if constexpr (Ix == 0) return left;
+    else if constexpr (Ix == 1) return top;
+    else if constexpr (Ix == 2) return right;
+    else return bottom;
+  }
+  friend constexpr bool operator==(const rect& A, const rect& B) noexcept {
+    if (!is_cev) return xveq(A, B);
+    return A.left == B.left && A.top == B.top && A.right == B.right && A.bottom == B.bottom;
+  }
+  friend constexpr auto operator<=>(const rect& A, const rect& B) noexcept {
+    if (!is_cev) return xvtw(A, B);
+    if (auto a = A.left <=> B.left; a != 0) return a;
+    else if (a = A.top <=> B.top; a != 0) return a;
+    else if (a = A.right <=> B.right; a != 0) return a;
+    else return A.bottom <=> B.bottom;
+  }
+  friend constexpr rect operator+(const rect& A) noexcept { return A; }
+  friend constexpr rect operator-(const rect& A) noexcept {
+    if (!is_cev) return xvneg(A);
+    else return {-A.left, -A.top, -A.right, -A.bottom};
+  }
+  friend constexpr rect operator+(const rect& A, const rect& B) noexcept {
+    if (!is_cev) return xvadd(A, B);
+    else return {A.left + B.left, A.top + B.top, A.right + B.right, A.bottom + B.bottom};
+  }
+  friend constexpr rect operator-(const rect& A, const rect& B) noexcept {
+    if (!is_cev) return xvsub(A, B);
+    else return {A.left - B.left, A.top - B.top, A.right - B.right, A.bottom - B.bottom};
+  }
+  friend constexpr rect operator*(const rect& A, const rect& B) noexcept {
+    if (!is_cev) return xvmul(A, B);
+    else return {A.left * B.left, A.top * B.top, A.right * B.right, A.bottom * B.bottom};
+  }
+  friend constexpr rect operator/(const rect& A, const rect& B) noexcept {
+    if (!is_cev) return xvdiv(A, B);
+    else return {A.left / B.left, A.top / B.top, A.right / B.right, A.bottom / B.bottom};
+  }
+  friend constexpr rect operator+(const rect& A, const int& B) noexcept {
+    if (!is_cev) return xvadd(A, xvload(B));
+    else return {A.left + B, A.top + B, A.right + B, A.bottom + B};
+  }
+  friend constexpr rect operator-(const rect& A, const int& B) noexcept {
+    if (!is_cev) return xvsub(A, xvload(B));
+    else return {A.left - B, A.top - B, A.right - B, A.bottom - B};
+  }
+  friend constexpr rect operator*(const rect& A, const int& B) noexcept {
+    if (!is_cev) return xvmul(A, xvload(B));
+    else return {A.left * B, A.top * B, A.right * B, A.bottom * B};
+  }
+  friend constexpr rect operator/(const rect& A, const int& B) noexcept {
+    if (!is_cev) return xvdiv(A, xvload(B));
+    else return {A.left / B, A.top / B, A.right / B, A.bottom / B};
+  }
+  friend constexpr rect operator+(const int& A, const rect& B) noexcept {
+    if (!is_cev) return xvadd(xvload(A), B);
+    else return {A + B.left, A + B.top, A + B.right, A + B.bottom};
+  }
+  friend constexpr rect operator-(const int& A, const rect& B) noexcept {
+    if (!is_cev) return xvsub(xvload(A), B);
+    else return {A - B.left, A - B.top, A - B.right, A - B.bottom};
+  }
+  friend constexpr rect operator*(const int& A, const rect& B) noexcept {
+    if (!is_cev) return xvmul(xvload(A), B);
+    else return {A * B.left, A * B.top, A * B.right, A * B.bottom};
+  }
+  friend constexpr rect operator/(const int& A, const rect& B) noexcept {
+    if (!is_cev) return xvdiv(xvload(A), B);
+    else return {A / B.left, A / B.top, A / B.right, A / B.bottom};
+  }
+  friend constexpr rect& operator+=(rect& A, const rect& B) noexcept { return A = A + B; }
+  friend constexpr rect& operator-=(rect& A, const rect& B) noexcept { return A = A - B; }
+  friend constexpr rect& operator*=(rect& A, const rect& B) noexcept { return A = A * B; }
+  friend constexpr rect& operator/=(rect& A, const rect& B) noexcept { return A = A / B; }
+  friend constexpr rect& operator+=(rect& A, const int& B) noexcept { return A = A + B; }
+  friend constexpr rect& operator-=(rect& A, const int& B) noexcept { return A = A - B; }
+  friend constexpr rect& operator*=(rect& A, const int& B) noexcept { return A = A * B; }
+  friend constexpr rect& operator/=(rect& A, const int& B) noexcept { return A = A / B; }
+  constexpr vector to_vector() const noexcept {
+    if (is_cev) return {float(left), float(top), float(right), float(bottom)};
+    else return {xvcast<xvector>(*this)};
+  }
+};
+
+constexpr rect vector::to_rect() const noexcept {
+  if (is_cev) return {int(x), int(y), int(z), int(w)};
+  else return {xvcast<xrect>(*this)};
+}
+}
+
+namespace std { // clang-format off
+template<> struct tuple_size<yw::vector> : integral_constant<size_t, 4> {};
+template<size_t I> requires (I < 4) struct tuple_element<I, yw::vector> : type_identity<float> {};
+template<> struct formatter<yw::vector, char> : formatter<string, char> {
+  template<typename FormatContext> auto format(const yw::vector& v, FormatContext& Context) const {
+    return formatter<string, char>::format(std::format("({}, {}, {}, {})", v.x, v.y, v.z, v.w), Context); } };
+template<> struct formatter<yw::vector, wchar_t> : formatter<wstring, wchar_t> {
+  template<typename FormatContext> auto format(const yw::vector& v, FormatContext& Context) const {
+    return formatter<wstring, wchar_t>::format(std::format(L"({}, {}, {}, {})", v.x, v.y, v.z, v.w), Context); } };
+template<> struct tuple_size<yw::color> : integral_constant<size_t, 4> {};
+template<size_t I> requires (I < 4) struct tuple_element<I, yw::color> : type_identity<float> {};
+template<> struct formatter<yw::color, char> : formatter<string, char> {
+  template<typename FormatContext> auto format(const yw::color& c, FormatContext& Context) const {
+    return formatter<string, char>::format(std::format("({}, {}, {}, {})", c.r, c.g, c.b, c.a), Context); } };
+template<> struct formatter<yw::color, wchar_t> : formatter<wstring, wchar_t> {
+  template<typename FormatContext> auto format(const yw::color& c, FormatContext& Context) const {
+    return formatter<wstring, wchar_t>::format(std::format(L"({}, {}, {}, {})", c.r, c.g, c.b, c.a), Context); } };
+template<> struct tuple_size<yw::rect> : integral_constant<size_t, 4> {};
+template<size_t I> requires (I < 4) struct tuple_element<I, yw::rect> : type_identity<int> {};
+template<> struct formatter<yw::rect, char> : formatter<string, char> {
+  template<typename FormatContext> auto format(const yw::rect& r, FormatContext& Context) const {
+    return formatter<string, char>::format(std::format("({}, {}, {}, {})", r.left, r.top, r.right, r.bottom), Context); } };
+template<> struct formatter<yw::rect, wchar_t> : formatter<wstring, wchar_t> {
+  template<typename FormatContext> auto format(const yw::rect& r, FormatContext& Context) const {
+    return formatter<wstring, wchar_t>::format(std::format(L"({}, {}, {}, {})", r.left, r.top, r.right, r.bottom), Context); } };
+} // clang-format on
