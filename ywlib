@@ -827,47 +827,58 @@ using xvector = __m128;
 using xwector = __m256d;
 using xrect = __m128i;
 using xmatrix = array<xvector, 4>;
+template<typename Xv> concept xv = included_in<remove_cvref<Xv>, xvector, xwector, xrect>;
 
-template<typename T> concept xv = included_in<remove_cvref<T>, xvector, xwector, xrect>;
-template<typename T> concept xm = xv<common_element<T>>;
-template<xv Xv> using xv_value_t = select_type<inspects<same_as<remove_cvref<Xv>, xvector>, same_as<remove_cvref<Xv>, xwector>, same_as<remove_cvref<Xv>, xrect>>, fat4, fat8, int4>;
+struct t_xvload {
+  xvector operator()(const float Fill) const noexcept { return _mm_set1_ps(Fill); }
+  xwector operator()(const double Fill) const noexcept { return _mm256_set1_pd(Fill); }
+  xrect operator()(const int Fill) const noexcept { return _mm_set1_epi32(Fill); }
+  xvector operator()(const float* Ptr) const noexcept { return _mm_loadu_ps(Ptr); }
+  xwector operator()(const double* Ptr) const noexcept { return _mm256_loadu_pd(Ptr); }
+  xrect operator()(const int* Ptr) const noexcept { return _mm_loadu_epi32(Ptr); }
+  xvector operator()(const float X, const float Y, const float Z = {}, const float W = {}) const noexcept { return _mm_set_ps(W, Z, Y, X); }
+  xwector operator()(const double X, const double Y, const double Z = {}, const double W = {}) const noexcept { return _mm256_set_pd(W, Z, Y, X); }
+  xrect operator()(const int X, const int Y, const int Z = {}, const int W = {}) const noexcept { return _mm_set_epi32(W, Z, Y, X); }
+  xvector operator()(const xvector& Xv) const noexcept { return Xv; }
+  xwector operator()(const xwector& Xv) const noexcept { return Xv; }
+  xrect operator()(const xrect& Xv) const noexcept { return Xv; }
+};
+inline constexpr t_xvload xvload;
 
-inline xvector xvload(const float a) noexcept { return _mm_set1_ps(a); }
-inline xvector xvload(const float* a) noexcept { return _mm_loadu_ps(a); }
-inline xvector xvload(const float x, const float y, const float z = {}, const float w = {}) noexcept { return _mm_set_ps(w, z, y, x); }
-inline xwector xvload(const double a) noexcept { return _mm256_set1_pd(a); }
-inline xwector xvload(const double* a) noexcept { return _mm256_loadu_pd(a); }
-inline xwector xvload(const double x, const double y, const double z = {}, const double w = {}) noexcept { return _mm256_set_pd(w, z, y, x); }
-inline xrect xvload(const int a) noexcept { return _mm_set1_epi32(a); }
-inline xrect xvload(const int* a) noexcept { return _mm_loadu_epi32(a); }
-inline xrect xvload(const int x, const int y, const int z = {}, const int w = {}) noexcept { return _mm_set_epi32(w, z, y, x); }
+template<xv Xv> struct t_xvcast {
+  Xv operator()(const xvector& A) const noexcept {
+    if constexpr (same_as<Xv, xvector>) return A;
+    else if constexpr (same_as<Xv, xwector>) return _mm256_cvtps_pd(A);
+    else if constexpr (same_as<Xv, xrect>) return _mm_cvtps_epi32(A);
+  }
+  Xv operator()(const xwector& A) const noexcept {
+    if constexpr (same_as<Xv, xvector>) return _mm256_cvtpd_ps(A);
+    else if constexpr (same_as<Xv, xwector>) return A;
+    else if constexpr (same_as<Xv, xrect>) return _mm256_cvtpd_epi32(A);
+  }
+  Xv operator()(const xrect& A) const noexcept {
+    if constexpr (same_as<Xv, xvector>) return _mm_cvtepi32_ps(A);
+    else if constexpr (same_as<Xv, xwector>) return _mm256_cvtepi32_pd(A);
+    else if constexpr (same_as<Xv, xrect>) return A;
+  } };
+template<xv Xv> inline constexpr t_xvcast<Xv> xvcast;
 
-template<xv Xv> inline constexpr auto xvcast = [](const xv auto& A) noexcept {
-  if constexpr (same_as<remove_cvref<Xv>, remove_cvref<decltype(A)>>) return A;
-  else if constexpr (same_as<remove_cvref<decltype(Xv)>, xvector>) {
-    if constexpr (same_as<remove_cvref<Xv>, xwector>) return _mm256_cvtps_pd(A);
-    else if constexpr (same_as<remove_cvref<Xv>, xrect>) return _mm_cvtps_epi32(A);
-  } else if constexpr (same_as<remove_cvref<decltype(Xv)>, xwector>) {
-    if constexpr (same_as<remove_cvref<Xv>, xvector>) return _mm256_cvtpd_ps(A);
-    else if constexpr (same_as<remove_cvref<Xv>, xrect>) return _mm256_cvtpd_epi32(A);
-  } else if constexpr (same_as<remove_cvref<decltype(Xv)>, xrect>) {
-    if constexpr (same_as<remove_cvref<Xv>, xvector>) return _mm_cvtepi32_ps(A);
-    else if constexpr (same_as<remove_cvref<Xv>, xwector>) return _mm256_cvtepi32_pd(A); } };
-
-inline constexpr auto xvbitcast = []<included_in<xvector, xrect> Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_castps_si128(A);
-  else return _mm_castsi128_ps(A); };
+struct t_xvbitcast {
+  xrect operator()(const xvector& A) const noexcept { return _mm_castps_si128(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_castsi128_ps(A); }
+};
+inline constexpr t_xvbitcast xvbitcast;
 
 inline constexpr caster xv_zero{
   []() noexcept { return _mm_setzero_ps(); }, []() noexcept { return _mm256_setzero_pd(); }, []() noexcept { return _mm_setzero_si128(); },
-  []() noexcept -> const xmatrix& { static const xmatrix static_{_mm_setzero_ps(), _mm_setzero_ps(), _mm_setzero_ps(), _mm_setzero_ps()}; return static_; }};
+  []() noexcept -> const xmatrix& { static const xmatrix s{_mm_setzero_ps(), _mm_setzero_ps(), _mm_setzero_ps(), _mm_setzero_ps()}; return s; }};
 
 inline constexpr caster xv_identity{[]() noexcept -> const xmatrix& { static const xmatrix m{xv_x, xv_y, xv_z, xv_w}; return m; }};
 
 template<value X, value Y = X, value Z = Y, value W = Z> inline constexpr caster xv_constant{
-  []() noexcept -> const xvector& { static const xvector static_ = xvload(float(X), float(Y), float(Z), float(W)); return static_; },
-  []() noexcept -> const xwector& { static const xwector static_ = xvload(double(X), double(Y), double(Z), double(W)); return static_; },
-  []() noexcept -> const xrect& { static const xrect static_ = xvload(int(X), int(Y), int(Z), int(W)); return static_; }};
+  []() noexcept -> const xvector& { static const xvector s = xvload(float(X), float(Y), float(Z), float(W)); return s; },
+  []() noexcept -> const xwector& { static const xwector s = xvload(double(X), double(Y), double(Z), double(W)); return s; },
+  []() noexcept -> const xrect& { static const xrect s = xvload(int(X), int(Y), int(Z), int(W)); return s; }};
 
 inline constexpr auto xv_x = xv_constant<1, 0, 0, 0>;
 inline constexpr auto xv_y = xv_constant<0, 1, 0, 0>;
@@ -879,25 +890,44 @@ inline constexpr auto xv_neg_y = xv_constant<0, -1, 0, 0>;
 inline constexpr auto xv_neg_z = xv_constant<0, 0, -1, 0>;
 inline constexpr auto xv_neg_w = xv_constant<0, 0, 0, -1>;
 
-template<nat I> requires (I < 4) inline constexpr auto xvget = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) { if constexpr (I == 0) return _mm_cvtss_f32(A); else return bitcast<float>(_mm_extract_ps(A, I)); }
-  else if constexpr (same_as<Xv, xwector>) return bitcast<double>(_mm256_extract_epi64(_mm256_castpd_si256(A), I));
-  else if constexpr (same_as<Xv, xrect>) { if constexpr (I == 0) return _mm_cvtsi128_si32(A); else return _mm_extract_epi32(A, I); } };
+template<nat I> requires (I < 4) struct t_xvget {
+  fat4 operator()(const xvector& A) const noexcept { if constexpr (I == 0) return _mm_cvtss_f32(A); else return bitcast<fat4>(_mm_extract_ps(A, I)); }
+  fat8 operator()(const xwector& A) const noexcept { return bitcast<fat8>(_mm256_extract_epi64(_mm256_castpd_si256(A), I)); }
+  int4 operator()(const xrect& A) const noexcept { if constexpr (I == 0) return _mm_cvtsi128_si32(A); else return _mm_extract_epi32(A, I); }
+};
+template<nat I> requires (I < 4) inline constexpr t_xvget<I> xvget;
 
-template<nat I> requires (I < 4) inline constexpr auto xvset = []<xv Xv>(const Xv& A, const xv_value_t<Xv> Value) noexcept {
-  if constexpr (same_as<Xv, xvector>) return xvbitcast(_mm_insert_ps(xvbitcast(A), bitcast<float>(Value), int(I)));
-  else if constexpr (same_as<Xv, xwector>) return _mm256_castsi256_pd(_mm256_insert_epi64(_mm256_castpd_si256(A), bitcast<long long>(Value), int(I)));
-  else if constexpr (same_as<Xv, xrect>) return _mm_insert_epi32(A, Value, int(I)); };
+template<nat I> requires (I < 4) struct t_xvset {
+  xvector operator()(const xvector& A, const fat4 Value) const noexcept { return xvbitcast(_mm_insert_epi32(A, bitcast<int>(Value), int(I))); }
+  xwector operator()(const xwector& A, const fat8 Value) const noexcept { return _mm256_castsi256_pd(_mm256_insert_epi64(_mm256_castpd_si256(A), bitcast<int8>(Value), int(I))); }
+  xrect operator()(const xrect& A, const int4 Value) const noexcept { return _mm_insert_epi32(A, Value, int(I)); }
+};
+template<nat I> requires (I < 4) inline constexpr t_xvset<I> xvset;
 
-template<bool X, bool Y, bool Z, bool W> inline constexpr auto xvblend = []<xv Xv>(const Xv& A, const Xv& B) noexcept {
-  static constexpr int m = X + Y * 2 + Z * 4 + W * 8;
-  if constexpr (!(X || Y || Z || W)) return A;
-  else if constexpr (X && Y && Z && W) return B;
-  else if constexpr (same_as<Xv, xvector>) return _mm_blend_ps(A, B, m);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_blend_pd(A, B, m);
-  else if constexpr (same_as<Xv, xrect>) return _mm_blend_epi32(A, B, m); };
+template<bool X, bool Y, bool Z, bool W> struct t_xvblend {
+  xvector operator()(const xvector& A, const xvector& B) const noexcept {
+    if constexpr (!(X || Y || Z || W)) return A;
+    else if constexpr (X && Y && Z && W) return B;
+    else return _mm_blend_ps(A, B, X + Y * 2 + Z * 4 + W * 8);
+  }
+  xwector operator()(const xwector& A, const xwector& B) const noexcept {
+    if constexpr (!(X || Y || Z || W)) return A;
+    else if constexpr (X && Y && Z && W) return B;
+    else return _mm256_blend_pd(A, B, X + Y * 2 + Z * 4 + W * 8);
+  }
+  xrect operator()(const xrect& A, const xrect& B) const noexcept {
+    if constexpr (!(X || Y || Z || W)) return A;
+    else if constexpr (X && Y && Z && W) return B;
+    else return _mm_blend_epi32(A, B, X + Y * 2 + Z * 4 + W * 8);
+  } };
+template<bool X, bool Y, bool Z, bool W> inline constexpr t_xvblend<X, Y, Z, W> xvblend;
 
-template<bool X, bool Y, bool Z, bool W> inline constexpr auto xvsetzero = [](const xv auto& A) noexcept { return xvblend<X, Y, Z, W>(A, xv_zero); };
+template<bool X, bool Y, bool Z, bool W> struct t_xvsetzero {
+  xvector operator()(const xvector& A) const noexcept { return xvblend<X, Y, Z, W>(A, xv_zero); }
+  xwector operator()(const xwector& A) const noexcept { return xvblend<X, Y, Z, W>(A, xv_zero); }
+  xrect operator()(const xrect& A) const noexcept { return xvblend<X, Y, Z, W>(A, xv_zero); }
+};
+template<bool X, bool Y, bool Z, bool W> inline constexpr t_xvsetzero<X, Y, Z, W> xvsetzero;
 
 template<int X, int Y, int Z, int W> struct t_xvpermute {
   template<int A, int B, int C, int D> friend struct t_xvpermute;
@@ -961,305 +991,455 @@ public:
 };
 template<int X, int Y, int Z, int W> inline constexpr t_xvpermute<X, Y, Z, W> xvpermute;
 
-template<nat To, nat From, nat Zero = 0b0000> requires ((To | From) < 4 && Zero < 16)
-inline constexpr auto xvinsert = []<xv Xv>(const Xv& Inserted, const Xv& Picked) noexcept {
-  constexpr auto f = [](auto a) { return To == a ? From + 4 : a; };
-  if constexpr (Zero == 0) return xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Picked);
-  else if constexpr (same_as<Xv, xvector>) return _mm_insert_ps(Inserted, Picked, From << 6 | To << 4 | Zero);
-  else if constexpr (same_as<Xv, xwector>) return xvsetzero<Zero & 1, Zero & 2, Zero & 4, Zero & 8>(xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Picked));
-  else if constexpr (same_as<Xv, xrect>) return xvbitcast(_mm_insert_ps(xvbitcast(Inserted), xvbitcast(Picked), From << 6 | To << 4 | Zero)); };
+template<nat To, nat From, nat Zero = 0> requires ((To | From) < 4 && Zero < 16) struct t_xvinsert {
+  xvector operator()(const xvector& Inserted, const xvector& Picked) const noexcept {
+    constexpr auto f = [](auto a) { return To == a ? From + 4 : a; };
+    if constexpr (Zero == 0) return xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Picked);
+    else return _mm_insert_ps(Inserted, Picked, From << 6 | To << 4 | Zero);
+  }
+  xwector operator()(const xwector& Inserted, const xwector& Picked) const noexcept {
+    constexpr auto f = [](auto a) { return To == a ? From + 4 : a; };
+    if constexpr (Zero == 0) return xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Picked);
+    else return xvsetzero<Zero & 1, Zero & 2, Zero & 4, Zero & 8>(xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Picked));
+  }
+  xrect operator()(const xrect& Inserted, const xrect& Picked) const noexcept {
+    constexpr auto f = [](auto a) { return To == a ? From + 4 : a; };
+    if constexpr (Zero == 0) return xvpermute<f(0), f(1), f(2), f(3)>(Inserted, Picked);
+    else return xvbitcast(_mm_insert_ps(xvbitcast(Inserted), xvbitcast(Picked), From << 6 | To << 4 | Zero));
+  }
+};
+template<nat To, nat From, nat Zero = 0> inline constexpr t_xvinsert<To, From, Zero> xvinsert;
 
-inline constexpr auto xveq = []<xv Xv>(const Xv& A, const Xv& B) noexcept -> bool {
-  if constexpr (same_as<Xv, xvector>) return _mm_test_all_ones(xvbitcast(_mm_cmpeq_ps(A, B)));
-  else if constexpr (same_as<Xv, xwector>) return _mm256_testc_pd(_mm256_cmp_pd(A, B, 0), xv_neg_zero);
-  else if constexpr (same_as<Xv, xrect>) return _mm_test_all_ones(_mm_cmpeq_epi32(A, B)); };
+struct t_xveq {
+  bool operator()(const xvector& A, const xvector& B) const noexcept { return _mm_test_all_ones(xvbitcast(_mm_cmpeq_ps(A, B))); }
+  bool operator()(const xwector& A, const xwector& B) const noexcept { return _mm256_testc_pd(_mm256_cmp_pd(A, B, 0), xv_neg_zero); }
+  bool operator()(const xrect& A, const xrect& B) const noexcept { return _mm_test_all_ones(_mm_cmpeq_epi32(A, B)); }
+};
+inline constexpr t_xveq xveq;
 
-inline constexpr auto xvne = []<xv Xv>(const Xv& A, const Xv& B) noexcept -> bool { return !xveq(A, B); };
+struct t_xvne {
+  bool operator()(const xvector& A, const xvector& B) const noexcept { return !xveq(A, B); }
+  bool operator()(const xwector& A, const xwector& B) const noexcept { return !xveq(A, B); }
+  bool operator()(const xrect& A, const xrect& B) const noexcept { return !xveq(A, B); }
+};
+inline constexpr t_xvne xvne;
 
-inline constexpr auto xvlt = []<xv Xv>(const Xv& A, const Xv& B) noexcept -> bool {
-  if constexpr (same_as<Xv, xvector>) return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) < _mm_movemask_ps(_mm_cmplt_ps(A, B));
-  else if constexpr (same_as<Xv, xwector>) return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) < _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17));
-  else if constexpr (same_as<Xv, xrect>) return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) < _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); };
+struct t_xvlt {
+  bool operator()(const xvector& A, const xvector& B) const noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) < _mm_movemask_ps(_mm_cmplt_ps(A, B)); }
+  bool operator()(const xwector& A, const xwector& B) const noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) < _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); }
+  bool operator()(const xrect& A, const xrect& B) const noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) < _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }
+};
+inline constexpr t_xvlt xvlt;
 
-inline constexpr auto xvle = []<xv Xv>(const Xv& A, const Xv& B) noexcept -> bool {
-  if constexpr (same_as<Xv, xvector>) return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) <= _mm_movemask_ps(_mm_cmplt_ps(A, B));
-  else if constexpr (same_as<Xv, xwector>) return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) <= _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17));
-  else if constexpr (same_as<Xv, xrect>) return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) <= _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); };
+struct t_xvle {
+  bool operator()(const xvector& A, const xvector& B) const noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) <= _mm_movemask_ps(_mm_cmplt_ps(A, B)); }
+  bool operator()(const xwector& A, const xwector& B) const noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) <= _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); }
+  bool operator()(const xrect& A, const xrect& B) const noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) <= _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }
+};
+inline constexpr t_xvle xvle;
 
-inline constexpr auto xvgt = []<xv Xv>(const Xv& A, const Xv& B) noexcept -> bool {
-  if constexpr (same_as<Xv, xvector>) return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) > _mm_movemask_ps(_mm_cmplt_ps(A, B));
-  else if constexpr (same_as<Xv, xwector>) return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) > _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17));
-  else if constexpr (same_as<Xv, xrect>) return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) > _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); };
+struct t_xvgt {
+  bool operator()(const xvector& A, const xvector& B) const noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) > _mm_movemask_ps(_mm_cmplt_ps(A, B)); }
+  bool operator()(const xwector& A, const xwector& B) const noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) > _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); }
+  bool operator()(const xrect& A, const xrect& B) const noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) > _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }
+};
+inline constexpr t_xvgt xvgt;
 
-inline constexpr auto xvge = []<xv Xv>(const Xv& A, const Xv& B) noexcept -> bool {
-  if constexpr (same_as<Xv, xvector>) return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) >= _mm_movemask_ps(_mm_cmplt_ps(A, B));
-  else if constexpr (same_as<Xv, xwector>) return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) >= _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17));
-  else if constexpr (same_as<Xv, xrect>) return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) >= _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); };
+struct t_xvge {
+  bool operator()(const xvector& A, const xvector& B) const noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) >= _mm_movemask_ps(_mm_cmplt_ps(A, B)); }
+  bool operator()(const xwector& A, const xwector& B) const noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) >= _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); }
+  bool operator()(const xrect& A, const xrect& B) const noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) >= _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }
+};
+inline constexpr t_xvge xvge;
 
-inline constexpr auto xvtw = []<xv Xv>(const Xv& A, const Xv& B) noexcept -> int {
-  if constexpr (same_as<Xv, xvector>) return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) <=> _mm_movemask_ps(_mm_cmplt_ps(A, B));
-  else if constexpr (same_as<Xv, xwector>) return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) <=> _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17));
-  else if constexpr (same_as<Xv, xrect>) return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) <=> _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); };
+struct t_xvtw {
+  auto operator()(const xvector& A, const xvector& B) const noexcept { return _mm_movemask_ps(_mm_cmpgt_ps(A, B)) <=> _mm_movemask_ps(_mm_cmplt_ps(A, B)); }
+  auto operator()(const xwector& A, const xwector& B) const noexcept { return _mm256_movemask_pd(_mm256_cmp_pd(B, A, 17)) <=> _mm256_movemask_pd(_mm256_cmp_pd(A, B, 17)); }
+  auto operator()(const xrect& A, const xrect& B) const noexcept { return _mm_movemask_ps(xvbitcast(_mm_cmpgt_epi32(A, B))) <=> _mm_movemask_ps(xvbitcast(_mm_cmplt_epi32(A, B))); }
+};
+inline constexpr t_xvtw xvtw;
 
-inline constexpr auto xvabs = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_andnot_ps(xv_neg_zero, A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_andnot_pd(xv_neg_zero, A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_abs_epi32(A); };
+struct t_xvabs {
+  xvector operator()(const xvector& A) const noexcept { return _mm_andnot_ps(xv_neg_zero, A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_andnot_pd(xv_neg_zero, A); }
+  xrect operator()(const xrect& A) const noexcept { return _mm_abs_epi32(A); }
+};
+inline constexpr t_xvabs xvabs;
 
-inline constexpr auto xvneg = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_xor_ps(A, xv_neg_zero);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_xor_pd(A, xv_neg_zero);
-  else if constexpr (same_as<Xv, xrect>) return _mm_xor_epi32(A, xv_neg_zero); };
+struct t_xvneg {
+  xvector operator()(const xvector& A) const noexcept { return _mm_xor_ps(A, xv_neg_zero); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_xor_pd(A, xv_neg_zero); }
+  xrect operator()(const xrect& A) const noexcept { return _mm_xor_si128(A, xv_neg_zero); }
+};
+inline constexpr t_xvneg xvneg;
 
-inline constexpr auto xvadd = []<xv Xv>(const Xv& A, const Xv& B) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_add_ps(A, B);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_add_pd(A, B);
-  else if constexpr (same_as<Xv, xrect>) return _mm_add_epi32(A, B); };
+struct t_xvadd {
+  xvector operator()(const xvector& A, const xvector& B) const noexcept { return _mm_add_ps(A, B); }
+  xwector operator()(const xwector& A, const xwector& B) const noexcept { return _mm256_add_pd(A, B); }
+  xrect operator()(const xrect& A, const xrect& B) const noexcept { return _mm_add_epi32(A, B); }
+};
+inline constexpr t_xvadd xvadd;
 
-inline constexpr auto xvsub = []<xv Xv>(const Xv& A, const Xv& B) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_sub_ps(A, B);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_sub_pd(A, B);
-  else if constexpr (same_as<Xv, xrect>) return _mm_sub_epi32(A, B); };
+struct t_xvsub {
+  xvector operator()(const xvector& A, const xvector& B) const noexcept { return _mm_sub_ps(A, B); }
+  xwector operator()(const xwector& A, const xwector& B) const noexcept { return _mm256_sub_pd(A, B); }
+  xrect operator()(const xrect& A, const xrect& B) const noexcept { return _mm_sub_epi32(A, B); }
+};
+inline constexpr t_xvsub xvsub;
 
-inline constexpr auto xvmul = []<xv Xv>(const Xv& A, const Xv& B) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_mul_ps(A, B);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_mul_pd(A, B);
-  else if constexpr (same_as<Xv, xrect>) return _mm_mul_epi32(A, B); };
+struct t_xvmul {
+  xvector operator()(const xvector& A, const xvector& B) const noexcept { return _mm_mul_ps(A, B); }
+  xwector operator()(const xwector& A, const xwector& B) const noexcept { return _mm256_mul_pd(A, B); }
+  xrect operator()(const xrect& A, const xrect& B) const noexcept { return _mm_mul_epi32(A, B); }
+};
+inline constexpr t_xvmul xvmul;
 
-inline constexpr auto xvdiv = []<xv Xv>(const Xv& A, const Xv& B) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_div_ps(A, B);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_div_pd(A, B);
-  else if constexpr (same_as<Xv, xrect>) return _mm_div_epi32(A, B); };
+struct t_xvdiv {
+  xvector operator()(const xvector& A, const xvector& B) const noexcept { return _mm_div_ps(A, B); }
+  xwector operator()(const xwector& A, const xwector& B) const noexcept { return _mm256_div_pd(A, B); }
+  xrect operator()(const xrect& A, const xrect& B) const noexcept { return _mm_div_epi32(A, B); }
+};
+inline constexpr t_xvdiv xvdiv;
 
-template<bool X, bool Y, bool Z, bool W> inline constexpr auto xvabsolute = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return xvblend<X, Y, Z, W>(A, xvabs(A));
-  else if constexpr (same_as<Xv, xwector>) return xvblend<X, Y, Z, W>(A, xvabs(A));
-  else if constexpr (same_as<Xv, xrect>) return xvblend<X, Y, Z, W>(A, xvabs(A)); };
+template<bool X, bool Y, bool Z, bool W> struct t_xvabsolute {
+  xvector operator()(const xvector& A) const noexcept { return xvblend<X, Y, Z, W>(A, xvabs(A)); }
+  xwector operator()(const xwector& A) const noexcept { return xvblend<X, Y, Z, W>(A, xvabs(A)); }
+  xrect operator()(const xrect& A) const noexcept { return xvblend<X, Y, Z, W>(A, xvabs(A)); }
+};
+inline constexpr t_xvabsolute<1, 1, 1, 1> xvabsolute;
 
-template<bool X, bool Y, bool Z, bool W> inline constexpr auto xvnegate = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return xvblend<X, Y, Z, W>(A, xvneg(A));
-  else if constexpr (same_as<Xv, xwector>) return xvblend<X, Y, Z, W>(A, xvneg(A));
-  else if constexpr (same_as<Xv, xrect>) return xvblend<X, Y, Z, W>(A, xvneg(A)); };
+template<bool X, bool Y, bool Z, bool W> struct t_xvnegate {
+  xvector operator()(const xvector& A) const noexcept { return xvblend<X, Y, Z, W>(A, xvneg(A)); }
+  xwector operator()(const xwector& A) const noexcept { return xvblend<X, Y, Z, W>(A, xvneg(A)); }
+  xrect operator()(const xrect& A) const noexcept { return xvblend<X, Y, Z, W>(A, xvneg(A)); }
+};
+inline constexpr t_xvnegate<1, 1, 1, 1> xvnegate;
 
-inline constexpr auto xvfma = []<xv Xv>(const Xv& A, const Xv& B, const Xv& C) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_fmadd_ps(A, B, C);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_fmadd_pd(A, B, C);
-  else if constexpr (same_as<Xv, xrect>) return xvadd(xvmul(A, B), C); };
+struct t_xvfma {
+  xvector operator()(const xvector& A, const xvector& B, const xvector& C) const noexcept { return _mm_fmadd_ps(A, B, C); }
+  xwector operator()(const xwector& A, const xwector& B, const xwector& C) const noexcept { return _mm256_fmadd_pd(A, B, C); }
+  xrect operator()(const xrect& A, const xrect& B, const xrect& C) const noexcept { return xvadd(xvmul(A, B), C); }
+};
+inline constexpr t_xvfma xvfma;
 
-inline constexpr auto xvfms = []<xv Xv>(const Xv& A, const Xv& B, const Xv& C) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_fmsub_ps(A, B, C);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_fmsub_pd(A, B, C);
-  else if constexpr (same_as<Xv, xrect>) return xvsub(xvmul(A, B), C); };
+struct t_xvfms {
+  xvector operator()(const xvector& A, const xvector& B, const xvector& C) const noexcept { return _mm_fmsub_ps(A, B, C); }
+  xwector operator()(const xwector& A, const xwector& B, const xwector& C) const noexcept { return _mm256_fmsub_pd(A, B, C); }
+  xrect operator()(const xrect& A, const xrect& B, const xrect& C) const noexcept { return xvsub(xvmul(A, B), C); }
+};
+inline constexpr t_xvfms xvfms;
 
-inline constexpr auto xvfnma = []<xv Xv>(const Xv& A, const Xv& B, const Xv& C) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_fnmadd_ps(A, B, C);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_fnmadd_pd(A, B, C);
-  else if constexpr (same_as<Xv, xrect>) return xvsub(xvmul(xvneg(A), B), C); };
+struct t_xvfnma {
+  xvector operator()(const xvector& A, const xvector& B, const xvector& C) const noexcept { return _mm_fnmadd_ps(A, B, C); }
+  xwector operator()(const xwector& A, const xwector& B, const xwector& C) const noexcept { return _mm256_fnmadd_pd(A, B, C); }
+  xrect operator()(const xrect& A, const xrect& B, const xrect& C) const noexcept { return xvsub(xvmul(xvneg(A), B), C); }
+};
+inline constexpr t_xvfnma xvfnma;
 
-inline constexpr auto xvfnms = []<xv Xv>(const Xv& A, const Xv& B, const Xv& C) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_fnmsub_ps(A, B, C);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_fnmsub_pd(A, B, C);
-  else if constexpr (same_as<Xv, xrect>) return xvsub(xvmul(xvneg(A), B), C); };
+struct t_xvfnms {
+  xvector operator()(const xvector& A, const xvector& B, const xvector& C) const noexcept { return _mm_fnmsub_ps(A, B, C); }
+  xwector operator()(const xwector& A, const xwector& B, const xwector& C) const noexcept { return _mm256_fnmsub_pd(A, B, C); }
+  xrect operator()(const xrect& A, const xrect& B, const xrect& C) const noexcept { return xvsub(xvmul(xvneg(A), B), C); }
+};
+inline constexpr t_xvfnms xvfnms;
 
-inline constexpr auto xvceil = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_ceil_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_ceil_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return A; };
+struct t_xvceil {
+  xvector operator()(const xvector& A) const noexcept { return _mm_ceil_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_ceil_pd(A); }
+  xrect operator()(const xrect& A) const noexcept { return A; };
+};
+inline constexpr t_xvceil xvceil;
 
-inline constexpr auto xvfloor = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_floor_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_floor_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return A; };
+struct t_xvfloor {
+  xvector operator()(const xvector& A) const noexcept { return _mm_floor_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_floor_pd(A); }
+  xrect operator()(const xrect& A) const noexcept { return A; };
+};
+inline constexpr t_xvfloor xvfloor;
 
-inline constexpr auto xvtrunc = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_trunc_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_trunc_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return A; };
+struct t_xvtrunc {
+  xvector operator()(const xvector& A) const noexcept { return _mm_trunc_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_trunc_pd(A); }
+  xrect operator()(const xrect& A) const noexcept { return A; };
+};
+inline constexpr t_xvtrunc xvtrunc;
 
-inline constexpr auto xvround = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_round_ps(A, 8);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_round_pd(A, 8);
-  else if constexpr (same_as<Xv, xrect>) return A; };
+struct t_xvround {
+  xvector operator()(const xvector& A) const noexcept { return _mm_round_ps(A, 8); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_round_pd(A, 8); }
+  xrect operator()(const xrect& A) const noexcept { return A; };
+};
+inline constexpr t_xvround xvround;
 
-inline constexpr auto xvmax = []<xv Xv>(const Xv& A, const Xv& B) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_max_ps(A, B);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_max_pd(A, B);
-  else if constexpr (same_as<Xv, xrect>) return _mm_max_epi32(A, B); };
+struct t_xvmax {
+  xvector operator()(const xvector& A, const xvector& B) const noexcept { return _mm_max_ps(A, B); }
+  xwector operator()(const xwector& A, const xwector& B) const noexcept { return _mm256_max_pd(A, B); }
+  xrect operator()(const xrect& A, const xrect& B) const noexcept { return _mm_max_epi32(A, B); };
+};
+inline constexpr t_xvmax xvmax;
 
-inline constexpr auto xvmin = []<xv Xv>(const Xv& A, const Xv& B) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_min_ps(A, B);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_min_pd(A, B);
-  else if constexpr (same_as<Xv, xrect>) return _mm_min_epi32(A, B); };
+struct t_xvmin {
+  xvector operator()(const xvector& A, const xvector& B) const noexcept { return _mm_min_ps(A, B); }
+  xwector operator()(const xwector& A, const xwector& B) const noexcept { return _mm256_min_pd(A, B); }
+  xrect operator()(const xrect& A, const xrect& B) const noexcept { return _mm_min_epi32(A, B); };
+};
+inline constexpr t_xvmin xvmin;
 
-inline constexpr auto xvsin = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_sin_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_sin_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_sin_ps(xvcast<xvector>(A)); };
+struct t_xvsin {
+  xvector operator()(const xvector& A) const noexcept { return _mm_sin_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_sin_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_sin_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvsin xvsin;
 
-inline constexpr auto xvasin = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_asin_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_asin_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_asin_ps(xvcast<xvector>(A)); };
+struct t_xvasin {
+  xvector operator()(const xvector& A) const noexcept { return _mm_asin_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_asin_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_asin_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvasin xvasin;
 
-inline constexpr auto xvsinh = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_sinh_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_sinh_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_sinh_ps(xvcast<xvector>(A)); };
+struct t_xvsinh {
+  xvector operator()(const xvector& A) const noexcept { return _mm_sinh_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_sinh_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_sinh_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvsinh xvsinh;
 
-inline constexpr auto xvasinh = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_asinh_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_asinh_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_asinh_ps(xvcast<xvector>(A)); };
+struct t_xvasinh {
+  xvector operator()(const xvector& A) const noexcept { return _mm_asinh_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_asinh_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_asinh_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvasinh xvasinh;
 
-inline constexpr auto xvcos = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_cos_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_cos_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_cos_ps(xvcast<xvector>(A)); };
+struct t_xvcos {
+  xvector operator()(const xvector& A) const noexcept { return _mm_cos_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_cos_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_cos_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvcos xvcos;
 
-inline constexpr auto xvacos = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_acos_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_acos_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_acos_ps(xvcast<xvector>(A)); };
+struct t_xvacos {
+  xvector operator()(const xvector& A) const noexcept { return _mm_acos_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_acos_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_acos_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvacos xvacos;
 
-inline constexpr auto xvcosh = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_cosh_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_cosh_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_cosh_ps(xvcast<xvector>(A)); };
+struct t_xvcosh {
+  xvector operator()(const xvector& A) const noexcept { return _mm_cosh_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_cosh_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_cosh_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvcosh xvcosh;
 
-inline constexpr auto xvacosh = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_acosh_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_acosh_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_acosh_ps(xvcast<xvector>(A)); };
+struct t_xvacosh {
+  xvector operator()(const xvector& A) const noexcept { return _mm_acosh_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_acosh_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_acosh_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvacosh xvacosh;
 
-inline constexpr auto xvtan = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_tan_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_tan_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_tan_ps(xvcast<xvector>(A)); };
+struct t_xvtan {
+  xvector operator()(const xvector& A) const noexcept { return _mm_tan_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_tan_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_tan_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvtan xvtan;
 
-inline constexpr auto xvatan = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_atan_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_atan_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_atan_ps(xvcast<xvector>(A)); };
+struct t_xvatan {
+  xvector operator()(const xvector& A) const noexcept { return _mm_atan_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_atan_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_atan_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvatan xvatan;
 
-inline constexpr auto xvtanh = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_tanh_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_tanh_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_tanh_ps(xvcast<xvector>(A)); };
+struct t_xvtanh {
+  xvector operator()(const xvector& A) const noexcept { return _mm_tanh_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_tanh_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_tanh_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvtanh xvtanh;
 
-inline constexpr auto xvatanh = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_atanh_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_atanh_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_atanh_ps(xvcast<xvector>(A)); };
+struct t_xvatanh {
+  xvector operator()(const xvector& A) const noexcept { return _mm_atanh_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_atanh_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_atanh_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvatanh xvatanh;
 
-inline constexpr auto xvatan2 = []<xv Xv>(const Xv& Sin, const Xv& Cos) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_atan2_ps(Sin, Cos);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_atan2_pd(Sin, Cos);
-  else if constexpr (same_as<Xv, xrect>) return _mm_atan2_ps(xvcast<xvector>(Sin), xvcast<xvector>(Cos)); };
+struct t_xvatan2 {
+  xvector operator()(const xvector& Sin, const xvector& Cos) const noexcept { return _mm_atan2_ps(Sin, Cos); }
+  xwector operator()(const xwector& Sin, const xwector& Cos) const noexcept { return _mm256_atan2_pd(Sin, Cos); }
+  xvector operator()(const xrect& Sin, const xrect& Cos) const noexcept { return _mm_atan2_ps(xvcast<xvector>(Sin), xvcast<xvector>(Cos)); };
+};
+inline constexpr t_xvatan2 xvatan2;
 
-inline constexpr auto xvsincos = []<xv Xv>(const Xv& A, select_type<same_as<Xv, xrect>, xvector, Xv>& Cos) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_sincos_ps(&Cos, A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_sincos_pd(&Cos, A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_sincos_ps(&Cos, xvcast<xvector>(A)); };
+struct t_xvsincos {
+  xvector operator()(const xvector& A, xvector& Cos) const noexcept { return _mm_sincos_ps(&Cos, A); }
+  xwector operator()(const xwector& A, xwector& Cos) const noexcept { return _mm256_sincos_pd(&Cos, A); }
+  xvector operator()(const xrect& A, xvector& Cos) const noexcept { return _mm_sincos_ps(&Cos, xvcast<xvector>(A)); };
+};
+inline constexpr t_xvsincos xvsincos;
 
-inline constexpr auto xvpow = []<xv Xv>(const Xv& A, const Xv& B) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_pow_ps(A, B);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_pow_pd(A, B);
-  else if constexpr (same_as<Xv, xrect>) return _mm_pow_ps(xvcast<xvector>(A), xvcast<xvector>(B)); };
+struct t_xvpow {
+  xvector operator()(const xvector& A, const xvector& B) const noexcept { return _mm_pow_ps(A, B); }
+  xwector operator()(const xwector& A, const xwector& B) const noexcept { return _mm256_pow_pd(A, B); }
+  xvector operator()(const xrect& A, const xrect& B) const noexcept { return _mm_pow_ps(xvcast<xvector>(A), xvcast<xvector>(B)); };
+};
+inline constexpr t_xvpow xvpow;
 
-inline constexpr auto xvexp = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_exp_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_exp_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_exp_ps(xvcast<xvector>(A)); };
+struct t_xvexp {
+  xvector operator()(const xvector& A) const noexcept { return _mm_exp_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_exp_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_exp_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvexp xvexp;
 
-inline constexpr auto xvexp2 = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_exp2_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_exp2_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_exp2_ps(xvcast<xvector>(A)); };
+struct t_xvexp2 {
+  xvector operator()(const xvector& A) const noexcept { return _mm_exp2_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_exp2_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_exp2_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvexp2 xvexp2;
 
-inline constexpr auto xvexp10 = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_exp10_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_exp10_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_exp10_ps(xvcast<xvector>(A)); };
+struct t_xvexp10 {
+  xvector operator()(const xvector& A) const noexcept { return _mm_exp10_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_exp10_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_exp10_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvexp10 xvexp10;
 
-inline constexpr auto xvexpm1 = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_expm1_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_expm1_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_expm1_ps(xvcast<xvector>(A)); };
+struct t_xvexpm1 {
+  xvector operator()(const xvector& A) const noexcept { return _mm_expm1_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_expm1_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_expm1_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvexpm1 xvexpm1;
 
-inline constexpr auto xvln = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_log_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_log_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_log_ps(xvcast<xvector>(A)); };
+struct t_xvln {
+  xvector operator()(const xvector& A) const noexcept { return _mm_log_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_log_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_log_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvln xvln;
 
-inline constexpr auto xvlog = []<xv Xv>(const Xv& A, const Xv& Base) noexcept {
-  if constexpr (same_as<Xv, xvector>) return xvdiv(xvln(A), xvln(Base));
-  else if constexpr (same_as<Xv, xwector>) return xvdiv(xvln(A), xvln(Base));
-  else if constexpr (same_as<Xv, xrect>) return xvdiv(xvln(A), xvln(Base)); };
+struct t_xvlog {
+  xvector operator()(const xvector& A, const xvector& Base) const noexcept { return xvdiv(xvln(A), xvln(Base)); }
+  xwector operator()(const xwector& A, const xwector& Base) const noexcept { return xvdiv(xvln(A), xvln(Base)); }
+  xvector operator()(const xrect& A, const xrect& Base) const noexcept { return xvdiv(xvln(A), xvln(Base)); };
+};
+inline constexpr t_xvlog xvlog;
 
-inline constexpr auto xvlog2 = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_log2_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_log2_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_log2_ps(xvcast<xvector>(A)); };
+struct t_xvlog2 {
+  xvector operator()(const xvector& A) const noexcept { return _mm_log2_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_log2_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_log2_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvlog2 xvlog2;
 
-inline constexpr auto xvlog10 = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_log10_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_log10_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_log10_ps(xvcast<xvector>(A)); };
+struct t_xvlog10 {
+  xvector operator()(const xvector& A) const noexcept { return _mm_log10_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_log10_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_log10_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvlog10 xvlog10;
 
-inline constexpr auto xvlog1p = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_log1p_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_log1p_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_log1p_ps(xvcast<xvector>(A)); };
+struct t_xvlog1p {
+  xvector operator()(const xvector& A) const noexcept { return _mm_log1p_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_log1p_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_log1p_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvlog1p xvlog1p;
 
-inline constexpr auto xvlogb = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_logb_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_logb_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_logb_ps(xvcast<xvector>(A)); };
+struct t_xvlogb {
+  xvector operator()(const xvector& A) const noexcept { return _mm_logb_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_logb_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_logb_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvlogb xvlogb;
 
-inline constexpr auto xvsqrt = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_sqrt_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_sqrt_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_sqrt_ps(xvcast<xvector>(A)); };
+struct t_xvsqrt {
+  xvector operator()(const xvector& A) const noexcept { return _mm_sqrt_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_sqrt_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_sqrt_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvsqrt xvsqrt;
 
-inline constexpr auto xvcbrt = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_cbrt_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_cbrt_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_cbrt_ps(xvcast<xvector>(A)); };
+struct t_xvcbrt {
+  xvector operator()(const xvector& A) const noexcept { return _mm_cbrt_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_cbrt_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_cbrt_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvcbrt xvcbrt;
 
-inline constexpr auto xvhypot = []<xv Xv>(const Xv& A, const Xv& B) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_hypot_ps(A, B);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_hypot_pd(A, B);
-  else if constexpr (same_as<Xv, xrect>) return _mm_hypot_ps(xvcast<xvector>(A), xvcast<xvector>(B)); };
+struct t_xvhypot {
+  xvector operator()(const xvector& A, const xvector& B) const noexcept { return _mm_hypot_ps(A, B); }
+  xwector operator()(const xwector& A, const xwector& B) const noexcept { return _mm256_hypot_pd(A, B); }
+  xvector operator()(const xrect& A, const xrect& B) const noexcept { return _mm_hypot_ps(xvcast<xvector>(A), xvcast<xvector>(B)); };
+};
+inline constexpr t_xvhypot xvhypot;
 
-inline constexpr auto xvsqrt_r = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_invsqrt_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_invsqrt_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_invsqrt_ps(xvcast<xvector>(A)); };
+struct t_xvsqrt_r {
+  xvector operator()(const xvector& A) const noexcept { return _mm_invsqrt_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_invsqrt_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_invsqrt_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvsqrt_r xvsqrt_r;
 
-inline constexpr auto xvcbrt_r = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_invcbrt_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_invcbrt_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_invcbrt_ps(xvcast<xvector>(A)); };
+struct t_xvcbrt_r {
+  xvector operator()(const xvector& A) const noexcept { return _mm_invcbrt_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_invcbrt_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_invcbrt_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xvcbrt_r xvcbrt_r;
 
-inline constexpr auto xverf = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_erf_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_erf_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_erf_ps(xvcast<xvector>(A)); };
+struct t_xverf {
+  xvector operator()(const xvector& A) const noexcept { return _mm_erf_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_erf_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_erf_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xverf xverf;
 
-inline constexpr auto xverfc = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_erfc_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_erfc_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_erfc_ps(xvcast<xvector>(A)); };
+struct t_xverfc {
+  xvector operator()(const xvector& A) const noexcept { return _mm_erfc_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_erfc_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_erfc_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xverfc xverfc;
 
-inline constexpr auto xverf_r = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_erfinv_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_erfinv_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_erfinv_ps(xvcast<xvector>(A)); };
+struct t_xverf_r {
+  xvector operator()(const xvector& A) const noexcept { return _mm_erfinv_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_erfinv_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_erfinv_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xverf_r xverf_r;
 
-inline constexpr auto xverfc_r = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return _mm_erfcinv_ps(A);
-  else if constexpr (same_as<Xv, xwector>) return _mm256_erfcinv_pd(A);
-  else if constexpr (same_as<Xv, xrect>) return _mm_erfcinv_ps(xvcast<xvector>(A)); };
+struct t_xverfc_r {
+  xvector operator()(const xvector& A) const noexcept { return _mm_erfcinv_ps(A); }
+  xwector operator()(const xwector& A) const noexcept { return _mm256_erfcinv_pd(A); }
+  xvector operator()(const xrect& A) const noexcept { return _mm_erfcinv_ps(xvcast<xvector>(A)); };
+};
+inline constexpr t_xverfc_r xverfc_r;
+
+template<nat N, nat Zero = 0> requires (0 < N && N <= 4 && Zero < 16) struct t_xvdot {
+  xvector operator()(const xvector& A, const xvector& B) const noexcept {
+    if constexpr (Zero == 15) return Xv(xv_zero);
+    else if constexpr (N == 1) {
+      if constexpr (bitcount(Zero) == 3) return xvinsert<inspects<!(Zero & 1), !(Zero & 2), !(Zero & 4), !(Zero & 8)>, 0, Zero>(A, xvmul(A, B));
+      else if constexpr (Zero == 0) return xvpermute<0, 0, 0, 0>(xvmul(A, B));
+      else return xvpermute<Zero & 1 ? 0 : 0, Zero & 2 ? 1 : 0, Zero & 4 ? 2 : 0, Zero & 8 ? 3 : 0>(xv_zero, xvmul(A, B));
+    } else if constexpr (N == 2) {
+
+    }
+    if constexpr (N == 1 && bitcount(Zero) == 3)
+    else if constexpr (N == 2)
+    else return _mm_dp_ps(A, B, select_value<N, 0, 16, 48, 112, 240> | (15 ^ Zero));
+  }
+  xwector operator()(const xwector& A, const xwector& B) const noexcept { return xvdot<N, Zero>(A, B); }
+  xrect operator()(const xrect& A, const xrect& B) const noexcept { return xvdot<N, Zero>(A, B); }
+};
 
 template<nat N, nat Zero = 0b0000> requires (0 < N && N <= 4 && Zero < 16)
 inline constexpr auto xvdot = []<xv Xv>(const Xv& A, const Xv& B) noexcept {
@@ -1499,18 +1679,15 @@ struct t_xmcamera {
     get<2>(O) = xv_constant<0, 0, 1 / (f - n), -n / (f - n)>;
     if constexpr (N == 4) get<3>(O) = xv_w; } };
 
-inline constexpr auto xveuler = []<xm Xm>(const Xm& Rotation) noexcept { // not complete
-  if (extent<Xm> >= 3) {
-    remove_cvref<common_element<Xm>> v = xvneg(xvpermute<3, 0, 3, 3>(get<2>(Rotation)));
-    if (xveq(v, xv_y)) return xvasin(xvinsert<0, 1, 0b1100>(v, get<0>(Rotation)));
-    v = xvpermute<0, 1, 6, 3>(xvpermute<4, 1, -1, 3>(v, xvdiv(get<1>(Rotation), get<0>(Rotation))), xvdiv(xvpermute<-1, -1, 1, -1>(get<2>(Rotation)), get<2>(Rotation)));
-    return xvpermute<6, 1, 4, 3>(xvasin(v), xvatan(xvpermute<0, -1, 5, -1>(get<1>(Rotation), get<2>(Rotation)), xvblend<0, 0, 1, 1>(get<0>(Rotation), get<2>(Rotation))));
-  }
+inline constexpr auto xveuler = []<xm Xm>(const Xm& Rotation) noexcept requires (le(3, extent<Xm>) && le(extent<Xm>, 4)) {
+  remove_cvref<common_element<Xm>> v = xvneg(xvpermute<3, 0, 3, 3>(get<2>(Rotation)));
+  if (xveq(v, xv_y)) return xvasin(xvinsert<0, 1, 0b1100>(v, get<0>(Rotation)));
+  v = xvpermute<0, 1, 6, 3>(xvpermute<4, 1, -1, 3>(v, xvdiv(get<1>(Rotation), get<0>(Rotation))), xvdiv(xvpermute<-1, -1, 1, -1>(get<2>(Rotation)), get<2>(Rotation)));
+  return xvpermute<6, 1, 4, 3>(xvasin(v), xvatan(xvpermute<0, -1, 5, -1>(get<1>(Rotation), get<2>(Rotation)), xvblend<0, 0, 1, 1>(get<0>(Rotation), get<2>(Rotation))));
 };
 
 struct rect;
 
-/// vector structure
 struct vector {
   float x{}, y{}, z{}, w{};
   constexpr vector() noexcept = default;
