@@ -69,8 +69,8 @@ template<typename T, typename... Ts> concept included_in = requires { requires (
 template<typename T, typename... Ts> concept derived_from = requires { requires (std::derived_from<T, Ts> && ...); };
 template<typename T, typename... Ts> concept castable_to = requires(T (&f)()) { ((static_cast<Ts>(f())), ...); };
 template<typename T, typename... Ts> concept nt_castable_to = castable_to<T, Ts...> && requires(T (&f)() noexcept) { { ((static_cast<Ts>(f())), ...) } noexcept; };
-template<typename T, typename... Ts> concept convertible_to = castable_to<T, Ts...> && requires { requires (std::convertible_to<T, Ts> && ...); };
-template<typename T, typename... Ts> concept nt_convertible_to = nt_castable_to<T, Ts...> && requires { requires (std::is_nothrow_convertible_v<T, Ts> && ...); };
+template<typename T, typename... Ts> concept convertible_to = requires { requires (std::convertible_to<T, Ts> && ...); };
+template<typename T, typename... Ts> concept nt_convertible_to = convertible_to<T, Ts...> && requires { requires (std::is_nothrow_convertible_v<T, Ts> && ...); };
 template<typename T> concept numerical = nt_convertible_to<T, int4, int8, nat4, nat8, fat4, fat8>;
 
 template<auto V, typename T = decltype(V)> requires convertible_to<decltype(V), T> struct constant {
@@ -699,6 +699,8 @@ template<character Ct> using string = std::basic_string<Ct>;
 template<character Ct> using string_view = std::basic_string_view<Ct>;
 using str1 = string<cat1>;
 using str2 = string<cat2>;
+using stv1 = string_view<cat1>;
+using stv2 = string_view<cat2>;
 
 template<arithmetic T> struct t_stov {
   T operator()(const str1& Str) const noexcept { return call(Str); }
@@ -730,7 +732,14 @@ struct source {
   source(const char* const) = delete;
   constexpr source(const char* const File = __builtin_FILE(), const int Line = __builtin_LINE(), const int Column = __builtin_COLUMN()) noexcept : file(mv(File)), line(Line), column(Column) {}
   str1 to_string() const { return std::format("{}({},{})", file, line, column); }
-  template<typename Tr> friend std::basic_ostream<char, Tr>& operator<<(std::basic_ostream<char, Tr>& os, const source& s) { return os << s.to_string(); }
+  template<character Ct> string<Ct> to_string() const {
+    if constexpr (same_as<remove_cv<Ct>, cat1>) return std::format("{}({},{})", std::filesystem::path(file).string<Ct>(), line, column);
+    else if constexpr (same_as<remove_cv<Ct>, cat2>) return std::format(L"{}({},{})", std::filesystem::path(file).string<Ct>(), line, column);
+    else if constexpr (same_as<remove_cv<Ct>, uct1>) return std::format(u8"{}({},{})", std::filesystem::path(file).string<Ct>(), line, column);
+    else if constexpr (same_as<remove_cv<Ct>, uct2>) return std::format(u"{}({},{})", std::filesystem::path(file).string<Ct>(), line, column);
+    else if constexpr (same_as<remove_cv<Ct>, uct4>) return std::format(U"{}({},{})", std::filesystem::path(file).string<Ct>(), line, column);
+  }
+  template<typename Ct, typename Tr> friend std::basic_ostream<char, Tr>& operator<<(std::basic_ostream<Ct, Tr>& os, const source& s) { return os << s.to_string<Ct>(); }
 };
 
 template<character Ct> struct literal {
@@ -741,57 +750,38 @@ template<character Ct> struct literal {
 };
 template<character Ct, nat N> literal(const Ct (&)[N]) -> literal<Ct>;
 
-class path : public std::filesystem::path {
-public:
-  using base = std::filesystem::path;
-  path() noexcept = default;
-  path(const base& p) : base(p) {}
-  path(base&& p) noexcept : base(mv(p)) {}
-  path(string_type&& s) : base(mv(s)) {}
-  template<range Rg> requires character<iter_value<Rg>> path(Rg&& r) : base(yw::begin(r), yw::end(r)) {}
-  template<character Ct> path(const Ct* s) : base(s) {}
-  static bool exists(const auto& p) ywlib_wrapper(std::filesystem::exists(p));
-  static bool remove(const auto& p) ywlib_wrapper(std::filesystem::remove(p));
-  static bool is_file(const auto& p) ywlib_wrapper(std::filesystem::is_regular_file(p));
-  static bool is_directory(const auto& p) ywlib_wrapper(std::filesystem::is_directory(p));
-  static nat file_size(const auto& p) ywlib_wrapper(std::filesystem::file_size(p));
-  static array<path> list(const convertible_to<base> auto& p, bool Recursive = false);
-  static void read(const convertible_to<base> auto& p, cnt_range auto&& Out) requires (!is_const<decltype(yw::data(Out))>);
-  static array<nat1> read(const convertible_to<base> auto& p) { array<nat1> a(file_size(p), nat1{}); read(p, a); return a; }
-  static void write(const convertible_to<base> auto& p, cnt_range auto&& In);
-  bool exists() const { return exists(*this); }
-  bool remove() const { return remove(*this); }
-  bool is_file() const { return is_file(*this); }
-  bool is_directory() const { return is_directory(*this); }
-  nat file_size() const { return file_size(*this); }
-  std::vector<path> list(bool Recursive = false) const { return list(*this, Recursive); }
-  void read(cnt_range auto&& Out) const requires(!is_const<decltype(yw::data(Out))>) { return read(*this, Out); }
-  array<nat1> read() const { return read(*this); }
-  void write(cnt_range auto&& In) const { return write(*this, In); }
-};
+using path = std::filesystem::path;
+}
 
-array<path> path::list(const convertible_to<base> auto& p, bool Recursive) {
+namespace yw::file {
+bool exists(const path& p) { return std::filesystem::exists(p); }
+bool remove(const path& p) { return std::filesystem::remove(p); }
+bool is_file(const path& p) { return std::filesystem::is_regular_file(p); }
+bool is_directory(const path& p) { return std::filesystem::is_directory(p); }
+nat size(const path& p) { return std::filesystem::file_size(p); }
+array<path> list(const path& p, bool Recursive = false) {
   array<path> a;
-  if (!std::filesystem::exists(p)) throw std::runtime_error(std::format("runtime error in path::list : the path does not exist ({})", base(p)));
-  if (!std::filesystem::is_directory(p)) throw std::runtime_error(std::format("runtime error in path::list : the path is not a directory ({})", base(p)));
+  if (!std::filesystem::exists(p)) throw std::runtime_error(std::format("runtime error in path::list : the path does not exist ({})", p.string()));
+  if (!std::filesystem::is_directory(p)) throw std::runtime_error(std::format("runtime error in path::list : the path is not a directory ({})", p.string()));
   if (Recursive) for (const auto& e : std::filesystem::recursive_directory_iterator(p)) a.push_back(e.path());
   else for (const auto& e : std::filesystem::directory_iterator(p)) a.push_back(e.path());
   return a;
 }
-
-void path::read(const convertible_to<base> auto& p, cnt_range auto&& Out) requires (!is_const<decltype(yw::data(Out))>) {
-  if (const auto n = yw::size(Out) * sizeof(iter_value<decltype(Out)>); p.file_size() == n) {
+void read(const path& p, cnt_range auto&& Out) requires (!is_const<decltype(yw::data(Out))>) {
+  if (const auto n = yw::size(Out) * sizeof(iter_value<decltype(Out)>); file_size(p) == n) {
     if (std::ifstream ifs(p, std::ios::binary); ifs) return void(ifs.read(reinterpret_cast<char*>(yw::data(Out)), n));
     else throw std::runtime_error(std::format("runtime error in path::read : failed to open the file ({})", p.string()));
   } else throw std::runtime_error(std::format("runtime error in path::read : the byte size of the output range is not equal to the file size ({})", p.string()));
 }
-
-void path::write(const convertible_to<base> auto& p, cnt_range auto&& In) {
+array<nat1> read(const path& p) { array<nat1> a(file_size(p), nat1{}); read(p, a); return a; }
+void write(const path& p, cnt_range auto&& In) {
   if (std::ofstream ofs(p, std::ios::binary); ofs) {
     if (const auto n = yw::size(In) * sizeof(iter_value<decltype(In)>); ofs.write(reinterpret_cast<const char*>(yw::data(In)), n)) return;
     else throw std::runtime_error(std::format("runtime error in path::write : failed to write to the file ({})", p.string()));
   } else throw std::runtime_error(std::format("runtime error in path::write : failed to open the file ({})", p.string()));
 }
+inline constexpr auto canonical = [](const path& p) { return std::filesystem::canonical(p); };
+inline constexpr auto weakly_canonical = [](const path& p) { return std::filesystem::weakly_canonical(p); };
 }
 
 namespace std {
@@ -814,10 +804,11 @@ template<typename T, typename Pj, yw::sequence_of<nat> Sq> struct tuple_size<yw:
 template<nat I, typename T, typename Pj, yw::sequence_of<nat> Sq> struct tuple_element<I, yw::projector<T, Pj, Sq>> : type_identity<yw::element_t<yw::projector<T, Pj, Sq>, I>> {};
 template<typename T, size_t N> struct tuple_size<yw::array<T, N>> : integral_constant<size_t, N> {};
 template<size_t I, typename T, size_t N> struct tuple_element<I, yw::array<T, N>> : type_identity<T> {};
-template<> struct formatter<yw::source> : formatter<string> { auto format(const yw::source& s, auto& c) const { return formatter<std::string>::format(s.to_string(), c); } };
+template<typename Ct> struct formatter<yw::source, Ct> : formatter<basic_string<Ct>, Ct> {
+  auto format(const yw::source& s, auto& c) const { return formatter<basic_string<Ct>, Ct>::format(s.to_string<Ct>(), c); } };
 template<typename Ct> struct formatter<yw::path, Ct> : formatter<basic_string<Ct>, Ct> { auto format(const yw::path& p, auto& c) const {
   if constexpr (same_as<remove_cv<Ct>, char>) return std::format("\"{}\"", formatter<basic_string<Ct>, Ct>::format(p.string<Ct>(), c));
-  else return std::format(L"\"{}\"", formatter<basic_string<Ct>, Ct>::format(p.string<Ct>(), c)) } };
+  else return std::format(L"\"{}\"", formatter<basic_string<Ct>, Ct>::format(p.string<Ct>(), c)); } };
 }
 
 #include <immintrin.h>
@@ -873,8 +864,6 @@ inline constexpr caster xv_zero{
   []() noexcept { return _mm_setzero_ps(); }, []() noexcept { return _mm256_setzero_pd(); }, []() noexcept { return _mm_setzero_si128(); },
   []() noexcept -> const xmatrix& { static const xmatrix s{_mm_setzero_ps(), _mm_setzero_ps(), _mm_setzero_ps(), _mm_setzero_ps()}; return s; }};
 
-inline constexpr caster xv_identity{[]() noexcept -> const xmatrix& { static const xmatrix m{xv_x, xv_y, xv_z, xv_w}; return m; }};
-
 template<value X, value Y = X, value Z = Y, value W = Z> inline constexpr caster xv_constant{
   []() noexcept -> const xvector& { static const xvector s = xvload(float(X), float(Y), float(Z), float(W)); return s; },
   []() noexcept -> const xwector& { static const xwector s = xvload(double(X), double(Y), double(Z), double(W)); return s; },
@@ -889,6 +878,8 @@ inline constexpr auto xv_neg_x = xv_constant<-1, 0, 0, 0>;
 inline constexpr auto xv_neg_y = xv_constant<0, -1, 0, 0>;
 inline constexpr auto xv_neg_z = xv_constant<0, 0, -1, 0>;
 inline constexpr auto xv_neg_w = xv_constant<0, 0, 0, -1>;
+
+inline constexpr caster xv_identity{[]() noexcept -> const xmatrix& { static const xmatrix m{xv_x, xv_y, xv_z, xv_w}; return m; }};
 
 template<nat I> requires (I < 4) struct t_xvget {
   fat4 operator()(const xvector& A) const noexcept { if constexpr (I == 0) return _mm_cvtss_f32(A); else return bitcast<fat4>(_mm_extract_ps(A, I)); }
@@ -943,51 +934,52 @@ private:
     else if constexpr (same_as<Xv, xwector>) return _mm256_permute4x64_pd(A, int(x + y * 4 + z * 16 + w * 64));
   }
 public:
-  template<xv Xv> Xv operator()(const Xv& A) const noexcept requires(lt(max(X, Y, Z, W), 4)) {
-    if constexpr (same_as<Xv, xrect>) return xvbitcast(call(xvbitcast(A)));
-    else if constexpr (included_in<Xv, xvector, xwector>) return call(A);
-  }
-  template<xv Xv> Xv operator()(const Xv& A, const Xv& B) const noexcept requires(lt(max(X, Y, Z, W), 8)) {
+  xvector operator()(const xvector& A) const noexcept requires (lt(max(X, Y, Z, W), 4)) { return call(A); }
+  xwector operator()(const xwector& A) const noexcept requires (lt(max(X, Y, Z, W), 4)) { return call(A); }
+  xrect operator()(const xrect& A) const noexcept requires (lt(max(X, Y, Z, W), 4)) { return xvbitcast(call(xvbitcast(A))); }
+  xvector operator()(const xvector& A, const xvector& B) const noexcept requires (lt(max(X, Y, Z, W), 8)) {
     constexpr auto f = [](auto a, auto b) { return a == b || a < 0; };
     constexpr int xa = (f(X, 0) ? 0 : X), ya = (f(Y, 1) ? 1 : Y), za = (f(Z, 2) ? 2 : Z), wa = (f(W, 3) ? 3 : W),
                   xb = (f(X, 4) ? 4 : X), yb = (f(Y, 5) ? 5 : Y), zb = (f(Z, 6) ? 6 : Z), wb = (f(W, 7) ? 7 : W);
     if constexpr ((xa | ya | za | wa) < 4) return t_xvpermute<xa, ya, za, wa>::call(A);
     else if constexpr (4 <= (xb & yb & zb & wb)) return t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B);
     else if constexpr ((xa & 3) == 0 && (ya & 3) == 1 && (za & 3) == 2 && (wa & 3) == 3) return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(B, A);
-    else if constexpr (same_as<xv, xvector>) {
-      if constexpr ((xa | ya) < 4 && 4 <= (zb & wb)) return _mm_shuffle_ps(A, B, xa + ya * 4 + (zb - 4) * 16 + (wb - 4) * 64);
-      else if constexpr (4 <= (xb & yb) && (za | wa) < 4) return _mm_shuffle_ps(B, A, xb - 4 | (yb - 4) * 4 | za * 16 | wa * 64);
-      else if constexpr ((xa == 0) + (ya == 1) + (za == 2) + (wa == 3) == 3) {
-        constexpr nat i = inspects<xa != 0, ya != 1, za != 2, wa != 3>;
-        return _mm_insert_ps(A, B, int((select_value<i, xa, ya, za, wa> - 4) << 6 | i << 4));
-      } else if constexpr ((xb == 4) + (yb == 5) + (zb == 6) + (wb == 7) == 3) {
-        constexpr nat i = inspects<xb != 4, yb != 5, zb != 6, wb != 7>;
-        return _mm_insert_ps(A, B, int(select_value<i, xb, yb, zb, wb> << 6 | i << 4));
-      } else if constexpr ((xa < 4 || xb == 4) && (ya < 4 || yb == 5) && (za < 4 || zb == 6) && (wa < 4 || wb == 7))
-        return xvblend<xb == 4, yb == 5, zb == 6, wb == 7>(t_xvpermute<xa, ya, za, wa>::call(A), B);
-      else if constexpr ((4 <= xb || xa == 0) && (4 <= yb || ya == 1) && (4 <= zb || za == 2) && (4 <= wb || wa == 3))
-        return xvblend<xa == 0, ya == 1, za == 2, wa == 3>(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), A);
-      else if constexpr ((xa < 4) + (ya < 4) + (za < 4) + (wa < 4) == 3) {
-        constexpr nat i = inspects<(xa > 3), (ya > 3), (za > 3), (wa > 3)>;
-        return _mm_insert_ps(t_xvpermute<xa, ya, za, wa>::call(A), B, int((select_value<i, xa, ya, za, wa> - 4) << 6 | i << 4));
-      } else if constexpr ((xb < 4) + (yb < 4) + (zb < 4) + (wb < 4) == 1) {
-        constexpr nat i = inspects<(xb < 4), (yb < 4), (zb < 4), (wb < 4)>;
-        return _mm_insert_ps(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), A, int(select_value<i, xb, yb, zb, wb> << 6 | i << 4));
-      } else return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), t_xvpermute<xa, ya, za, wa>::call(A));
-    } else if constexpr (same_as<xv, xwector>) {
-      if constexpr (xa < 2 && (yb == 4 || yb == 5) && (za == 2 || zb == 3) && wb > 5)
-        return _mm256_shuffle_pd(A, B, (xa == 1) + (yb == 5) * 2 + (za == 3) * 4 + (wb == 7) * 8);
-      else if constexpr ((xb == 4 || xb == 5) && ya < 2 && zb > 5 && (wa == 2 || wa == 3))
-        return _mm256_shuffle_pd(B, A, (xb == 5) + (ya == 1) * 2 + (zb == 7) * 4 + (wa == 3) * 8);
-      else if constexpr ((xa | ya | za | wa) < 4) return t_xvpermute<xa, ya, za, wa>::call(A);
-      else if constexpr ((xb & yb & zb & wb) > 3) return t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B);
-      else if constexpr (((xa == 0 && ya == 1) || (xa == 2 && ya == 3)) && ((zb == 4 && wb == 5) || (zb == 6 && wb == 7)))
-        return _mm256_shuffle_f64x2(A, B, (xa == 2) + (zb == 6) * 2);
-      else if constexpr (((xb == 4 && yb == 5) || (xb == 6 && yb == 7)) && ((za == 0 && wa == 1) || (za == 2 && wa == 3)))
-        return _mm256_shuffle_f64x2(B, A, (xb == 6) + (za == 2) * 2);
-      else return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), t_xvpermute<xa, ya, za, wa>::call(A));
-    } else if constexpr (same_as<xv, xrect>) return xvbitcast((*this)(xvbitcast(A), xvbitcast(B)));
+    else if constexpr ((xa | ya) < 4 && 4 <= (zb & wb)) return _mm_shuffle_ps(A, B, xa + ya * 4 + (zb - 4) * 16 + (wb - 4) * 64);
+    else if constexpr (4 <= (xb & yb) && (za | wa) < 4) return _mm_shuffle_ps(B, A, xb - 4 | (yb - 4) * 4 | za * 16 | wa * 64);
+    else if constexpr ((xa == 0) + (ya == 1) + (za == 2) + (wa == 3) == 3) {
+      constexpr nat i = inspects<xa != 0, ya != 1, za != 2, wa != 3>;
+      return _mm_insert_ps(A, B, int((select_value<i, xa, ya, za, wa> - 4) << 6 | i << 4));
+    } else if constexpr ((xb == 4) + (yb == 5) + (zb == 6) + (wb == 7) == 3) {
+      constexpr nat i = inspects<xb != 4, yb != 5, zb != 6, wb != 7>;
+      return _mm_insert_ps(A, B, int(select_value<i, xb, yb, zb, wb> << 6 | i << 4));
+    } else if constexpr ((xa < 4 || xb == 4) && (ya < 4 || yb == 5) && (za < 4 || zb == 6) && (wa < 4 || wb == 7))
+      return xvblend<xb == 4, yb == 5, zb == 6, wb == 7>(t_xvpermute<xa, ya, za, wa>::call(A), B);
+    else if constexpr ((4 <= xb || xa == 0) && (4 <= yb || ya == 1) && (4 <= zb || za == 2) && (4 <= wb || wa == 3))
+      return xvblend<xa == 0, ya == 1, za == 2, wa == 3>(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), A);
+    else if constexpr ((xa < 4) + (ya < 4) + (za < 4) + (wa < 4) == 3) {
+      constexpr nat i = inspects<(xa > 3), (ya > 3), (za > 3), (wa > 3)>;
+      return _mm_insert_ps(t_xvpermute<xa, ya, za, wa>::call(A), B, int((select_value<i, xa, ya, za, wa> - 4) << 6 | i << 4));
+    } else if constexpr ((xb < 4) + (yb < 4) + (zb < 4) + (wb < 4) == 1) {
+      constexpr nat i = inspects<(xb < 4), (yb < 4), (zb < 4), (wb < 4)>;
+      return _mm_insert_ps(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), A, int(select_value<i, xb, yb, zb, wb> << 6 | i << 4));
+    } else return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), t_xvpermute<xa, ya, za, wa>::call(A));
   }
+  xwector operator()(const xwector& A, const xwector& B) const noexcept requires (lt(max(X, Y, Z, W), 8)) {
+    constexpr auto f = [](auto a, auto b) { return a == b || a < 0; };
+    constexpr int xa = (f(X, 0) ? 0 : X), ya = (f(Y, 1) ? 1 : Y), za = (f(Z, 2) ? 2 : Z), wa = (f(W, 3) ? 3 : W),
+                  xb = (f(X, 4) ? 4 : X), yb = (f(Y, 5) ? 5 : Y), zb = (f(Z, 6) ? 6 : Z), wb = (f(W, 7) ? 7 : W);
+    if constexpr ((xa | ya | za | wa) < 4) return t_xvpermute<xa, ya, za, wa>::call(A);
+    else if constexpr (4 <= (xb & yb & zb & wb)) return t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B);
+    else if constexpr ((xa & 3) == 0 && (ya & 3) == 1 && (za & 3) == 2 && (wa & 3) == 3) return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(B, A);
+    else if constexpr (xa < 2 && (yb == 4 || yb == 5) && (za == 2 || zb == 3) && wb > 5) return _mm256_shuffle_pd(A, B, (xa == 1) + (yb == 5) * 2 + (za == 3) * 4 + (wb == 7) * 8);
+    else if constexpr ((xb == 4 || xb == 5) && ya < 2 && zb > 5 && (wa == 2 || wa == 3)) return _mm256_shuffle_pd(B, A, (xb == 5) + (ya == 1) * 2 + (zb == 7) * 4 + (wa == 3) * 8);
+    else if constexpr ((xa | ya | za | wa) < 4) return t_xvpermute<xa, ya, za, wa>::call(A);
+    else if constexpr ((xb & yb & zb & wb) > 3) return t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B);
+    else if constexpr (((xa == 0 && ya == 1) || (xa == 2 && ya == 3)) && ((zb == 4 && wb == 5) || (zb == 6 && wb == 7))) return _mm256_shuffle_f64x2(A, B, (xa == 2) + (zb == 6) * 2);
+    else if constexpr (((xb == 4 && yb == 5) || (xb == 6 && yb == 7)) && ((za == 0 && wa == 1) || (za == 2 && wa == 3))) return _mm256_shuffle_f64x2(B, A, (xb == 6) + (za == 2) * 2);
+    else return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), t_xvpermute<xa, ya, za, wa>::call(A));
+  }
+  xrect operator()(const xrect& A, const xrect& B) const noexcept requires (lt(max(X, Y, Z, W), 8)) { return xvbitcast(call(xvbitcast(A), xvbitcast(B))); }
 };
 template<int X, int Y, int Z, int W> inline constexpr t_xvpermute<X, Y, Z, W> xvpermute;
 
@@ -1106,14 +1098,14 @@ template<bool X, bool Y, bool Z, bool W> struct t_xvabsolute {
   xwector operator()(const xwector& A) const noexcept { return xvblend<X, Y, Z, W>(A, xvabs(A)); }
   xrect operator()(const xrect& A) const noexcept { return xvblend<X, Y, Z, W>(A, xvabs(A)); }
 };
-inline constexpr t_xvabsolute<1, 1, 1, 1> xvabsolute;
+template<bool X, bool Y, bool Z, bool W> inline constexpr t_xvabsolute<X, Y, Z, W> xvabsolute;
 
 template<bool X, bool Y, bool Z, bool W> struct t_xvnegate {
   xvector operator()(const xvector& A) const noexcept { return xvblend<X, Y, Z, W>(A, xvneg(A)); }
   xwector operator()(const xwector& A) const noexcept { return xvblend<X, Y, Z, W>(A, xvneg(A)); }
   xrect operator()(const xrect& A) const noexcept { return xvblend<X, Y, Z, W>(A, xvneg(A)); }
 };
-inline constexpr t_xvnegate<1, 1, 1, 1> xvnegate;
+template<bool X, bool Y, bool Z, bool W> inline constexpr t_xvnegate<X, Y, Z, W> xvnegate;
 
 struct t_xvfma {
   xvector operator()(const xvector& A, const xvector& B, const xvector& C) const noexcept { return _mm_fmadd_ps(A, B, C); }
@@ -1425,154 +1417,205 @@ inline constexpr t_xverfc_r xverfc_r;
 
 template<nat N, nat Zero = 0> requires (0 < N && N <= 4 && Zero < 16) struct t_xvdot {
   xvector operator()(const xvector& A, const xvector& B) const noexcept {
-    if constexpr (Zero == 15) return Xv(xv_zero);
-    else if constexpr (N == 1) {
-      if constexpr (bitcount(Zero) == 3) return xvinsert<inspects<!(Zero & 1), !(Zero & 2), !(Zero & 4), !(Zero & 8)>, 0, Zero>(A, xvmul(A, B));
-      else if constexpr (Zero == 0) return xvpermute<0, 0, 0, 0>(xvmul(A, B));
-      else return xvpermute<Zero & 1 ? 0 : 0, Zero & 2 ? 1 : 0, Zero & 4 ? 2 : 0, Zero & 8 ? 3 : 0>(xv_zero, xvmul(A, B));
-    } else if constexpr (N == 2) {
-
-    }
-    if constexpr (N == 1 && bitcount(Zero) == 3)
-    else if constexpr (N == 2)
+    if constexpr (Zero == 15) return xv_zero;
+    else if constexpr (N == 1) { return call<Zero>(xvmul(A, B)); }
+    else if constexpr (N == 2) { return call<Zero>(_mm_hadd_ps(xvmul(A, B), xv_zero)); }
     else return _mm_dp_ps(A, B, select_value<N, 0, 16, 48, 112, 240> | (15 ^ Zero));
   }
-  xwector operator()(const xwector& A, const xwector& B) const noexcept { return xvdot<N, Zero>(A, B); }
-  xrect operator()(const xrect& A, const xrect& B) const noexcept { return xvdot<N, Zero>(A, B); }
-};
+  xwector operator()(const xwector& A, const xwector& B) const noexcept {
+    if constexpr (Zero == 15) return xv_zero;
+    else if constexpr (N == 1) { return call<Zero>(xvmul(A, B)); }
+    else if constexpr (N == 2) { return call<Zero>(xvadd(_mm256_hadd_pd(xvmul(A, B), xv_zero), A)); }
+    else if constexpr (N == 3) { auto a = xvmul(A, B); return call<Zero>(xvadd(_mm256_hadd_pd(a, xv_zero), _mm256_castpd128_pd256(_mm256_extractf128_pd(A, 1)))); }
+    else if constexpr (N == 4) { auto a = _mm256_hadd_pd(xvmul(A, B), xv_zero); return call<Zero>(xvadd(a, _mm256_castpd128_pd256(_mm256_extractf128_pd(a, 1)))); }
+  }
+  xrect operator()(const xrect& A, const xrect& B) const noexcept {
+    if constexpr (Zero == 15) return xv_zero;
+    else if constexpr (N == 1) { return call<Zero>(xvmul(A, B)); }
+    else if constexpr (N == 2) { return call<Zero>(xvadd(_mm_hadd_epi32(xvmul(A, B), xv_zero), A)); }
+    else if constexpr (N == 3) { auto a = xvmul(A, B); return call<Zero>(xvadd(_mm_hadd_epi32(a, A), xvpermute<2, -1, -1, -1>(a))); }
+    else if constexpr (N == 4) { auto a = _mm_hadd_epi32(xvmul(A, B), A); return call<Zero>(xvadd(a, xvpermute<2, -1, -1, -1>(a))); }
+  }
+private:
+  static auto call(const auto& A) noexcept {
+    if constexpr (bitcount(Zero) == 3) return xvpermute<Zero & 1, Zero & 2, Zero & 4, Zero & 8>(xv_zero, A);
+    else if constexpr (Zero == 0) return xvpermute<0, 0, 0, 0>(A);
+    else return xvpermute<Zero & 1 ? 0 : 0, Zero & 2 ? 1 : 0, Zero & 4 ? 2 : 0, Zero & 8 ? 3 : 0>(xv_zero, A);
+  } };
+template<nat N, nat Zero = 0> requires (0 < N && N <= 4 && Zero < 16) inline constexpr t_xvdot<N, Zero> xvdot;
 
-template<nat N, nat Zero = 0b0000> requires (0 < N && N <= 4 && Zero < 16)
-inline constexpr auto xvdot = []<xv Xv>(const Xv& A, const Xv& B) noexcept {
-  if constexpr (Zero == 15) return Xv(xv_zero);
-  else if constexpr (same_as<Xv, xvector>) {
-    if constexpr (N == 1 && bitcount(Zero) == 3) return xvinsert<inspects<!(Zero & 1), !(Zero & 2), !(Zero & 4), !(Zero & 8)>, 0, Zero>(A, xvmul(A, B));
-    else return _mm_dp_ps(A, B, select_value<N, 0, 16, 48, 112, 240> | (15 ^ Zero));
-  } else if constexpr (same_as<Xv, xwector>) { // can improve performance
-    xwector a;
-    if constexpr (N == 1) a = xvmul(A, B);
-    else if constexpr (N == 2) a = _mm256_hadd_pd(xvmul(A, B), A);
-    else if constexpr (N == 3) (a = xvmul(A, B)), a = xvadd(_mm256_hadd_pd(a, A), _mm256_castpd128_pd256(_mm256_extractf128_pd(a, 1)));
-    else if constexpr (N == 4) (a = _mm256_hadd_pd(xvmul(A, B), A)), a = xvadd(a, _mm256_castpd128_pd256(_mm256_extractf128_pd(a, 1)));
-    return xvsetzero<Zero & 1, Zero & 2, Zero & 4, Zero & 8>(xvpermute<0, 0, 0, 0>(a));
-  } else if constexpr (same_as<Xv, xrect>) { // can improve performance
-    xrect a;
-    if constexpr (N == 1) a = xvmul(A, B);
-    else if constexpr (N == 2) a = _mm_hadd_epi32(xvmul(A, B), A);
-    else if constexpr (N == 3) (a = xvmul(A, B)), a = xvadd(_mm_hadd_epi32(a, A), xvpermute<2, -1, -1, -1>(a));
-    else if constexpr (N == 4) (a = _mm_hadd_epi32(xvmul(A, B), A)), a = xvadd(a, xvpermute<2, -1, -1, -1>(a));
-    return xvsetzero<Zero & 1, Zero & 2, Zero & 4, Zero & 8>(xvpermute<0, 0, 0, 0>(a)); } };
+template<nat N> requires (0 < N && N <= 4) struct t_xvtransform {
+  template<tuple_for<xvector> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  xvector operator()(const Matrix& M, const xvector& V) const noexcept { return call<extent<Matrix>>(M, V); }
+  template<tuple_for<xwector> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  xwector operator()(const Matrix& M, const xwector& V) const noexcept { return call<extent<Matrix>>(M, V); }
+  template<tuple_for<xrect> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  xrect operator()(const Matrix& M, const xrect& V) const noexcept { return call<extent<Matrix>>(M, V); }
+private:
+  template<nat E> static auto call(const auto& M, const auto& V) noexcept {
+    auto o = xvdot<N, 0b1110>(get<0>(M), V);
+    if constexpr (E >= 2) o = xvinsert<1, 0, (N == 1) * 0b1100>(o, xvdot<N, 0b1110>(get<1>(M), V));
+    if constexpr (E >= 3) o = xvinsert<2, 0, (N == 2) * 0b1000>(o, xvdot<N, 0b1110>(get<2>(M), V));
+    if constexpr (E == 4) o = xvinsert<3, 0, 0>(o, xvdot<N, 0b1110>(get<3>(M), V));
+    return o;
+  } };
+template<nat N> requires (0 < N && N <= 4) inline constexpr t_xvtransform<N> xvtransform;
 
-template<nat N> requires (0 < N && N <= 4) inline constexpr auto xvtransform =
-  []<xm Xm, xv Xv>(const Xm& M, const Xv& V) noexcept {
-  Xv o = xvdot<N, 0b1110>(get<0>(M), V);
-  if constexpr (N >= 2) o = xvinsert<1, 0, (N == 1) * 0b1100>(o, xvdot<N, 0b1110>(get<1>(M), V));
-  if constexpr (N >= 3) o = xvinsert<2, 0, (N == 2) * 0b1000>(o, xvdot<N, 0b1110>(get<2>(M), V));
-  if constexpr (N == 4) o = xvinsert<3, 0, 0>(o, xvdot<N, 0b1110>(get<3>(M), V));
-  return o;};
-
-inline constexpr auto xmproduct =
-  []<xm XmL, xm XmR>(const XmL& L, const XmR& R, XmL& O) noexcept
-  requires (same_as<remove_cvref<element_t<XmL, 0>>, remove_cvref<element_t<XmR, 0>>> && le(extent<XmR>, 4)) {
-  constexpr auto f = [](const auto& A, const auto& B, auto& C) noexcept {
+struct t_xvproduct {
+  template<tuple_for<xvector> ML, tuple_for<xvector> MR> requires (le(extent<MR>, 4))
+  void operator()(const ML& Left, const MR& Right, ML& Out) const noexcept { return call<extent<ML>, extent<MR>>(Left, Right, Out); }
+  template<tuple_for<xwector> ML, tuple_for<xwector> MR> requires (le(extent<MR>, 4))
+  void operator()(const ML& Left, const MR& Right, ML& Out) const noexcept { return call<extent<ML>, extent<MR>>(Left, Right, Out); }
+  template<tuple_for<xrect> ML, tuple_for<xrect> MR> requires (le(extent<MR>, 4))
+  void operator()(const ML& Left, const MR& Right, ML& Out) const noexcept { return call<extent<ML>, extent<MR>>(Left, Right, Out); }
+private:
+  template<nat NL, nat NR> static void call(const auto& L, const auto& R, auto& O) noexcept {
+    constexpr auto f = [](const auto& A, const auto& B, auto& C) noexcept {
     C = xvmul(xvpermute<0, 0, 0, 0>(A), get<0>(B));
-    if constexpr (extent<XmR> >= 2) C = xvfma(xvpermute<1, 1, 1, 1>(A), get<1>(B), C);
-    if constexpr (extent<XmR> >= 3) C = xvfma(xvpermute<2, 2, 2, 2>(A), get<2>(B), C);
-    if constexpr (extent<XmR> == 4) C = xvfma(xvpermute<3, 3, 3, 3>(A), get<3>(B), C); };
-  [&]<nat... Is>(sequence<Is...>) noexcept { (f(get<Is>(L), R, get<Is>(O)), ...); }(make_indices_for<XmL>{}); };
+    if constexpr (NR >= 2) C = xvfma(xvpermute<1, 1, 1, 1>(A), get<1>(B), C);
+    if constexpr (NR >= 3) C = xvfma(xvpermute<2, 2, 2, 2>(A), get<2>(B), C);
+    if constexpr (NR == 4) C = xvfma(xvpermute<3, 3, 3, 3>(A), get<3>(B), C); };
+    [&]<nat... Is>(sequence<Is...>) noexcept { (f(get<Is>(L), R, get<Is>(O)), ...); }(make_sequence<0, NL>{});
+  } };
+inline constexpr t_xvproduct xvproduct;
 
-inline constexpr auto xvcross = []<xv Xv>(const Xv& A, const Xv& B) noexcept {
-  if constexpr (same_as<Xv, xvector>) {
+struct t_xvcross {
+  xvector operator()(const xvector& A, const xvector& B) const noexcept { return call(A, B); }
+  xwector operator()(const xwector& A, const xwector& B) const noexcept { return call(A, B); }
+  xrect operator()(const xrect& A, const xrect& B) const noexcept { return call(A, B); }
+private:
+  static auto call(const auto& A, const auto& B) noexcept {
     auto a = xvpermute<2, 0, 1, 3>(A), b = xvpermute<1, 2, 0, 3>(B);
     return xvfms(xvpermute<1, 2, 0, 3>(A), xvpermute<2, 0, 1, 3>(B), xvmul(a, b));
-  } else if constexpr (same_as<Xv, xwector>) {
-    auto a = xvpermute<2, 0, 1, 3>(A), b = xvpermute<1, 2, 0, 3>(B);
-    return xvfms(xvpermute<1, 2, 0, 3>(A), xvpermute<2, 0, 1, 3>(B), xvmul(a, b));
-  } else if constexpr (same_as<Xv, xrect>) {
-    auto a = xvpermute<2, 0, 1, 3>(A), b = xvpermute<1, 2, 0, 3>(B);
-    return xvfms(xvpermute<1, 2, 0, 3>(A), xvpermute<2, 0, 1, 3>(B), xvmul(a, b)); } };
+  } };
+inline constexpr t_xvcross xvcross;
 
-template<nat N, nat Zero = 0b0000> requires (N <= 4 && Zero < 16)
-inline constexpr auto xvlength = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return xvsqrt(xvdot<N, Zero>(A, A));
-  else if constexpr (same_as<Xv, xwector>) return xvsqrt(xvdot<N, Zero>(A, A));
-  else if constexpr (same_as<Xv, xrect>) return xvsqrt(xvdot<N, Zero>(A, A)); };
+template<nat N, nat Zero = 0> requires (0 < N && N <= 4 && Zero < 16) struct t_xvlength {
+  xvector operator()(const xvector& A) const noexcept { return xvsqrt(xvdot<N, Zero>(A, A)); }
+  xwector operator()(const xwector& A) const noexcept { return xvsqrt(xvdot<N, Zero>(A, A)); }
+  xvector operator()(const xrect& A) const noexcept { return xvsqrt(xvdot<N, Zero>(A, A)); }
+};
+template<nat N, nat Zero = 0> requires (0 < N && N <= 4 && Zero < 16) inline constexpr t_xvlength<N, Zero> xvlength;
 
-template<nat N, nat Zero = 0b0000> requires (N <= 4 && Zero < 16)
-inline constexpr auto xvlength_r = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return xvsqrt_r(xvdot<N, Zero>(A, A));
-  else if constexpr (same_as<Xv, xwector>) return xvsqrt_r(xvdot<N, Zero>(A, A));
-  else if constexpr (same_as<Xv, xrect>) return xvsqrt_r(xvdot<N, Zero>(A, A)); };
+template<nat N, nat Zero = 0> requires (0 < N && N <= 4 && Zero < 16) struct t_xvlength_r {
+  xvector operator()(const xvector& A) const noexcept { return xvsqrt_r(xvdot<N, Zero>(A, A)); }
+  xwector operator()(const xwector& A) const noexcept { return xvsqrt_r(xvdot<N, Zero>(A, A)); }
+  xvector operator()(const xrect& A) const noexcept { return xvsqrt_r(xvdot<N, Zero>(A, A)); }
+};
+template<nat N, nat Zero = 0> requires (0 < N && N <= 4 && Zero < 16) inline constexpr t_xvlength_r<N, Zero> xvlength_r;
 
-template<nat N> requires (N <= 4)
-inline constexpr auto xvnormalize = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return xvmul(A, xvlength_r<N>(A));
-  else if constexpr (same_as<Xv, xwector>) return xvmul(A, xvlength_r<N>(A));
-  else if constexpr (same_as<Xv, xrect>) { auto a = xv_cast<xvector>(A); return xvmul(a, xvlength_r<N>(a)); } };
+template<nat N> requires (0 < N && N <= 4) struct t_xvnormalize {
+  xvector operator()(const xvector& A) const noexcept { return xvdiv(A, xvlength<N>(A)); }
+  xwector operator()(const xwector& A) const noexcept { return xvdiv(A, xvlength<N>(A)); }
+  xvector operator()(const xrect& A) const noexcept { return xvdiv(A, xvlength<N>(A)); }
+};
+template<nat N> requires (0 < N && N <= 4) inline constexpr t_xvnormalize<N> xvnormalize;
 
-inline constexpr auto xvradian = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return xvmul(A, xv_constant<pi / 180>);
-  else if constexpr (same_as<Xv, xwector>) return xvmul(A, xv_constant<pi / 180>);
-  else if constexpr (same_as<Xv, xrect>) return xvmul(xv_cast<xvector>(A), xv_constant<pi / 180>); };
+struct t_xvradian {
+  xvector operator()(const xvector& A) const noexcept { return xvmul(A, xv_constant<pi / 180>); }
+  xwector operator()(const xwector& A) const noexcept { return xvmul(A, xv_constant<pi / 180>); }
+  xvector operator()(const xrect& A) const noexcept { return xvmul(xvcast<xvector>(A), xv_constant<pi / 180>); }
+};
+inline constexpr t_xvradian xvradian;
 
-inline constexpr auto xvdegree = []<xv Xv>(const Xv& A) noexcept {
-  if constexpr (same_as<Xv, xvector>) return xvmul(A, xv_constant<180 / pi>);
-  else if constexpr (same_as<Xv, xwector>) return xvmul(A, xv_constant<180 / pi>);
-  else if constexpr (same_as<Xv, xrect>) return xvmul(xv_cast<xvector>(A), xv_constant<180 / pi>); };
+struct t_xvdegree {
+  xvector operator()(const xvector& A) const noexcept { return xvmul(A, xv_constant<180 / pi>); }
+  xwector operator()(const xwector& A) const noexcept { return xvmul(A, xv_constant<180 / pi>); }
+  xvector operator()(const xrect& A) const noexcept { return xvmul(xvcast<xvector>(A), xv_constant<180 / pi>); }
+};
+inline constexpr t_xvdegree xvdegree;
 
-inline constexpr auto xmtranspose = []<xm Xm, xm XmT>(const Xm& M, XmT& O) noexcept
-  requires (le(extent<Xm>, 4) && le(extent<XmT>, 4) && same_as<remove_cvref<element_t<Xm, 0>>, remove_cvref<element_t<XmT, 0>>>) {
-  constexpr auto f = []<nat I>(constant<I>, const auto& A, auto& B) noexcept {
-    if constexpr (extent<Xm> == 1) B = xvinsert<0, I, 0b1110>(get<0>(A), get<0>(A));
-    B = xvpermute<I, 4 + I, -1, -1>(get<0>(A), get<1>(A));
-    if constexpr (extent<Xm> == 2) B = xvsetzero<0, 0, 1, 1>(B);
-    else if constexpr (extent<Xm> == 3) B = xvinsert<2, I, 0b1000>(B, get<2>(A));
-    else if constexpr (extent<Xm> == 4) B = xvpermute<0, 1, 4, 5>(B, xvpermute<I, 4 + I, -1, -1>(get<2>(M), get<3>(M))); };
-  []<nat... Is>(sequence<Is...>) noexcept { (f(constant<Is>{}, M, get<Is>(O)), ...); }(make_indices_for<XmT>{}); };
+struct t_xvtranspose {
+  template<tuple_for<xvector> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const Matrix& M, Matrix& O) const noexcept { return call<extent<Matrix>>(M, O); }
+  template<tuple_for<xwector> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const Matrix& M, Matrix& O) const noexcept { return call<extent<Matrix>>(M, O); }
+  template<tuple_for<xrect> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const Matrix& M, Matrix& O) const noexcept { return call<extent<Matrix>>(M, O); }
+private:
+  template<nat N> static void call(const auto& M, auto& O) noexcept {
+    constexpr auto f = []<nat I>(constant<I>, const auto& A, auto& B) noexcept {
+      if constexpr (N == 1) B = xvinsert<0, I, 0b1110>(get<0>(A), get<0>(A));
+      else {
+        B = xvpermute<I, 4 + I, -1, -1>(get<0>(A), get<1>(A));
+        if constexpr (N == 2) B = xvsetzero<0, 0, 1, 1>(B);
+        else if constexpr (N == 3) B = xvinsert<2, I, 0b1000>(B, get<2>(A));
+        else if constexpr (N == 4) B = xvpermute<0, 1, 4, 5>(B, xvpermute<I, 4 + I, -1, -1>(get<2>(A), get<3>(A)));
+      } };
+    [&]<nat... Is>(sequence<Is...>) noexcept { (f(constant<Is>{}, M, get<Is>(O)), ...); }(make_sequence<0, N>{});
+  } };
+inline constexpr t_xvtranspose xvtranspose;
 
-inline constexpr auto xmtranslate = []<xv Xv, xm Xm>(const Xv& Offset, Xm& O) noexcept
-  requires (le(extent<Xm>, 4) && same_as<Xv, remove_cvref<element_t<Xm, 0>>>) {
-  get<0>(O) = xvinsert<3, 0>(xv_x, Offset);
-  if constexpr (extent<Xm> >= 2) get<1>(O) = xvinsert<3, 1>(xv_y, Offset);
-  if constexpr (extent<Xm> >= 3) get<2>(O) = xvinsert<3, 2>(xv_z, Offset);
-  if constexpr (extent<Xm> == 4) get<3>(O) = xv_w; };
+struct t_xvtranslation {
+  template<tuple_for<xvector> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xvector& Offset, Matrix& O) const noexcept { return call<extent<Matrix>>(Offset, O); }
+  template<tuple_for<xwector> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xwector& Offset, Matrix& O) const noexcept { return call<extent<Matrix>>(Offset, O); }
+  template<tuple_for<xrect> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xrect& Offset, Matrix& O) const noexcept { return call<extent<Matrix>>(Offset, O); }
+private:
+  template<nat N> static void call(const auto& Offset, auto& O) noexcept {
+    get<0>(O) = xvinsert<3, 0>(xv_x, Offset);
+    if constexpr (N >= 2) get<1>(O) = xvinsert<3, 1>(xv_y, Offset);
+    if constexpr (N >= 3) get<2>(O) = xvinsert<3, 2>(xv_z, Offset);
+    if constexpr (N == 4) get<3>(O) = xv_w;
+  } };
+inline constexpr t_xvtranslation xvtranslation;
 
-inline constexpr auto xmrotate = []<xv Xv, xm Xm>(const Xv& Radian, Xm& O) noexcept
-  requires (le(2, extent<Xm>) && le(extent<Xm>, 4) && same_as<Xv, remove_cvref<element_t<Xm, 0>>>) {
-  if constexpr (extent<Xm> == 2) {
-    get<1>(O) = xvsincos(Radian, get<0>(O));
-    get<0>(O) = xvinsert<1, 0, 0b1100>(get<0>(O), get<1>(O));
-    get<1>(O) = xvinsert<1, 0, 0b1100>(get<1>(O), get<0>(O));
-  } else if constexpr (extent<Xm> == 3) {
-    get<0>(O) = xvsincos(Radian, get<1>(O));
-    get<2>(O) = xvpermute<4, 6, 0, 2>(get<0>(O), get<1>(O));
-    auto temp = xvpermute<3, 0, 1, 2>(get<2>(O));
-    get<2>(O) = xvmul(get<2>(O), temp);
-    get<1>(O) = xvmul(xvpermute<1, 1, 1, 1>(get<1>(O)), temp);
-    get<0>(O) = xvpermute<1, 1, 1, 1>(get<0>(O));
-    temp = _mm_addsub_ps(xvpermute<2, 3, 0, 1>(xvmul(get<0>(O), get<2>(O))), get<2>(O));
-    get<2>(O) = xvinsert<0, 0, 0b1000>(xvpermute<-1, 3, 1, -1>(get<1>(O)), xvneg(get<0>(O)));
-    get<0>(O) = xvinsert<0, 2, 0b1000>(xvpermute<-1, 0, 3, -1>(temp), get<1>(O));
-    get<1>(O) = xvinsert<0, 0, 0b1000>(temp, get<1>(O));
-  } else if constexpr (extent<Xm> == 4) {
-    get<0>(O) = xvsincos(Radian, get<1>(O));
-    get<2>(O) = xvpermute<4, 6, 0, 2>(get<0>(O), get<1>(O));
-    get<3>(O) = xvpermute<3, 0, 1, 2>(get<2>(O));
-    get<2>(O) = xvmul(get<2>(O), get<3>(O));
-    get<1>(O) = xvmul(xvpermute<1, 1, 1, 1>(get<1>(O)), get<3>(O));
-    get<0>(O) = xvpermute<1, 1, 1, 1>(get<0>(O));
-    get<3>(O) = _mm_addsub_ps(xvpermute<2, 3, 0, 1>(xvmul(get<0>(O), get<2>(O))), get<2>(O));
-    get<2>(O) = xvinsert<0, 0, 0b1000>(xvpermute<-1, 3, 1, -1>(get<1>(O)), xvneg(get<0>(O)));
-    get<0>(O) = xvinsert<0, 2, 0b1000>(xvpermute<-1, 0, 3, -1>(get<3>(O)), get<1>(O));
-    get<1>(O) = xvinsert<0, 0, 0b1000>(get<3>(O), get<1>(O));
-    get<3>(O) = xv_w; } };
+struct t_xvrotation {
+  template<tuple_for<xvector> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xvector& Radian, Matrix& O) const noexcept { return call<extent<Matrix>>(Radian, O); }
+  template<tuple_for<xwector> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xwector& Radian, Matrix& O) const noexcept { return call<extent<Matrix>>(Radian, O); }
+  template<tuple_for<xrect> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xrect& Radian, Matrix& O) const noexcept { return call<extent<Matrix>>(Radian, O); }
+private:
+  template<nat N> static void call(const auto& Radian, auto& O) noexcept {
+    if constexpr (N == 2) {
+      get<1>(O) = xvsincos(Radian, get<0>(O));
+      get<0>(O) = xvinsert<1, 0, 0b1100>(get<0>(O), get<1>(O));
+      get<1>(O) = xvinsert<1, 0, 0b1100>(get<1>(O), get<0>(O));
+    } else if constexpr (N == 3) {
+      get<0>(O) = xvsincos(Radian, get<1>(O));
+      get<2>(O) = xvpermute<4, 6, 0, 2>(get<0>(O), get<1>(O));
+      auto temp = xvpermute<3, 0, 1, 2>(get<2>(O));
+      get<2>(O) = xvmul(get<2>(O), temp);
+      get<1>(O) = xvmul(xvpermute<1, 1, 1, 1>(get<1>(O)), temp);
+      get<0>(O) = xvpermute<1, 1, 1, 1>(get<0>(O));
+      temp = _mm_addsub_ps(xvpermute<2, 3, 0, 1>(xvmul(get<0>(O), get<2>(O))), get<2>(O));
+      get<2>(O) = xvinsert<0, 0, 0b1000>(xvpermute<-1, 3, 1, -1>(get<1>(O)), xvneg(get<0>(O)));
+      get<0>(O) = xvinsert<0, 2, 0b1000>(xvpermute<-1, 0, 3, -1>(temp), get<1>(O));
+      get<1>(O) = xvinsert<0, 0, 0b1000>(temp, get<1>(O));
+    } else if constexpr (N == 4) {
+      get<0>(O) = xvsincos(Radian, get<1>(O));
+      get<2>(O) = xvpermute<4, 6, 0, 2>(get<0>(O), get<1>(O));
+      get<3>(O) = xvpermute<3, 0, 1, 2>(get<2>(O));
+      get<2>(O) = xvmul(get<2>(O), get<3>(O));
+      get<1>(O) = xvmul(xvpermute<1, 1, 1, 1>(get<1>(O)), get<3>(O));
+      get<0>(O) = xvpermute<1, 1, 1, 1>(get<0>(O));
+      get<3>(O) = _mm_addsub_ps(xvpermute<2, 3, 0, 1>(xvmul(get<0>(O), get<2>(O))), get<2>(O));
+      get<2>(O) = xvinsert<0, 0, 0b1000>(xvpermute<-1, 3, 1, -1>(get<1>(O)), xvneg(get<0>(O)));
+      get<0>(O) = xvinsert<0, 2, 0b1000>(xvpermute<-1, 0, 3, -1>(get<3>(O)), get<1>(O));
+      get<1>(O) = xvinsert<0, 0, 0b1000>(get<3>(O), get<1>(O));
+      get<3>(O) = xv_w;
+    } } };
+inline constexpr t_xvrotation xvrotation;
 
-inline constexpr auto xmrotate_inv = []<xv Xv, xm Xm>(const Xv& Radian, Xm& O) noexcept {
-  if constexpr (extent<Xm> == 2) {
+struct t_xvrotation_inv {
+  template<tuple_for<xvector> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xvector& Radian, Matrix& O) const noexcept { return call<extent<Matrix>>(Radian, O); }
+  template<tuple_for<xwector> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xwector& Radian, Matrix& O) const noexcept { return call<extent<Matrix>>(Radian, O); }
+  template<tuple_for<xrect> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xrect& Radian, Matrix& O) const noexcept { return call<extent<Matrix>>(Radian, O); }
+private:
+  template<nat N> static void call(const auto& Radian, auto& O) noexcept {
+    if constexpr (N == 2) {
     get<1>(O) = xvsincos(Radian, get<0>(O));
     get<0>(O) = xvinsert<1, 0, 0b1100>(get<0>(O), get<1>(O));
     get<1>(O) = xvinsert<1, 0, 0b1100>(get<1>(O), get<0>(O));
     get<1>(O) = xvnegate<0, 1, 0, 0>(get<1>(O));
-  } else if constexpr (extent<Xm> == 3) {
+  } else if constexpr (N == 3) {
     get<0>(O) = xvsincos(Radian, get<1>(O));
     get<2>(O) = xvpermute<4, 6, 0, 2>(get<0>(O), get<1>(O));
     auto temp = xvpermute<3, 0, 1, 2>(get<2>(O));
@@ -1583,7 +1626,7 @@ inline constexpr auto xmrotate_inv = []<xv Xv, xm Xm>(const Xv& Radian, Xm& O) n
     get<2>(O) = xvinsert<2, 1, 0b1000>(xvpermute<3, 2, -1, -1>(temp), get<1>(O));
     get<0>(O) = xvinsert<2, 2, 0b1000>(xvpermute<2, 0, -1, -1>(get<1>(O)), xvneg(get<0>(O)));
     get<1>(O) = xvinsert<2, 3, 0b1000>(temp, get<1>(O));
-  } else if constexpr (extent<Xm> == 4) {
+  } else if constexpr (N == 4) {
     get<0>(O) = xvsincos(Radian, get<1>(O));
     get<2>(O) = xvpermute<4, 6, 0, 2>(get<0>(O), get<1>(O));
     get<3>(O) = xvpermute<3, 0, 1, 2>(get<2>(O));
@@ -1594,46 +1637,82 @@ inline constexpr auto xmrotate_inv = []<xv Xv, xm Xm>(const Xv& Radian, Xm& O) n
     get<2>(O) = xvinsert<2, 1, 0b1000>(xvpermute<3, 2, -1, -1>(get<3>(O)), get<1>(O));
     get<0>(O) = xvinsert<2, 2, 0b1000>(xvpermute<2, 0, -1, -1>(get<1>(O)), xvneg(get<0>(O)));
     get<1>(O) = xvinsert<2, 3, 0b1000>(get<3>(O), get<1>(O));
-    get<3>(O) = xv_w; } };
+    get<3>(O) = xv_w;
+  } } };
+inline constexpr t_xvrotation_inv xvrotation_inv;
 
-inline constexpr auto xmscale = []<xv Xv, xm Xm>(const Xv& Scalar, Xm& O) noexcept {
-  constexpr nat N = extent<T>;
-  if constexpr (N >= 2) { get<0>(Result) = xvinsert<0, 0, 0b1110>(Scalar, Scalar); get<1>(Result) = xvinsert<1, 1, 0b1101>(Scalar, Scalar); }
-  if constexpr (N >= 3) get<2>(Result) = xvinsert<2, 2, 0b1011>(Scalar, Scalar);
-  if constexpr (N == 4) get<3>(Result) = xv_w;
-  static_assert(1 < N && N < 5); };
+struct t_xvscale {
+  template<tuple_for<xvector> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xvector& Scalar, Matrix& O) const noexcept { return call<extent<Matrix>>(Scalar, O); }
+  template<tuple_for<xwector> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xwector& Scalar, Matrix& O) const noexcept { return call<extent<Matrix>>(Scalar, O); }
+  template<tuple_for<xrect> Matrix> requires (0 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xrect& Scalar, Matrix& O) const noexcept { return call<extent<Matrix>>(Scalar, O); }
+private:
+  template<nat N> static void call(const auto& Scalar, auto& O) noexcept {
+    get<0>(O) = xvmul(get<0>(O), xvpermute<0, 0, 0, 0>(Scalar));
+    if constexpr (N >= 2) get<1>(O) = xvmul(get<1>(O), xvpermute<1, 1, 1, 1>(Scalar));
+    if constexpr (N >= 3) get<2>(O) = xvmul(get<2>(O), xvpermute<2, 2, 2, 2>(Scalar));
+    if constexpr (N == 4) get<3>(O) = xvmul(get<3>(O), xvpermute<3, 3, 3, 3>(Scalar));
+  } };
+inline constexpr t_xvscale xvscale;
 
-struct t_xmworld {
-  template<xm Xm> requires (le(2, extent<Xm>) && le(extent<Xm>, 4)) void operator()(Xm& O) const noexcept {
-    if constexpr (N >= 2) get<0>(O) = xv_x, get<1>(O) = xv_y;
+struct t_xvworld {
+  template<tuple_for<xvector> Matrix> requires (1 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(Matrix& O) const noexcept { return zero<extent<Matrix>>(O); }
+  template<tuple_for<xwector> Matrix> requires (1 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(Matrix& O) const noexcept { return zero<extent<Matrix>>(O); }
+  template<tuple_for<xvector> Matrix> requires (1 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xvector& Offset, Matrix& O) const noexcept { return xvtranslation(Offset, O); }
+  template<tuple_for<xwector> Matrix> requires (1 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xwector& Offset, Matrix& O) const noexcept { return xvtranslation(Offset, O); }
+  template<tuple_for<xvector> Matrix> requires (1 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xvector& Offset, const xvector& Radian, Matrix& O) const noexcept { return two(Offset, Radian, O); }
+  template<tuple_for<xwector> Matrix> requires (1 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xwector& Offset, const xwector& Radian, Matrix& O) const noexcept { return two(Offset, Radian, O); }
+  template<tuple_for<xvector> Matrix> requires (1 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xvector& Offset, const xvector& Radian, const xvector& Scale, Matrix& O) const noexcept { return three(Offset, Radian, Scale, O); }
+  template<tuple_for<xwector> Matrix> requires (1 < extent<Matrix> && extent<Matrix> <= 4)
+  void operator()(const xwector& Offset, const xwector& Radian, const xwector& Scale, Matrix& O) const noexcept { return three(Offset, Radian, Scale, O); }
+private:
+  template<nat N> static void zero(auto& O) noexcept {
+    get<0>(O) = xv_x, get<1>(O) = xv_y;
     if constexpr (N >= 3) get<2>(O) = xv_z;
     if constexpr (N == 4) get<3>(O) = xv_w;
   }
-  template<xv Xv, xm Xm> requires (le(2, extent<Xm>) && le(extent<Xm>, 4) && same_as<Xv, remove_cvref<common_element<Xm>>>)
-  void operator()(const Xv& Offset, Xm& O) const noexcept { xmtranslate(Offset, O); }
-
-  template<xv Xv, xm Xm> requires (le(2, extent<Xm>) && le(extent<Xm>, 4) && same_as<Xv, remove_cvref<common_element<Xm>>>)
-  void operator()(const Xv& Offset, const Xv& Radian, Xm& O) const noexcept {
-    xmrotate(Radian, O), get<0>(O) = xvinsert<3, 0>(get<0>(O), Offset), get<1>(O) = xvinsert<3, 1>(get<1>(O), Offset);
-    if constexpr (extent<Xm> >= 3) get<2>(O) = xvinsert<3, 2>(get<2>(O), Offset);
+  template<nat N> static void two(const auto& Offset, const auto& Radian, auto& O) noexcept {
+    xmrotate(Radian, O);
+    get<0>(O) = xvinsert<3, 0>(get<0>(O), Offset);
+    get<1>(O) = xvinsert<3, 1>(get<1>(O), Offset);
+    if constexpr (N >= 3) get<2>(O) = xvinsert<3, 2>(get<2>(O), Offset);
   }
-  template<xv Xv, xm Xm> requires (le(2, extent<Xm>) && le(extent<Xm>, 4) && same_as<Xv, remove_cvref<common_element<Xm>>>)
-  void operator()(const Xv& Offset, const Xv& Radian, const Xv& Scalara, Xm& O) const noexcept {
-    xmrotate(Radian, O), get<0>(O) = xvinsert<3, 0>(get<0>(O), Offset), get<1>(O) = xvinsert<3, 1>(get<1>(O), Offset);
-    if constexpr (extent<Xm> >= 3) get<2>(O) = xvinsert<3, 2>(get<2>(O), Offset);
-    get<0>(O) = xvmul(get<0>(O), xvpermute<0, 0, 0, 0>(Scalara)), get<1>(O) = xvmul(get<1>(O), xvpermute<1, 1, 1, 1>(Scalara));
-    if constexpr (extent<Xm> >= 3) get<2>(O) = xvmul(get<2>(O), xvpermute<2, 2, 2, 2>(Scalara));
-  }
-};
-inline constexpr t_xmworld xmworld;
+  template<nat N> static void three(const auto& Offset, const auto& Radian, const auto& Scale, auto& O) noexcept {
+    xmrotate(Radian, O);
+    get<0>(O) = xvinsert<3, 0>(get<0>(O), Offset);
+    get<1>(O) = xvinsert<3, 1>(get<1>(O), Offset);
+    if constexpr (N >= 3) get<2>(O) = xvinsert<3, 2>(get<2>(O), Offset);
+    get<0>(O) = xvmul(get<0>(O), xvpermute<0, 0, 0, 0>(Scale));
+    get<1>(O) = xvmul(get<1>(O), xvpermute<1, 1, 1, 1>(Scale));
+    if constexpr (N >= 3) get<2>(O) = xvmul(get<2>(O), xvpermute<2, 2, 2, 2>(Scale));
+  } };
+inline constexpr t_xvworld xvworld;
 
-struct t_xmview {
-  template<xv Xv, xm Xm> requires (le(2, extent<Xm>) && le(extent<Xm>, 4) && same_as<Xv, remove_cvref<common_element<Xm>>>)
-  void operator()(const Xv& Radian, Xm& O) const noexcept { xmrotate_inv(Radian, O); }
-
-  template<xv Xv, xm Xm> requires (le(2, extent<Xm>) && le(extent<Xm>, 4) && same_as<Xv, remove_cvref<common_element<Xm>>>)
-  void operator()(const Xv& Position, const Xv& Radian, Xm& O) const noexcept {
-    xmrotate_inv(Radian, O);
+struct t_xvview {
+  template<tuple_for<xvector> Matrix> requires (le(2, extent<Matrix>) && le(extent<Matrix>, 4))
+  void operator()(const xvector& Radian, Matrix& O) const noexcept { return xvrotation_inv(Radian, O); }
+  template<tuple_for<xwector> Matrix> requires (le(2, extent<Matrix>) && le(extent<Matrix>, 4))
+  void operator()(const xwector& Radian, Matrix& O) const noexcept { return xvrotation_inv(Radian, O); }
+  template<tuple_for<xvector> Matrix> requires (le(2, extent<Matrix>) && le(extent<Matrix>, 4))
+  void operator()(const xvector& Position, const xvector& Radian, Matrix& O) const noexcept { two<extent<Matrix>>(Position, Radian, O); }
+  template<tuple_for<xwector> Matrix> requires (le(2, extent<Matrix>) && le(extent<Matrix>, 4))
+  void operator()(const xwector& Position, const xwector& Radian, Matrix& O) const noexcept { two<extent<Matrix>>(Position, Radian, O); }
+  template<tuple_for<xvector> Matrix> requires (le(2, extent<Matrix>) && le(extent<Matrix>, 4))
+  void operator()(const xvector& Position, const xvector& Radian, const xvector& Offset, Matrix& O) const noexcept { three<extent<Matrix>>(Position, Radian, Offset, O); }
+  template<tuple_for<xwector> Matrix> requires (le(2, extent<Matrix>) && le(extent<Matrix>, 4))
+  void operator()(const xwector& Position, const xwector& Radian, const xwector& Offset, Matrix& O) const noexcept { three<extent<Matrix>>(Position, Radian, Offset, O); }
+private:
+  template<nat N> static void two(const auto& Position, const auto& Radian, auto& O) noexcept {
+    xvrotate_inv(Radian, O);
     if constexpr (N < 4) {
       auto temp = xvneg(Position);
       get<0>(O) = xvinsert<3, 3>(get<0>(O), xvdot<3>(get<0>(O), temp));
@@ -1644,11 +1723,10 @@ struct t_xmview {
       get<0>(O) = xvinsert<3, 3>(get<0>(O), xvdot<3>(get<0>(O), get<3>(O)));
       get<1>(O) = xvinsert<3, 3>(get<1>(O), xvdot<3>(get<1>(O), get<3>(O)));
       get<2>(O) = xvinsert<3, 3>(get<2>(O), xvdot<3>(get<2>(O), get<3>(O)));
-      get<3>(O) = xv_w; } }
-
-  template<xv Xv, xm Xm> requires (le(2, extent<Xm>) && le(extent<Xm>, 4) && same_as<Xv, remove_cvref<common_element<Xm>>>)
-  void operator()(const Xv& Position, const Xv& Radian, const Xv& Offset, Xm& O) const noexcept {
-    xmrotate_inv(Radian, O);
+      get<3>(O) = xv_w;
+    } }
+  template<nat N> static void three(const auto& Position, const auto& Radian, const auto& Offset, auto& O) noexcept {
+    xvrotate_inv(Radian, O);
     if constexpr (N < 4) {
       auto temp = xvneg(Position);
       get<0>(O) = xvsub(xvinsert<3, 3>(get<0>(O), xvdot<3>(get<0>(O), temp)), xvinsert<3, 0, 0b0111>(Offset, Offset));
@@ -1659,34 +1737,62 @@ struct t_xmview {
       get<0>(O) = xvsub(xvinsert<3, 3>(get<0>(O), xvdot<3>(get<0>(O), get<3>(O))), xvinsert<3, 0, 0b0111>(Offset, Offset));
       get<1>(O) = xvsub(xvinsert<3, 3>(get<1>(O), xvdot<3>(get<1>(O), get<3>(O))), xvinsert<3, 1, 0b0111>(Offset, Offset));
       get<2>(O) = xvsub(xvinsert<3, 3>(get<2>(O), xvdot<3>(get<2>(O), get<3>(O))), xvinsert<3, 2, 0b0111>(Offset, Offset));
-      get<3>(O) = xv_w; } } };
-inline constexpr t_xmview xmview;
+      get<3>(O) = xv_w;
+    } } };
+inline constexpr t_xvview xvview;
 
-struct t_xmcamera {
-  template<xm Xm, typename T = xv_value_t<common_element<Xm>>> requires (le(3, extent<Xm>) && le(extent<Xm>, 4))
-  void operator()(const T Width, const T Height, const T Factor, Xm& O) const noexcept {
+struct t_xvprojection {
+  /// Create a perspective projection matrix; `Factor` is `1/tan(fov/2)`.
+  template<tuple_for<xvector> Matrix> requires (le(3, extent<Matrix>) && le(extent<Matrix>, 4))
+  void operator()(const xvector& Width, const xvector& Height, const xvector& Factor, Matrix& O) const noexcept { return parallel(Width, Height, Factor, O); }
+  /// Create a perspective projection matrix; `Factor` is `1/tan(fov/2)`.
+  template<tuple_for<xwector> Matrix> requires (le(3, extent<Matrix>) && le(extent<Matrix>, 4))
+  void operator()(const xwector& Width, const xwector& Height, const xwector& Factor, Matrix& O) const noexcept { return parallel(Width, Height, Factor, O); }
+  /// Create a orthographic projection matrix; `Factor` means magnification.
+  template<tuple_for<xvector> Matrix> requires (le(3, extent<Matrix>) && le(extent<Matrix>, 4))
+  void operator()(const xvector& Width, const xvector& Height, const xvector& Factor, none OrthographicMode, Matrix& O) const noexcept { return orthographic(Width, Height, Factor, O); }
+  /// Create a orthographic projection matrix; `Factor` means magnification.
+  template<tuple_for<xwector> Matrix> requires (le(3, extent<Matrix>) && le(extent<Matrix>, 4))
+  void operator()(const xwector& Width, const xwector& Height, const xwector& Factor, none OrthographicMode, Matrix& O) const noexcept { return orthographic(Width, Height, Factor, O); }
+private:
+  template<nat N> static void parallel(const auto& Width, const auto& Height, const auto& Factor, auto& O) noexcept {
     constexpr value f = 1048576.0, n = 0.25;
     get<0>(O) = xvset<0>(xv_zero, -Factor * Height / Width);
     get<1>(O) = xvset<1>(xv_zero, Factor);
     get<2>(O) = xv_constant<0, 0, f / (f - n), -f * n / (f - n)>;
-    if constexpr (N == 4) get<3>(O) = xv_z; }
-
-  template<xm Xm, typename T = xv_value_t<common_element<Xm>>> requires (le(3, extent<Xm>) && le(extent<Xm>, 4))
-  void operator()(const T Width, const T Height, const T Factor, none OrthgraphicMode, Xm& O) const noexcept {
+    if constexpr (N == 4) get<3>(O) = xv_z;
+  }
+  template<nat N> static void orthographic(const auto& Width, const auto& Height, const auto& Factor, auto& O) noexcept {
     constexpr value f = 1048576.0, n = 0.25;
     get<0>(O) = xvset<0>(xv_zero, -2.0f * Factor / Width);
     get<1>(O) = xvset<1>(xv_zero, 2.0f * Factor / Height);
     get<2>(O) = xv_constant<0, 0, 1 / (f - n), -n / (f - n)>;
-    if constexpr (N == 4) get<3>(O) = xv_w; } };
+    if constexpr (N == 4) get<3>(O) = xv_w;
+  } };
+/// Create a perspective (or orthographic) projection matrix.
+inline constexpr t_xvprojection xvprojection;
 
-inline constexpr auto xveuler = []<xm Xm>(const Xm& Rotation) noexcept requires (le(3, extent<Xm>) && le(extent<Xm>, 4)) {
-  remove_cvref<common_element<Xm>> v = xvneg(xvpermute<3, 0, 3, 3>(get<2>(Rotation)));
-  if (xveq(v, xv_y)) return xvasin(xvinsert<0, 1, 0b1100>(v, get<0>(Rotation)));
-  v = xvpermute<0, 1, 6, 3>(xvpermute<4, 1, -1, 3>(v, xvdiv(get<1>(Rotation), get<0>(Rotation))), xvdiv(xvpermute<-1, -1, 1, -1>(get<2>(Rotation)), get<2>(Rotation)));
-  return xvpermute<6, 1, 4, 3>(xvasin(v), xvatan(xvpermute<0, -1, 5, -1>(get<1>(Rotation), get<2>(Rotation)), xvblend<0, 0, 1, 1>(get<0>(Rotation), get<2>(Rotation))));
-};
+struct t_xveuler {
+  /// Calculate the Euler angles from a rotation matrix.
+  template<tuple_for<xvector> Matrix> requires (le(3, extent<Matrix>) && le(extent<Matrix>, 4))
+  auto operator()(const Matrix& Rotation) const noexcept { return call<extent<Matrix>>(Rotation); }
+  /// Calculate the Euler angles from a rotation matrix.
+  template<tuple_for<xwector> Matrix> requires (le(3, extent<Matrix>) && le(extent<Matrix>, 4))
+  auto operator()(const Matrix& Rotation) const noexcept { return call<extent<Matrix>>(Rotation); }
+private:
+  template<nat N> static auto call(const auto& Rotation) noexcept {
+    auto v = xvneg(xvpermute<3, 0, 3, 3>(get<2>(Rotation)));
+    if (xveq(v, xv_y)) return xvasin(xvinsert<0, 1, 0b1100>(v, get<0>(Rotation)));
+    v = xvpermute<0, 1, 6, 3>(xvpermute<4, 1, -1, 3>(v, xvdiv(get<1>(Rotation), get<0>(Rotation))), xvdiv(xvpermute<-1, -1, 1, -1>(get<2>(Rotation)), get<2>(Rotation)));
+    return xvpermute<6, 1, 4, 3>(xvasin(v), xvatan(xvpermute<0, -1, 5, -1>(get<1>(Rotation), get<2>(Rotation)), xvblend<0, 0, 1, 1>(get<0>(Rotation), get<2>(Rotation))));
+  } };
+/// Calculate the Euler angles from a rotation matrix.
+inline constexpr t_xveuler xveuler;
 
+struct vector;
+struct wector;
 struct rect;
+struct color;
 
 struct vector {
   float x{}, y{}, z{}, w{};
@@ -1782,77 +1888,108 @@ struct vector {
   friend constexpr vector& operator-=(vector& A, const float& B) noexcept { return A = A - B; }
   friend constexpr vector& operator*=(vector& A, const float& B) noexcept { return A = A * B; }
   friend constexpr vector& operator/=(vector& A, const float& B) noexcept { return A = A / B; }
+  constexpr wector to_wector() const noexcept;
   constexpr rect to_rect() const noexcept;
 };
 
-/// color structure
-struct color {
-  float r{}, g{}, b{}, a = 1.f;
-  constexpr color() noexcept = default;
-  constexpr color(const numerical auto R, const numerical auto G, const numerical auto B) noexcept : r(float(R)), g(float(G)), b(float(B)) {}
-  constexpr color(const numerical auto R, const numerical auto G, const numerical auto B, const numerical auto A) noexcept : r(float(R)), g(float(G)), b(float(B)), a(float(A)) {}
-  explicit constexpr color(unsigned xRRGGBB, float A = 1.f) noexcept : color(from_code(xRRGGBB)) { a = A; }
-  explicit constexpr operator unsigned() const noexcept {
-    if (is_cev) return (unsigned)(r * 255.f) << 16 | (unsigned)(g * 255.f) << 6 | (unsigned)(b * 255.f) | (unsigned)(a * 255.f) << 24;
-    else return bitcast<unsigned>(_mm_cvtsi128_si32(_mm_shuffle_epi8(_mm_cvtps_epi32(xvmul(xvload(&r), xv_constant<255>)), xv_constant<0, 0, 0, 0x03020100>)));
-  }
-  explicit color(const xvector& Xv) noexcept { _mm_storeu_ps(&r, Xv); }
-  operator xvector() const noexcept { return xvload(&r); }
-  friend constexpr bool operator==(const color& A, const color& B) noexcept {
+struct wector {
+  fat8 x{}, y{}, z{}, w{};
+  constexpr wector() noexcept = default;
+  explicit constexpr wector(const fat8 Fill) noexcept : x(Fill), y(Fill), z(Fill), w(Fill) {}
+  explicit constexpr wector(const numerical auto Fill) noexcept : wector(fat8(Fill)) {}
+  constexpr wector(const numerical auto X, const numerical auto Y, const numerical auto Z, const numerical auto W) noexcept : x(fat8(X)), y(fat8(Y)), z(fat8(Z)), w(fat8(W)) {}
+  constexpr wector(const numerical auto X, const numerical auto Y, const numerical auto Z) noexcept : x(fat8(X)), y(fat8(Y)), z(fat8(Z)) {}
+  constexpr wector(const numerical auto X, const numerical auto Y) noexcept : x(fat8(X)), y(fat8(Y)) {}
+  wector(const xwector& A) noexcept { _mm256_storeu_pd(&x, A); }
+  wector& operator=(const xwector& A) noexcept { return _mm256_storeu_pd(&x, A), *this; }
+  operator xwector() const noexcept { return xvload(&x); }
+  constexpr nat size() const noexcept { return 4; }
+  fat8* data() noexcept { return &x; }
+  const fat8* data() const noexcept { return &x; }
+  fat8* begin() noexcept { return &x; }
+  const fat8* begin() const noexcept { return &x; }
+  fat8* end() noexcept { return &x + 4; }
+  const fat8* end() const noexcept { return &x + 4; }
+  fat8& operator[](nat i) { return *(&x + i); }
+  const fat8& operator[](nat i) const { return *(&x + i); }
+  template<nat Ix> requires(Ix < 4) constexpr fat8& get() noexcept { return select_parameter<Ix>(x, y, z, w); }
+  template<nat Ix> requires(Ix < 4) constexpr fat8 get() const noexcept { return select_parameter<Ix>(x, y, z, w); }
+  friend constexpr bool operator==(const wector& A, const wector& B) noexcept {
     if (!is_cev) return xveq(A, B);
-    else return A.r == B.r && A.g == B.g && A.b == B.b && A.a == B.a;
+    return A.x == B.x && A.y == B.y && A.z == B.z && A.w == B.w;
   }
-  static const color black, dimgray, gray, darkgray, silver, lightgray, gainsboro, whitesmoke, white, snow, ghostwhite,
-    floralwhite, linen, antiquewhite, papayawhip, blanchedalmond, bisque, moccasin, navajowhite, peachpuff, mistyrose,
-    lavenderblush, seashell, oldlace, ivory, honeydew, mintcream, azure, aliceblue, lavender, lightsteelblue,
-    lightslategray, slategray, steelblue, royalblue, midnightblue, navy, darkblue, mediumblue, blue, dodgerblue,
-    cornflowerblue, deepskyblue, lightskyblue, skyblue, lightblue, powderblue, paleturquoise, lightcyan, cyan, aqua,
-    turquoise, mediumturquoise, darkturquoise, lightseagreen, cadetblue, darkcyan, teal, darkslategray, darkgreen,
-    green, forestgreen, seagreen, mediumseagreen, mediumaquamarine, darkseagreen, aquamarine, palegreen, lightgreen,
-    springgreen, mediumspringgreen, lawngreen, chartreuse, greenyellow, lime, limegreen, yellowgreen, darkolivegreen,
-    olivedrab, olive, darkkhaki, palegoldenrod, cornsilk, beige, lightyellow, lightgoldenrodyellow, lemonchiffon, wheat,
-    burlywood, tan, khaki, yellow, gold, orange, sandybrown, darkorange, goldenrod, peru, darkgoldenrod, chocolate,
-    sienna, saddlebrown, maroon, darkred, brown, firebrick, indianred, rosybrown, darksalmon, lightcoral, salmon,
-    lightsalmon, coral, tomato, orangered, red, crimson, mediumvioletred, deeppink, hotpink, palevioletred, pink,
-    lightpink, thistle, magenta, fuchsia, violet, plum, orchid, mediumorchid, darkorchid, darkviolet, darkmagenta,
-    purple, indigo, darkslateblue, blueviolet, mediumpurple, slateblue, mediumslateblue, transparent, undefined, yw;
-private:
-  static constexpr color from_code(const unsigned& a) noexcept {
-    if (is_cev) return color(float((0xff0000 & a) >> 16) / 255.f, float((0xff00 & a) >> 8) / 255.f, float(0xff & a) / 255.f, float((0xff000000 & a) >> 24) / 255.f);
-    else return color(xvmul(xv_constant<1.0 / 255.0>, _mm_cvtepi32_ps(_mm_cvtepu8_epi32(xvbitcast(_mm_broadcast_ss((const float*)&a))))));
+  friend constexpr auto operator<=>(const wector& A, const wector& B) noexcept {
+    if (!is_cev) return std::partial_ordering(xvtw(A, B));
+    if (auto a = A.x <=> B.x; a != 0) return a;
+    else if (a = A.y <=> B.y; a != 0) return a;
+    else if (a = A.z <=> B.z; a != 0) return a;
+    else return A.w <=> B.w;
   }
+  friend constexpr wector operator+(const wector& A) noexcept { return A; }
+  friend constexpr wector operator-(const wector& A) noexcept {
+    if (!is_cev) return xvneg(A);
+    else return {-A.x, -A.y, -A.z, -A.w};
+  }
+  friend constexpr wector operator+(const wector& A, const wector& B) noexcept {
+    if (!is_cev) return xvadd(A, B);
+    else return {A.x + B.x, A.y + B.y, A.z + B.z, A.w + B.w};
+  }
+  friend constexpr wector operator-(const wector& A, const wector& B) noexcept {
+    if (!is_cev) return xvsub(A, B);
+    else return {A.x - B.x, A.y - B.y, A.z - B.z, A.w - B.w};
+  }
+  friend constexpr wector operator*(const wector& A, const wector& B) noexcept {
+    if (!is_cev) return xvmul(A, B);
+    else return {A.x * B.x, A.y * B.y, A.z * B.z, A.w * B.w};
+  }
+  friend constexpr wector operator/(const wector& A, const wector& B) noexcept {
+    if (!is_cev) return xvdiv(A, B);
+    else return {A.x / B.x, A.y / B.y, A.z / B.z, A.w / B.w};
+  }
+  friend constexpr wector operator+(const wector& A, const fat8& B) noexcept {
+    if (!is_cev) return xvadd(A, xvload(B));
+    else return {A.x + B, A.y + B, A.z + B, A.w + B};
+  }
+  friend constexpr wector operator-(const wector& A, const fat8& B) noexcept {
+    if (!is_cev) return xvsub(A, xvload(B));
+    else return {A.x - B, A.y - B, A.z - B, A.w - B};
+  }
+  friend constexpr wector operator*(const wector& A, const fat8& B) noexcept {
+    if (!is_cev) return xvmul(A, xvload(B));
+    else return {A.x * B, A.y * B, A.z * B, A.w * B};
+  }
+  friend constexpr wector operator/(const wector& A, const fat8& B) noexcept {
+    if (!is_cev) return xvdiv(A, xvload(B));
+    else return {A.x / B, A.y / B, A.z / B, A.w / B};
+  }
+  friend constexpr wector operator+(const fat8& A, const wector& B) noexcept {
+    if (!is_cev) return xvadd(xvload(A), B);
+    else return {A + B.x, A + B.y, A + B.z, A + B.w};
+  }
+  friend constexpr wector operator-(const fat8& A, const wector& B) noexcept {
+    if (!is_cev) return xvsub(xvload(A), B);
+    else return {A - B.x, A - B.y, A - B.z, A - B.w};
+  }
+  friend constexpr wector operator*(const fat8& A, const wector& B) noexcept {
+    if (!is_cev) return xvmul(xvload(A), B);
+    else return {A * B.x, A * B.y, A * B.z, A * B.w};
+  }
+  friend constexpr wector operator/(const fat8& A, const wector& B) noexcept {
+    if (!is_cev) return xvdiv(xvload(A), B);
+    else return {A / B.x, A / B.y, A / B.z, A / B.w};
+  }
+  friend constexpr wector& operator+=(wector& A, const wector& B) noexcept { return A = A + B; }
+  friend constexpr wector& operator-=(wector& A, const wector& B) noexcept { return A = A - B; }
+  friend constexpr wector& operator*=(wector& A, const wector& B) noexcept { return A = A * B; }
+  friend constexpr wector& operator/=(wector& A, const wector& B) noexcept { return A = A / B; }
+  friend constexpr wector& operator+=(wector& A, const fat8& B) noexcept { return A = A + B; }
+  friend constexpr wector& operator-=(wector& A, const fat8& B) noexcept { return A = A - B; }
+  friend constexpr wector& operator*=(wector& A, const fat8& B) noexcept { return A = A * B; }
+  friend constexpr wector& operator/=(wector& A, const fat8& B) noexcept { return A = A / B; }
+  constexpr wector to_wector() const noexcept;
+  constexpr rect to_rect() const noexcept;
 };
 
-inline constexpr color color::black{0x000000}, color::dimgray{0x696969}, color::gray{0x808080}, color::darkgray{0xa9a9a9}, color::silver{0xc0c0c0},
-  color::lightgray{0xd3d3d3}, color::gainsboro{0xdcdcdc}, color::whitesmoke{0xf5f5f5}, color::white{0xffffff}, color::snow{0xfffafa},
-  color::ghostwhite{0xf8f8ff}, color::floralwhite{0xfffaf0}, color::linen{0xfaf0e6}, color::antiquewhite{0xfaebd7}, color::papayawhip{0xffefd5},
-  color::blanchedalmond{0xffebcd}, color::bisque{0xffe4c4}, color::moccasin{0xffe4b5}, color::navajowhite{0xffdead}, color::peachpuff{0xffdab9},
-  color::mistyrose{0xffe4e1}, color::lavenderblush{0xfff0f5}, color::seashell{0xfff5ee}, color::oldlace{0xfdf5e6}, color::ivory{0xfffff0},
-  color::honeydew{0xf0fff0}, color::mintcream{0xf5fffa}, color::azure{0xf0ffff}, color::aliceblue{0xf0f8ff}, color::lavender{0xe6e6fa},
-  color::lightsteelblue{0xb0c4de}, color::lightslategray{0x778899}, color::slategray{0x708090}, color::steelblue{0x4682b4}, color::royalblue{0x4169e1},
-  color::midnightblue{0x191970}, color::navy{0x000080}, color::darkblue{0x00008b}, color::mediumblue{0x0000cd}, color::blue{0x0000ff},
-  color::dodgerblue{0x1e90ff}, color::cornflowerblue{0x6495ed}, color::deepskyblue{0x00bfff}, color::lightskyblue{0x87cefa}, color::skyblue{0x87ceeb},
-  color::lightblue{0xadd8e6}, color::powderblue{0xb0e0e6}, color::paleturquoise{0xafeeee}, color::lightcyan{0xe0ffff}, color::cyan{0x00ffff},
-  color::aqua{0x00ffff}, color::turquoise{0x40e0d0}, color::mediumturquoise{0x48d1cc}, color::darkturquoise{0x00ced1}, color::lightseagreen{0x20b2aa},
-  color::cadetblue{0x5f9ea0}, color::darkcyan{0x008b8b}, color::teal{0x008080}, color::darkslategray{0x2f4f4f}, color::darkgreen{0x006400},
-  color::green{0x008000}, color::forestgreen{0x228b22}, color::seagreen{0x2e8b57}, color::mediumseagreen{0x3cb371}, color::mediumaquamarine{0x66cdaa},
-  color::darkseagreen{0x8fbc8f}, color::aquamarine{0x7fffd4}, color::palegreen{0x98fb98}, color::lightgreen{0x90ee90}, color::springgreen{0x00ff7f},
-  color::mediumspringgreen{0x00fa9a}, color::lawngreen{0x7cfc00}, color::chartreuse{0x7fff00}, color::greenyellow{0xadff2f}, color::lime{0x00ff00},
-  color::limegreen{0x32cd32}, color::yellowgreen{0x9acd32}, color::darkolivegreen{0x556b2f}, color::olivedrab{0x6b8e23}, color::olive{0x808000},
-  color::darkkhaki{0xbdb76b}, color::palegoldenrod{0xeee8aa}, color::cornsilk{0xfff8dc}, color::beige{0xf5f5dc}, color::lightyellow{0xffffe0},
-  color::lightgoldenrodyellow{0xfafad2}, color::lemonchiffon{0xfffacd}, color::wheat{0xf5deb3}, color::burlywood{0xdeb887}, color::tan{0xd2b48c},
-  color::khaki{0xf0e68c}, color::yellow{0xffff00}, color::gold{0xffd700}, color::orange{0xffa500}, color::sandybrown{0xf4a460}, color::darkorange{0xff8c00},
-  color::goldenrod{0xdaa520}, color::peru{0xcd853f}, color::darkgoldenrod{0xb8860b}, color::chocolate{0xd2691e}, color::sienna{0xa0522d},
-  color::saddlebrown{0x8b4513}, color::maroon{0x800000}, color::darkred{0x8b0000}, color::brown{0xa52a2a}, color::firebrick{0xb22222},
-  color::indianred{0xcd5c5c}, color::rosybrown{0xbc8f8f}, color::darksalmon{0xe9967a}, color::lightcoral{0xf08080}, color::salmon{0xfa8072},
-  color::lightsalmon{0xffa07a}, color::coral{0xff7f50}, color::tomato{0xff6347}, color::orangered{0xff4500}, color::red{0xff0000}, color::crimson{0xdc143c},
-  color::mediumvioletred{0xc71585}, color::deeppink{0xff1493}, color::hotpink{0xff69b4}, color::palevioletred{0xdb7093}, color::pink{0xffc0cb},
-  color::lightpink{0xffb6c1}, color::thistle{0xd8bfd8}, color::magenta{0xff00ff}, color::fuchsia{0xff00ff}, color::violet{0xee82ee}, color::plum{0xdda0dd},
-  color::orchid{0xda70d6}, color::mediumorchid{0xba55d3}, color::darkorchid{0x9932cc}, color::darkviolet{0x9400d3}, color::darkmagenta{0x8b008b},
-  color::purple{0x800080}, color::indigo{0x4b0082}, color::darkslateblue{0x483d8b}, color::blueviolet{0x8a2be2}, color::mediumpurple{0x9370db},
-  color::slateblue{0x6a5acd}, color::mediumslateblue{0x7b68ee}, color::transparent = color(0x0, 0.0f), color::undefined = color(0x0, -1.f), color::yw{0x081020};
-
-/// rectangle structure (left, top, right, bottom)
 struct rect {
   int left{}, top{}, right{}, bottom{};
   constexpr int width() const noexcept { return right - left; }
@@ -1968,31 +2105,385 @@ constexpr rect vector::to_rect() const noexcept {
   if (is_cev) return {int(x), int(y), int(z), int(w)};
   else return {xvcast<xrect>(*this)};
 }
+
+constexpr wector vector::to_wector() const noexcept {
+  if (is_cev) return {fat8(x), fat8(y), fat8(z), fat8(w)};
+  else return {xvcast<xwector>(*this)};
 }
 
-namespace std { // clang-format off
+
+
+struct color {
+  float r{}, g{}, b{}, a = 1.f;
+  constexpr color() noexcept = default;
+  constexpr color(const numerical auto R, const numerical auto G, const numerical auto B) noexcept : r(float(R)), g(float(G)), b(float(B)) {}
+  constexpr color(const numerical auto R, const numerical auto G, const numerical auto B, const numerical auto A) noexcept : r(float(R)), g(float(G)), b(float(B)), a(float(A)) {}
+  explicit constexpr color(unsigned xRRGGBB, float A = 1.f) noexcept : color(from_code(xRRGGBB)) { a = A; }
+  explicit constexpr operator unsigned() const noexcept {
+    if (is_cev) return (unsigned)(r * 255.f) << 16 | (unsigned)(g * 255.f) << 6 | (unsigned)(b * 255.f) | (unsigned)(a * 255.f) << 24;
+    else return bitcast<unsigned>(_mm_cvtsi128_si32(_mm_shuffle_epi8(_mm_cvtps_epi32(xvmul(xvload(&r), xv_constant<255>)), xv_constant<0, 0, 0, 0x03020100>)));
+  }
+  explicit color(const xvector& Xv) noexcept { _mm_storeu_ps(&r, Xv); }
+  operator xvector() const noexcept { return xvload(&r); }
+  friend constexpr bool operator==(const color& A, const color& B) noexcept {
+    if (!is_cev) return xveq(A, B);
+    else return A.r == B.r && A.g == B.g && A.b == B.b && A.a == B.a;
+  }
+  static const color black, dimgray, gray, darkgray, silver, lightgray, gainsboro, whitesmoke, white, snow, ghostwhite,
+    floralwhite, linen, antiquewhite, papayawhip, blanchedalmond, bisque, moccasin, navajowhite, peachpuff, mistyrose,
+    lavenderblush, seashell, oldlace, ivory, honeydew, mintcream, azure, aliceblue, lavender, lightsteelblue,
+    lightslategray, slategray, steelblue, royalblue, midnightblue, navy, darkblue, mediumblue, blue, dodgerblue,
+    cornflowerblue, deepskyblue, lightskyblue, skyblue, lightblue, powderblue, paleturquoise, lightcyan, cyan, aqua,
+    turquoise, mediumturquoise, darkturquoise, lightseagreen, cadetblue, darkcyan, teal, darkslategray, darkgreen,
+    green, forestgreen, seagreen, mediumseagreen, mediumaquamarine, darkseagreen, aquamarine, palegreen, lightgreen,
+    springgreen, mediumspringgreen, lawngreen, chartreuse, greenyellow, lime, limegreen, yellowgreen, darkolivegreen,
+    olivedrab, olive, darkkhaki, palegoldenrod, cornsilk, beige, lightyellow, lightgoldenrodyellow, lemonchiffon, wheat,
+    burlywood, tan, khaki, yellow, gold, orange, sandybrown, darkorange, goldenrod, peru, darkgoldenrod, chocolate,
+    sienna, saddlebrown, maroon, darkred, brown, firebrick, indianred, rosybrown, darksalmon, lightcoral, salmon,
+    lightsalmon, coral, tomato, orangered, red, crimson, mediumvioletred, deeppink, hotpink, palevioletred, pink,
+    lightpink, thistle, magenta, fuchsia, violet, plum, orchid, mediumorchid, darkorchid, darkviolet, darkmagenta,
+    purple, indigo, darkslateblue, blueviolet, mediumpurple, slateblue, mediumslateblue, transparent, undefined, yw;
+private:
+  static constexpr color from_code(const unsigned& a) noexcept {
+    if (is_cev) return color(float((0xff0000 & a) >> 16) / 255.f, float((0xff00 & a) >> 8) / 255.f, float(0xff & a) / 255.f, float((0xff000000 & a) >> 24) / 255.f);
+    else return color(xvmul(xv_constant<1.0 / 255.0>, _mm_cvtepi32_ps(_mm_cvtepu8_epi32(xvbitcast(_mm_broadcast_ss((const float*)&a))))));
+  }
+};
+
+inline constexpr color color::black{0x000000}, color::dimgray{0x696969}, color::gray{0x808080}, color::darkgray{0xa9a9a9}, color::silver{0xc0c0c0},
+  color::lightgray{0xd3d3d3}, color::gainsboro{0xdcdcdc}, color::whitesmoke{0xf5f5f5}, color::white{0xffffff}, color::snow{0xfffafa},
+  color::ghostwhite{0xf8f8ff}, color::floralwhite{0xfffaf0}, color::linen{0xfaf0e6}, color::antiquewhite{0xfaebd7}, color::papayawhip{0xffefd5},
+  color::blanchedalmond{0xffebcd}, color::bisque{0xffe4c4}, color::moccasin{0xffe4b5}, color::navajowhite{0xffdead}, color::peachpuff{0xffdab9},
+  color::mistyrose{0xffe4e1}, color::lavenderblush{0xfff0f5}, color::seashell{0xfff5ee}, color::oldlace{0xfdf5e6}, color::ivory{0xfffff0},
+  color::honeydew{0xf0fff0}, color::mintcream{0xf5fffa}, color::azure{0xf0ffff}, color::aliceblue{0xf0f8ff}, color::lavender{0xe6e6fa},
+  color::lightsteelblue{0xb0c4de}, color::lightslategray{0x778899}, color::slategray{0x708090}, color::steelblue{0x4682b4}, color::royalblue{0x4169e1},
+  color::midnightblue{0x191970}, color::navy{0x000080}, color::darkblue{0x00008b}, color::mediumblue{0x0000cd}, color::blue{0x0000ff},
+  color::dodgerblue{0x1e90ff}, color::cornflowerblue{0x6495ed}, color::deepskyblue{0x00bfff}, color::lightskyblue{0x87cefa}, color::skyblue{0x87ceeb},
+  color::lightblue{0xadd8e6}, color::powderblue{0xb0e0e6}, color::paleturquoise{0xafeeee}, color::lightcyan{0xe0ffff}, color::cyan{0x00ffff},
+  color::aqua{0x00ffff}, color::turquoise{0x40e0d0}, color::mediumturquoise{0x48d1cc}, color::darkturquoise{0x00ced1}, color::lightseagreen{0x20b2aa},
+  color::cadetblue{0x5f9ea0}, color::darkcyan{0x008b8b}, color::teal{0x008080}, color::darkslategray{0x2f4f4f}, color::darkgreen{0x006400},
+  color::green{0x008000}, color::forestgreen{0x228b22}, color::seagreen{0x2e8b57}, color::mediumseagreen{0x3cb371}, color::mediumaquamarine{0x66cdaa},
+  color::darkseagreen{0x8fbc8f}, color::aquamarine{0x7fffd4}, color::palegreen{0x98fb98}, color::lightgreen{0x90ee90}, color::springgreen{0x00ff7f},
+  color::mediumspringgreen{0x00fa9a}, color::lawngreen{0x7cfc00}, color::chartreuse{0x7fff00}, color::greenyellow{0xadff2f}, color::lime{0x00ff00},
+  color::limegreen{0x32cd32}, color::yellowgreen{0x9acd32}, color::darkolivegreen{0x556b2f}, color::olivedrab{0x6b8e23}, color::olive{0x808000},
+  color::darkkhaki{0xbdb76b}, color::palegoldenrod{0xeee8aa}, color::cornsilk{0xfff8dc}, color::beige{0xf5f5dc}, color::lightyellow{0xffffe0},
+  color::lightgoldenrodyellow{0xfafad2}, color::lemonchiffon{0xfffacd}, color::wheat{0xf5deb3}, color::burlywood{0xdeb887}, color::tan{0xd2b48c},
+  color::khaki{0xf0e68c}, color::yellow{0xffff00}, color::gold{0xffd700}, color::orange{0xffa500}, color::sandybrown{0xf4a460}, color::darkorange{0xff8c00},
+  color::goldenrod{0xdaa520}, color::peru{0xcd853f}, color::darkgoldenrod{0xb8860b}, color::chocolate{0xd2691e}, color::sienna{0xa0522d},
+  color::saddlebrown{0x8b4513}, color::maroon{0x800000}, color::darkred{0x8b0000}, color::brown{0xa52a2a}, color::firebrick{0xb22222},
+  color::indianred{0xcd5c5c}, color::rosybrown{0xbc8f8f}, color::darksalmon{0xe9967a}, color::lightcoral{0xf08080}, color::salmon{0xfa8072},
+  color::lightsalmon{0xffa07a}, color::coral{0xff7f50}, color::tomato{0xff6347}, color::orangered{0xff4500}, color::red{0xff0000}, color::crimson{0xdc143c},
+  color::mediumvioletred{0xc71585}, color::deeppink{0xff1493}, color::hotpink{0xff69b4}, color::palevioletred{0xdb7093}, color::pink{0xffc0cb},
+  color::lightpink{0xffb6c1}, color::thistle{0xd8bfd8}, color::magenta{0xff00ff}, color::fuchsia{0xff00ff}, color::violet{0xee82ee}, color::plum{0xdda0dd},
+  color::orchid{0xda70d6}, color::mediumorchid{0xba55d3}, color::darkorchid{0x9932cc}, color::darkviolet{0x9400d3}, color::darkmagenta{0x8b008b},
+  color::purple{0x800080}, color::indigo{0x4b0082}, color::darkslateblue{0x483d8b}, color::blueviolet{0x8a2be2}, color::mediumpurple{0x9370db},
+  color::slateblue{0x6a5acd}, color::mediumslateblue{0x7b68ee}, color::transparent = color(0x0, 0.0f), color::undefined = color(0x0, -1.f), color::yw{0x081020};
+}
+
+namespace std {
 template<> struct tuple_size<yw::vector> : integral_constant<size_t, 4> {};
 template<size_t I> requires (I < 4) struct tuple_element<I, yw::vector> : type_identity<float> {};
 template<> struct formatter<yw::vector, char> : formatter<string, char> {
-  template<typename FormatContext> auto format(const yw::vector& v, FormatContext& Context) const {
-    return formatter<string, char>::format(std::format("({}, {}, {}, {})", v.x, v.y, v.z, v.w), Context); } };
+  auto format(const yw::vector& v, auto& c) const { return formatter<string, char>::format(std::format("({}, {}, {}, {})", v.x, v.y, v.z, v.w), c); } };
 template<> struct formatter<yw::vector, wchar_t> : formatter<wstring, wchar_t> {
-  template<typename FormatContext> auto format(const yw::vector& v, FormatContext& Context) const {
-    return formatter<wstring, wchar_t>::format(std::format(L"({}, {}, {}, {})", v.x, v.y, v.z, v.w), Context); } };
+  auto format(const yw::vector& v, auto& c) const { return formatter<wstring, wchar_t>::format(std::format(L"({}, {}, {}, {})", v.x, v.y, v.z, v.w), c); } };
 template<> struct tuple_size<yw::color> : integral_constant<size_t, 4> {};
 template<size_t I> requires (I < 4) struct tuple_element<I, yw::color> : type_identity<float> {};
 template<> struct formatter<yw::color, char> : formatter<string, char> {
-  template<typename FormatContext> auto format(const yw::color& c, FormatContext& Context) const {
-    return formatter<string, char>::format(std::format("({}, {}, {}, {})", c.r, c.g, c.b, c.a), Context); } };
+  auto format(const yw::color& r, auto& c) const { return formatter<string, char>::format(std::format("({}, {}, {}, {})", r.r, r.g, r.b, r.a), c); } };
 template<> struct formatter<yw::color, wchar_t> : formatter<wstring, wchar_t> {
-  template<typename FormatContext> auto format(const yw::color& c, FormatContext& Context) const {
-    return formatter<wstring, wchar_t>::format(std::format(L"({}, {}, {}, {})", c.r, c.g, c.b, c.a), Context); } };
+  auto format(const yw::color& r, auto& c) const { return formatter<wstring, wchar_t>::format(std::format(L"({}, {}, {}, {})", r.r, r.g, r.b, r.a), c); } };
 template<> struct tuple_size<yw::rect> : integral_constant<size_t, 4> {};
 template<size_t I> requires (I < 4) struct tuple_element<I, yw::rect> : type_identity<int> {};
 template<> struct formatter<yw::rect, char> : formatter<string, char> {
-  template<typename FormatContext> auto format(const yw::rect& r, FormatContext& Context) const {
-    return formatter<string, char>::format(std::format("({}, {}, {}, {})", r.left, r.top, r.right, r.bottom), Context); } };
+  auto format(const yw::rect& r, auto& c) const { return formatter<string, char>::format(std::format("({}, {}, {}, {})", r.left, r.top, r.right, r.bottom), c); } };
 template<> struct formatter<yw::rect, wchar_t> : formatter<wstring, wchar_t> {
-  template<typename FormatContext> auto format(const yw::rect& r, FormatContext& Context) const {
-    return formatter<wstring, wchar_t>::format(std::format(L"({}, {}, {}, {})", r.left, r.top, r.right, r.bottom), Context); } };
-} // clang-format on
+  auto format(const yw::rect& r, auto& c) const { return formatter<wstring, wchar_t>::format(std::format(L"({}, {}, {}, {})", r.left, r.top, r.right, r.bottom), c); } };
+}
+
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+
+#include <commdlg.h>
+#include <d2d1_3.h>
+#include <d3d11_3.h>
+#include <d3dcompiler.h>
+#include <dwrite_3.h>
+#include <dxgi1_6.h>
+#include <shellapi.h>
+#include <wincodec.h>
+#pragma comment(lib, "comdlg32.lib")
+#pragma comment(lib, "d2d1.lib")
+#pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "d3dcompiler.lib")
+#pragma comment(lib, "dwrite.lib")
+#pragma comment(lib, "dxgi.lib")
+#pragma comment(lib, "Shlwapi.lib")
+#pragma comment(lib, "windowscodecs.lib")
+
+#undef max
+#undef min
+
+namespace yw {
+
+class stopwatch {
+  inline static fat8 freq = [](LARGE_INTEGER _) { return ::QueryPerformanceFrequency(&_), fat8(_.QuadPart); }({});
+  mutable LARGE_INTEGER li;
+  int8 last;
+public:
+  stopwatch() noexcept : li{}, last{(::QueryPerformanceCounter(&li), li.QuadPart)} {}
+  fat8 operator()() const noexcept { return *this; }
+  operator fat8() const noexcept { return ::QueryPerformanceCounter(&li), (li.QuadPart - last) / freq; }
+  operator fat4() const noexcept { return float(operator fat8()); }
+  void reset() noexcept { ::QueryPerformanceCounter(&li), last = li.QuadPart; }
+  fat8 split() noexcept { return ::QueryPerformanceCounter(&li), (li.QuadPart - exchange(last, li.QuadPart)) / freq; }
+};
+
+inline constexpr overload ok{
+  [](const str1& Text, const str1& Caption = "OK?") -> bool { return ::MessageBoxA(nullptr, Text.c_str(), Caption.c_str(), MB_ICONEXCLAMATION | MB_OK) == IDOK; },
+  [](const str2& Text, const str2& Caption = L"OK?") -> bool { return ::MessageBoxW(nullptr, Text.c_str(), Caption.c_str(), MB_ICONEXCLAMATION | MB_OK) == IDOK; },
+  [](const HWND Window, const str1& Text, const str1& Caption = "OK?") -> bool { return ::MessageBoxA(Window, Text.c_str(), Caption.c_str(), MB_ICONEXCLAMATION | MB_OK) == IDOK; },
+  [](const HWND Window, const str2& Text, const str2& Caption = L"OK?") -> bool { return ::MessageBoxW(Window, Text.c_str(), Caption.c_str(), MB_ICONEXCLAMATION | MB_OK) == IDOK; }};
+
+inline constexpr overload yes{
+  [](const str1& Text, const str1& Caption = "Yes?") -> bool { return ::MessageBoxA(nullptr, Text.c_str(), Caption.c_str(), MB_ICONQUESTION | MB_YESNO) == IDYES; },
+  [](const str2& Text, const str2& Caption = L"Yes?") -> bool { return ::MessageBoxW(nullptr, Text.c_str(), Caption.c_str(), MB_ICONQUESTION | MB_YESNO) == IDYES; },
+  [](const HWND Window, const str1& Text, const str1& Caption = "Yes?") -> bool { return ::MessageBoxA(Window, Text.c_str(), Caption.c_str(), MB_ICONQUESTION | MB_YESNO) == IDYES; },
+  [](const HWND Window, const str2& Text, const str2& Caption = L"Yes?") -> bool { return ::MessageBoxW(Window, Text.c_str(), Caption.c_str(), MB_ICONQUESTION | MB_YESNO) == IDYES; }};
+
+struct t_to_utf16 {
+  /// Convert a utf-8 string to utf-16 string.
+  string<uct2> operator()(const string_view<uct1>& utf8) const {
+    if (utf8.empty()) return {};
+    if (auto size = ::MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const cat1*>(utf8.data()), -1, nullptr, 0); size) {
+      string<uct2> utf16(size - 1, L'\0');
+      ::MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const cat1*>(utf8.data()), -1, reinterpret_cast<cat2*>(utf16.data()), size);
+      return utf16;
+    } else return {};
+  }
+  /// Convert a utf-16 string to utf-16 string.
+  constexpr string<uct2> operator()(const string_view<uct2>& wcs) const {
+    return string<uct2>(wcs);
+  }
+  /// Convert a utf-32 string to utf-16 string.
+  constexpr string<uct2> operator()(const string_view<uct4>& utf32) const {
+    string<uct2> utf16(utf32.size() * 2, u'\0');
+    nat size = 0;
+    for (auto i = utf32.begin(); i < utf32.end(); ++i) {
+      if (*i < 0x10000) utf16[size++] = uct2(*i);
+      else if (*i < 0x110000) {
+        utf16[size++] = uct2(0xD800 + (*i - 0x10000) / 0x400);
+        utf16[size++] = uct2(0xDC00 + (*i - 0x10000) % 0x400);
+      } else break; }
+    utf16.resize(size); return utf16;
+  }
+  /// Convert a multi-byte-string to utf-16 string.
+  string<uct2> operator()(const string_view<cat1>& mbs) const {
+    if (mbs.empty()) return {};
+    if (auto size = ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, nullptr, 0); size) {
+      string<uct2> utf16(size - 1, L'\0');
+      ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, reinterpret_cast<cat2*>(utf16.data()), size);
+      return utf16;
+    } else return {};
+  }
+  /// Convert a wide-char-string to utf-16 string.
+  string<uct2> operator()(const string_view<cat2>& wcs) const {
+    return string<uct2>(reinterpret_cast<const string_view<uct2>&>(wcs));
+  } };
+/// Convert a string to utf-16 string.
+inline constexpr t_to_utf16 to_utf16;
+
+struct t_to_utf8 {
+  /// Convert a utf-8 string to utf-8 string.
+  constexpr string<uct1> operator()(const string_view<uct1>& utf8) const {
+    return string<uct1>(utf8);
+  }
+  /// Convert a utf-16 string to utf-8 string.
+  constexpr string<uct1> operator()(const string_view<uct2>& utf16) const {
+    if (utf16.empty()) return {};
+    if (auto size = ::WideCharToMultiByte(CP_UTF8, 0, reinterpret_cast<const cat2*>(utf16.data()), -1, nullptr, 0, nullptr, nullptr); size) {
+      string<uct1> utf8(size - 1, '\0');
+      ::WideCharToMultiByte(CP_UTF8, 0, reinterpret_cast<const cat2*>(utf16.data()), -1, reinterpret_cast<cat1*>(utf8.data()), size, nullptr, nullptr);
+      return utf8;
+    } else return {};
+  }
+  /// Convert a utf-32 string to utf-8 string.
+  string<uct1> operator()(const string_view<uct4>& utf32) const {
+    return operator()(to_utf16(utf32));
+  }
+  /// Convert a multi-byte-string to utf-8 string.
+  string<uct1> operator()(const string_view<cat1>& mbs) const {
+    return operator()(to_utf16(mbs));
+  }
+  /// Convert a wide-char-string to utf-8 string.
+  string<uct1> operator()(const string_view<cat2>& wcs) const {
+    return operator()(reinterpret_cast<const string_view<uct2>&>(wcs));
+  } };
+/// Convert a string to utf-8 string.
+inline constexpr t_to_utf8 to_utf8;
+
+struct t_to_utf32 {
+  /// Convert a utf-8 string to utf-32 string.
+  constexpr string<uct4> operator()(const string_view<uct1>& utf8) const {
+    string<uct4> utf32(utf8.size(), 0);
+    nat size = 0;
+    for (auto i = utf8.begin(); i < utf8.end(); ++i) {
+      if (*i < 0x80) utf32[size++] = *i;
+      else if (*i < 0xE0) utf32[size++] = (*i & 0x1F) << 6 | (*(++i) & 0x3F);
+      else if (*i < 0xF0) utf32[size++] = (*i & 0x0F) << 12 | (*(++i) & 0x3F) << 6 | (*(++i) & 0x3F);
+      else if (*i < 0xF8) utf32[size++] = (*i & 0x07) << 18 | (*(++i) & 0x3F) << 12 | (*(++i) & 0x3F) << 6 | (*(++i) & 0x3F);
+      else break; }
+    utf32.resize(size); return utf32;
+  }
+  /// Convert a utf-16 string to utf-32 string.
+  constexpr string<uct4> operator()(const string_view<uct2>& utf16) const {
+    string<uct4> utf32(utf16.size(), 0);
+    nat size = 0;
+    for (auto i = utf16.begin(); i < utf16.end(); ++i) {
+      if (*i < 0xD800 || *i >= 0xDC00) utf32[size++] = *i;
+      else if (*i < 0xDC00) utf32[size++] = 0x10000 + (*i - 0xD800) * 0x400 + (*(++i) - 0xDC00);
+      else break; }
+    utf32.resize(size); return utf32;
+  }
+  /// Convert a utf-32 string to utf-32 string.
+  constexpr string<uct4> operator()(const string_view<uct4>& utf32) const {
+    return string<uct4>(utf32);
+  }
+  /// Convert a multi-byte-string to utf-32 string.
+  string<uct4> operator()(const string_view<cat1>& mbs) const {
+    return operator()(to_utf16(mbs));
+  }
+  /// Convert a wide-char-string to utf-32 string.
+  string<uct4> operator()(const string_view<cat2>& wcs) const {
+    return operator()(reinterpret_cast<const string_view<uct2>&>(wcs));
+  } };
+/// Convert a string to utf-32 string.
+inline constexpr t_to_utf32 to_utf32;
+
+struct t_to_mbs {
+  /// Convert a utf-8 string to multi-byte-string.
+  string<cat1> operator()(const string_view<uct1>& utf8) const {
+    return operator()(to_utf16(utf8));
+  }
+  /// Convert a utf-16 string to multi-byte-string.
+  string<cat1> operator()(const string_view<uct2>& utf16) const {
+    return operator()(reinterpret_cast<const string_view<cat2>&>(utf16));
+  }
+  /// Convert a utf-32 string to multi-byte-string.
+  string<cat1> operator()(const string_view<uct4>& utf32) const {
+    return operator()(to_utf16(utf32));
+  }
+  /// Convert a multi-byte-string to multi-byte-string.
+  constexpr string<cat1> operator()(const string_view<cat1>& mbs) const {
+    return string<cat1>(mbs);
+  }
+  /// Convert a wide-char-string to multi-byte-string.
+  string<cat1> operator()(const string_view<cat2>& wcs) const {
+    if (wcs.empty()) return {};
+    if (auto size = ::WideCharToMultiByte(CP_ACP, 0, reinterpret_cast<const cat2*>(wcs.data()), -1, nullptr, 0, nullptr, nullptr); size) {
+      string<cat1> mbs(size - 1, '\0');
+      ::WideCharToMultiByte(CP_ACP, 0, reinterpret_cast<const cat2*>(wcs.data()), -1, reinterpret_cast<cat1*>(mbs.data()), size, nullptr, nullptr);
+      return mbs;
+    } else return {};
+  } };
+/// Convert a string to multi-byte-string.
+inline constexpr t_to_mbs to_mbs;
+
+struct t_to_wcs {
+  /// Convert a utf-8 string to wide-char-string.
+  string<cat2> operator()(const string_view<uct1>& utf8) const {
+    if (utf8.empty()) return {};
+    if (auto size = ::MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const cat1*>(utf8.data()), -1, nullptr, 0); size) {
+      string<cat2> wcs(size - 1, L'\0');
+      ::MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const cat1*>(utf8.data()), -1, reinterpret_cast<cat2*>(wcs.data()), size);
+      return wcs;
+    } else return {};
+  }
+  /// Convert a utf-16 string to wide-char-string.
+  constexpr string<cat2> operator()(const string_view<uct2>& utf16) const {
+    return string<cat2>(reinterpret_cast<const string_view<cat2>&>(utf16));
+  }
+  /// Convert a utf-32 string to wide-char-string.
+  string<cat2> operator()(const string_view<uct4>& utf32) const {
+    string<cat2> wcs(utf32.size() * 2, u'\0');
+    nat size = 0;
+    for (auto i = utf32.begin(); i < utf32.end(); ++i) {
+      if (*i < 0x10000) wcs[size++] = cat2(*i);
+      else if (*i < 0x110000) {
+        wcs[size++] = cat2(0xD800 + (*i - 0x10000) / 0x400);
+        wcs[size++] = cat2(0xDC00 + (*i - 0x10000) % 0x400);
+      } else break; }
+    wcs.resize(size); return wcs;
+  }
+  /// Convert a multi-byte-string to wide-char-string.
+  string<cat2> operator()(const string_view<cat1>& mbs) const {
+    if (mbs.empty()) return {};
+    if (auto size = ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, nullptr, 0); size) {
+      string<cat2> wcs(size - 1, L'\0');
+      ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, reinterpret_cast<cat2*>(wcs.data()), size);
+      return wcs;
+    } else return {};
+  }
+  /// Convert a wide-char-string to wide-char-string.
+  constexpr string<cat2> operator()(const string_view<cat2>& wcs) const {
+    return string<cat2>(wcs);
+  } };
+/// Convert a string to wide-char-string.
+inline constexpr t_to_wcs to_wcs;
+
+template<typename T, typename Setter = none> class status {
+protected:
+  T _status;
+  bool _changed;
+public:
+  status() noexcept : _status{}, _changed{false} {}
+  status(T Init) noexcept : _status{Init}, _changed{false} {}
+  explicit operator bool() const noexcept { return _changed; }
+  operator T() const noexcept { return _changed = false, _status; }
+  void set(T New) noexcept { _changed = true, _status = New, Setter{}(New); }
+  T get() noexcept { return _changed = false, _status; }
+};
+
+namespace key {
+enum class status { free, down, hold, up };
+inline yw::status<key::status> keys[256]{};
+inline auto& lbutton = keys[VK_LBUTTON], &rbutton = keys[VK_RBUTTON], &mbutton = keys[VK_MBUTTON];
+inline auto& xbutton1 = keys[VK_XBUTTON1], &xbutton2 = keys[VK_XBUTTON2];
+inline auto& win = keys[VK_LWIN], &app = keys[VK_APPS], &back = keys[VK_BACK], &tab = keys[VK_TAB], &enter = keys[VK_RETURN];
+inline auto& escape = keys[VK_ESCAPE], &shift = keys[VK_SHIFT], &control = keys[VK_CONTROL], &alt = keys[VK_MENU], &space = keys[VK_SPACE];
+inline auto& pageup = keys[VK_PRIOR], &pagedown = keys[VK_NEXT], &end = keys[VK_END], &home = keys[VK_HOME];
+inline auto& left = keys[VK_LEFT], &up = keys[VK_UP], &right = keys[VK_RIGHT], &down = keys[VK_DOWN];
+inline auto& screenshot = keys[VK_SNAPSHOT], &insert = keys[VK_INSERT], &delete_ = keys[VK_DELETE];
+inline auto& n0 = keys['0'], &n1 = keys['1'], &n2 = keys['2'], &n3 = keys['3'], &n4 = keys['4'], &n5 = keys['5'], &n6 = keys['6'], &n7 = keys['7'], &n8 = keys['8'], &n9 = keys['9'];
+inline auto& a = keys['A'], &b = keys['B'], &c = keys['C'], &d = keys['D'], &e = keys['E'], &f = keys['F'], &g = keys['G'], &h = keys['H'], &i = keys['I'];
+inline auto& j = keys['J'], &k = keys['K'], &l = keys['L'], &m = keys['M'], &n = keys['N'], &o = keys['O'], &p = keys['P'], &q = keys['Q'], &r = keys['R'];
+inline auto& s = keys['S'], &t = keys['T'], &u = keys['U'], &v = keys['V'], &w = keys['W'], &x = keys['X'], &y = keys['Y'], &z = keys['Z'];
+inline auto& np_0 = keys[VK_NUMPAD0], &np_1 = keys[VK_NUMPAD1], &np_2 = keys[VK_NUMPAD2], &np_3 = keys[VK_NUMPAD3], &np_4 = keys[VK_NUMPAD4];
+inline auto& np_5 = keys[VK_NUMPAD5], &np_6 = keys[VK_NUMPAD6], &np_7 = keys[VK_NUMPAD7], &np_8 = keys[VK_NUMPAD8], &np_9 = keys[VK_NUMPAD9];
+inline auto& np_mul = keys[VK_MULTIPLY], &np_add = keys[VK_ADD], &np_sub = keys[VK_SUBTRACT], &np_div = keys[VK_DIVIDE], &np_decimal = keys[VK_DECIMAL];
+inline auto& f1 = keys[VK_F1], &f2 = keys[VK_F2], &f3 = keys[VK_F3], &f4 = keys[VK_F4], &f5 = keys[VK_F5], &f6 = keys[VK_F6];
+inline auto& f7 = keys[VK_F7], &f8 = keys[VK_F8], &f9 = keys[VK_F9], &f10 = keys[VK_F10], &f11 = keys[VK_F11], &f12 = keys[VK_F12];
+inline auto& minus = keys[VK_OEM_MINUS], &plus = keys[VK_OEM_PLUS], &comma = keys[VK_OEM_COMMA], &period = keys[VK_OEM_PERIOD];
+inline auto& oem00 = keys[VK_OEM_7], &oem01 = keys[VK_OEM_5], &oem10 = keys[VK_OEM_3], &oem11 = keys[VK_OEM_4];
+inline auto& oem20 = keys[VK_OEM_1], &oem21 = keys[VK_OEM_6], &oem30 = keys[VK_OEM_2], &oem31 = keys[VK_OEM_102];
+}
+
+namespace mouse {
+inline status<list<int, int>, decltype([](const list<int, int>& New) { ::SetCursorPos(New.first, New.second); })> position;
+inline status<int> wheel;
+}
+
+namespace main {
+inline bool (*userproc)(HWND hw, nat4 msg, natt wp, intt lp) = nullptr;
+}
+
+namespace main::system {
+
+}
+
+
+
+
+
+
+}
