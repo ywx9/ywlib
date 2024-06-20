@@ -2196,9 +2196,9 @@ struct hsv {
     if (h < 0) return rgb(0.f, 0.f, 0.f, a);
     else if (h < 0.5f) { if      (h < cev(1.f / 6.f)) return rgb(v, v - s + 6 * h * s, v - s, a);
                          else if (h < cev(2.f / 6.f)) return rgb(v + s - 6 * h * s, v, v - s, a);
-                         else return rgb(v - s, v, v - 3 * s + 6 * h * s, a); }
-    else               { if      (h < cev(4.f / 6/f)) return rgb(v - s, v + 3 * s - 6 * h * s, v, a);
-                         else if (h < cev(5.f / 6.f))
+                         else                         return rgb(v - s, v, v - 3 * s + 6 * h * s, a); }
+    else               { if      (h < cev(4.f / 6.f)) return rgb(v - s, v + 3 * s - 6 * h * s, v, a);
+                         else if (h < cev(5.f / 6.f)) return rgb(); // not complete
     }
     else if (h < 1.0f) {
 
