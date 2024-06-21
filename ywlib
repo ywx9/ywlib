@@ -410,6 +410,11 @@ template<typename... Ts> struct list : typepack<Ts...>::template fore<sizeof...(
   static constexpr nat count = sizeof...(Ts);
   using last_type = select_type<count - 1, Ts...>;
   last_type last;
+  template<same_extent<list> Tuple> constexpr operator Tuple() const
+    noexcept(nt_constructible<Tuple, add_const<Ts&>...>)
+    requires constructible<Tuple, add_const<Ts&>...> {
+    // return [&]() noexcept(nt_constructible<Tuple, add_const<Ts&>...>) { return Tuple{get<Ts>()...};} ///////////////////////////////////////////////////////////////
+  }
   template<nat I> constexpr auto get() & noexcept -> select_type<I, Ts...>& { if constexpr (I == count - 1) return last; else return base::template get<I>(); }
   template<nat I> constexpr auto get() const& noexcept -> add_const<select_type<I, Ts...>&> { if constexpr (I == count - 1) return last; else return base::template get<I>(); }
   template<nat I> constexpr auto get() && noexcept -> select_type<I, Ts...>&& { if constexpr (I == count - 1) return fwd<last_type>(last); else return fwd<select_type<I, Ts...>>(base::template get<I>()); }
@@ -2198,12 +2203,9 @@ struct hsv {
                          else if (h < cev(2.f / 6.f)) return rgb(v + s - 6 * h * s, v, v - s, a);
                          else                         return rgb(v - s, v, v - 3 * s + 6 * h * s, a); }
     else               { if      (h < cev(4.f / 6.f)) return rgb(v - s, v + 3 * s - 6 * h * s, v, a);
-                         else if (h < cev(5.f / 6.f)) return rgb(); // not complete
-    }
-    else if (h < 1.0f) {
-
-    }
-    else return rgb(0.f, 0.f, 0.f, a);
+                         else if (h < cev(5.f / 6.f)) return rgb(v - 5 * s + 6 * h * s, v - s, v, a);
+                         else if (h < 1.f)            return rgb(v, v - s, v + 5 * s - 6 * h * s, a);
+                         else                         return rgb(0.f, 0.f, 0.f, a); }
   }
   static const hsv black, dimgray, gray, darkgray, silver, lightgray, gainsboro, whitesmoke, white, snow, ghostwhite, floralwhite, linen, antiquewhite,
     papayawhip, blanchedalmond, bisque, moccasin, navajowhite, peachpuff, mistyrose, lavenderblush, seashell, oldlace, ivory, honeydew, mintcream, azure,
@@ -2780,37 +2782,54 @@ inline const bool directx_initialized = false;
 #else
 inline const bool directx_initialized = main_window_initialized && [] {
   try {
+    stopwatch sw;
+    std::cout << "Start initializing DirectX" << std::flush;
     static constexpr D3D_FEATURE_LEVEL d3d_feature_levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
     tiff(::D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, d3d_feature_levels, arraysize(d3d_feature_levels),
                              D3D11_SDK_VERSION, (ID3D11Device**)d3d_device.init(), nullptr, (ID3D11DeviceContext**)d3d_context.init()));
+    std::cout << "." << std::flush;
     tiff(::CreateDXGIFactory2(0, IID_PPV_ARGS(dxgi_factory.init()))), tiff(dxgi_factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER));
+    std::cout << "." << std::flush;
     [&](comptr<ID3D11BlendState> state, D3D11_BLEND_DESC desc) {
       desc.RenderTarget[0] = {true, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD,
                               D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD, 0x0f};
       tiff(d3d_device->CreateBlendState(&desc, state.init())), d3d_context->OMSetBlendState(state, 0, 0xffffffff); }({}, {});
+    std::cout << "." << std::flush;
     [&](comptr<ID3D11SamplerState> state, D3D11_SAMPLER_DESC desc) {
       desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP, desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP; desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP,
       desc.MaxAnisotropy = 1; desc.ComparisonFunc = D3D11_COMPARISON_ALWAYS, desc.MaxLOD = D3D11_FLOAT32_MAX;
       tiff(d3d_device->CreateSamplerState(&desc, state.init()));
       [&](auto p) { d3d_context->PSSetSamplers(0, 1, &p); }(state.get()); }({}, {D3D11_FILTER_MIN_MAG_MIP_LINEAR});
+    std::cout << "." << std::flush;
     [&](comptr<ID3D11RasterizerState> state, D3D11_RASTERIZER_DESC desc) {
       tiff(d3d_device->CreateRasterizerState(&desc, state.init()));
       d3d_context->RSSetState(state); }({}, {D3D11_FILL_SOLID, D3D11_CULL_NONE, 1, 0, 0, 0, 1, 0, 1, 1});
+    std::cout << "." << std::flush;
     tiff(::CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(wic_factory.init())));
+    std::cout << "." << std::flush;
     DXGI_SWAP_CHAIN_DESC1 desc{UINT(width), UINT(height), DXGI_FORMAT_R8G8B8A8_UNORM};
     desc.SampleDesc.Count = 1, desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT, desc.BufferCount = 2;
     desc.Scaling = DXGI_SCALING_STRETCH, desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    std::cout << "." << std::flush;
     tiff(dxgi_factory->CreateSwapChainForHwnd(d3d_device, hwnd, &desc, nullptr, nullptr, swapchain.init()));
+    std::cout << "." << std::flush;
     tiff(::D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, d2d_factory.init()));
+    std::cout << "." << std::flush;
     tiff(d3d_device.as(dxgi_device)), tiff(d2d_factory->CreateDevice(dxgi_device, d2d_device.init()));
+    std::cout << "." << std::flush;
     tiff(d2d_device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, d2d_context.init()));
+    std::cout << "." << std::flush;
     comptr<ID3D11Texture2D> tex; tiff(swapchain->GetBuffer(0, IID_PPV_ARGS(tex.init())));
+    std::cout << "." << std::flush;
     comptr<IDXGISurface> surface; tiff(tex->QueryInterface(IID_PPV_ARGS(surface.init())));
+    std::cout << "." << std::flush;
     auto p = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
                                      D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_PREMULTIPLIED));
+    std::cout << "." << std::flush;
     tiff(d2d_context->CreateBitmapFromDxgiSurface(surface, &p, rendertarget.init()));
+    std::cout << "." << std::flush;
     tiff(::DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), (IUnknown**)dw_factory.init()));
-    std::cout << "DirectX initialized in " << timer() << " seconds\n";
+    std::cout << "initialized (" << sw() << " seconds)\n";
     return true;
   } catch (const std::exception& e) {
     return std::cerr << e.what() << '\n', false;
@@ -2966,6 +2985,79 @@ inline constexpr auto save_file = [](const path& Dir = {}, const path& Default =
     ofn.lpstrInitialDir = Dir.c_str();
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
     return ::GetSaveFileNameW(&ofn) == TRUE ? path(ofn.lpstrFile) : path{};
+};
+
+/// alignment
+enum class alignment {lefttop, top, righttop, left, center, right, leftbottom, bottom, rightbottom};
+
+/// text format to print plane text
+template<value Size, rgb Color, literal<cat2> Font = L"Yu Gothic UI", bool Bold = false> class text_format {
+  static void init() {
+    try {
+      if (!dw_format) {
+        tiff(main::dw_factory->CreateTextFormat(
+          Font, nullptr, Bold ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL,
+          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, size, L"", dw_format.init()));
+        tiff(dw_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING));
+      }
+      if (!d2d_brush) tiff(main::d2d_context->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black), d2d_brush.init()));
+      tiff(bool(dw_format), "Failed to initialize text format");
+    } catch (const std::exception& e) {
+      std::cerr << e.what() << '\n';
+      throw std::runtime_error("runtime error: Failed to initialize text format");
+    }
+  }
+  static list<fat4, fat4> get_metrics(const string_view<cat2>& Text) {
+    comptr<IDWriteTextLayout> layout;
+    tiff(main::dw_factory->CreateTextLayout(Text.data(), unsigned(Text.size()), dw_format, fat4(inf), fat4(inf), layout.init()));
+    DWRITE_TEXT_METRICS metrics;
+    layout->GetMetrics(&metrics);
+    return {metrics.width, metrics.height};
+  }
+protected:
+  inline static comptr<IDWriteTextFormat> dw_format{};
+  inline static comptr<ID2D1SolidColorBrush> d2d_brush{};
+public:
+  static constexpr fat4 size = fat4(Size);
+  static constexpr rgb color = Color;
+  static constexpr auto font = Font;
+  static constexpr auto bold = Bold;
+  constexpr text_format() noexcept = default;
+  explicit operator bool() const noexcept { return true; }
+  /// return the geometry of the text; {0, 0, width, height}
+  static list<fat4, fat4> geometry(const string_view<cat2>& Text) {
+    init();
+    auto geometry = get_metrics(Text);
+    return {geometry.first, geometry.second};
+  }
+  /// return the geometry of the text which is located at the specified position
+  static vector geometry(const string_view<cat2>& Text, list<value, value> Point, alignment Align) {
+    init();
+    auto g = get_metrics(Text);
+    switch (Align) {
+    case alignment::lefttop: return {Point.first, Point.second. Point.first + g.first, Point.second + g.second};
+    case alignment::top: return {Point.first - g.first / 2, Point.second, Point.first + g.first / 2, Point.second + g.second};
+    case alignment::righttop: return {Point.first - g.first, Point.second, Point.first, Point.second + g.second};
+    case alignment::left: return {Point.first, Point.second - g.second / 2, Point.first + g.first, Point.second + g.second / 2};
+    case alignment::center: return {Point.first - g.first / 2, Point.second - g.second / 2, Point.first + g.first / 2, Point.second + g.second / 2};
+    case alignment::right: return {Point.first - g.first, Point.second - g.second / 2, Point.first, Point.second + g.second / 2};
+    case alignment::leftbottom: return {Point.first, Point.second - g.second, Point.first + g.first, Point.second};
+    case alignment::bottom: return {Point.first - g.first / 2, Point.second - g.second, Point.first + g.first / 2, Point.second};
+    case alignment::rightbottom: return {Point.first - g.first, Point.second - g.second, Point.first, Point.second};
+    default: return {};
+    } }
+  /// print the text
+  static void print(const string_view<cat2>& Text, const vector& Rect) {
+    init();
+    main::d2d_context->DrawTextW(Text.data(), Text.size(), dw_format, reinterpret_cast<const D2D1_RECT_F&>(Rect), d2d_brush);
+  }
+  /// print the text
+  static void print(const string_view<cat2>& Text, const value Left, const value Top) {
+    init();
+    auto geometry = get_metrics(Text);
+    auto rect = D2D1::RectF(fat4(Left), fat4(Top), fat4(Left) + geometry.first, fat4(Top) + geometry.second);
+    main::d2d_context->DrawTextW(Text.data(), unsigned(Text.size()), dw_format, rect, d2d_brush);
+  }
 };
 
 
