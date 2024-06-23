@@ -757,34 +757,83 @@ template<character Ct> struct literal {
 template<character Ct, nat N> literal(const Ct (&)[N]) -> literal<Ct>;
 
 using path = std::filesystem::path;
+
+/// @brief class for logging text; the text is written to a file when the object is destroyed.
+class logger {
+  string<cat1> text;
+  path file;
+public:
+  /// @brief constructs a logger object with the specified file name to write the text to.
+  logger(const path& LogFileName) : file(LogFileName) {}
+  /// @brief saves the text to the file.
+  ~logger() { if (std::ofstream ofs(file, std::ios::app); ofs) ofs << text << std::endl; }
+  /// @brief appends the text to the logger object.
+  logger& operator<<(const string_view<cat1> s) { return (text += s) += "\n", *this; }
+  /// @brief outputs the text of the logger object to the specified output stream.
+  template<typename Tr> friend std::basic_ostream<cat1, Tr>& operator<<(std::basic_ostream<cat1, Tr>& os, const logger& l) { return os << l.text; }
+};
+
+/// @brief default logger object for ywlib
+inline logger log("ywlib.log");
 }
 
 namespace yw::file {
-bool exists(const path& p) { return std::filesystem::exists(p); }
-bool remove(const path& p) { return std::filesystem::remove(p); }
-bool is_file(const path& p) { return std::filesystem::is_regular_file(p); }
-bool is_directory(const path& p) { return std::filesystem::is_directory(p); }
-nat size(const path& p) { return std::filesystem::file_size(p); }
-array<path> list(const path& p, bool Recursive = false) {
-  array<path> a;
-  if (!std::filesystem::exists(p)) throw std::runtime_error(std::format("runtime error in path::list : the path does not exist ({})", p.string()));
-  if (!std::filesystem::is_directory(p)) throw std::runtime_error(std::format("runtime error in path::list : the path is not a directory ({})", p.string()));
-  if (Recursive) for (const auto& e : std::filesystem::recursive_directory_iterator(p)) a.push_back(e.path());
-  else for (const auto& e : std::filesystem::directory_iterator(p)) a.push_back(e.path());
-  return a;
+/// @brief checks if the specified path exists.
+inline constexpr auto exists = [](const path& p) noexcept -> bool {
+  try { return std::filesystem::exists(p); }
+  catch (const std::exception& e) { log << "runtime error : yw::file::exists : " << e.what(); }
+};
+/// @brief removes the specified path.
+inline constexpr auto remove = [](const path& p) noexcept -> bool {
+  try { return std::filesystem::remove(p); }
+  catch (const std::exception& e) { log << "runtime error : yw::file::remove : " << e.what(); }
+};
+/// @brief checks if the specified path is a regular file.
+inline constexpr auto is_file = [](const path& p) noexcept -> bool {
+  try { return std::filesystem::is_regular_file(p); }
+  catch (const std::exception& e) { log << "runtime error : yw::file::is_file : " << e.what(); }
+};
+/// @brief checks if the specified path is a directory.
+inline constexpr auto is_directory = [](const path& p) noexcept -> bool {
+  try { return std::filesystem::is_directory(p); }
+  catch (const std::exception& e) { log << "runtime error : yw::file::is_directory : " << e.what(); }
+};
+/// @brief returns the size of the specified file.
+inline constexpr auto size = [](const path& p) noexcept -> nat {
+  try { return std::filesystem::file_size(p); }
+  catch (const std::exception& e) { log << "runtime error : yw::file::size : " << e.what(); }
+};
+/// @brief returns the file list of the specified directory.
+inline constexpr auto list = [](const path& p, bool Recursive = false) noexcept -> array<path> {
+  try { array<path> a;
+        if (!file::exists(p)) throw  std::runtime_error(std::format("the path ({}) does not exist", p.string()));
+        if (!file::is_directory(p)) throw std::runtime_error(std::format("the path ({}) is not a directory", p.string()));
+        if (Recursive) for (const auto& e : std::filesystem::recursive_directory_iterator(p)) a.push_back(e.path());
+        else for (const auto& e : std::filesystem::directory_iterator(p)) a.push_back(e.path());
+        return a; }
+  catch (const std::exception& e) { log << "runtime error : yw::file::list : " << e.what(); return {}; }
+};
+/// @brief reads the specified file and writes the data to the output range.
+inline void read(const path& p, cnt_range auto&& Out) noexcept requires (!is_const<decltype(yw::data(Out))>) {
+  try { if (const auto n = yw::size(Out) * sizeof(iter_value<decltype(Out)>); file_size(p) == n) {
+          if (std::ifstream ifs(p, std::ios::binary); ifs) return void(ifs.read(reinterpret_cast<char*>(yw::data(Out)), n));
+          else throw std::runtime_error(std::format("failed to open the file ({})", p.string()));
+        } else throw std::runtime_error(std::format("the byte size of the output range ({}) is not equal to the file size ({})", n, p.string()));
+  } catch (const std::exception& e) { log << "runtime error : yw::file::read : " << e.what(); }
 }
-void read(const path& p, cnt_range auto&& Out) requires (!is_const<decltype(yw::data(Out))>) {
-  if (const auto n = yw::size(Out) * sizeof(iter_value<decltype(Out)>); file_size(p) == n) {
-    if (std::ifstream ifs(p, std::ios::binary); ifs) return void(ifs.read(reinterpret_cast<char*>(yw::data(Out)), n));
-    else throw std::runtime_error(std::format("runtime error in path::read : failed to open the file ({})", p.string()));
-  } else throw std::runtime_error(std::format("runtime error in path::read : the byte size of the output range is not equal to the file size ({})", p.string()));
+/// @brief reads the specified file and returns the byte array.
+inline array<nat1> read(const path& p) noexcept {
+  try { array<nat1> a(file_size(p), nat1{}); read(p, a); return a; }
+  catch (const std::exception& e) { log << "runtime error : yw::file::read : " << e.what(); return {}; }
 }
-array<nat1> read(const path& p) { array<nat1> a(file_size(p), nat1{}); read(p, a); return a; }
-void write(const path& p, cnt_range auto&& In) {
-  if (std::ofstream ofs(p, std::ios::binary); ofs) {
-    if (const auto n = yw::size(In) * sizeof(iter_value<decltype(In)>); ofs.write(reinterpret_cast<const char*>(yw::data(In)), n)) return;
-    else throw std::runtime_error(std::format("runtime error in path::write : failed to write to the file ({})", p.string()));
-  } else throw std::runtime_error(std::format("runtime error in path::write : failed to open the file ({})", p.string()));
+/// @brief writes the data of the input range to the specified file.
+inline void write(const path& p, cnt_range auto&& In) {
+  try {
+    if (std::ofstream ofs(p, std::ios::binary); ofs) {
+      if (const auto n = yw::size(In) * sizeof(iter_value<decltype(In)>); ofs.write(reinterpret_cast<const char*>(yw::data(In)), n)) return;
+      else throw std::runtime_error(std::format("failed to write to the file ({})", p.string()));
+    } else throw std::runtime_error(std::format("failed to open the file ({})", p.string()));
+  } catch (const std::exception& e) { log << "runtime error : yw::file::write : " << e.what(); }
 }
 inline constexpr auto canonical = [](const path& p) { return std::filesystem::canonical(p); };
 inline constexpr auto weakly_canonical = [](const path& p) { return std::filesystem::weakly_canonical(p); };
