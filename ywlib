@@ -410,11 +410,6 @@ template<typename... Ts> struct list : typepack<Ts...>::template fore<sizeof...(
   static constexpr nat count = sizeof...(Ts);
   using last_type = select_type<count - 1, Ts...>;
   last_type last;
-  template<same_extent<list> Tuple> constexpr operator Tuple() const
-    noexcept(nt_constructible<Tuple, add_const<Ts&>...>)
-    requires constructible<Tuple, add_const<Ts&>...> {
-    // return [&]() noexcept(nt_constructible<Tuple, add_const<Ts&>...>) { return Tuple{get<Ts>()...};} ///////////////////////////////////////////////////////////////
-  }
   template<nat I> constexpr auto get() & noexcept -> select_type<I, Ts...>& { if constexpr (I == count - 1) return last; else return base::template get<I>(); }
   template<nat I> constexpr auto get() const& noexcept -> add_const<select_type<I, Ts...>&> { if constexpr (I == count - 1) return last; else return base::template get<I>(); }
   template<nat I> constexpr auto get() && noexcept -> select_type<I, Ts...>&& { if constexpr (I == count - 1) return fwd<last_type>(last); else return fwd<select_type<I, Ts...>>(base::template get<I>()); }
@@ -835,8 +830,16 @@ inline void write(const path& p, cnt_range auto&& In) {
     } else throw std::runtime_error(std::format("failed to open the file ({})", p.string()));
   } catch (const std::exception& e) { log << "runtime error : yw::file::write : " << e.what(); }
 }
-inline constexpr auto canonical = [](const path& p) { return std::filesystem::canonical(p); };
-inline constexpr auto weakly_canonical = [](const path& p) { return std::filesystem::weakly_canonical(p); };
+/// @brief canonicalizes the specified path.
+inline constexpr auto canonical = [](const path& p) noexcept {
+  try { return std::filesystem::canonical(p); }
+  catch (const std::exception& e) { log << "runtime error : yw::file::canonical : " << e.what(); return path{}; }
+};
+/// @brief weakly canonicalizes the specified path.
+inline constexpr auto weakly_canonical = [](const path& p) noexcept {
+  try { return std::filesystem::weakly_canonical(p); }
+  catch (const std::exception& e) { log << "runtime error : yw::file::weakly_canonical : " << e.what(); return path{}; }
+};
 }
 
 namespace std {
@@ -2366,7 +2369,7 @@ public:
   stopwatch() noexcept : li{}, last{(::QueryPerformanceCounter(&li), li.QuadPart)} {}
   fat8 operator()() const noexcept { return *this; }
   operator fat8() const noexcept { return ::QueryPerformanceCounter(&li), (li.QuadPart - last) / freq; }
-  operator fat4() const noexcept { return float(operator fat8()); }
+  explicit operator fat4() const noexcept { return float(operator fat8()); }
   void reset() noexcept { ::QueryPerformanceCounter(&li), last = li.QuadPart; }
   fat8 split() noexcept { return ::QueryPerformanceCounter(&li), (li.QuadPart - exchange(last, li.QuadPart)) / freq; }
 };
@@ -2660,6 +2663,8 @@ inline const bool& outside = main::system::leave;
 
 LRESULT CALLBACK main::system::wndproc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
   static TRACKMOUSEEVENT tme{.cbSize = sizeof(TRACKMOUSEEVENT), .dwFlags = TME_LEAVE};
+  static auto keydown = [](WPARAM wp, LPARAM lp) {
+    if (key::keys[wp].changed() || !key::keys[wp].get() || !(lp & 0x40000000)) key::keys[wp].set(true); };
   if (userproc && userproc(hw, msg, wp, lp)) return 0;
   switch (msg) {
   case WM_MOUSEMOVE:
@@ -2673,23 +2678,23 @@ LRESULT CALLBACK main::system::wndproc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) 
   case WM_MOUSELEAVE:
     return leave = true, 0;
   case WM_KEYDOWN:
-    return key::keys[wp].set(true), 0;
+    return keydown(wp, lp), 0;
   case WM_KEYUP:
     return key::keys[wp].set(false), 0;
   case WM_LBUTTONDOWN:
-    return ::SetFocus(hwnd), key::keys[VK_LBUTTON].set(true), 0;
+    return ::SetFocus(hwnd), keydown(VK_LBUTTON, lp), 0;
   case WM_LBUTTONUP:
     return key::keys[VK_LBUTTON].set(false), 0;
   case WM_RBUTTONDOWN:
-    return ::SetFocus(hwnd), key::keys[VK_RBUTTON].set(true), 0;
+    return ::SetFocus(hwnd), keydown(VK_RBUTTON, lp), 0;
   case WM_RBUTTONUP:
     return key::keys[VK_RBUTTON].set(false), 0;
   case WM_MBUTTONDOWN:
-    return ::SetFocus(hwnd), key::keys[VK_MBUTTON].set(true), 0;
+    return ::SetFocus(hwnd), keydown(VK_MBUTTON, lp), 0;
   case WM_MBUTTONUP:
     return key::keys[VK_MBUTTON].set(false), 0;
   case WM_XBUTTONDOWN:
-    return ::SetFocus(hwnd), key::keys[GET_XBUTTON_WPARAM(wp) == XBUTTON1 ? VK_XBUTTON1 : VK_XBUTTON2].set(true), 0;
+    return ::SetFocus(hwnd), keydown(GET_XBUTTON_WPARAM(wp) == XBUTTON1 ? VK_XBUTTON1 : VK_XBUTTON2, lp), 0;
   case WM_XBUTTONUP:
     return key::keys[GET_XBUTTON_WPARAM(wp) == XBUTTON1 ? VK_XBUTTON1 : VK_XBUTTON2].set(false), 0;
   case WM_DROPFILES: {
@@ -2700,8 +2705,7 @@ LRESULT CALLBACK main::system::wndproc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) 
       UINT size = ::DragQueryFileW(hdrop, i, nullptr, 0);
       str2 file(size, L'\0');
       ::DragQueryFileW(hdrop, i, file.data(), size + 1);
-      temp[i] = mv(file);
-    }
+      temp[i] = mv(file); }
     return ::DragFinish(hdrop), dropped_files.set(mv(temp)), 0;
   }
   case WM_CLOSE:
@@ -2923,8 +2927,11 @@ inline MSG message{};
 }
 
 namespace main {
+inline const auto& d3d_device = system::d3d_device;
+inline const auto& d3d_context = system::d3d_context;
 inline const auto& d2d_device = system::d2d_device;
 inline const auto& d2d_context = system::d2d_context;
+inline const auto& d2d_factory = system::d2d_factory;
 inline const auto& dw_factory = system::dw_factory;
 inline const auto& wic_factory = system::wic_factory;
 inline const double& spf = system::spf;
@@ -2983,7 +2990,7 @@ inline void terminate() {
   system::termination = system::terminator{};
 }
 
-/// update the main window
+/// @brief updates the main window.
 inline constexpr caster update{[]() {
   static stopwatch sw{};
   if (system::swapchain) system::swapchain->Present(1, 0);
@@ -3039,6 +3046,25 @@ inline constexpr auto save_file = [](const path& Dir = {}, const path& Default =
 /// alignment
 enum class alignment {lefttop, top, righttop, left, center, right, leftbottom, bottom, rightbottom};
 
+/// @brief class to create a solid color brush object.
+class solid_brush {
+protected:
+  comptr<ID2D1SolidColorBrush> brush{};
+  void init(const rgb& Color) {
+    if (!main::d2d_context) throw std::runtime_error("runtime error : yw::solid_brush : Direct2D is not initialized");
+    if (!brush) tiff(main::d2d_context->CreateSolidColorBrush(reinterpret_cast<const D2D1_COLOR_F&>(Color), brush.init()));
+  }
+public:
+  solid_brush() noexcept = default;
+  explicit solid_brush(const rgb& Color) { init(Color); }
+  explicit operator bool() const noexcept { return bool(brush); }
+  operator ID2D1SolidColorBrush*() const noexcept { return brush; }
+  /// @brief resets the color of the brush
+  void color(const rgb& Color) { init(Color); }
+  /// @brief returns the color of the brush
+  rgb color() const { const auto c = brush->GetColor(); return reinterpret_cast<const rgb&>(c); }
+};
+
 /// text format to print plane text
 template<value Size, rgb Color, literal<cat2> Font = L"Yu Gothic UI", bool Bold = false> class text_format {
   static void init() {
@@ -3073,35 +3099,36 @@ public:
   static constexpr auto bold = Bold;
   constexpr text_format() noexcept = default;
   explicit operator bool() const noexcept { return true; }
-  /// return the geometry of the text; {0, 0, width, height}
+  /// return the geometry of the text; {width, height}
   static list<fat4, fat4> geometry(const string_view<cat2>& Text) {
     init();
     auto geometry = get_metrics(Text);
     return {geometry.first, geometry.second};
   }
-  /// return the geometry of the text which is located at the specified position
+  /// return the geometry of the text which is located at the specified position; {left, top, right, bottom}
   static vector geometry(const string_view<cat2>& Text, list<value, value> Point, alignment Align) {
     init();
     auto g = get_metrics(Text);
+    auto w = fat4(Point.first), h = fat4(Point.second);
     switch (Align) {
-    case alignment::lefttop: return {Point.first, Point.second. Point.first + g.first, Point.second + g.second};
-    case alignment::top: return {Point.first - g.first / 2, Point.second, Point.first + g.first / 2, Point.second + g.second};
-    case alignment::righttop: return {Point.first - g.first, Point.second, Point.first, Point.second + g.second};
-    case alignment::left: return {Point.first, Point.second - g.second / 2, Point.first + g.first, Point.second + g.second / 2};
-    case alignment::center: return {Point.first - g.first / 2, Point.second - g.second / 2, Point.first + g.first / 2, Point.second + g.second / 2};
-    case alignment::right: return {Point.first - g.first, Point.second - g.second / 2, Point.first, Point.second + g.second / 2};
-    case alignment::leftbottom: return {Point.first, Point.second - g.second, Point.first + g.first, Point.second};
-    case alignment::bottom: return {Point.first - g.first / 2, Point.second - g.second, Point.first + g.first / 2, Point.second};
-    case alignment::rightbottom: return {Point.first - g.first, Point.second - g.second, Point.first, Point.second};
+    case alignment::lefttop: return {w, h, w + g.first, h + g.second};
+    case alignment::top: return {w - g.first / 2, h, w + g.first / 2, h + g.second};
+    case alignment::righttop: return {w - g.first, h, w, h + g.second};
+    case alignment::left: return {w, h - g.second / 2, w + g.first, h + g.second / 2};
+    case alignment::center: return {w - g.first / 2, h - g.second / 2, w + g.first / 2, h + g.second / 2};
+    case alignment::right: return {w - g.first, h - g.second / 2, w, h + g.second / 2};
+    case alignment::leftbottom: return {w, h - g.second, w + g.first, h};
+    case alignment::bottom: return {w - g.first / 2, h - g.second, w + g.first / 2, h};
+    case alignment::rightbottom: return {w - g.first, h - g.second, w, h};
     default: return {};
     } }
-  /// print the text
-  static void print(const string_view<cat2>& Text, const vector& Rect) {
+  /// Draws the text
+  static void draw(const string_view<cat2>& Text, const vector& Rect) {
     init();
-    main::d2d_context->DrawTextW(Text.data(), Text.size(), dw_format, reinterpret_cast<const D2D1_RECT_F&>(Rect), d2d_brush);
+    main::d2d_context->DrawTextW(Text.data(), unsigned(Text.size()), dw_format, reinterpret_cast<const D2D1_RECT_F&>(Rect), d2d_brush);
   }
-  /// print the text
-  static void print(const string_view<cat2>& Text, const value Left, const value Top) {
+  /// Draws the text
+  static void draw(const string_view<cat2>& Text, const value Left, const value Top) {
     init();
     auto geometry = get_metrics(Text);
     auto rect = D2D1::RectF(fat4(Left), fat4(Top), fat4(Left) + geometry.first, fat4(Top) + geometry.second);
@@ -3109,5 +3136,34 @@ public:
   }
 };
 
+/// @brief class to create a path geometry object.
+class geometry {
+protected:
+  comptr<ID2D1PathGeometry> path{};
+  void init() { if (!path) tiff(main::d2d_factory->CreatePathGeometry(path.init())); }
+public:
+  geometry() noexcept = default;
+  geometry(const geometry&) = delete;
+  geometry(geometry&&) noexcept = default;
+  /// @brief draws the geometry
+  void draw(convertible_to<ID2D1SolidColorBrush*> auto&& Brush, const value Thickness = 1.0) const {
+    if (!path) throw std::runtime_error("runtime error : yw::geometry::draw : Path geometry is not initialized");
+    main::d2d_context->DrawGeometry(path, Brush, fat4(Thickness));
+  }
+  /// @brief fills the geometry
+  void fill(convertible_to<ID2D1SolidColorBrush*> auto&& Brush) const {
+    if (!path) throw std::runtime_error("runtime error : yw::geometry::fill : Path geometry is not initialized");
+    main::d2d_context->FillGeometry(path, Brush);
+  }
+  void add_line(const list<value, value>& Start, const list<value, value>& End) {
+    init();
+    comptr<ID2D1GeometrySink> sink;
+    tiff(path->Open(sink.init()));
+    sink->BeginFigure(D2D1::Point2F(fat4(Start.first), fat4(Start.second)), D2D1_FIGURE_BEGIN_FILLED);
+    sink->AddLine(D2D1::Point2F(fat4(End.first), fat4(End.second)));
+    sink->EndFigure(D2D1_FIGURE_END_OPEN);
+    sink->Close();
+  }
+};
 
 }
