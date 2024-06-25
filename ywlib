@@ -1,5 +1,5 @@
 /// @file ywlib
-/// @brief C++20 library for DirectX 12.
+/// C++20 library for DirectX 12.
 
 #pragma once
 // clang-format off
@@ -753,52 +753,52 @@ template<character Ct, nat N> literal(const Ct (&)[N]) -> literal<Ct>;
 
 using path = std::filesystem::path;
 
-/// @brief class for logging text; the text is written to a file when the object is destroyed.
+/// class for logging text; the text is written to a file when the object is destroyed.
 class logger {
   string<cat1> text;
   path file;
 public:
-  /// @brief constructs a logger object with the specified file name to write the text to.
+  /// constructs a logger object with the specified file name to write the text to.
   logger(const path& LogFileName) : file(LogFileName) {}
-  /// @brief saves the text to the file.
+  /// saves the text to the file.
   ~logger() { if (std::ofstream ofs(file, std::ios::app); ofs) ofs << text << std::endl; }
-  /// @brief appends the text to the logger object.
+  /// appends the text to the logger object.
   logger& operator<<(const string_view<cat1> s) { return (text += s) += "\n", *this; }
-  /// @brief outputs the text of the logger object to the specified output stream.
+  /// outputs the text of the logger object to the specified output stream.
   template<typename Tr> friend std::basic_ostream<cat1, Tr>& operator<<(std::basic_ostream<cat1, Tr>& os, const logger& l) { return os << l.text; }
 };
 
-/// @brief default logger object for ywlib
+/// default logger object for ywlib
 inline logger log("ywlib.log");
 }
 
 namespace yw::file {
-/// @brief checks if the specified path exists.
+/// checks if the specified path exists.
 inline constexpr auto exists = [](const path& p) noexcept -> bool {
   try { return std::filesystem::exists(p); }
   catch (const std::exception& e) { log << "runtime error : yw::file::exists : " << e.what(); }
 };
-/// @brief removes the specified path.
+/// removes the specified path.
 inline constexpr auto remove = [](const path& p) noexcept -> bool {
   try { return std::filesystem::remove(p); }
   catch (const std::exception& e) { log << "runtime error : yw::file::remove : " << e.what(); }
 };
-/// @brief checks if the specified path is a regular file.
+/// checks if the specified path is a regular file.
 inline constexpr auto is_file = [](const path& p) noexcept -> bool {
   try { return std::filesystem::is_regular_file(p); }
   catch (const std::exception& e) { log << "runtime error : yw::file::is_file : " << e.what(); }
 };
-/// @brief checks if the specified path is a directory.
+/// checks if the specified path is a directory.
 inline constexpr auto is_directory = [](const path& p) noexcept -> bool {
   try { return std::filesystem::is_directory(p); }
   catch (const std::exception& e) { log << "runtime error : yw::file::is_directory : " << e.what(); }
 };
-/// @brief returns the size of the specified file.
+/// returns the size of the specified file.
 inline constexpr auto size = [](const path& p) noexcept -> nat {
   try { return std::filesystem::file_size(p); }
   catch (const std::exception& e) { log << "runtime error : yw::file::size : " << e.what(); }
 };
-/// @brief returns the file list of the specified directory.
+/// returns the file list of the specified directory.
 inline constexpr auto list = [](const path& p, bool Recursive = false) noexcept -> array<path> {
   try { array<path> a;
         if (!file::exists(p)) throw  std::runtime_error(std::format("the path ({}) does not exist", p.string()));
@@ -808,7 +808,7 @@ inline constexpr auto list = [](const path& p, bool Recursive = false) noexcept 
         return a; }
   catch (const std::exception& e) { log << "runtime error : yw::file::list : " << e.what(); return {}; }
 };
-/// @brief reads the specified file and writes the data to the output range.
+/// reads the specified file and writes the data to the output range.
 inline void read(const path& p, cnt_range auto&& Out) noexcept requires (!is_const<decltype(yw::data(Out))>) {
   try { if (const auto n = yw::size(Out) * sizeof(iter_value<decltype(Out)>); file_size(p) == n) {
           if (std::ifstream ifs(p, std::ios::binary); ifs) return void(ifs.read(reinterpret_cast<char*>(yw::data(Out)), n));
@@ -816,12 +816,12 @@ inline void read(const path& p, cnt_range auto&& Out) noexcept requires (!is_con
         } else throw std::runtime_error(std::format("the byte size of the output range ({}) is not equal to the file size ({})", n, p.string()));
   } catch (const std::exception& e) { log << "runtime error : yw::file::read : " << e.what(); }
 }
-/// @brief reads the specified file and returns the byte array.
+/// reads the specified file and returns the byte array.
 inline array<nat1> read(const path& p) noexcept {
   try { array<nat1> a(file_size(p), nat1{}); read(p, a); return a; }
   catch (const std::exception& e) { log << "runtime error : yw::file::read : " << e.what(); return {}; }
 }
-/// @brief writes the data of the input range to the specified file.
+/// writes the data of the input range to the specified file.
 inline void write(const path& p, cnt_range auto&& In) {
   try {
     if (std::ofstream ofs(p, std::ios::binary); ofs) {
@@ -830,12 +830,12 @@ inline void write(const path& p, cnt_range auto&& In) {
     } else throw std::runtime_error(std::format("failed to open the file ({})", p.string()));
   } catch (const std::exception& e) { log << "runtime error : yw::file::write : " << e.what(); }
 }
-/// @brief canonicalizes the specified path.
+/// canonicalizes the specified path.
 inline constexpr auto canonical = [](const path& p) noexcept {
   try { return std::filesystem::canonical(p); }
   catch (const std::exception& e) { log << "runtime error : yw::file::canonical : " << e.what(); return path{}; }
 };
-/// @brief weakly canonicalizes the specified path.
+/// weakly canonicalizes the specified path.
 inline constexpr auto weakly_canonical = [](const path& p) noexcept {
   try { return std::filesystem::weakly_canonical(p); }
   catch (const std::exception& e) { log << "runtime error : yw::file::weakly_canonical : " << e.what(); return path{}; }
@@ -1846,13 +1846,16 @@ private:
   } };
 /// Calculate the Euler angles from a rotation matrix.
 inline constexpr t_xveuler xveuler;
+}
 
-struct vector;
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace yw {
+
 struct wector;
 struct rect;
-struct rgb;
-struct hsv;
 
+/// struct to represent a 4D vector.
 struct vector {
   float x{}, y{}, z{}, w{};
   constexpr vector() noexcept = default;
@@ -2169,19 +2172,85 @@ constexpr wector vector::to_wector() const noexcept {
   if (is_cev) return {fat8(x), fat8(y), fat8(z), fat8(w)};
   else return {xvcast<xwector>(*this)};
 }
+}
 
-struct rgb {
+namespace std {
+template<> struct tuple_size<yw::vector> : integral_constant<size_t, 4> {};
+template<size_t I> requires (I < 4) struct tuple_element<I, yw::vector> : type_identity<float> {};
+template<typename Ct> struct formatter<yw::vector, Ct> : formatter<basic_string<Ct>, Ct> {
+  using base = formatter<basic_string<Ct>, Ct>;
+  auto format(const yw::vector& v, auto& c) const {
+    if constexpr (same_as<Ct, char>) return base::format(format("({}, {}, {}, {})", v.x, v.y, v.z, v.w), c);
+    else return base::format(format(L"({}, {}, {}, {})", v.x, v.y, v.z, v.w), c); } };
+template<> struct tuple_size<yw::wector> : integral_constant<size_t, 4> {};
+template<size_t I> requires (I < 4) struct tuple_element<I, yw::wector> : type_identity<double> {};
+template<typename Ct> struct formatter<yw::wector, Ct> : formatter<basic_string<Ct>, Ct> {
+  using base = formatter<basic_string<Ct>, Ct>;
+  auto format(const yw::wector& v, auto& c) const {
+    if constexpr (same_as<Ct, char>) return base::format(format("({}, {}, {}, {})", v.x, v.y, v.z, v.w), c);
+    else return base::format(format(L"({}, {}, {}, {})", v.x, v.y, v.z, v.w), c); } };
+template<> struct tuple_size<yw::rect> : integral_constant<size_t, 4> {};
+template<size_t I> requires (I < 4) struct tuple_element<I, yw::rect> : type_identity<int> {};
+template<typename Ct> struct formatter<yw::rect, Ct> : formatter<basic_string<Ct>, Ct> {
+  using base = formatter<basic_string<Ct>, Ct>;
+  auto format(const yw::rect& r, auto& c) const {
+    if constexpr (same_as<Ct, char>) return base::format(format("({}, {}, {}, {})", r.left, r.top, r.right, r.bottom), c);
+    else return base::format(format(L"({}, {}, {}, {})", r.left, r.top, r.right, r.bottom), c); } };
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace yw {
+
+/// class to repreesnt a color in RGB format.
+struct color {
+  struct rgb;
+  struct hsv;
+  fat4 r = 0.f; // Red [0..1]
+  fat4 g = 0.f; // Blue [0..1]
+  fat4 b = 0.f; // Green [0..1]
+  fat4 a = 1.f; // Alpha [0..1]
+  constexpr color() noexcept = default;
+  constexpr color(const numerical auto R, const numerical auto G, const numerical auto B) noexcept : r(fat4(R)), g(fat4(G)), b(fat4(B)) {}
+  constexpr color(const numerical auto R, const numerical auto G, const numerical auto B, const numerical auto A) noexcept : r(fat4(R)), g(fat4(G)), b(fat4(B)), a(fat4(A)) {}
+  static const color black, dimgray, gray, darkgray, silver, lightgray, gainsboro, whitesmoke, white, snow, ghostwhite, floralwhite, linen, antiquewhite,
+    papayawhip, blanchedalmond, bisque, moccasin, navajowhite, peachpuff, mistyrose, lavenderblush, seashell, oldlace, ivory, honeydew, mintcream, azure,
+    aliceblue, lavender, lightsteelblue, lightslategray, slategray, steelblue, royalblue, midnightblue, navy, darkblue, mediumblue, blue, dodgerblue,
+    cornflowerblue, deepskyblue, lightskyblue, skyblue, lightblue, powderblue, paleturquoise, lightcyan, cyan, aqua, turquoise, mediumturquoise, darkturquoise,
+    lightseagreen, cadetblue, darkcyan, teal, darkslategray, darkgreen, green, forestgreen, seagreen, mediumseagreen, mediumaquamarine, darkseagreen, aquamarine,
+    palegreen, lightgreen, springgreen, mediumspringgreen, lawngreen, chartreuse, greenyellow, lime, limegreen, yellowgreen, darkolivegreen, olivedrab, olive,
+    darkkhaki, palegoldenrod, cornsilk, beige, lightyellow, lightgoldenrodyellow, lemonchiffon, wheat, burlywood, tan, khaki, yellow, gold, orange, sandybrown,
+    darkorange, goldenrod, peru, darkgoldenrod, chocolate, sienna, saddlebrown, maroon, darkred, brown, firebrick, indianred, rosybrown, darksalmon, lightcoral,
+    salmon, lightsalmon, coral, tomato, orangered, red, crimson, mediumvioletred, deeppink, hotpink, palevioletred, pink, lightpink, thistle, magenta, fuchsia,
+    violet, plum, orchid, mediumorchid, darkorchid, darkviolet, darkmagenta, purple, indigo, darkslateblue, blueviolet, mediumpurple, slateblue, mediumslateblue,
+    transparent, undefined, yw;
+  template<nat I> requires (I < 4) constexpr fat4& get() noexcept { return select_parameter<I>(r, g, b, a); }
+  template<nat I> requires (I < 4) constexpr fat4 get() const noexcept { return select_parameter<I>(r, g, b, a); }
+  template<typename Ct, typename Tr> friend auto& operator<<(std::basic_ostream<Ct, Tr>& os, const color& c) {
+    return os << "RGBA(" << c.r << ", " << c.g << ", " << c.b << ", " << c.a << ')';
+  }
+};
+
+/// class to repreesnt a color in RGB format.
+struct color::rgb {
   fat4 r = 0.f; // Red [0..1]
   fat4 g = 0.f; // Blue [0..1]
   fat4 b = 0.f; // Green [0..1]
   fat4 a = 1.f; // Alpha [0..1]
   constexpr rgb() noexcept = default;
+  constexpr rgb(const color& c) noexcept : r(c.r), g(c.g), b(c.b), a(c.a) {}
+  constexpr operator color() const noexcept { return {r, g, b, a}; }
   constexpr rgb(const numerical auto R, const numerical auto G, const numerical auto B) noexcept : r(fat4(R)), g(fat4(G)), b(fat4(B)) {}
   constexpr rgb(const numerical auto R, const numerical auto G, const numerical auto B, const numerical auto A) noexcept : r(fat4(R)), g(fat4(G)), b(fat4(B)), a(fat4(A)) {}
   explicit constexpr rgb(unsigned xRRGGBB, fat4 A = 1.f) noexcept : rgb(from_hex(xRRGGBB, A)) {}
   explicit constexpr operator unsigned() const noexcept { return to_hex(*this); }
   explicit rgb(const xvector& Xv) noexcept { _mm_storeu_ps(&r, Xv); }
   operator xvector() const noexcept { return xvload(&r); }
+  template<nat Ix> requires(Ix < 4) constexpr fat4& get() noexcept { return select_parameter<Ix>(r, g, b, a); }
+  template<nat Ix> requires(Ix < 4) constexpr fat4 get() const noexcept { return select_parameter<Ix>(r, g, b, a); }
+  template<typename Ct, typename Tr> friend auto& operator<<(std::basic_ostream<Ct, Tr>& os, const rgb& c) {
+    return os << "RGBA(" << c.r << ", " << c.g << ", " << c.b << ", " << c.a << ')';
+  }
 private:
   static constexpr rgb from_hex(const unsigned x, const fat4 A) noexcept {
     if constexpr (is_cev) return {fat4((0xff0000 & x) >> 16) / 255.f, fat4((0xff00 & x) >> 8) / 255.f, fat4(0xff & x) / 255.f, A};
@@ -2191,150 +2260,216 @@ private:
     if constexpr (is_cev) return (unsigned)(a.r * 255.f) << 16 | (unsigned)(a.g * 255.f) << 6 | (unsigned)(a.b * 255.f) | (unsigned)(a.a * 255.f) << 24;
     else return bitcast<unsigned>(_mm_cvtsi128_si32(_mm_shuffle_epi8(_mm_cvtps_epi32(xvmul(xvload(&a.r), xv_constant<255>)), xv_constant<0, 0, 0, 0x03020100>)));
   }
-public:
-  static const rgb black, dimgray, gray, darkgray, silver, lightgray, gainsboro, whitesmoke, white, snow, ghostwhite, floralwhite, linen, antiquewhite,
-    papayawhip, blanchedalmond, bisque, moccasin, navajowhite, peachpuff, mistyrose, lavenderblush, seashell, oldlace, ivory, honeydew, mintcream, azure,
-    aliceblue, lavender, lightsteelblue, lightslategray, slategray, steelblue, royalblue, midnightblue, navy, darkblue, mediumblue, blue, dodgerblue,
-    cornflowerblue, deepskyblue, lightskyblue, skyblue, lightblue, powderblue, paleturquoise, lightcyan, cyan, aqua, turquoise, mediumturquoise, darkturquoise,
-    lightseagreen, cadetblue, darkcyan, teal, darkslategray, darkgreen, green, forestgreen, seagreen, mediumseagreen, mediumaquamarine, darkseagreen, aquamarine,
-    palegreen, lightgreen, springgreen, mediumspringgreen, lawngreen, chartreuse, greenyellow, lime, limegreen, yellowgreen, darkolivegreen, olivedrab, olive,
-    darkkhaki, palegoldenrod, cornsilk, beige, lightyellow, lightgoldenrodyellow, lemonchiffon, wheat, burlywood, tan, khaki, yellow, gold, orange, sandybrown,
-    darkorange, goldenrod, peru, darkgoldenrod, chocolate, sienna, saddlebrown, maroon, darkred, brown, firebrick, indianred, rosybrown, darksalmon, lightcoral,
-    salmon, lightsalmon, coral, tomato, orangered, red, crimson, mediumvioletred, deeppink, hotpink, palevioletred, pink, lightpink, thistle, magenta, fuchsia,
-    violet, plum, orchid, mediumorchid, darkorchid, darkviolet, darkmagenta, purple, indigo, darkslateblue, blueviolet, mediumpurple, slateblue, mediumslateblue,
-    transparent, undefined, yw;
 };
 
-inline constexpr rgb rgb::black{0x000000}, rgb::dimgray{0x696969}, rgb::gray{0x808080}, rgb::darkgray{0xa9a9a9}, rgb::silver{0xc0c0c0},
-  rgb::lightgray{0xd3d3d3}, rgb::gainsboro{0xdcdcdc}, rgb::whitesmoke{0xf5f5f5}, rgb::white{0xffffff}, rgb::snow{0xfffafa}, rgb::ghostwhite{0xf8f8ff},
-  rgb::floralwhite{0xfffaf0}, rgb::linen{0xfaf0e6}, rgb::antiquewhite{0xfaebd7}, rgb::papayawhip{0xffefd5}, rgb::blanchedalmond{0xffebcd},
-  rgb::bisque{0xffe4c4}, rgb::moccasin{0xffe4b5}, rgb::navajowhite{0xffdead}, rgb::peachpuff{0xffdab9}, rgb::mistyrose{0xffe4e1}, rgb::lavenderblush{0xfff0f5},
-  rgb::seashell{0xfff5ee}, rgb::oldlace{0xfdf5e6}, rgb::ivory{0xfffff0}, rgb::honeydew{0xf0fff0}, rgb::mintcream{0xf5fffa}, rgb::azure{0xf0ffff},
-  rgb::aliceblue{0xf0f8ff}, rgb::lavender{0xe6e6fa}, rgb::lightsteelblue{0xb0c4de}, rgb::lightslategray{0x778899}, rgb::slategray{0x708090},
-  rgb::steelblue{0x4682b4}, rgb::royalblue{0x4169e1}, rgb::midnightblue{0x191970}, rgb::navy{0x000080}, rgb::darkblue{0x00008b}, rgb::mediumblue{0x0000cd},
-  rgb::blue{0x0000ff}, rgb::dodgerblue{0x1e90ff}, rgb::cornflowerblue{0x6495ed}, rgb::deepskyblue{0x00bfff}, rgb::lightskyblue{0x87cefa},
-  rgb::skyblue{0x87ceeb}, rgb::lightblue{0xadd8e6}, rgb::powderblue{0xb0e0e6}, rgb::paleturquoise{0xafeeee}, rgb::lightcyan{0xe0ffff}, rgb::cyan{0x00ffff},
-  rgb::aqua{0x00ffff}, rgb::turquoise{0x40e0d0}, rgb::mediumturquoise{0x48d1cc}, rgb::darkturquoise{0x00ced1}, rgb::lightseagreen{0x20b2aa},
-  rgb::cadetblue{0x5f9ea0}, rgb::darkcyan{0x008b8b}, rgb::teal{0x008080}, rgb::darkslategray{0x2f4f4f}, rgb::darkgreen{0x006400}, rgb::green{0x008000},
-  rgb::forestgreen{0x228b22}, rgb::seagreen{0x2e8b57}, rgb::mediumseagreen{0x3cb371}, rgb::mediumaquamarine{0x66cdaa}, rgb::darkseagreen{0x8fbc8f},
-  rgb::aquamarine{0x7fffd4}, rgb::palegreen{0x98fb98}, rgb::lightgreen{0x90ee90}, rgb::springgreen{0x00ff7f}, rgb::mediumspringgreen{0x00fa9a},
-  rgb::lawngreen{0x7cfc00}, rgb::chartreuse{0x7fff00}, rgb::greenyellow{0xadff2f}, rgb::lime{0x00ff00}, rgb::limegreen{0x32cd32}, rgb::yellowgreen{0x9acd32},
-  rgb::darkolivegreen{0x556b2f}, rgb::olivedrab{0x6b8e23}, rgb::olive{0x808000}, rgb::darkkhaki{0xbdb76b}, rgb::palegoldenrod{0xeee8aa},
-  rgb::cornsilk{0xfff8dc}, rgb::beige{0xf5f5dc}, rgb::lightyellow{0xffffe0}, rgb::lightgoldenrodyellow{0xfafad2}, rgb::lemonchiffon{0xfffacd},
-  rgb::wheat{0xf5deb3}, rgb::burlywood{0xdeb887}, rgb::tan{0xd2b48c}, rgb::khaki{0xf0e68c}, rgb::yellow{0xffff00}, rgb::gold{0xffd700}, rgb::orange{0xffa500},
-  rgb::sandybrown{0xf4a460}, rgb::darkorange{0xff8c00}, rgb::goldenrod{0xdaa520}, rgb::peru{0xcd853f}, rgb::darkgoldenrod{0xb8860b}, rgb::chocolate{0xd2691e},
-  rgb::sienna{0xa0522d}, rgb::saddlebrown{0x8b4513}, rgb::maroon{0x800000}, rgb::darkred{0x8b0000}, rgb::brown{0xa52a2a}, rgb::firebrick{0xb22222},
-  rgb::indianred{0xcd5c5c}, rgb::rosybrown{0xbc8f8f}, rgb::darksalmon{0xe9967a}, rgb::lightcoral{0xf08080}, rgb::salmon{0xfa8072}, rgb::lightsalmon{0xffa07a},
-  rgb::coral{0xff7f50}, rgb::tomato{0xff6347}, rgb::orangered{0xff4500}, rgb::red{0xff0000}, rgb::crimson{0xdc143c}, rgb::mediumvioletred{0xc71585},
-  rgb::deeppink{0xff1493}, rgb::hotpink{0xff69b4}, rgb::palevioletred{0xdb7093}, rgb::pink{0xffc0cb}, rgb::lightpink{0xffb6c1}, rgb::thistle{0xd8bfd8},
-  rgb::magenta{0xff00ff}, rgb::fuchsia{0xff00ff}, rgb::violet{0xee82ee}, rgb::plum{0xdda0dd}, rgb::orchid{0xda70d6}, rgb::mediumorchid{0xba55d3},
-  rgb::darkorchid{0x9932cc}, rgb::darkviolet{0x9400d3}, rgb::darkmagenta{0x8b008b}, rgb::purple{0x800080}, rgb::indigo{0x4b0082}, rgb::darkslateblue{0x483d8b},
-  rgb::blueviolet{0x8a2be2}, rgb::mediumpurple{0x9370db}, rgb::slateblue{0x6a5acd}, rgb::mediumslateblue{0x7b68ee},
-  rgb::transparent = rgb(0x0, 0.0f), rgb::undefined = rgb(0x0, -1.f), rgb::yw{0x081020};
-
-struct hsv {
+/// class to repreesnt a color in HSV format.
+struct color::hsv {
   fat4 h = 0.f; // Hue [0..1]
-  fat4 s = 0.f; // Chroma [0..1]
-  fat4 v = 0.f; // Brightness [0..1]
+  fat4 s = 0.f; // Saturation [0..1]
+  fat4 v = 0.f; // Chroma [0..1]
   fat4 a = 1.f; // Alpha [0..1]
   constexpr hsv() noexcept = default;
+  constexpr hsv(const color& c) noexcept : hsv(from_rgb(c)) {}
+  constexpr operator color() const noexcept { return to_rgb(*this); }
+  explicit constexpr hsv(const rgb& RGB) noexcept : hsv(from_rgb(RGB)) {}
+  explicit constexpr operator rgb() const noexcept { return to_rgb(*this); }
   constexpr hsv(const numerical auto H, const numerical auto S, const numerical auto V) noexcept : h(fat4(H)), s(fat4(S)), v(fat4(V)) {}
   constexpr hsv(const numerical auto H, const numerical auto S, const numerical auto V, const numerical auto A) noexcept : h(fat4(H)), s(fat4(S)), v(fat4(V)), a(fat4(A)) {}
-  explicit constexpr hsv(const rgb& Rgb) noexcept {
-    auto min = yw::mini(Rgb.r, Rgb.g, Rgb.b);
-    v = yw::max(Rgb.r, Rgb.g, Rgb.b);
-    if (v == min.second) h = 0.f, s = 0.f;
-    else if (min.first == 0) s = v - min.second, h = cev(1.0f / 6.0f) * ((Rgb.b - Rgb.g) / s + 3.f);
-    else if (min.first == 1) s = v - min.second, h = cev(1.0f / 6.0f) * ((Rgb.r - Rgb.b) / s + 5.f);
-    else s = v - min.second, h = cev(1.0f / 6.0f) * ((Rgb.g - Rgb.r) / s + 1.f);
+
+private:
+  static constexpr rgb to_rgb(const hsv& HSV) noexcept {
+    if (HSV.s == 0.f) return rgb(HSV.v, HSV.v, HSV.v, HSV.a);
+    else if (HSV.h < 0.5f) {
+      if      (cev(2 / 6.f) < HSV.h) return rgb(HSV.v - HSV.s, HSV.v, HSV.v - 3 * HSV.s + 6 * HSV.h * HSV.s, HSV.a);
+      else if (cev(1 / 6.f) < HSV.h) return rgb(HSV.v + HSV.s - 6 * HSV.h * HSV.s, HSV.v, HSV.v - HSV.s, HSV.a);
+      else if (cev(0 / 6.f) < HSV.h) return rgb(HSV.v, HSV.v - HSV.s + 6 * HSV.h * HSV.s, HSV.v - HSV.s, HSV.a);
+      else return rgb(0.f, 0.f, 0.f, HSV.a);
+    } else {
+      if      (HSV.h < cev(4.f / 6.f)) return rgb(HSV.v - HSV.s, HSV.v + 3 * HSV.s - 6 * HSV.h * HSV.s, HSV.v, HSV.a);
+      else if (HSV.h < cev(5.f / 6.f)) return rgb(HSV.v - 5 * HSV.s + 6 * HSV.h * HSV.s, HSV.v - HSV.s, HSV.v, HSV.a);
+      else if (HSV.h < 1.f)            return rgb(HSV.v, HSV.v - HSV.s, HSV.v + 5 * HSV.s - 6 * HSV.h * HSV.s, HSV.a);
+      else return rgb(0.f, 0.f, 0.f, HSV.a);
+    }
   }
-  explicit constexpr operator rgb() const noexcept {
-    if (s == 0.f) return rgb(v, v, v, a);
-    if (h < 0) return rgb(0.f, 0.f, 0.f, a);
-    else if (h < 0.5f) { if      (h < cev(1.f / 6.f)) return rgb(v, v - s + 6 * h * s, v - s, a);
-                         else if (h < cev(2.f / 6.f)) return rgb(v + s - 6 * h * s, v, v - s, a);
-                         else                         return rgb(v - s, v, v - 3 * s + 6 * h * s, a); }
-    else               { if      (h < cev(4.f / 6.f)) return rgb(v - s, v + 3 * s - 6 * h * s, v, a);
-                         else if (h < cev(5.f / 6.f)) return rgb(v - 5 * s + 6 * h * s, v - s, v, a);
-                         else if (h < 1.f)            return rgb(v, v - s, v + 5 * s - 6 * h * s, a);
-                         else                         return rgb(0.f, 0.f, 0.f, a); }
+  static constexpr hsv from_rgb(const rgb& RGB) noexcept {
+    auto min = yw::mini(RGB.r, RGB.g, RGB.b);
+    if (fat4 v = yw::max(RGB.r, RGB.g, RGB.b); v == min.second) return {0.f, 0.f, v, RGB.a};
+    else if (fat4 s = v - min.second; min.first == 0) return {cev(1.0f / 6.0f) * ((RGB.b - RGB.g) / s + 3.f), s, v, RGB.a};
+    else if (min.first == 1) return {cev(1.0f / 6.0f) * ((RGB.r - RGB.b) / s + 5.f), s, v, RGB.a};
+    else return {cev(1.0f / 6.0f) * ((RGB.g - RGB.r) / s + 1.f), s, v, RGB.a};
   }
-  static const hsv black, dimgray, gray, darkgray, silver, lightgray, gainsboro, whitesmoke, white, snow, ghostwhite, floralwhite, linen, antiquewhite,
-    papayawhip, blanchedalmond, bisque, moccasin, navajowhite, peachpuff, mistyrose, lavenderblush, seashell, oldlace, ivory, honeydew, mintcream, azure,
-    aliceblue, lavender, lightsteelblue, lightslategray, slategray, steelblue, royalblue, midnightblue, navy, darkblue, mediumblue, blue, dodgerblue,
-    cornflowerblue, deepskyblue, lightskyblue, skyblue, lightblue, powderblue, paleturquoise, lightcyan, cyan, aqua, turquoise, mediumturquoise, darkturquoise,
-    lightseagreen, cadetblue, darkcyan, teal, darkslategray, darkgreen, green, forestgreen, seagreen, mediumseagreen, mediumaquamarine, darkseagreen, aquamarine,
-    palegreen, lightgreen, springgreen, mediumspringgreen, lawngreen, chartreuse, greenyellow, lime, limegreen, yellowgreen, darkolivegreen, olivedrab, olive,
-    darkkhaki, palegoldenrod, cornsilk, beige, lightyellow, lightgoldenrodyellow, lemonchiffon, wheat, burlywood, tan, khaki, yellow, gold, orange, sandybrown,
-    darkorange, goldenrod, peru, darkgoldenrod, chocolate, sienna, saddlebrown, maroon, darkred, brown, firebrick, indianred, rosybrown, darksalmon, lightcoral,
-    salmon, lightsalmon, coral, tomato, orangered, red, crimson, mediumvioletred, deeppink, hotpink, palevioletred, pink, lightpink, thistle, magenta, fuchsia,
-    violet, plum, orchid, mediumorchid, darkorchid, darkviolet, darkmagenta, purple, indigo, darkslateblue, blueviolet, mediumpurple, slateblue, mediumslateblue,
-    transparent, undefined, yw;
 };
 
-inline constexpr hsv hsv::black{hsv(rgb::black)}, hsv::dimgray{hsv(rgb::dimgray)}, hsv::gray{hsv(rgb::gray)}, hsv::darkgray{hsv(rgb::darkgray)},
-  hsv::silver{hsv(rgb::silver)}, hsv::lightgray{hsv(rgb::lightgray)}, hsv::gainsboro{hsv(rgb::gainsboro)}, hsv::whitesmoke{hsv(rgb::whitesmoke)},
-  hsv::white{hsv(rgb::white)}, hsv::snow{hsv(rgb::snow)}, hsv::ghostwhite{hsv(rgb::ghostwhite)}, hsv::floralwhite{hsv(rgb::floralwhite)},
-  hsv::linen{hsv(rgb::linen)}, hsv::antiquewhite{hsv(rgb::antiquewhite)}, hsv::papayawhip{hsv(rgb::papayawhip)}, hsv::blanchedalmond{hsv(rgb::blanchedalmond)},
-  hsv::bisque{hsv(rgb::bisque)}, hsv::moccasin{hsv(rgb::moccasin)}, hsv::navajowhite{hsv(rgb::navajowhite)}, hsv::peachpuff{hsv(rgb::peachpuff)},
-  hsv::mistyrose{hsv(rgb::mistyrose)}, hsv::lavenderblush{hsv(rgb::lavenderblush)}, hsv::seashell{hsv(rgb::seashell)}, hsv::oldlace{hsv(rgb::oldlace)},
-  hsv::ivory{hsv(rgb::ivory)}, hsv::honeydew{hsv(rgb::honeydew)}, hsv::mintcream{hsv(rgb::mintcream)}, hsv::azure{hsv(rgb::azure)},
-  hsv::aliceblue{hsv(rgb::aliceblue)}, hsv::lavender{hsv(rgb::lavender)}, hsv::lightsteelblue{hsv(rgb::lightsteelblue)},
-  hsv::lightslategray{hsv(rgb::lightslategray)}, hsv::slategray{hsv(rgb::slategray)}, hsv::steelblue{hsv(rgb::steelblue)}, hsv::royalblue{hsv(rgb::royalblue)},
-  hsv::midnightblue{hsv(rgb::midnightblue)}, hsv::navy{hsv(rgb::navy)}, hsv::darkblue{hsv(rgb::darkblue)}, hsv::mediumblue{hsv(rgb::mediumblue)},
-  hsv::blue{hsv(rgb::blue)}, hsv::dodgerblue{hsv(rgb::dodgerblue)}, hsv::cornflowerblue{hsv(rgb::cornflowerblue)}, hsv::deepskyblue{hsv(rgb::deepskyblue)},
-  hsv::lightskyblue{hsv(rgb::lightskyblue)}, hsv::skyblue{hsv(rgb::skyblue)}, hsv::lightblue{hsv(rgb::lightblue)}, hsv::powderblue{hsv(rgb::powderblue)},
-  hsv::paleturquoise{hsv(rgb::paleturquoise)}, hsv::lightcyan{hsv(rgb::lightcyan)}, hsv::cyan{hsv(rgb::cyan)}, hsv::aqua{hsv(rgb::aqua)},
-  hsv::turquoise{hsv(rgb::turquoise)}, hsv::mediumturquoise{hsv(rgb::mediumturquoise)}, hsv::darkturquoise{hsv(rgb::darkturquoise)},
-  hsv::lightseagreen{hsv(rgb::lightseagreen)}, hsv::cadetblue{hsv(rgb::cadetblue)}, hsv::darkcyan{hsv(rgb::darkcyan)}, hsv::teal{hsv(rgb::teal)},
-  hsv::darkslategray{hsv(rgb::darkslategray)}, hsv::darkgreen{hsv(rgb::darkgreen)}, hsv::green{hsv(rgb::green)}, hsv::forestgreen{hsv(rgb::forestgreen)},
-  hsv::seagreen{hsv(rgb::seagreen)}, hsv::mediumseagreen{hsv(rgb::mediumseagreen)}, hsv::mediumaquamarine{hsv(rgb::mediumaquamarine)},
-  hsv::darkseagreen{hsv(rgb::darkseagreen)}, hsv::aquamarine{hsv(rgb::aquamarine)}, hsv::palegreen{hsv(rgb::palegreen)}, hsv::lightgreen{hsv(rgb::lightgreen)},
-  hsv::springgreen{hsv(rgb::springgreen)}, hsv::mediumspringgreen{hsv(rgb::mediumspringgreen)}, hsv::lawngreen{hsv(rgb::lawngreen)},
-  hsv::chartreuse{hsv(rgb::chartreuse)}, hsv::greenyellow{hsv(rgb::greenyellow)}, hsv::lime{hsv(rgb::lime)}, hsv::limegreen{hsv(rgb::limegreen)},
-  hsv::yellowgreen{hsv(rgb::yellowgreen)}, hsv::darkolivegreen{hsv(rgb::darkolivegreen)}, hsv::olivedrab{hsv(rgb::olivedrab)}, hsv::olive{hsv(rgb::olive)},
-  hsv::darkkhaki{hsv(rgb::darkkhaki)}, hsv::palegoldenrod{hsv(rgb::palegoldenrod)}, hsv::cornsilk{hsv(rgb::cornsilk)}, hsv::beige{hsv(rgb::beige)},
-  hsv::lightyellow{hsv(rgb::lightyellow)}, hsv::lightgoldenrodyellow{hsv(rgb::lightgoldenrodyellow)}, hsv::lemonchiffon{hsv(rgb::lemonchiffon)},
-  hsv::wheat{hsv(rgb::wheat)}, hsv::burlywood{hsv(rgb::burlywood)}, hsv::tan{hsv(rgb::tan)}, hsv::khaki{hsv(rgb::khaki)}, hsv::yellow{hsv(rgb::yellow)},
-  hsv::gold{hsv(rgb::gold)}, hsv::orange{hsv(rgb::orange)}, hsv::sandybrown{hsv(rgb::sandybrown)}, hsv::darkorange{hsv(rgb::darkorange)},
-  hsv::goldenrod{hsv(rgb::goldenrod)}, hsv::peru{hsv(rgb::peru)}, hsv::darkgoldenrod{hsv(rgb::darkgoldenrod)}, hsv::chocolate{hsv(rgb::chocolate)},
-  hsv::sienna{hsv(rgb::sienna)}, hsv::saddlebrown{hsv(rgb::saddlebrown)}, hsv::maroon{hsv(rgb::maroon)}, hsv::darkred{hsv(rgb::darkred)},
-  hsv::brown{hsv(rgb::brown)}, hsv::firebrick{hsv(rgb::firebrick)}, hsv::indianred{hsv(rgb::indianred)}, hsv::rosybrown{hsv(rgb::rosybrown)},
-  hsv::darksalmon{hsv(rgb::darksalmon)}, hsv::lightcoral{hsv(rgb::lightcoral)}, hsv::salmon{hsv(rgb::salmon)}, hsv::lightsalmon{hsv(rgb::lightsalmon)},
-  hsv::coral{hsv(rgb::coral)}, hsv::tomato{hsv(rgb::tomato)}, hsv::orangered{hsv(rgb::orangered)}, hsv::red{hsv(rgb::red)}, hsv::crimson{hsv(rgb::crimson)},
-  hsv::mediumvioletred{hsv(rgb::mediumvioletred)}, hsv::deeppink{hsv(rgb::deeppink)}, hsv::hotpink{hsv(rgb::hotpink)},
-  hsv::palevioletred{hsv(rgb::palevioletred)}, hsv::pink{hsv(rgb::pink)}, hsv::lightpink{hsv(rgb::lightpink)}, hsv::thistle{hsv(rgb::thistle)},
-  hsv::magenta{hsv(rgb::magenta)}, hsv::fuchsia{hsv(rgb::fuchsia)}, hsv::violet{hsv(rgb::violet)}, hsv::plum{hsv(rgb::plum)}, hsv::orchid{hsv(rgb::orchid)},
-  hsv::mediumorchid{hsv(rgb::mediumorchid)}, hsv::darkorchid{hsv(rgb::darkorchid)}, hsv::darkviolet{hsv(rgb::darkviolet)},
-  hsv::darkmagenta{hsv(rgb::darkmagenta)}, hsv::purple{hsv(rgb::purple)}, hsv::indigo{hsv(rgb::indigo)}, hsv::darkslateblue{hsv(rgb::darkslateblue)},
-  hsv::blueviolet{hsv(rgb::blueviolet)}, hsv::mediumpurple{hsv(rgb::mediumpurple)}, hsv::slateblue{hsv(rgb::slateblue)},
-  hsv::mediumslateblue{hsv(rgb::mediumslateblue)}, hsv::transparent{hsv(rgb::transparent)}, hsv::undefined{hsv(rgb::undefined)}, hsv::yw{hsv(rgb::yw)};
+inline constexpr color color::black = color::rgb(0x000000);
+inline constexpr color color::dimgray = color::rgb(0x696969);
+inline constexpr color color::gray = color::rgb(0x808080);
+inline constexpr color color::darkgray = color::rgb(0xa9a9a9);
+inline constexpr color color::silver = color::rgb(0xc0c0c0);
+inline constexpr color color::lightgray = color::rgb(0xd3d3d3);
+inline constexpr color color::gainsboro = color::rgb(0xdcdcdc);
+inline constexpr color color::whitesmoke = color::rgb(0xf5f5f5);
+inline constexpr color color::white = color::rgb(0xffffff);
+inline constexpr color color::snow = color::rgb(0xfffafa);
+inline constexpr color color::ghostwhite = color::rgb(0xf8f8ff);
+inline constexpr color color::floralwhite = color::rgb(0xfffaf0);
+inline constexpr color color::linen = color::rgb(0xfaf0e6);
+inline constexpr color color::antiquewhite = color::rgb(0xfaebd7);
+inline constexpr color color::papayawhip = color::rgb(0xffefd5);
+inline constexpr color color::blanchedalmond = color::rgb(0xffebcd);
+inline constexpr color color::bisque = color::rgb(0xffe4c4);
+inline constexpr color color::moccasin = color::rgb(0xffe4b5);
+inline constexpr color color::navajowhite = color::rgb(0xffdead);
+inline constexpr color color::peachpuff = color::rgb(0xffdab9);
+inline constexpr color color::mistyrose = color::rgb(0xffe4e1);
+inline constexpr color color::lavenderblush = color::rgb(0xfff0f5);
+inline constexpr color color::seashell = color::rgb(0xfff5ee);
+inline constexpr color color::oldlace = color::rgb(0xfdf5e6);
+inline constexpr color color::ivory = color::rgb(0xfffff0);
+inline constexpr color color::honeydew = color::rgb(0xf0fff0);
+inline constexpr color color::mintcream = color::rgb(0xf5fffa);
+inline constexpr color color::azure = color::rgb(0xf0ffff);
+inline constexpr color color::aliceblue = color::rgb(0xf0f8ff);
+inline constexpr color color::lavender = color::rgb(0xe6e6fa);
+inline constexpr color color::lightsteelblue = color::rgb(0xb0c4de);
+inline constexpr color color::lightslategray = color::rgb(0x778899);
+inline constexpr color color::slategray = color::rgb(0x708090);
+inline constexpr color color::steelblue = color::rgb(0x4682b4);
+inline constexpr color color::royalblue = color::rgb(0x4169e1);
+inline constexpr color color::midnightblue = color::rgb(0x191970);
+inline constexpr color color::navy = color::rgb(0x000080);
+inline constexpr color color::darkblue = color::rgb(0x00008b);
+inline constexpr color color::mediumblue = color::rgb(0x0000cd);
+inline constexpr color color::blue = color::rgb(0x0000ff);
+inline constexpr color color::dodgerblue = color::rgb(0x1e90ff);
+inline constexpr color color::cornflowerblue = color::rgb(0x6495ed);
+inline constexpr color color::deepskyblue = color::rgb(0x00bfff);
+inline constexpr color color::lightskyblue = color::rgb(0x87cefa);
+inline constexpr color color::skyblue = color::rgb(0x87ceeb);
+inline constexpr color color::lightblue = color::rgb(0xadd8e6);
+inline constexpr color color::powderblue = color::rgb(0xb0e0e6);
+inline constexpr color color::paleturquoise = color::rgb(0xafeeee);
+inline constexpr color color::lightcyan = color::rgb(0xe0ffff);
+inline constexpr color color::cyan = color::rgb(0x00ffff);
+inline constexpr color color::aqua = color::rgb(0x00ffff);
+inline constexpr color color::turquoise = color::rgb(0x40e0d0);
+inline constexpr color color::mediumturquoise = color::rgb(0x48d1cc);
+inline constexpr color color::darkturquoise = color::rgb(0x00ced1);
+inline constexpr color color::lightseagreen = color::rgb(0x20b2aa);
+inline constexpr color color::cadetblue = color::rgb(0x5f9ea0);
+inline constexpr color color::darkcyan = color::rgb(0x008b8b);
+inline constexpr color color::teal = color::rgb(0x008080);
+inline constexpr color color::darkslategray = color::rgb(0x2f4f4f);
+inline constexpr color color::darkgreen = color::rgb(0x006400);
+inline constexpr color color::green = color::rgb(0x008000);
+inline constexpr color color::forestgreen = color::rgb(0x228b22);
+inline constexpr color color::seagreen = color::rgb(0x2e8b57);
+inline constexpr color color::mediumseagreen = color::rgb(0x3cb371);
+inline constexpr color color::mediumaquamarine = color::rgb(0x66cdaa);
+inline constexpr color color::darkseagreen = color::rgb(0x8fbc8f);
+inline constexpr color color::aquamarine = color::rgb(0x7fffd4);
+inline constexpr color color::palegreen = color::rgb(0x98fb98);
+inline constexpr color color::lightgreen = color::rgb(0x90ee90);
+inline constexpr color color::springgreen = color::rgb(0x00ff7f);
+inline constexpr color color::mediumspringgreen = color::rgb(0x00fa9a);
+inline constexpr color color::lawngreen = color::rgb(0x7cfc00);
+inline constexpr color color::chartreuse = color::rgb(0x7fff00);
+inline constexpr color color::greenyellow = color::rgb(0xadff2f);
+inline constexpr color color::lime = color::rgb(0x00ff00);
+inline constexpr color color::limegreen = color::rgb(0x32cd32);
+inline constexpr color color::yellowgreen = color::rgb(0x9acd32);
+inline constexpr color color::darkolivegreen = color::rgb(0x556b2f);
+inline constexpr color color::olivedrab = color::rgb(0x6b8e23);
+inline constexpr color color::olive = color::rgb(0x808000);
+inline constexpr color color::darkkhaki = color::rgb(0xbdb76b);
+inline constexpr color color::palegoldenrod = color::rgb(0xeee8aa);
+inline constexpr color color::cornsilk = color::rgb(0xfff8dc);
+inline constexpr color color::beige = color::rgb(0xf5f5dc);
+inline constexpr color color::lightyellow = color::rgb(0xffffe0);
+inline constexpr color color::lightgoldenrodyellow = color::rgb(0xfafad2);
+inline constexpr color color::lemonchiffon = color::rgb(0xfffacd);
+inline constexpr color color::wheat = color::rgb(0xf5deb3);
+inline constexpr color color::burlywood = color::rgb(0xdeb887);
+inline constexpr color color::tan = color::rgb(0xd2b48c);
+inline constexpr color color::khaki = color::rgb(0xf0e68c);
+inline constexpr color color::yellow = color::rgb(0xffff00);
+inline constexpr color color::gold = color::rgb(0xffd700);
+inline constexpr color color::orange = color::rgb(0xffa500);
+inline constexpr color color::sandybrown = color::rgb(0xf4a460);
+inline constexpr color color::darkorange = color::rgb(0xff8c00);
+inline constexpr color color::goldenrod = color::rgb(0xdaa520);
+inline constexpr color color::peru = color::rgb(0xcd853f);
+inline constexpr color color::darkgoldenrod = color::rgb(0xb8860b);
+inline constexpr color color::chocolate = color::rgb(0xd2691e);
+inline constexpr color color::sienna = color::rgb(0xa0522d);
+inline constexpr color color::saddlebrown = color::rgb(0x8b4513);
+inline constexpr color color::maroon = color::rgb(0x800000);
+inline constexpr color color::darkred = color::rgb(0x8b0000);
+inline constexpr color color::brown = color::rgb(0xa52a2a);
+inline constexpr color color::firebrick = color::rgb(0xb22222);
+inline constexpr color color::indianred = color::rgb(0xcd5c5c);
+inline constexpr color color::rosybrown = color::rgb(0xbc8f8f);
+inline constexpr color color::darksalmon = color::rgb(0xe9967a);
+inline constexpr color color::lightcoral = color::rgb(0xf08080);
+inline constexpr color color::salmon = color::rgb(0xfa8072);
+inline constexpr color color::lightsalmon = color::rgb(0xffa07a);
+inline constexpr color color::coral = color::rgb(0xff7f50);
+inline constexpr color color::tomato = color::rgb(0xff6347);
+inline constexpr color color::orangered = color::rgb(0xff4500);
+inline constexpr color color::red = color::rgb(0xff0000);
+inline constexpr color color::crimson = color::rgb(0xdc143c);
+inline constexpr color color::mediumvioletred = color::rgb(0xc71585);
+inline constexpr color color::deeppink = color::rgb(0xff1493);
+inline constexpr color color::hotpink = color::rgb(0xff69b4);
+inline constexpr color color::palevioletred = color::rgb(0xdb7093);
+inline constexpr color color::pink = color::rgb(0xffc0cb);
+inline constexpr color color::lightpink = color::rgb(0xffb6c1);
+inline constexpr color color::thistle = color::rgb(0xd8bfd8);
+inline constexpr color color::magenta = color::rgb(0xff00ff);
+inline constexpr color color::fuchsia = color::rgb(0xff00ff);
+inline constexpr color color::violet = color::rgb(0xee82ee);
+inline constexpr color color::plum = color::rgb(0xdda0dd);
+inline constexpr color color::orchid = color::rgb(0xda70d6);
+inline constexpr color color::mediumorchid = color::rgb(0xba55d3);
+inline constexpr color color::darkorchid = color::rgb(0x9932cc);
+inline constexpr color color::darkviolet = color::rgb(0x9400d3);
+inline constexpr color color::darkmagenta = color::rgb(0x8b008b);
+inline constexpr color color::purple = color::rgb(0x800080);
+inline constexpr color color::indigo = color::rgb(0x4b0082);
+inline constexpr color color::darkslateblue = color::rgb(0x483d8b);
+inline constexpr color color::blueviolet = color::rgb(0x8a2be2);
+inline constexpr color color::mediumpurple = color::rgb(0x9370db);
+inline constexpr color color::slateblue = color::rgb(0x6a5acd);
+inline constexpr color color::mediumslateblue = color::rgb(0x7b68ee);
+inline constexpr color color::transparent = color::rgb(0x00000000);
+inline constexpr color color::undefined = color(0, 0, 0, -1);
+inline constexpr color color::yw = color::rgb(0x081020);
 }
 
 namespace std {
-template<> struct tuple_size<yw::vector> : integral_constant<size_t, 4> {};
-template<size_t I> requires (I < 4) struct tuple_element<I, yw::vector> : type_identity<float> {};
-template<> struct formatter<yw::vector, char> : formatter<string, char> {
-  auto format(const yw::vector& v, auto& c) const { return formatter<string, char>::format(std::format("({}, {}, {}, {})", v.x, v.y, v.z, v.w), c); } };
-template<> struct formatter<yw::vector, wchar_t> : formatter<wstring, wchar_t> {
-  auto format(const yw::vector& v, auto& c) const { return formatter<wstring, wchar_t>::format(std::format(L"({}, {}, {}, {})", v.x, v.y, v.z, v.w), c); } };
-template<> struct tuple_size<yw::rgb> : integral_constant<size_t, 4> {};
-template<size_t I> requires (I < 4) struct tuple_element<I, yw::rgb> : type_identity<float> {};
-template<> struct formatter<yw::rgb, char> : formatter<string, char> {
-  auto format(const yw::rgb& r, auto& c) const { return formatter<string, char>::format(std::format("RGBA({}, {}, {}, {})", r.r, r.g, r.b, r.a), c); } };
-template<> struct formatter<yw::rgb, wchar_t> : formatter<wstring, wchar_t> {
-  auto format(const yw::rgb& r, auto& c) const { return formatter<wstring, wchar_t>::format(std::format(L"RGBA({}, {}, {}, {})", r.r, r.g, r.b, r.a), c); } };
-template<> struct formatter<yw::hsv, char> : formatter<string, char> {
-  auto format(const yw::hsv& h, auto& c) const { return formatter<string, char>::format(std::format("HSVA({}, {}, {}, {})", h.h, h.s, h.v, h.a), c); } };
-template<> struct formatter<yw::hsv, wchar_t> : formatter<wstring, wchar_t> {
-  auto format(const yw::hsv& h, auto& c) const { return formatter<wstring, wchar_t>::format(std::format(L"HSVA({}, {}, {}, {})", h.h, h.s, h.v, h.a), c); } };
-template<> struct tuple_size<yw::rect> : integral_constant<size_t, 4> {};
-template<size_t I> requires (I < 4) struct tuple_element<I, yw::rect> : type_identity<int> {};
-template<> struct formatter<yw::rect, char> : formatter<string, char> {
-  auto format(const yw::rect& r, auto& c) const { return formatter<string, char>::format(std::format("({}, {}, {}, {})", r.left, r.top, r.right, r.bottom), c); } };
-template<> struct formatter<yw::rect, wchar_t> : formatter<wstring, wchar_t> {
-  auto format(const yw::rect& r, auto& c) const { return formatter<wstring, wchar_t>::format(std::format(L"({}, {}, {}, {})", r.left, r.top, r.right, r.bottom), c); } };
+template<> struct tuple_size<yw::color> : integral_constant<size_t, 4> {};
+template<size_t I> requires (I < 4) struct tuple_element<I, yw::color> : type_identity<float> {};
+template<typename Ct> struct formatter<yw::color, Ct> : formatter<basic_string<Ct>, Ct> {
+  using base = formatter<basic_string<Ct>, Ct>;
+  auto format(const yw::color& a, auto& c) const {
+    if constexpr (same_as<Ct, char>) return base::format(std::format("RGBA({}, {}, {}, {})", a.r, a.g, a.b, a.a), c);
+    else return base::format(std::format(L"RGBA({}, {}, {}, {})", a.r, a.g, a.b, a.a), c); } };
+template<> struct tuple_size<yw::color::rgb> : integral_constant<size_t, 4> {};
+template<size_t I> requires (I < 4) struct tuple_element<I, yw::color::rgb> : type_identity<float> {};
+template<typename Ct> struct formatter<yw::color::rgb, Ct> : formatter<basic_string<Ct>, Ct> {
+  using base = formatter<basic_string<Ct>, Ct>;
+  auto format(const yw::color::rgb& a, auto& c) const {
+    if constexpr (same_as<Ct, char>) return base::format(std::format("RGBA({}, {}, {}, {})", a.r, a.g, a.b, a.a), c);
+    else return base::format(std::format(L"RGBA({}, {}, {}, {})", a.r, a.g, a.b, a.a), c); } };
+template<> struct tuple_size<yw::color::hsv> : integral_constant<size_t, 4> {};
+template<size_t I> requires (I < 4) struct tuple_element<I, yw::color::hsv> : type_identity<float> {};
+template<typename Ct> struct formatter<yw::color::hsv, Ct> : formatter<basic_string<Ct>, Ct> {
+  using base = formatter<basic_string<Ct>, Ct>;
+  auto format(const yw::color::hsv& a, auto& c) const {
+    if constexpr (same_as<Ct, char>) return base::format(std::format("HSVA({}, {}, {}, {})", a.h, a.s, a.v, a.a), c);
+    else return base::format(std::format(L"HSVA({}, {}, {}, {})", a.h, a.s, a.v, a.a), c); } };
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
@@ -2566,36 +2701,48 @@ struct t_to_wcs {
 /// Convert a string to wide-char-string.
 inline constexpr t_to_wcs to_wcs;
 
+/// class to handle a status needing to be checked the change.
 template<typename T, typename Setter = none> class status {
 protected:
-  T _status;
-  bool _changed;
+  T _value;
+  mutable bool _changed;
+  inline static auto setter = Setter{};
 public:
-  status() noexcept : _status{}, _changed{false} {}
-  status(const T& Init) noexcept : _status{Init}, _changed{false} {}
-  status(T&& Init) noexcept : _status{mv(Init)}, _changed{false} {}
+  const T& value = _value;
+  const bool& changed = _changed;
+  status() noexcept : _value{}, _changed{false} {}
+  status(const T& Init) noexcept : _value{Init}, _changed{false} {}
+  status(T&& Init) noexcept : _value{mv(Init)}, _changed{false} {}
+  /// checks if the status has changed.
   explicit operator bool() const noexcept { return _changed; }
-  operator T() const noexcept { return _changed = false, _status; }
-  bool changed() const noexcept { return _changed; }
-  void set(const T& New) noexcept(nt_assignable<T&, const T&>) { _changed = true, _status = New, Setter{}(New); }
-  void set(T&& New) noexcept(nt_assignable<T&, T>) { _changed = true, _status = mv(New), Setter{}(New); }
-  T get() noexcept { return _changed = false, _status; }
+  /// returns the status.
+  operator const T&() const noexcept { return _changed = false, _value; }
+  /// returns the status.
+  const T& operator()() const noexcept { return _changed = false, _value; }
+  /// assigns a new value to the status.
+  status& operator=(const T& New) noexcept(nt_assignable<T&, const T&> && nt_invocable<Setter, const T&>)
+  { return _changed = true, _value = New, setter(_value), *this; }
+  /// assigns a new value to the status.
+  status& operator=(T&& New) noexcept(nt_assignable<T&, const T&> && nt_invocable<Setter, const T&>)
+  { return _changed = true, _value = mv(New), setter(_value), *this; }
 };
 
+/// class to handle a status needing to be checked the change.
 template<typename Setter> class status<bool, Setter> {
 protected:
-  bool _status;
-  bool _changed;
+  bool _value;
+  mutable bool _changed;
 public:
-  status() noexcept : _status{}, _changed{false} {}
-  status(bool Init) noexcept : _status{Init}, _changed{false} {}
-  operator bool() noexcept { return _changed = false, _status; }
-  bool changed() const noexcept { return _changed; }
-  void set(bool New) noexcept { _changed = true, _status = New, Setter{}(New); }
-  bool get() noexcept { return _changed = false, _status; }
+  const bool& value = _value;
+  const bool& changed = _changed;
+  status() noexcept : _value{}, _changed{false} {}
+  status(bool Init) noexcept : _value{Init}, _changed{false} {}
+  /// returns the status.
+  bool operator()() const noexcept { return _changed = false, _value; }
+  /// assigns a new value to the status.
+  bool operator=(bool New) noexcept(nt_invocable<Setter, bool>)
+  { return _changed = true, _value = New, Setter(New), _value; }
 };
-
-// inline status<bool> health(true);
 
 inline void tiff(HRESULT hr, const source& _ = {}) {
   if (SUCCEEDED(hr)) return;
@@ -2603,14 +2750,16 @@ inline void tiff(HRESULT hr, const source& _ = {}) {
   str1 buffer(256, '\0');
   ::FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
                    hr, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buffer.data(), 256, nullptr);
-  auto text = std::format("runtime error: {}\n at {}", buffer, _);
+  auto text = std::format("runtime error: {}\n at {}\n", buffer, _);
+  log << text;
   throw std::runtime_error(text.data());
 }
 
 inline void tiff(const convertible_to<bool> auto& Result, const std::string_view Message, const source& _ = {}) {
   if (Result) return;
   // health.set(false);
-  auto text = std::format("runtime error: {}\n at {}", Message, _);
+  auto text = std::format("runtime error: {}\n at {}\n", Message, _);
+  log << text;
   throw std::runtime_error(text.data());
 }
 
@@ -2664,7 +2813,7 @@ inline const bool& outside = main::system::leave;
 LRESULT CALLBACK main::system::wndproc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
   static TRACKMOUSEEVENT tme{.cbSize = sizeof(TRACKMOUSEEVENT), .dwFlags = TME_LEAVE};
   static auto keydown = [](WPARAM wp, LPARAM lp) {
-    if (key::keys[wp].changed() || !key::keys[wp].get() || !(lp & 0x40000000)) key::keys[wp].set(true); };
+    if (key::keys[wp].changed || !key::keys[wp]() || !(lp & 0x40000000)) key::keys[wp] = true; };
   if (userproc && userproc(hw, msg, wp, lp)) return 0;
   switch (msg) {
   case WM_MOUSEMOVE:
@@ -2672,31 +2821,31 @@ LRESULT CALLBACK main::system::wndproc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) 
     reinterpret_cast<list<int, int>&>(mouse::position) = {LOWORD(lp), HIWORD(lp)};
     return 0;
   case WM_MOUSEWHEEL:
-    if (!mouse::wheel.changed()) mouse::wheel.set(GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA);
-    else mouse::wheel.set(mouse::wheel.get() + GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA);
+    if (!mouse::wheel.changed) mouse::wheel = GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA;
+    else mouse::wheel = mouse::wheel() + GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA;
     return 0;
   case WM_MOUSELEAVE:
     return leave = true, 0;
   case WM_KEYDOWN:
     return keydown(wp, lp), 0;
   case WM_KEYUP:
-    return key::keys[wp].set(false), 0;
+    return key::keys[wp] = false, 0;
   case WM_LBUTTONDOWN:
     return ::SetFocus(hwnd), keydown(VK_LBUTTON, lp), 0;
   case WM_LBUTTONUP:
-    return key::keys[VK_LBUTTON].set(false), 0;
+    return key::keys[VK_LBUTTON] = false, 0;
   case WM_RBUTTONDOWN:
     return ::SetFocus(hwnd), keydown(VK_RBUTTON, lp), 0;
   case WM_RBUTTONUP:
-    return key::keys[VK_RBUTTON].set(false), 0;
+    return key::keys[VK_RBUTTON] = false, 0;
   case WM_MBUTTONDOWN:
     return ::SetFocus(hwnd), keydown(VK_MBUTTON, lp), 0;
   case WM_MBUTTONUP:
-    return key::keys[VK_MBUTTON].set(false), 0;
+    return key::keys[VK_MBUTTON] = false, 0;
   case WM_XBUTTONDOWN:
     return ::SetFocus(hwnd), keydown(GET_XBUTTON_WPARAM(wp) == XBUTTON1 ? VK_XBUTTON1 : VK_XBUTTON2, lp), 0;
   case WM_XBUTTONUP:
-    return key::keys[GET_XBUTTON_WPARAM(wp) == XBUTTON1 ? VK_XBUTTON1 : VK_XBUTTON2].set(false), 0;
+    return key::keys[GET_XBUTTON_WPARAM(wp) == XBUTTON1 ? VK_XBUTTON1 : VK_XBUTTON2] = false , 0;
   case WM_DROPFILES: {
     HDROP hdrop = (HDROP)wp;
     nat count = ::DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
@@ -2706,7 +2855,7 @@ LRESULT CALLBACK main::system::wndproc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) 
       str2 file(size, L'\0');
       ::DragQueryFileW(hdrop, i, file.data(), size + 1);
       temp[i] = mv(file); }
-    return ::DragFinish(hdrop), dropped_files.set(mv(temp)), 0;
+    return ::DragFinish(hdrop), dropped_files = mv(temp), 0;
   }
   case WM_CLOSE:
     return ::DestroyWindow(hw), 0;
@@ -2990,7 +3139,7 @@ inline void terminate() {
   system::termination = system::terminator{};
 }
 
-/// @brief updates the main window.
+/// updates the main window.
 inline constexpr caster update{[]() {
   static stopwatch sw{};
   if (system::swapchain) system::swapchain->Present(1, 0);
@@ -3012,7 +3161,7 @@ inline void begin_draw() {
 }
 
 /// begins drawing to the main window after filling with the specified color
-inline void begin_draw(const rgb& Color) {
+inline void begin_draw(const color& Color) {
   d2d_context->SetTarget(system::rendertarget);
   d2d_context->BeginDraw();
   d2d_context->Clear(reinterpret_cast<const D2D1_COLOR_F&>(Color));
@@ -3044,117 +3193,127 @@ inline constexpr auto save_file = [](const path& Dir = {}, const path& Default =
 };
 
 /// alignment
-enum class alignment {lefttop, top, righttop, left, center, right, leftbottom, bottom, rightbottom};
+enum class alignment {
+  lefttop     = 0b0101,
+  top         = 0b0001,
+  righttop    = 0b1101,
+  left        = 0b0100,
+  center      = 0b0000,
+  right       = 0b1100,
+  leftbottom  = 0b0111,
+  bottom      = 0b0011,
+  rightbottom = 0b1111, };
 
-/// @brief class to create a solid color brush object.
-class solid_brush {
+/// class to create a solid color brush object.
+template<color Color = color::undefined> class brush;
+
+/// class to create a solid color brush object.
+template<> class brush<yw::color::undefined> {
 protected:
-  comptr<ID2D1SolidColorBrush> brush{};
-  void init(const rgb& Color) {
-    if (!main::d2d_context) throw std::runtime_error("runtime error : yw::solid_brush : Direct2D is not initialized");
-    if (!brush) tiff(main::d2d_context->CreateSolidColorBrush(reinterpret_cast<const D2D1_COLOR_F&>(Color), brush.init()));
+  comptr<ID2D1SolidColorBrush> d2d_brush{};
+  void init(const yw::color& Color) {
+    if (!main::d2d_context) throw std::runtime_error("runtime error : yw::brush<>::init : Direct2D is not initialized");
+    d2d_brush.reset();
+    tiff(main::d2d_context->CreateSolidColorBrush(reinterpret_cast<const D2D1_COLOR_F&>(Color), d2d_brush.init()));
   }
 public:
-  solid_brush() noexcept = default;
-  explicit solid_brush(const rgb& Color) { init(Color); }
-  explicit operator bool() const noexcept { return bool(brush); }
-  operator ID2D1SolidColorBrush*() const noexcept { return brush; }
-  /// @brief resets the color of the brush
-  void color(const rgb& Color) { init(Color); }
-  /// @brief returns the color of the brush
-  rgb color() const { const auto c = brush->GetColor(); return reinterpret_cast<const rgb&>(c); }
+  brush() noexcept = default;
+  explicit brush(const yw::color& Color) { init(Color); }
+  explicit operator bool() const noexcept { return bool(d2d_brush); }
+  operator ID2D1SolidColorBrush*() const noexcept { return d2d_brush; }
+  /// resets the color of the brush.
+  void color(const yw::color& Color) { init(Color); }
+  /// returns the color of the brush.
+  yw::color color() const { const auto c = d2d_brush->GetColor(); return reinterpret_cast<const yw::color&>(c); }
 };
 
-/// text format to print plane text
-template<value Size, rgb Color, literal<cat2> Font = L"Yu Gothic UI", bool Bold = false> class text_format {
+/// class to create a solid color brush object with a specified color.
+template<yw::color Color> class brush {
+protected:
+  inline static comptr<ID2D1SolidColorBrush> d2d_brush{};
   static void init() {
-    try {
-      if (!dw_format) {
-        tiff(main::dw_factory->CreateTextFormat(
-          Font, nullptr, Bold ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL,
-          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, size, L"", dw_format.init()));
-        tiff(dw_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING));
-      }
-      if (!d2d_brush) tiff(main::d2d_context->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black), d2d_brush.init()));
-      tiff(bool(dw_format), "Failed to initialize text format");
-    } catch (const std::exception& e) {
-      std::cerr << e.what() << '\n';
-      throw std::runtime_error("runtime error: Failed to initialize text format");
-    }
+    if (!d2d_brush) {
+      tiff(main::d2d_context->CreateSolidColorBrush(reinterpret_cast<const D2D1_COLOR_F&>(Color), d2d_brush.init()));
+      tiff(bool(d2d_brush), "Failed to initialize brush"); } }
+public:
+  static constexpr yw::color color = Color;
+  constexpr brush() noexcept = default;
+  explicit operator bool() const noexcept { return true; }
+  operator ID2D1SolidColorBrush*() const noexcept { return init(), d2d_brush; }
+
+};
+
+template<convertible_to<color> Color> brush(const Color&) -> brush<color::undefined>;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// class to create text-format object.
+class text_format {
+protected:
+  comptr<IDWriteTextFormat> dw_format{};
+public:
+  text_format() noexcept = default;
+  text_format(const string<cat2>& Font, const value Size, bool Bold = false) {
+    tiff(main::dw_factory->CreateTextFormat(Font.data(), nullptr, Bold ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL,
+                                            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, fat4(Size), L"", dw_format.init()));
+    tiff(bool(dw_format), "Failed to initialize text format");
+    tiff(dw_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING));
   }
-  static list<fat4, fat4> get_metrics(const string_view<cat2>& Text) {
+  explicit operator bool() const noexcept { return bool(dw_format); }
+  operator IDWriteTextFormat*() const noexcept { return dw_format; }
+  /// return the geometry of the text; {width, height}
+  list<fat4, fat4> geometry(const string_view<cat2>& Text) const {
     comptr<IDWriteTextLayout> layout;
     tiff(main::dw_factory->CreateTextLayout(Text.data(), unsigned(Text.size()), dw_format, fat4(inf), fat4(inf), layout.init()));
     DWRITE_TEXT_METRICS metrics;
     layout->GetMetrics(&metrics);
     return {metrics.width, metrics.height};
   }
-protected:
-  inline static comptr<IDWriteTextFormat> dw_format{};
-  inline static comptr<ID2D1SolidColorBrush> d2d_brush{};
-public:
-  static constexpr fat4 size = fat4(Size);
-  static constexpr rgb color = Color;
-  static constexpr auto font = Font;
-  static constexpr auto bold = Bold;
-  constexpr text_format() noexcept = default;
-  explicit operator bool() const noexcept { return true; }
-  /// return the geometry of the text; {width, height}
-  static list<fat4, fat4> geometry(const string_view<cat2>& Text) {
-    init();
-    auto geometry = get_metrics(Text);
-    return {geometry.first, geometry.second};
-  }
   /// return the geometry of the text which is located at the specified position; {left, top, right, bottom}
-  static vector geometry(const string_view<cat2>& Text, list<value, value> Point, alignment Align) {
-    init();
-    auto g = get_metrics(Text);
-    auto w = fat4(Point.first), h = fat4(Point.second);
-    switch (Align) {
-    case alignment::lefttop: return {w, h, w + g.first, h + g.second};
-    case alignment::top: return {w - g.first / 2, h, w + g.first / 2, h + g.second};
-    case alignment::righttop: return {w - g.first, h, w, h + g.second};
-    case alignment::left: return {w, h - g.second / 2, w + g.first, h + g.second / 2};
-    case alignment::center: return {w - g.first / 2, h - g.second / 2, w + g.first / 2, h + g.second / 2};
-    case alignment::right: return {w - g.first, h - g.second / 2, w, h + g.second / 2};
-    case alignment::leftbottom: return {w, h - g.second, w + g.first, h};
-    case alignment::bottom: return {w - g.first / 2, h - g.second, w + g.first / 2, h};
-    case alignment::rightbottom: return {w - g.first, h - g.second, w, h};
-    default: return {};
-    } }
-  /// Draws the text
-  static void draw(const string_view<cat2>& Text, const vector& Rect) {
-    init();
-    main::d2d_context->DrawTextW(Text.data(), unsigned(Text.size()), dw_format, reinterpret_cast<const D2D1_RECT_F&>(Rect), d2d_brush);
+  vector geometry(const string_view<cat2>& Text, list<value, value> Point, alignment Align) const {
+    const auto [w, h] = geometry(Text);
+    const auto a = nat(Align);
+    vector r = {fat4(Point.first), fat4(Point.second)};
+    r.x = a & 0b1100 ? (a & 0b1000 ? r.x - w : r.x) : r.x - w / 2;
+    r.y = a & 0b0011 ? (a & 0b0010 ? r.y - h : r.y) : r.y - h / 2;
+    r.z = r.x + w, r.w = r.y + h;
+    return r;
   }
-  /// Draws the text
-  static void draw(const string_view<cat2>& Text, const value Left, const value Top) {
-    init();
-    auto geometry = get_metrics(Text);
-    auto rect = D2D1::RectF(fat4(Left), fat4(Top), fat4(Left) + geometry.first, fat4(Top) + geometry.second);
-    main::d2d_context->DrawTextW(Text.data(), unsigned(Text.size()), dw_format, rect, d2d_brush);
+  /// draws the text.
+  void draw(const string_view<cat2>& Text, const vector& Rect, ID2D1SolidColorBrush* Brush = brush<color::black>{}) const {
+    if (!dw_format) throw std::runtime_error("runtime error : yw::text_format::draw : Text format is not initialized");
+    if (!Brush) throw std::runtime_error("runtime error : yw::text_format::draw : Brush is not initialized");
+    main::d2d_context->DrawTextW(Text.data(), unsigned(Text.size()), dw_format, reinterpret_cast<const D2D1_RECT_F&>(Rect), Brush);
+  }
+  /// draws the text.
+  void draw(const string_view<cat2>& Text, list<value, value> Point, alignment Align, ID2D1SolidColorBrush* Brush = brush<color::black>{}) const {
+    if (!dw_format) throw std::runtime_error("runtime error : yw::text_format::draw : Text format is not initialized");
+    if (!Brush) throw std::runtime_error("runtime error : yw::text_format::draw : Brush is not initialized");
+    this->draw(Text, geometry(Text, Point, Align), Brush);
   }
 };
 
-/// @brief class to create a path geometry object.
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// class to create a path geometry object.
 class geometry {
-protected:
+  protected:
   comptr<ID2D1PathGeometry> path{};
   void init() { if (!path) tiff(main::d2d_factory->CreatePathGeometry(path.init())); }
 public:
   geometry() noexcept = default;
-  geometry(const geometry&) = delete;
-  geometry(geometry&&) noexcept = default;
-  /// @brief draws the geometry
+  /// sets SVG path code.
+  /// draws the geometry
   void draw(convertible_to<ID2D1SolidColorBrush*> auto&& Brush, const value Thickness = 1.0) const {
     if (!path) throw std::runtime_error("runtime error : yw::geometry::draw : Path geometry is not initialized");
     main::d2d_context->DrawGeometry(path, Brush, fat4(Thickness));
   }
-  /// @brief fills the geometry
+  /// fills the geometry
   void fill(convertible_to<ID2D1SolidColorBrush*> auto&& Brush) const {
     if (!path) throw std::runtime_error("runtime error : yw::geometry::fill : Path geometry is not initialized");
     main::d2d_context->FillGeometry(path, Brush);
   }
+
   void add_line(const list<value, value>& Start, const list<value, value>& End) {
     init();
     comptr<ID2D1GeometrySink> sink;
@@ -3164,6 +3323,17 @@ public:
     sink->EndFigure(D2D1_FIGURE_END_OPEN);
     sink->Close();
   }
+  void add_rectangle(const vector& Rect) {
+    init();
+    comptr<ID2D1GeometrySink> sink;
+    tiff(path->Open(sink.init()));
+    sink->BeginFigure(D2D1::Point2F(fat4(Rect.x), fat4(Rect.y)), D2D1_FIGURE_BEGIN_FILLED);
+    sink->AddLine(D2D1::Point2F(fat4(Rect.z), fat4(Rect.y)));
+    sink->AddLine(D2D1::Point2F(fat4(Rect.z), fat4(Rect.w)));
+    sink->AddLine(D2D1::Point2F(fat4(Rect.x), fat4(Rect.w)));
+    sink->AddLine(D2D1::Point2F(fat4(Rect.x), fat4(Rect.y)));
+    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+    sink->Close();
+  }
 };
-
 }
