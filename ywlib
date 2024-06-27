@@ -716,35 +716,45 @@ using stv1 = string_view<cat1>;
 using stv2 = string_view<cat2>;
 
 template<arithmetic T> struct t_stov {
+
   /// converts a string to a value of type T.
   /// \param Str : the string to convert.
   T operator()(string_view<cat1> Str) const noexcept { return call(Str); }
-  /// converts a string to a value of type T.
-  /// \param Str : the string to convert.
-  /// \param Rest (out) : the rest of the string after the conversion.
-  T operator()(string_view<cat1> Str, string_view<cat1>& Rest) const noexcept { auto v = call(Str); Rest = Str; return v; }
+
   /// converts a wide string to a value of type T.
   /// \param Str : the wide string to convert.
   T operator()(string_view<cat2> Str) const noexcept { return call(Str); }
+
+  /// converts a string to a value of type T.
+  /// \param Str : the string to convert.
+  /// \param Rest (out) : the rest of the string after the conversion.
+  T operator()(string_view<cat1> Str, string_view<cat1>& Rest) const noexcept
+  { return [&](T v) noexcept { return Rest = Str, v; }(call(Str)); }
+
   /// converts a wide string to a value of type T.
   /// \param Str : the wide string to convert.
   /// \param Rest (out) : the rest of the wide string after the conversion.
-  T operator()(string_view<cat2> Str, string_view<cat2>& Rest) const noexcept { auto v = call(Str); Rest = Str; return v; }
+  T operator()(string_view<cat2> Str, string_view<cat2>& Rest) const noexcept
+  { return [&](T v) noexcept { return Rest = Str, v; }(call(Str)); }
+
 private:
   template<typename Ct> static T call(string_view<Ct>& s) noexcept {
     T v{};
-    for (auto last = s.begin() + s.size(); s.size(); s.remove_prefix(1)) {
+    for (auto last = s.data() + s.size(); s.size(); s.remove_prefix(1)) {
       auto [p, ec] = std::from_chars(s.data(), last, v);
-      if (p != s.data() || ec == std::errc{}) return v;
+      if (p != s.data() || ec == std::errc{}) return s = string_view<Ct>(p, last), v;
     }
     return v;
+
   }
 };
+
 /// converts a string to a value of type T.
 template<arithmetic T> inline constexpr t_stov<T> stov;
 
 /// converts a value of type T to a string.
-template<included_in<cat1, cat2> Ct> inline constexpr auto vtos = []<arithmetic T>(const T v) noexcept {
+template<included_in<cat1, cat2> Ct>
+inline constexpr auto vtos = []<arithmetic T>(const T v) noexcept {
   if constexpr (same_as<Ct, cat1>) return std::to_string(v);
   else return std::to_wstring(v);
 };
@@ -758,28 +768,34 @@ inline constexpr overload strlen{
 /// struct to represent the source location.
 struct source {
   source(const char* const) = delete;
-  /// file name.
-  const cat1* const file;
-  /// line number.
-  const int line;
-  /// column number.
-  const int column;
-  /// when a 'source' object is created, the file name, line number, and column number are automatically set.
-  constexpr source(const char* const File = __builtin_FILE(), const int Line = __builtin_LINE(), const int Column = __builtin_COLUMN())
-    noexcept : file(mv(File)), line(Line), column(Column) {}
+
+  const cat1* const file; // file name
+  const int line;         // line number
+  const int column;       // column number
+
+  /// default constructor to initialize the source location.
+  constexpr source(
+    const char* const File = __builtin_FILE(), const int Line = __builtin_LINE(),
+    const int Column = __builtin_COLUMN()) noexcept : file(mv(File)), line(Line), column(Column) {}
+
   /// returns the string representation of the source location.
   str1 to_string() const { return std::format("{}({},{})", file, line, column); }
+
   /// returns the string representation of the source location.
-  template<character Ct> string<Ct> to_string() const {
-    if constexpr (same_as<remove_cv<Ct>, cat1>) return std::format("{}({},{})", std::filesystem::path(file).string<Ct>(), line, column);
-    else if constexpr (same_as<remove_cv<Ct>, cat2>) return std::format(L"{}({},{})", std::filesystem::path(file).string<Ct>(), line, column);
-    else if constexpr (same_as<remove_cv<Ct>, uct1>) return std::format(u8"{}({},{})", std::filesystem::path(file).string<Ct>(), line, column);
-    else if constexpr (same_as<remove_cv<Ct>, uct2>) return std::format(u"{}({},{})", std::filesystem::path(file).string<Ct>(), line, column);
-    else if constexpr (same_as<remove_cv<Ct>, uct4>) return std::format(U"{}({},{})", std::filesystem::path(file).string<Ct>(), line, column);
-  }
+  template<character Ct> string<Ct> to_string() const
+  { return std::format(get_format<remove_cv<Ct>>(), std::filesystem::path(file).string<Ct>(), line, column); }
+
   /// outputs the string representation of the source location to the specified output stream.
   template<typename Ct, typename Tr> friend std::basic_ostream<char, Tr>&
   operator<<(std::basic_ostream<Ct, Tr>& os, const source& s) { return os << s.to_string<Ct>(); }
+private:
+  template<typename Ct> static constexpr const Ct* get_format() {
+    if constexpr (same_as<Ct, cat1>) return "{}({},{})";
+    else if constexpr (same_as<Ct, cat2>) return L"{}({},{})";
+    else if constexpr (same_as<Ct, uct1>) return u8"{}({},{})";
+    else if constexpr (same_as<Ct, uct2>) return u"{}({},{})";
+    else if constexpr (same_as<Ct, uct4>) return U"{}({},{})";
+  }
 };
 
 template<character Ct> struct literal {
@@ -3347,28 +3363,203 @@ public:
     comptr<ID2D1GeometrySink> sink;
     tiff(path->Open(sink.init()));
     sink->SetFillMode(D2D1_FILL_MODE_WINDING);
-    vector current{};
-    sink->BeginFigure(D2D1::Point2F(0, 0), D2D1_FIGURE_BEGIN_FILLED);
-    bool after_z = false;
-    for (auto last = SvgPath.end(); SvgPath.begin() != last;) {
-      bool b = after_z ? !(after_z = false) : false;
-      if (SvgPath.front() == 'M') {
-        if (!b) sink->EndFigure(D2D1_FIGURE_END_OPEN);
+    auto first_m = SvgPath.find_first_of("Mm");
+    if (first_m == npos) { tiff(sink->Close()); return; }
+    SvgPath.remove_prefix(first_m);
+    // {current-x, current-y, previous-control-point-x, previous-control-point-y}
+    vector current{stov<fat4>(SvgPath, SvgPath), stov<fat4>(SvgPath, SvgPath)};
+    vector start{current.x, current.y};
+    cat1 before = 'M';
+    sink->BeginFigure(D2D1::Point2F(fat4(current.x), fat4(current.y)), D2D1_FIGURE_BEGIN_FILLED);
+    D2D1_ARC_SEGMENT as{};
+    D2D1_BEZIER_SEGMENT bs{};
+    D2D1_QUADRATIC_BEZIER_SEGMENT qs{};
+    bool end_figure = false;
+    while (!SvgPath.empty()) {
+      switch (SvgPath.front()) {
+      case ' ':
+      case '\t':
+      case '\n':
+      case '\r':
         SvgPath.remove_prefix(1);
-        current.x = stov<fat4>(SvgPath, SvgPath);
-        current.y = stov<fat4>(SvgPath, SvgPath);
-        sink->BeginFigure(D2D1::Point2F(fat4(current.x), fat4(current.y)), D2D1_FIGURE_BEGIN_FILLED);
-      } else if (SvgPath.front() == 'm') {
-        if (!b) sink->EndFigure(D2D1_FIGURE_END_OPEN);
+        break;
+      case 'm':
+        if (!end_figure) sink->EndFigure(D2D1_FIGURE_END_OPEN);
+        end_figure = false;
         SvgPath.remove_prefix(1);
         current.x += stov<fat4>(SvgPath, SvgPath);
         current.y += stov<fat4>(SvgPath, SvgPath);
-        sink->BeginFigure(D2D1::Point2F(fat4(current.x), fat4(current.y)), D2D1_FIGURE_BEGIN_FILLED);
-      } else if (SvgPath.front() == 'L') {
+        start = current;
+        sink->BeginFigure(D2D1::Point2F(current.x, current.y), D2D1_FIGURE_BEGIN_FILLED);
+        before = 'M';
+        break;
+      case 'M':
+        if (!end_figure) sink->EndFigure(D2D1_FIGURE_END_OPEN);
+        end_figure = false;
         SvgPath.remove_prefix(1);
-        sink->BeginFigure(D2D1::Point2F(fat4(current.x), fat4(current.y)), D2D1_FIGURE_BEGIN_FILLED);
-
+        current.x = stov<fat4>(SvgPath, SvgPath);
+        current.y = stov<fat4>(SvgPath, SvgPath);
+        start = current;
+        sink->BeginFigure(D2D1::Point2F(current.x, current.y), D2D1_FIGURE_BEGIN_FILLED);
+        before = 'M';
+        break;
+      case 'l':
+        SvgPath.remove_prefix(1);
+        current.x += stov<fat4>(SvgPath, SvgPath);
+        current.y += stov<fat4>(SvgPath, SvgPath);
+        sink->AddLine(D2D1::Point2F(current.x, current.y));
+        before = 'L';
+        break;
+      case 'L':
+        SvgPath.remove_prefix(1);
+        current.x = stov<fat4>(SvgPath, SvgPath);
+        current.y = stov<fat4>(SvgPath, SvgPath);
+        sink->AddLine(D2D1::Point2F(current.x, current.y));
+        before = 'L';
+        break;
+      case 'h':
+        SvgPath.remove_prefix(1);
+        current.x += stov<fat4>(SvgPath, SvgPath);
+        sink->AddLine(D2D1::Point2F(current.x, current.y));
+        before = 'H';
+        break;
+      case 'H':
+        SvgPath.remove_prefix(1);
+        current.x = stov<fat4>(SvgPath, SvgPath);
+        sink->AddLine(D2D1::Point2F(current.x, current.y));
+        before = 'H';
+        break;
+      case 'v':
+        SvgPath.remove_prefix(1);
+        current.y += stov<fat4>(SvgPath, SvgPath);
+        sink->AddLine(D2D1::Point2F(current.x, current.y));
+        before = 'V';
+        break;
+      case 'V':
+        SvgPath.remove_prefix(1);
+        current.y = stov<fat4>(SvgPath, SvgPath);
+        sink->AddLine(D2D1::Point2F(current.x, current.y));
+        before = 'V';
+        break;
+      case 'c':
+        SvgPath.remove_prefix(1);
+        bs.point1.x = current.x + stov<fat4>(SvgPath, SvgPath), bs.point1.y = current.y + stov<fat4>(SvgPath, SvgPath);
+        bs.point2.x = current.x + stov<fat4>(SvgPath, SvgPath), bs.point2.y = current.y + stov<fat4>(SvgPath, SvgPath);
+        bs.point3.x = current.x + stov<fat4>(SvgPath, SvgPath), bs.point3.y = current.y + stov<fat4>(SvgPath, SvgPath);
+        current.x = bs.point3.x, current.y = bs.point3.y, current.z = bs.point2.x, current.w = bs.point2.y;
+        sink->AddBezier(bs);
+        before = 'C';
+        break;
+      case 'C':
+        SvgPath.remove_prefix(1);
+        bs.point1.x = stov<fat4>(SvgPath, SvgPath), bs.point1.y = stov<fat4>(SvgPath, SvgPath);
+        bs.point2.x = stov<fat4>(SvgPath, SvgPath), bs.point2.y = stov<fat4>(SvgPath, SvgPath);
+        bs.point3.x = stov<fat4>(SvgPath, SvgPath), bs.point3.y = stov<fat4>(SvgPath, SvgPath);
+        current.x = bs.point3.x, current.y = bs.point3.y, current.z = bs.point2.x, current.w = bs.point2.y;
+        sink->AddBezier(bs);
+        before = 'C';
+        break;
+      case 's':
+        SvgPath.remove_prefix(1);
+        bs.point2.x = current.x + stov<fat4>(SvgPath, SvgPath), bs.point2.y = current.y + stov<fat4>(SvgPath, SvgPath);
+        bs.point3.x = current.x + stov<fat4>(SvgPath, SvgPath), bs.point3.y = current.y + stov<fat4>(SvgPath, SvgPath);
+        if (before != 'C') bs.point1 = bs.point2;
+        else bs.point1.x = current.x + current.x - current.z, bs.point1.y = current.y + current.y - current.w;
+        current.x = bs.point3.x, current.y = bs.point3.y, current.z = bs.point2.x, current.w = bs.point2.y;
+        sink->AddBezier(bs);
+        before = 'C';
+        break;
+      case 'S':
+        SvgPath.remove_prefix(1);
+        bs.point2.x = stov<fat4>(SvgPath, SvgPath), bs.point2.y = stov<fat4>(SvgPath, SvgPath);
+        bs.point3.x = stov<fat4>(SvgPath, SvgPath), bs.point3.y = stov<fat4>(SvgPath, SvgPath);
+        if (before != 'C') bs.point1 = bs.point2;
+        else bs.point1.x = current.x + current.x - current.z, bs.point1.y = current.y + current.y - current.w;
+        current.x = bs.point3.x, current.y = bs.point3.y, current.z = bs.point2.x, current.w = bs.point2.y;
+        sink->AddBezier(bs);
+        before = 'C';
+        break;
+      case 'q':
+        SvgPath.remove_prefix(1);
+        current.z = current.x + stov<fat4>(SvgPath, SvgPath), current.w = current.y + stov<fat4>(SvgPath, SvgPath);
+        current.x += stov<fat4>(SvgPath, SvgPath), current.y += stov<fat4>(SvgPath, SvgPath);
+        qs.point1 = D2D1::Point2F(current.z, current.w), qs.point2 = D2D1::Point2F(current.x, current.y);
+        sink->AddQuadraticBezier(qs);
+        before = 'Q';
+        break;
+      case 'Q':
+        SvgPath.remove_prefix(1);
+        current.z = stov<fat4>(SvgPath, SvgPath), current.w = stov<fat4>(SvgPath, SvgPath);
+        current.x = stov<fat4>(SvgPath, SvgPath), current.y = stov<fat4>(SvgPath, SvgPath);
+        qs.point1 = D2D1::Point2F(current.z, current.w), qs.point2 = D2D1::Point2F(current.x, current.y);
+        sink->AddQuadraticBezier(qs);
+        before = 'Q';
+        break;
+      case 't':
+        SvgPath.remove_prefix(1);
+        qs.point2 = D2D1::Point2F(current.x + stov<fat4>(SvgPath, SvgPath), current.y + stov<fat4>(SvgPath, SvgPath));
+        if (before != 'Q') qs.point1 = qs.point2;
+        else qs.point1.x = current.x + current.x - current.z, qs.point1.y = current.y + current.y - current.w;
+        current.x = qs.point2.x, current.y = qs.point2.y, current.z = qs.point1.x, current.w = qs.point1.y;
+        sink->AddQuadraticBezier(qs);
+        before = 'Q';
+        break;
+      case 'T':
+        SvgPath.remove_prefix(1);
+        qs.point2.x = stov<fat4>(SvgPath, SvgPath), qs.point2.y = stov<fat4>(SvgPath, SvgPath);
+        if (before != 'Q') qs.point1 = qs.point2;
+        else qs.point1.x = current.x + current.x - current.z, qs.point1.y = current.y + current.y - current.w;
+        current.x = qs.point2.x, current.y = qs.point2.y, current.z = qs.point1.x, current.w = qs.point1.y;
+        sink->AddQuadraticBezier(qs);
+        before = 'Q';
+        break;
+      case 'a':
+        SvgPath.remove_prefix(1);
+        as.size.width = stov<fat4>(SvgPath, SvgPath), as.size.height = stov<fat4>(SvgPath, SvgPath);
+        as.rotationAngle = stov<fat4>(SvgPath, SvgPath);
+        as.arcSize = SvgPath.front() != '0' ? D2D1_ARC_SIZE_LARGE : D2D1_ARC_SIZE_SMALL;
+        as.sweepDirection = SvgPath.front() != '0' ? D2D1_SWEEP_DIRECTION_CLOCKWISE : D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE;
+        as.point.x = current.x + stov<fat4>(SvgPath, SvgPath), as.point.y = current.y + stov<fat4>(SvgPath, SvgPath);
+        current.x = as.point.x, current.y = as.point.y;
+        sink->AddArc(as);
+        before = 'A';
+        break;
+      case 'A':
+        SvgPath.remove_prefix(1);
+        as.size.width = stov<fat4>(SvgPath, SvgPath), as.size.height = stov<fat4>(SvgPath, SvgPath);
+        as.rotationAngle = stov<fat4>(SvgPath, SvgPath);
+        as.arcSize = stov<int>(SvgPath, SvgPath) != 0 ? D2D1_ARC_SIZE_LARGE : D2D1_ARC_SIZE_SMALL;
+        as.sweepDirection = stov<int>(SvgPath, SvgPath) != 0 ? D2D1_SWEEP_DIRECTION_CLOCKWISE : D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE;
+        as.point.x = stov<fat4>(SvgPath, SvgPath), as.point.y = stov<fat4>(SvgPath, SvgPath);
+        current.x = as.point.x, current.y = as.point.y;
+        sink->AddArc(as);
+        before = 'A';
+        break;
+      case 'z':
+      case 'Z':
+        SvgPath.remove_prefix(1);
+        sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+        end_figure = true;
+        current = start;
+        while (!SvgPath.empty()) {
+          if (SvgPath.front() == ' ') SvgPath.remove_prefix(1);
+          else if (SvgPath.front() == 'M' || SvgPath.front() == 'm') {
+            break;
+          } else {
+            log << std::format("Warning: yw::geometry : Invalid SVG path code: {}\n", SvgPath);
+            SvgPath = {};
+            break;
+          }
+        }
+        break;
+      default:
+        log << std::format("Warning: yw::geometry : Invalid SVG path code: {}\n", SvgPath);
+        SvgPath = {};
+        break;
+      }
     }
+    if (!end_figure) sink->EndFigure(D2D1_FIGURE_END_OPEN);
+    tiff(sink->Close());
   }
   /// draws the geometry
   void draw(convertible_to<ID2D1SolidColorBrush*> auto&& Brush, const value Thickness = 1.0) const {
@@ -3380,27 +3571,180 @@ public:
     if (!path) throw std::runtime_error("runtime error : yw::geometry::fill : Path geometry is not initialized");
     main::d2d_context->FillGeometry(path, Brush);
   }
+};
+}
 
-  // void add_line(const list<value, value>& Start, const list<value, value>& End) {
-  //   init();
-  //   comptr<ID2D1GeometrySink> sink;
-  //   tiff(path->Open(sink.init()));
-  //   sink->BeginFigure(D2D1::Point2F(fat4(Start.first), fat4(Start.second)), D2D1_FIGURE_BEGIN_FILLED);
-  //   sink->AddLine(D2D1::Point2F(fat4(End.first), fat4(End.second)));
-  //   sink->EndFigure(D2D1_FIGURE_END_OPEN);
-  //   sink->Close();
-  // }
-  // void add_rectangle(const vector& Rect) {
-  //   init();
-  //   comptr<ID2D1GeometrySink> sink;
-  //   tiff(path->Open(sink.init()));
-  //   sink->BeginFigure(D2D1::Point2F(fat4(Rect.x), fat4(Rect.y)), D2D1_FIGURE_BEGIN_FILLED);
-  //   sink->AddLine(D2D1::Point2F(fat4(Rect.z), fat4(Rect.y)));
-  //   sink->AddLine(D2D1::Point2F(fat4(Rect.z), fat4(Rect.w)));
-  //   sink->AddLine(D2D1::Point2F(fat4(Rect.x), fat4(Rect.w)));
-  //   sink->AddLine(D2D1::Point2F(fat4(Rect.x), fat4(Rect.y)));
-  //   sink->EndFigure(D2D1_FIGURE_END_CLOSED);
-  //   sink->Close();
-  // }
+namespace yw { // GPU buffer classes
+
+template<typename T> class staging_buffer;
+
+/// base class to create GPU buffers.
+template<typename T> class buffer {
+  buffer(const buffer&) = delete;
+protected:
+  comptr<ID3D11Buffer> d3d_buffer{};
+  buffer(const numerical auto Count) noexcept : count(unsigned(Count)) {}
+public:
+  using value_type = T;
+  const unsigned count{};
+  buffer() noexcept = default;
+  buffer(buffer&& b) noexcept : d3d_buffer(mv(b.d3d_buffer)), count(b.count) {}
+  buffer& operator=(buffer&& b) noexcept
+  { return d3d_buffer = mv(b.d3d_buffer), const_cast<unsigned&>(count) = b.count, *this; }
+  explicit operator bool() const noexcept { return bool(d3d_buffer); }
+  operator ID3D11Buffer*() const noexcept { return d3d_buffer; }
+
+  /// copies the data from another buffer `Src`.
+  /// \note `Src.count` must be the same as `this->count`.
+  void from(const buffer& Src) {
+    if (!d3d_buffer) throw std::runtime_error("runtime error : yw::buffer::from : Buffer is not initialized");
+    if (count != Src.count) throw std::runtime_error("runtime error : yw::buffer::from : The count of the source buffer is different");
+    main::d3d_context->CopyResource(d3d_buffer, Src);
+  }
+
+  /// copies the data to CPU memory.
+  virtual array<T> to_cpu() const;
+
+  /// copies the data to CPU memory using a staging buffer.
+  virtual array<T> to_cpu(staging_buffer<T>&) const;
+};
+
+/// class to create a staging buffer.
+template<typename T> class staging_buffer : public buffer<T> {
+public:
+  using buffer<T>::count;
+  using buffer<T>::d3d_buffer;
+  using buffer<T>::from;
+  using buffer<T>::operator bool;
+  using buffer<T>::operator ID3D11Buffer*;
+  staging_buffer() noexcept = default;
+
+  /// creates a staging buffer and copies the data from `Src`.
+  explicit staging_buffer(const buffer<T>& Src) : staging_buffer(Src.count) { from(Src); }
+
+  /// creates a staging buffer with the specified count.
+  explicit staging_buffer(const numerical auto Count) : buffer<T>(Count) {
+    D3D11_BUFFER_DESC desc{unsigned(sizeof(T)) * count, D3D11_USAGE_STAGING, 0, D3D11_CPU_ACCESS_READ};
+    tiff(main::d3d_device->CreateBuffer(&desc, nullptr, buffer<T>::d3d_buffer.init()));
+  }
+  /// copies the data to CPU memory.
+  virtual array<T> to_cpu() const {
+    if (!buffer<T>::d3d_buffer) throw std::runtime_error("runtime error : yw::staging_buffer::to_cpu : Buffer is not initialized");
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    array<T> a(count);
+    tiff(main::d3d_context->Map(d3d_buffer, 0, D3D11_MAP_READ, 0, &mapped));
+    std::ranges::copy_n(reinterpret_cast<T*>(mapped.pData), count, a.begin());
+    main::d3d_context->Unmap(d3d_buffer, 0);
+    return a;
+  }
+};
+
+template<typename T> staging_buffer(const buffer<T>&) -> staging_buffer<T>;
+
+template<typename T> array<T> buffer<T>::to_cpu() const {
+  if (!d3d_buffer) throw std::runtime_error("runtime error : yw::buffer::to_cpu : Buffer is not initialized");
+  staging_buffer<T> sb(*this);
+  return sb.to_cpu();
+}
+
+template<typename T> array<T> buffer<T>::to_cpu(staging_buffer<T>& sb) const {
+  if (!d3d_buffer) throw std::runtime_error("runtime error : yw::buffer::to_cpu : Buffer is not initialized");
+  if (count != sb.count) throw std::runtime_error("runtime error : yw::buffer::to_cpu : The count of the staging buffer is different");
+  sb.from(*this);
+  return sb.to_cpu();
+}
+
+/// class to create a constant buffer.
+template<typename T> requires ((sizeof(T) & 0xf) == 0)
+class constant_buffer : public buffer<T> {
+  static constexpr D3D11_BUFFER_DESC desc{sizeof(T), D3D11_USAGE_DYNAMIC, D3D11_BIND_CONSTANT_BUFFER, D3D11_CPU_ACCESS_WRITE};
+public:
+  using buffer<T>::count;
+  using buffer<T>::d3d_buffer;
+  using buffer<T>::from;
+  using buffer<T>::operator bool;
+  using buffer<T>::operator ID3D11Buffer*;
+  constant_buffer() noexcept = default;
+
+  /// creates a constant buffer with the specified value.
+  constant_buffer(const T& Value) : buffer<T>(1) {
+    D3D11_SUBRESOURCE_DATA d{&Value};
+    tiff(main::d3d_device->CreateBuffer(&desc, &d, d3d_buffer.init()));
+  }
+  /// creates a constant buffer with the specified object.
+  template<typename U> requires vassignable<T&, U> constant_buffer(U&& Object) : buffer<T>(1) {
+    tiff(main::d3d_device->CreateBuffer(&desc, nullptr, d3d_buffer.init()));
+    this->from(fwd<U>(Object));
+  }
+  /// copies the data from the specified object.
+  template<typename U> requires vassignable<T&, U> void from(U&& Object) {
+    if (!operator bool()) {
+      tiff(main::d3d_device->CreateBuffer(&desc, nullptr, d3d_buffer.init()));
+      const_cast<unsigned&>(count) = 1;
+    }
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    tiff(main::d3d_context->Map(d3d_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped));
+    vassign(*reinterpret_cast<T*>(mapped.pData), fwd<U>(Object));
+    main::d3d_context->Unmap(d3d_buffer, 0);
+  }
+  /// copies the data through the specified function.
+  template<invocable<T&> F> void from(F&& Func) {
+    if (!operator bool()) {
+      tiff(main::d3d_device->CreateBuffer(&desc, nullptr, d3d_buffer.init()));
+      const_cast<unsigned&>(count) = 1;
+    }
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    tiff(main::d3d_context->Map(d3d_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped));
+    Func(*reinterpret_cast<T*>(mapped.pData));
+    main::d3d_context->Unmap(d3d_buffer, 0);
+  }
+  /// sets the data to vertex shader.
+  void to_vs(nat Slot = 0) const {
+    if (!d3d_buffer) throw std::runtime_error("runtime error : yw::constant_buffer::to_vs : Buffer is not initialized");
+    [&](ID3D11Buffer* b) { main::d3d_context->VSSetConstantBuffers(Slot, 1, &b); }(d3d_buffer);
+  }
+  /// sets the data to pixel shader.
+  void to_ps(nat Slot = 0) const {
+    if (!d3d_buffer) throw std::runtime_error("runtime error : yw::constant_buffer::to_ps : Buffer is not initialized");
+    [&](ID3D11Buffer* b) { main::d3d_context->PSSetConstantBuffers(Slot, 1, &b); }(d3d_buffer);
+  }
+  /// sets the data to geometry shader.
+  void to_gs(nat Slot = 0) const {
+    if (!d3d_buffer) throw std::runtime_error("runtime error : yw::constant_buffer::to_gs : Buffer is not initialized");
+    [&](ID3D11Buffer* b) { main::d3d_context->GSSetConstantBuffers(Slot, 1, &b); }(d3d_buffer);
+  }
+  /// sets the data to compute shader.
+  void to_cs(nat Slot = 0) const {
+    if (!d3d_buffer) throw std::runtime_error("runtime error : yw::constant_buffer::to_cs : Buffer is not initialized");
+    [&](ID3D11Buffer* b) { main::d3d_context->CSSetConstantBuffers(Slot, 1, &b); }(d3d_buffer);
+  }
+};
+
+template<typename T> constant_buffer(const T&) -> constant_buffer<T>;
+
+/// class to create a structured buffer.
+template<typename T> class structured_buffer : public buffer<T> {
+protected:
+  comptr<ID3D11ShaderResourceView> srv{}; // shader resource view
+public:
+  using buffer<T>::count;
+  using buffer<T>::d3d_buffer;
+  using buffer<T>::from;
+  using buffer<T>::operator ID3D11Buffer*;
+  structured_buffer() noexcept = default;
+  explicit operator bool() const noexcept { return bool(d3d_buffer) && bool(srv); }
+  operator ID3D11ShaderResourceView*() const noexcept { return srv; }
+
+  /// copies the data from another buffer `Src`.
+  explicit structured_buffer(const buffer<T>& Src) : structured_buffer<T>(Src.count) { from(Src); }
+
+  /// creates a structured buffer with the specified count.
+  explicit structured_buffer(numerical auto Count) : buffer<T>(Count) {
+    D3D11_BUFFER_DESC desc{unsigned(sizeof(T)) * count, D3D11_USAGE_DEFAULT, D3D11_BIND_SHADER_RESOURCE};
+    desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, desc.StructureByteStride = sizeof(T);
+    tiff(main::d3d_device->CreateBuffer(&desc, nullptr, d3d_buffer.init()));
+    D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{DXGI_FORMAT_UNKNOWN, D3D11_SRV_DIMENSION_BUFFER, D3D11_BUFFER_SRV{0, count}};
+    tiff(main::d3d_device->CreateShaderResourceView(d3d_buffer, &srv_desc, srv.init()));
+  }
 };
 }
