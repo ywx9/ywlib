@@ -699,6 +699,7 @@ template<iterator It> struct _iter_t<It> { using v = std::iter_value_t<It>; usin
                                            using r = std::iter_reference_t<It>; using rr = std::iter_rvalue_reference_t<It>; };
 }
 
+#include <chrono>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -708,12 +709,25 @@ template<iterator It> struct _iter_t<It> { using v = std::iter_value_t<It>; usin
 #include <utility>
 
 namespace yw {
+
 template<character Ct> using string = std::basic_string<Ct>;
 template<character Ct> using string_view = std::basic_string_view<Ct>;
 using str1 = string<cat1>;
 using str2 = string<cat2>;
 using stv1 = string_view<cat1>;
 using stv2 = string_view<cat2>;
+
+/// returns the current date and time.
+/// \return `std::chrono::system_time`, `value`, `str1`, `str2`, `string<uct1>`, `string<uct2>`, or `string<uct4>`.
+inline constexpr caster now{
+  []() noexcept { return std::chrono::system_clock::now(); },
+  []() noexcept -> value { return std::chrono::system_clock::now().time_since_epoch().count(); },
+  []() noexcept -> str1 { return std::format("{:%FT%T}", std::chrono::system_clock::now()); },
+  []() noexcept -> str2 { return std::format(L"{:%FT%T}", std::chrono::system_clock::now()); },
+  []() noexcept -> string<uct1> { return reinterpret_cast<string<uct1>&&>(mv(std::format("{:%FT%T}", std::chrono::system_clock::now()))); },
+  []() noexcept -> string<uct2> { return reinterpret_cast<string<uct2>&&>(mv(std::format(L"{:%FT%T}", std::chrono::system_clock::now()))); },
+  []() noexcept -> string<uct4> { return [](string<cat1> s1, string<uct4> s4) noexcept { return std::ranges::copy(s1, s4.begin()), mv(s4); }(std::format("{:%FT%T}", std::chrono::system_clock::now()), string<uct4>(19, uct4{})); }
+};
 
 template<arithmetic T> struct t_stov {
 
@@ -922,6 +936,7 @@ template<typename Ct> struct formatter<yw::source, Ct> : formatter<basic_string<
 template<typename Ct> struct formatter<yw::path, Ct> : formatter<basic_string<Ct>, Ct> { auto format(const yw::path& p, auto& c) const {
   if constexpr (same_as<remove_cv<Ct>, char>) return std::format("\"{}\"", formatter<basic_string<Ct>, Ct>::format(p.string<Ct>(), c));
   else return std::format(L"\"{}\"", formatter<basic_string<Ct>, Ct>::format(p.string<Ct>(), c)); } };
+template<typename Ct, typename Tr> basic_ostream<Ct, Tr>& operator<<(basic_ostream<Ct, Tr>& os, decltype(yw::now)) { return os << yw::string<Ct>(yw::now); }
 }
 
 #include <immintrin.h>
@@ -1825,7 +1840,7 @@ struct t_xvview {
   void operator()(const xwector& Position, const xwector& Radian, const xwector& Offset, Matrix& O) const noexcept { three<extent<Matrix>>(Position, Radian, Offset, O); }
 private:
   template<nat N> static void two(const auto& Position, const auto& Radian, auto& O) noexcept {
-    xvrotate_inv(Radian, O);
+    xvrotation_inv(Radian, O);
     if constexpr (N < 4) {
       auto temp = xvneg(Position);
       get<0>(O) = xvinsert<3, 3>(get<0>(O), xvdot<3>(get<0>(O), temp));
@@ -1839,7 +1854,7 @@ private:
       get<3>(O) = xv_w;
     } }
   template<nat N> static void three(const auto& Position, const auto& Radian, const auto& Offset, auto& O) noexcept {
-    xvrotate_inv(Radian, O);
+    xvrotation_inv(Radian, O);
     if constexpr (N < 4) {
       auto temp = xvneg(Position);
       get<0>(O) = xvsub(xvinsert<3, 3>(get<0>(O), xvdot<3>(get<0>(O), temp)), xvinsert<3, 0, 0b0111>(Offset, Offset));
@@ -3561,11 +3576,13 @@ public:
     if (!end_figure) sink->EndFigure(D2D1_FIGURE_END_OPEN);
     tiff(sink->Close());
   }
+
   /// draws the geometry
   void draw(convertible_to<ID2D1SolidColorBrush*> auto&& Brush, const value Thickness = 1.0) const {
     if (!path) throw std::runtime_error("runtime error : yw::geometry::draw : Path geometry is not initialized");
     main::d2d_context->DrawGeometry(path, Brush, fat4(Thickness));
   }
+
   /// fills the geometry
   void fill(convertible_to<ID2D1SolidColorBrush*> auto&& Brush) const {
     if (!path) throw std::runtime_error("runtime error : yw::geometry::fill : Path geometry is not initialized");
@@ -3725,15 +3742,15 @@ template<typename T> constant_buffer(const T&) -> constant_buffer<T>;
 /// class to create a structured buffer.
 template<typename T> class structured_buffer : public buffer<T> {
 protected:
-  comptr<ID3D11ShaderResourceView> srv{}; // shader resource view
+  comptr<ID3D11ShaderResourceView> d3d_srv{}; // shader resource view
 public:
   using buffer<T>::count;
   using buffer<T>::d3d_buffer;
   using buffer<T>::from;
   using buffer<T>::operator ID3D11Buffer*;
   structured_buffer() noexcept = default;
-  explicit operator bool() const noexcept { return bool(d3d_buffer) && bool(srv); }
-  operator ID3D11ShaderResourceView*() const noexcept { return srv; }
+  explicit operator bool() const noexcept { return bool(d3d_buffer) && bool(d3d_srv); }
+  operator ID3D11ShaderResourceView*() const noexcept { return d3d_srv; }
 
   /// copies the data from another buffer `Src`.
   explicit structured_buffer(const buffer<T>& Src) : structured_buffer<T>(Src.count) { from(Src); }
@@ -3744,7 +3761,7 @@ public:
     desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, desc.StructureByteStride = sizeof(T);
     tiff(main::d3d_device->CreateBuffer(&desc, nullptr, d3d_buffer.init()));
     D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{DXGI_FORMAT_UNKNOWN, D3D11_SRV_DIMENSION_BUFFER, D3D11_BUFFER_SRV{0, count}};
-    tiff(main::d3d_device->CreateShaderResourceView(d3d_buffer, &srv_desc, srv.init()));
+    tiff(main::d3d_device->CreateShaderResourceView(d3d_buffer, &srv_desc, d3d_srv.init()));
   }
 
   /// copies the data from CPU memory.
@@ -3762,5 +3779,536 @@ public:
   /// copies the data from CPU memory.
   template<cnt_range_of<T> Rg> explicit structured_buffer(Rg&& Range)
     : structured_buffer(yw::data(Range), yw::size(Range)) {}
+
+  /// copies the data from CPU memory.
+  /// \param Data : pointer to the data; the size of the data must be the same as `count`.
+  void from(const T* Data) {
+    if (!d3d_buffer) throw std::runtime_error("runtime error : yw::structured_buffer::from : Buffer is not initialized");
+    main::d3d_context->UpdateSubresource(d3d_buffer, 0, 0, Data, sizeof(T), unsigned(sizeof(T) * count));
+  }
+
+  /// sets the data to the vertex shader.
+  void to_vs(nat Slot = 0) const {
+    if (!d3d_buffer) throw std::runtime_error("runtime error : yw::structured_buffer::to_vs : Buffer is not initialized");
+    [&](ID3D11ShaderResourceView* s) { main::d3d_context->VSSetShaderResources(Slot, 1, &s); }(d3d_srv);
+  }
+
+  /// sets the data to the pixel shader.
+  void to_ps(nat Slot = 0) const {
+    if (!d3d_buffer) throw std::runtime_error("runtime error : yw::structured_buffer::to_ps : Buffer is not initialized");
+    [&](ID3D11ShaderResourceView* s) { main::d3d_context->PSSetShaderResources(Slot, 1, &s); }(d3d_srv);
+  }
+
+  /// sets the data to the geometry shader.
+  void to_gs(nat Slot = 0) const {
+    if (!d3d_buffer) throw std::runtime_error("runtime error : yw::structured_buffer::to_gs : Buffer is not initialized");
+    [&](ID3D11ShaderResourceView* s) { main::d3d_context->GSSetShaderResources(Slot, 1, &s); }(d3d_srv);
+  }
+
+  /// sets the data to the compute shader.
+  void to_cs(nat Slot = 0) const {
+    if (!d3d_buffer) throw std::runtime_error("runtime error : yw::structured_buffer::to_cs : Buffer is not initialized");
+    [&](ID3D11ShaderResourceView* s) { main::d3d_context->CSSetShaderResources(Slot, 1, &s); }(d3d_srv);
+  }
+};
+
+template<typename T> structured_buffer(const T*, numerical auto) -> structured_buffer<T>;
+template<typename T> structured_buffer(const buffer<T>&) -> structured_buffer<T>;
+template<cnt_range Rg> structured_buffer(Rg&&) -> structured_buffer<iter_value<Rg>>;
+
+/// class to create a unordered access view.
+template<typename T> class unordered_buffer : public buffer<T> {
+protected:
+  comptr<ID3D11UnorderedAccessView> uav{}; // unordered access view
+public:
+  using buffer<T>::count;
+  using buffer<T>::d3d_buffer;
+  using buffer<T>::from;
+  using buffer<T>::operator ID3D11Buffer*;
+  unordered_buffer() noexcept = default;
+  explicit operator bool() const noexcept { return bool(d3d_buffer) && bool(uav); }
+  operator ID3D11UnorderedAccessView*() const noexcept { return uav; }
+
+  /// copies the data from another GPU buffer.
+  explicit unordered_buffer(const buffer<T>& Src) : unordered_buffer(Src.count) { from(Src); }
+
+  /// creates a unordered access view with the specified count.
+  explicit unordered_buffer(numerical auto Count) : buffer<T>(Count) {
+    D3D11_BUFFER_DESC desc{unsigned(sizeof(T)) * count, D3D11_USAGE_DEFAULT, D3D11_BIND_UNORDERED_ACCESS};
+    desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, desc.StructureByteStride = sizeof(T);
+    tiff(main::d3d_device->CreateBuffer(&desc, nullptr, d3d_buffer.init()));
+    tiff(main::d3d_device->CreateUnorderedAccessView(*this, nullptr, uav.init()));
+  }
+
+  /// copies the data from CPU memory.
+  unordered_buffer(const T* Data, const numerical auto Count) : buffer<T>(Count) {
+    D3D11_BUFFER_DESC desc{unsigned(sizeof(T)) * count, D3D11_USAGE_DEFAULT, D3D11_BIND_UNORDERED_ACCESS};
+    desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, desc.StructureByteStride = sizeof(T);
+    if (Data) {
+      D3D11_SUBRESOURCE_DATA data{.pSysMem = Data, .SysMemPitch = sizeof(T)};
+      tiff(main::d3d_device->CreateBuffer(&desc, &data, d3d_buffer.init()));
+    } else tiff(main::d3d_device->CreateBuffer(&desc, nullptr, d3d_buffer.init()));
+    tiff(main::d3d_device->CreateUnorderedAccessView(*this, nullptr, uav.init()));
+  }
+
+  /// copies the data from CPU memory.
+  template<cnt_range_of<T> Rg> explicit unordered_buffer(Rg&& Range)
+    : unordered_buffer(yw::data(Range), yw::size(Range)) {}
+
+  /// sets the data to the compute shader.
+  void to_cs(nat Slot = 0) const {
+    if (!d3d_buffer) throw std::runtime_error("runtime error : yw::unordered_buffer::to_cs : Buffer is not initialized");
+    [&](ID3D11UnorderedAccessView* u) { main::d3d_context->CSSetUnorderedAccessViews(Slot, 1, &u, nullptr); }(uav);
+  }
+};
+
+template<typename T> unordered_buffer(const T*, numerical auto) -> unordered_buffer<T>;
+template<typename T> unordered_buffer(const buffer<T>&) -> unordered_buffer<T>;
+}
+
+namespace yw { // renderer and gpgpu
+
+/// class to render 3D graphics.
+template<specialization_of<typepack> VSResources, specialization_of<typepack> VSCBuffers,
+         specialization_of<typepack> GSResources = typepack<>, specialization_of<typepack> GSCBuffers = typepack<>,
+        specialization_of<typepack> PSResources = typepack<>, specialization_of<typepack> PSCBuffers = typepack<>>
+class renderer {
+protected:
+  static_assert([]<nat... Is>(sequence<Is...>) { return (convertible_to<typename VSResources::template at<Is>, ID3D11ShaderResourceView*> && ...); }(make_indices_for<VSResources>{}));
+  static_assert([]<nat... Is>(sequence<Is...>) { return (convertible_to<typename GSResources::template at<Is>, ID3D11ShaderResourceView*> && ...); }(make_indices_for<GSResources>{}));
+  static_assert([]<nat... Is>(sequence<Is...>) { return (convertible_to<typename PSResources::template at<Is>, ID3D11ShaderResourceView*> && ...); }(make_indices_for<PSResources>{}));
+  static_assert([]<nat... Is>(sequence<Is...>) { return (convertible_to<typename VSCBuffers::template at<Is>, ID3D11Buffer*> && ...); }(make_indices_for<VSCBuffers>{}));
+  static_assert([]<nat... Is>(sequence<Is...>) { return (convertible_to<typename GSCBuffers::template at<Is>, ID3D11Buffer*> && ...); }(make_indices_for<GSCBuffers>{}));
+  static_assert([]<nat... Is>(sequence<Is...>) { return (convertible_to<typename PSCBuffers::template at<Is>, ID3D11Buffer*> && ...); }(make_indices_for<PSCBuffers>{}));
+  comptr<ID3D11VertexShader> d3d_vs{};
+  comptr<ID3D11GeometryShader> d3d_gs{};
+  comptr<ID3D11PixelShader> d3d_ps{};
+public:
+  using vs_resource_list = select_type<VSResources::count == 0, none, array<ID3D11ShaderResourceView*, VSResources::count>>;
+  using gs_resource_list = select_type<GSResources::count == 0, none, array<ID3D11ShaderResourceView*, GSResources::count>>;
+  using ps_resource_list = select_type<PSResources::count == 0, none, array<ID3D11ShaderResourceView*, PSResources::count>>;
+  using vs_cbuffer_list = select_type<VSCBuffers::count == 0, none, array<ID3D11Buffer*, VSCBuffers::count>>;
+  using gs_cbuffer_list = select_type<GSCBuffers::count == 0, none, array<ID3D11Buffer*, GSCBuffers::count>>;
+  using ps_cbuffer_list = select_type<PSCBuffers::count == 0, none, array<ID3D11Buffer*, PSCBuffers::count>>;
+  renderer() noexcept = default;
+  explicit operator bool() const noexcept { return bool(d3d_vs) && bool(d3d_ps); }
+
+  /// creates a renderer with the merged HLSL code.
+  /// \param HLSL : HLSL code that contains the vertex(`vsmain`), geometry(`gsmain`), and pixel(`psmain`) shader.
+  renderer(const stv1 HLSL) {
+    comptr<ID3DBlob> b, e;
+    auto hr = ::D3DCompile(HLSL.data(), HLSL.size(), 0, 0, 0, "vsmain", "vs_5_0", D3D10_SHADER_ENABLE_STRICTNESS, 0, b.init(), e.init());
+    if (FAILED(hr)) throw std::runtime_error(std::format("runtime error : yw::renderer : Failed to compile the vertex shader\n{}", static_cast<const char*>(e->GetBufferPointer())));
+    tiff(main::d3d_device->CreateVertexShader(b->GetBufferPointer(), b->GetBufferSize(), nullptr, d3d_vs.init()));
+    b.reset(), e.reset();
+    hr = ::D3DCompile(HLSL.data(), HLSL.size(), 0, 0, 0, "psmain", "ps_5_0", D3D10_SHADER_ENABLE_STRICTNESS, 0, b.init(), e.init());
+    if (FAILED(hr)) throw std::runtime_error(std::format("runtime error : yw::renderer : Failed to compile the pixel shader\n{}", static_cast<const char*>(e->GetBufferPointer())));
+    tiff(main::d3d_device->CreatePixelShader(b->GetBufferPointer(), b->GetBufferSize(), nullptr, d3d_ps.init()));
+    if (HLSL.find("gsmain") == npos) return;
+    b.reset(), e.reset();
+    hr = ::D3DCompile(HLSL.data(), HLSL.size(), 0, 0, 0, "gsmain", "gs_5_0", D3D10_SHADER_ENABLE_STRICTNESS, 0, b.init(), e.init());
+    if (FAILED(hr)) throw std::runtime_error(std::format("runtime error : yw::renderer : Failed to compile the geometry shader\n{}", static_cast<const char*>(e->GetBufferPointer())));
+    tiff(main::d3d_device->CreateGeometryShader(b->GetBufferPointer(), b->GetBufferSize(), nullptr, d3d_gs.init()));
+  }
+
+  /// renders the 3D graphics.
+  void operator()(const numerical auto VertexCounts, vs_resource_list vr, vs_cbuffer_list vcb,
+                  gs_resource_list gr = {}, gs_cbuffer_list gcb = {}, ps_resource_list pr = {}, ps_cbuffer_list pcb = {}) const {
+    if constexpr (!is_none<vs_resource_list>) main::d3d_context->VSSetShaderResources(0, vs_resource_list::count, vr.data());
+    if constexpr (!is_none<vs_cbuffer_list>) main::d3d_context->VSSetConstantBuffers(0, vs_cbuffer_list::count, vcb.data());
+    if constexpr (!is_none<gs_resource_list>) main::d3d_context->GSSetShaderResources(0, gs_resource_list::count, gr.data());
+    if constexpr (!is_none<gs_cbuffer_list>) main::d3d_context->GSSetConstantBuffers(0, gs_cbuffer_list::count, gcb.data());
+    if constexpr (!is_none<ps_resource_list>) main::d3d_context->PSSetShaderResources(0, ps_resource_list::count, pr.data());
+    if constexpr (!is_none<ps_cbuffer_list>) main::d3d_context->PSSetConstantBuffers(0, ps_cbuffer_list::count, pcb.data());
+    main::d3d_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    main::d3d_context->IASetInputLayout(nullptr);
+    main::d3d_context->IASetVertexBuffers(0, 0, nullptr, nullptr, nullptr);
+    main::d3d_context->IASetIndexBuffer(nullptr, DXGI_FORMAT_R32_UINT, 0);
+    main::d3d_context->VSSetShader(d3d_vs, nullptr, 0);
+    main::d3d_context->GSSetShader(d3d_gs, nullptr, 0);
+    main::d3d_context->PSSetShader(d3d_ps, nullptr, 0);
+    main::d3d_context->Draw(unsigned(VertexCounts), 0);
+  }
+};
+
+/// class to perform general-purpose computing on the GPU.
+template<specialization_of<typepack> Unordered,
+         specialization_of<typepack> Structured = typepack<>,
+         specialization_of<typepack> Constant = typepack<>>
+class computer {
+protected:
+  static_assert(Unordered::count > 0);
+  comptr<ID3D11ComputeShader> d3d_cs{};
+public:
+  using ub_list = array<ID3D11UnorderedAccessView*, Unordered::count>;
+  using sb_list = array<ID3D11ShaderResourceView*, Structured::count>;
+  using cb_list = array<ID3D11Buffer*, Constant::count>;
+  computer() noexcept = default;
+
+  /// creates a GPU computer with the HLSL code.
+  computer(const stv1 HLSL, const str1& Entry = "csmain", const str1& Target = "cs_5_0") {
+    comptr<ID3DBlob> b, e;
+    auto hr = ::D3DCompile(HLSL.data(), HLSL.size(), 0, 0, 0, Entry.data(), Target.data(), D3D10_SHADER_ENABLE_STRICTNESS, 0, b.init(), e.init());
+    if (FAILED(hr)) throw std::runtime_error(std::format("runtime error : yw::computer::computer : Failed to compile the compute shader\n{}", static_cast<const char*>(e->GetBufferPointer())));
+    tiff(main::d3d_device->CreateComputeShader(b->GetBufferPointer(), b->GetBufferSize(), nullptr, d3d_cs.init()));
+  }
+
+  /// performs general-purpose computing on the GPU.
+  void operator()(ub_list ub, sb_list sb, cb_list cb, const numerical auto ThreadGroupX,
+                  const numerical auto ThreadGroupY = 1, const numerical auto ThreadGroupZ = 1) const {
+    if (!d3d_cs) throw std::runtime_error("runtime error : yw::computer::operator() : Compute shader is not initialized");
+    for (nat i = 0; i < Unordered::count; ++i) if (!ub[i]) throw std::runtime_error(std::format("runtime error : yw::computer::operator() : {}-th unordered access view is not initialized", i));
+    for (nat i = 0; i < Structured::count; ++i) if (!sb[i]) throw std::runtime_error(std::format("runtime error : yw::computer::operator() : {}-th shader resource view is not initialized", i));
+    for (nat i = 0; i < Constant::count; ++i) if (!cb[i]) throw std::runtime_error(std::format("runtime error : yw::computer::operator() : {}-th constant buffer is not initialized", i));
+    main::d3d_context->CSSetShader(d3d_cs, nullptr, 0);
+    main::d3d_context->CSSetUnorderedAccessViews(0, Unordered::count, ub.data(), nullptr);
+    main::d3d_context->CSSetShaderResources(0, Structured::count, sb.data(), nullptr);
+    main::d3d_context->CSSetConstantBuffers(0, Constant::count, cb.data(), nullptr);
+    main::d3d_context->Dispatch(unsigned(ThreadGroupX), unsigned(ThreadGroupY), unsigned(ThreadGroupZ));
+    std::ranges::fill(ub, nullptr), std::ranges::fill(sb, nullptr), std::ranges::fill(cb, nullptr);
+    main::d3d_context->CSSetUnorderedAccessViews(0, Unordered::count, ub.data(), nullptr);
+    main::d3d_context->CSSetShaderResources(0, Structured::count, sb.data(), nullptr);
+    main::d3d_context->CSSetConstantBuffers(0, Constant::count, cb.data(), nullptr);
+  }
+
+  /// performs general-purpose computing on the GPU.
+  /// \note numthreads of the compute shader must be `(1024, 1, 1)`.
+  void operator()(const numerical auto Parallels, ub_list ub, sb_list sb, cb_list cb) const {
+    this->operator()(mv(ub), mv(sb), mv(cb), unsigned(Parallels - 1) / 1024 + 1);
+  }
+};
+}
+
+namespace yw { // bitmap classes
+
+/// class to create a Direct2D bitmap.
+class bitmap {
+protected:
+  comptr<ID2D1Bitmap1> d2d_bitmap{};
+public:
+  const unsigned width{};  // width of the bitmap
+  const unsigned height{}; // height of the bitmap
+  bitmap() noexcept = default;
+  explicit operator bool() const noexcept { return bool(d2d_bitmap); }
+  operator ID2D1Bitmap1*() const noexcept { return d2d_bitmap; }
+
+  bitmap(bitmap&& b) noexcept : d2d_bitmap(mv(b.d2d_bitmap)), width(b.width), height(b.height) {}
+  bitmap& operator=(bitmap&& b) noexcept {
+    d2d_bitmap = mv(b.d2d_bitmap);
+    const_cast<unsigned&>(width) = b.width;
+    const_cast<unsigned&>(height) = b.height;
+    return *this;
+  }
+
+  /// creates a bitmap with the specified width and height.
+  bitmap(const numerical auto Width, const numerical auto Height) : width(unsigned(Width)), height(unsigned(Height)) {
+    auto p = D2D1::BitmapProperties(D2D1_BITMAP_OPTIONS_TARGET, D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+    tiff(main::d2d_context->CreateBitmap(D2D1::SizeU(width, height), nullptr, 0, p, d2d_bitmap.init()));
+  }
+  /// creates a bitmap from the specified file.
+  bitmap(const path& File) {
+    comptr<IWICBitmapDecoder> decoder;
+    tiff(main::wic_factory->CreateDecoderFromFilename(File.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, decoder.init()));
+    comptr<IWICBitmapFrameDecode> frame;
+    tiff(decoder->GetFrame(0, frame.init()));
+    tiff(frame->GetSize(const_cast<unsigned*>(&width), const_cast<unsigned*>(&height)));
+    WICPixelFormatGUID image_format, convert_format = GUID_WICPixelFormat32bppPRGBA;
+    tiff(frame->GetPixelFormat(&image_format));
+    comptr<IWICFormatConverter> converter;
+    tiff(main::wic_factory->CreateFormatConverter(converter.init()));
+    BOOL can_convert = FALSE;
+    tiff(converter->CanConvert(image_format, convert_format, &can_convert));
+    if (!can_convert) throw std::runtime_error("runtime error : yw::bitmap : Cannot convert the image format");
+    tiff(converter->Initialize(frame, convert_format, WICBitmapDitherTypeErrorDiffusion, nullptr, 0.0, WICBitmapPaletteTypeMedianCut));
+    tiff(main::d2d_context->CreateBitmapFromWicBitmap(converter, d2d_bitmap.init()));
+  }
+
+  /// begins drawing on the bitmap.
+  void begin_draw() const {
+    if (!d2d_bitmap) throw std::runtime_error("runtime error : yw::bitmap::begin_draw : Bitmap is not initialized");
+    main::d2d_context->SetTarget(d2d_bitmap);
+    main::d2d_context->BeginDraw();
+  }
+  /// begins drawing on the bitmap after clearing it with the specified color.
+  void begin_draw(const color& Color) const {
+    if (!d2d_bitmap) throw std::runtime_error("runtime error : yw::bitmap::begin_draw : Bitmap is not initialized");
+    main::d2d_context->SetTarget(d2d_bitmap);
+    main::d2d_context->BeginDraw();
+    main::d2d_context->Clear(reinterpret_cast<const D2D1_COLOR_F*>(&Color));
+  }
+  /// ends drawing on the bitmap.
+  void end_draw() const {
+    if (!d2d_bitmap) throw std::runtime_error("runtime error : yw::bitmap::end_draw : Bitmap is not initialized");
+    tiff(main::d2d_context->EndDraw());
+  }
+  /// draws the bitmap on the specified render target.
+  void draw(const vector& Rect, const numerical auto Opacity) const {
+    if (!d2d_bitmap) throw std::runtime_error("runtime error : yw::bitmap::draw : Bitmap is not initialized");
+    main::d2d_context->DrawBitmap(d2d_bitmap, reinterpret_cast<const D2D1_RECT_F*>(&Rect), fat4(Opacity), D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+  }
+  /// draws the bitmap on the specified render target.
+  void draw(const vector& Rect) const { draw(Rect, 1.f); }
+
+  /// returns a new bitmap which is a rotated copy of the bitmap.
+  bitmap rotate(const numerical auto Angle) const {
+    auto m = D2D1::Matrix3x2F::Rotation(Angle);
+    auto p = array{D2D1_POINT_2F{0, 0}, D2D1::Point2F(fat4(width), 0) * m,
+                    D2D1::Point2F(0, fat4(height)) * m, D2D1::Point2F(fat4(width), fat4(height)) * m};
+    auto w = array{std::floor(apply(min, projector(p, &D2D1_POINT_2F::x))), ceil(apply(max, projector(p, &D2D1_POINT_2F::x)))};
+    auto h = array{std::floor(apply(min, projector(p, &D2D1_POINT_2F::y))), ceil(apply(max, projector(p, &D2D1_POINT_2F::y)))};
+    bitmap b(nat(w[1] - w[0]), nat(h[1] - h[0]));
+    main::d2d_context->SetTarget(b);
+    main::d2d_context->BeginDraw();
+    main::d2d_context->SetTransform(m * D2D1::Matrix3x2F::Translation(-w[0], -h[0]));
+    main::d2d_context->Clear(bitcast<D2D1_COLOR_F>(color::transparent));
+    main::d2d_context->DrawBitmap(d2d_bitmap);
+    main::d2d_context->SetTransform(D2D1::Matrix3x2F::Identity());
+    main::d2d_context->EndDraw();
+    return b;
+  }
+  /// saves the bitmap as a PNG file.
+  void to_png(const path& FileName) const {
+    comptr<IWICStream> stream;
+    tiff(main::wic_factory->CreateStream(stream.init()));
+    tiff(stream->InitializeFromFilename(FileName.c_str(), GENERIC_WRITE));
+    comptr<IWICBitmapEncoder> encoder;
+    tiff(main::wic_factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.init()));
+    tiff(encoder->Initialize(stream, WICBitmapEncoderNoCache));
+    comptr<IWICBitmapFrameEncode> frame;
+    tiff(encoder->CreateNewFrame(frame.init(), nullptr));
+    tiff(frame->Initialize(nullptr));
+    comptr<IWICImageEncoder> image_encoder;
+    tiff(main::wic_factory->CreateImageEncoder(main::d2d_device, image_encoder.init()));
+    tiff(image_encoder->WriteFrame(d2d_bitmap, frame, nullptr));
+    tiff(frame->Commit());
+    tiff(encoder->Commit());
+    tiff(stream->Commit(STGC_DEFAULT));
+  }
+};
+
+/// class to create a texture.
+class texture : public bitmap {
+  void initialize() {
+    comptr<IDXGISurface> surface;
+    tiff(bitmap::d2d_bitmap->GetSurface(surface.init()));
+    tiff(surface->QueryInterface(d3d_texture.init()));
+    D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{DXGI_FORMAT_R8G8B8A8_UNORM, D3D11_SRV_DIMENSION_TEXTURE2D};
+    srv_desc.Texture2D = {0, 1};
+    tiff(main::d3d_device->CreateShaderResourceView(d3d_texture, &srv_desc, d3d_srv.init()));
+  }
+protected:
+  comptr<ID3D11Texture2D> d3d_texture{};
+  comptr<ID3D11ShaderResourceView> d3d_srv{};
+public:
+  using bitmap::width;
+  using bitmap::height;
+  using bitmap::operator ID2D1Bitmap1*;
+
+  texture() noexcept = default;
+  explicit operator bool() const noexcept { return bool(d3d_texture) && bool(d3d_srv); }
+  operator ID3D11Texture2D*() const noexcept { return d3d_texture; }
+  operator ID3D11ShaderResourceView*() const noexcept { return d3d_srv; }
+
+  /// creates a texture with the specified width and height.
+  texture(const numerical auto Width, const numerical auto Height) : bitmap(Width, Height) { initialize(); }
+
+  /// creates a texture from the specified file.
+  texture(const path& File) : bitmap(File) { initialize(); }
+
+  /// creates a texture from the specified bitmap.
+  texture(bitmap&& b) : bitmap(mv(b)) { initialize(); }
+
+  /// sets the texture to the vertex shader.
+  void to_vs(nat Slot = 0) const {
+    if (!d3d_srv) throw std::runtime_error("runtime error : yw::texture::to_vs : Texture is not initialized");
+    [&](ID3D11ShaderResourceView* s) { main::d3d_context->VSSetShaderResources(unsigned(Slot), 1, &s); }(d3d_srv);
+  }
+  /// sets the texture to the pixel shader.
+  void to_ps(nat Slot = 0) const {
+    if (!d3d_srv) throw std::runtime_error("runtime error : yw::texture::to_ps : Texture is not initialized");
+    [&](ID3D11ShaderResourceView* s) { main::d3d_context->PSSetShaderResources(unsigned(Slot), 1, &s); }(d3d_srv);
+  }
+  /// sets the texture to the geometry shader.
+  void to_gs(nat Slot = 0) const {
+    if (!d3d_srv) throw std::runtime_error("runtime error : yw::texture::to_gs : Texture is not initialized");
+    [&](ID3D11ShaderResourceView* s) { main::d3d_context->GSSetShaderResources(unsigned(Slot), 1, &s); }(d3d_srv);
+  }
+  /// sets the texture to the compute shader.
+  void to_cs(nat Slot = 0) const {
+    if (!d3d_srv) throw std::runtime_error("runtime error : yw::texture::to_cs : Texture is not initialized");
+    [&](ID3D11ShaderResourceView* s) { main::d3d_context->CSSetShaderResources(unsigned(Slot), 1, &s); }(d3d_srv);
+  }
+};
+
+/// class to create a 3D render target.
+class canvas : public texture {
+  void initialize() {
+    comptr<ID3D11Texture2D> temp;
+    if (const_cast<unsigned&>(msaa) = msaa < 2 ? 0 : (msaa < 4 ? 2 : (msaa < 8 ? 4 : 8)); msaa) {
+      D3D11_TEXTURE2D_DESC desc{width, height, 1, 1, DXGI_FORMAT_D24_UNORM_S8_UINT, {msaa, 0}, D3D11_USAGE_DEFAULT, D3D11_BIND_DEPTH_STENCIL};
+      tiff(main::d3d_device->CreateTexture2D(&desc, nullptr, temp.init()));
+      tiff(main::d3d_device->CreateDepthStencilView(temp, nullptr, d3d_dsv.init()));
+      temp.reset(), desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM, desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+      tiff(main::d3d_device->CreateTexture2D(&desc, nullptr, temp.init()));
+      D3D11_RENDER_TARGET_VIEW_DESC rtv_desc{DXGI_FORMAT_R8G8B8A8_UNORM, D3D11_RTV_DIMENSION_TEXTURE2DMS};
+      tiff(main::d3d_device->CreateRenderTargetView(temp, &rtv_desc, d3d_rtv.init()));
+    } else {
+      D3D11_TEXTURE2D_DESC desc{width, height, 1, 1, DXGI_FORMAT_D24_UNORM_S8_UINT, {1, 0}, D3D11_USAGE_DEFAULT, D3D11_BIND_DEPTH_STENCIL};
+      tiff(main::d3d_device->CreateTexture2D(&desc, nullptr, temp.init()));
+      tiff(main::d3d_device->CreateDepthStencilView(temp, nullptr, d3d_dsv.init()));
+      D3D11_RENDER_TARGET_VIEW_DESC rtv_desc{DXGI_FORMAT_R8G8B8A8_UNORM, D3D11_RTV_DIMENSION_TEXTURE2D};
+      tiff(main::d3d_device->CreateRenderTargetView(d3d_texture, &rtv_desc, d3d_rtv.init()));
+    }
+  }
+protected:
+  comptr<ID3D11RenderTargetView> d3d_rtv{};
+  comptr<ID3D11DepthStencilView> d3d_dsv{};
+public:
+  using bitmap::width;
+  using bitmap::height;
+
+  const unsigned msaa{}; // multi-sample anti-aliasing
+
+  canvas() noexcept = default;
+  explicit operator bool() const noexcept { return bool(d3d_texture) && bool(d3d_srv) && bool(d3d_rtv) && bool(d3d_dsv); }
+  operator ID3D11Texture2D*() const noexcept { return d3d_texture; }
+  operator ID3D11ShaderResourceView*() const noexcept { return d3d_srv; }
+  operator ID3D11RenderTargetView*() const noexcept { return d3d_rtv; }
+
+  canvas(canvas&& c) noexcept : texture(mv(c)), msaa(c.msaa), d3d_rtv(mv(c.d3d_rtv)), d3d_dsv(mv(c.d3d_dsv)) {}
+
+  canvas& operator=(canvas&& c) noexcept {
+    texture::operator=(mv(c));
+    const_cast<unsigned&>(msaa) = c.msaa;
+    d3d_rtv = mv(c.d3d_rtv);
+    d3d_dsv = mv(c.d3d_dsv);
+    return *this;
+  }
+
+  /// creates a 3D render target with the specified width and height.
+  canvas(const numerical auto Width, const numerical auto Height, const numerical auto MSAA = 8)
+    : texture(Width, Height), msaa(unsigned(MSAA)) { initialize(); }
+
+  /// creates a 3D render target from the specified texture.
+  explicit canvas(texture&& t, const numerical auto MSAA = 8) : texture(mv(t)), msaa(unsigned(MSAA)) { initialize(); }
+
+  /// begins rendering on this render target.
+  template<typename... RTV_OR_UAV> void begin_render(RTV_OR_UAV&&... Views) const
+    requires(bool(convertible_to<RTV_OR_UAV, ID3D11RenderTargetView*> ^ convertible_to<RTV_OR_UAV, ID3D11UnorderedAccessView*>) && ...) {
+    if (!d3d_rtv) throw std::runtime_error("runtime error : yw::canvas::begin_render : Render target is not initialized");
+    main::d3d_context->ClearDepthStencilView(d3d_dsv, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+    [](D3D11_VIEWPORT vp) { main::d3d_context->RSSetViewports(1, &vp); }({0, 0, (float)width, (float)height, 0, 1});
+    static constexpr unsigned m = unsigned(counts<convertible_to<RTV_OR_UAV, ID3D11RenderTargetView*>...>), n = unsigned(sizeof...(RTV_OR_UAV) - m);
+    if constexpr (n == 0) [&]<nat... Is>(array<ID3D11RenderTargetView*, m + 1> RTVs) { main::d3d_context->OMSetRenderTargets(m + 1, RTVs.data(), d3d_dsv); }({d3d_rtv, Views...});
+    else [&](auto&& RTVs, auto&& UAVs) { main::d3d_context->OMSetRenderTargetsAndUnorderedAccessViews(m + 1, RTVs.data(), d3d_dsv, m + 1, n, UAVs.data(), nullptr); }(
+      [&]<nat... Is>(sequence<Is...>) { return array<ID3D11RenderTargetView*, m + 1>{d3d_rtv, select_parameter<Is>(Views...)...}; }(
+        extracting_indices<sequence<convertible_to<RTV_OR_UAV, ID3D11RenderTargetView*>...>>{}),
+      [&]<nat... Is>(sequence<Is...>) { return array<ID3D11UnorderedAccessView*, n>{select_parameter<Is>(Views...)...}; }(
+        extracting_indices<sequence<convertible_to<RTV_OR_UAV, ID3D11UnorderedAccessView*>...>>{}));
+  };
+  /// begins rendering on this render target after clearing it with the specified color.
+  template<typename... RTV_OR_UAV> void begin_render(const color& Color, RTV_OR_UAV&&... Views) const
+    requires(bool(convertible_to<RTV_OR_UAV, ID3D11RenderTargetView*> ^ convertible_to<RTV_OR_UAV, ID3D11UnorderedAccessView*>) && ...) {
+    if (!d3d_rtv) throw std::runtime_error("runtime error : yw::canvas::begin_render : Render target is not initialized");
+    main::d3d_context->ClearRenderTargetView(d3d_rtv, &Color.r);
+    begin_render(fwd<RTV_OR_UAV>(Views)...);
+  }
+  /// ends rendering on this render target.
+  void end_render() const {
+    if (!d3d_rtv) throw std::runtime_error("runtime error : yw::canvas::end_render : Render target is not initialized");
+    if (msaa) [&](comptr<ID3D11Resource> a) { d3d_rtv->GetResource(a.init()), main::d3d_context->ResolveSubresource(*this, 0, a, 0, DXGI_FORMAT_R8G8B8A8_UNORM); }({});
+    main::d3d_context->OMSetRenderTargets(0, nullptr, nullptr);
+  }
+};
+
+/// class to create a perspective camera.
+class perspective_camera : public canvas {
+public:
+  using canvas::operator bool;
+  using canvas::operator ID3D11Texture2D*;
+  using canvas::operator ID3D11ShaderResourceView*;
+  using canvas::operator ID3D11RenderTargetView*;
+
+  xmatrix view{};      // view matrix
+  xmatrix view_proj{}; // view-projection matrix
+  vector offset{};     // offsets of the camera lens from the center point
+  vector rotation{};   // rotation angles of the camera lens by degrees
+  vector position{};   // position of the camera
+  fat4 fov{};          // field of view
+
+  perspective_camera() noexcept = default;
+  perspective_camera(canvas&& c) : canvas(mv(c)) {}
+
+  perspective_camera(const numerical auto Width, const numerical auto Height, const numerical auto MSAA = 8)
+    : canvas(Width, Height, MSAA) {}
+
+  /// updates the matrices.
+  void update() {
+    constexpr fat4 f = 1048576.0f, n = 0.25f;
+    xvview(position, rotation, offset, view);
+    auto t = 1.f / std::tan(fov * 0.5f);
+    auto a = xvload((-t * height) / width, t, cev(f / (f - n)), cev(-f * n / (f - n)));
+    view_proj[0] = xvmul(view[0], xvpermute<0, 0, 0, 0>(a));
+    view_proj[1] = xvmul(view[1], xvpermute<1, 1, 1, 1>(a));
+    view_proj[2] = xvadd(xvmul(view[2], xvpermute<2, 2, 2, 2>(a)), xvsetzero<1, 1, 1, 0>(a));
+    view_proj[3] = view[2];
+  }
+};
+
+/// class to create a orthographic camera.
+class orthographic_camera : public canvas {
+public:
+  using canvas::operator bool;
+  using canvas::operator ID3D11Texture2D*;
+  using canvas::operator ID3D11ShaderResourceView*;
+  using canvas::operator ID3D11RenderTargetView*;
+
+  xmatrix view{};      // view matrix
+  xmatrix view_proj{}; // view-projection matrix
+  vector offset{};     // offsets of the camera lens from the center point
+  vector rotation{};   // rotation angles of the camera lens by degrees
+  vector position{};   // position of the camera
+  fat4 factor{};       // magnification factor
+
+  orthographic_camera() noexcept = default;
+  orthographic_camera(canvas&& c) : canvas(mv(c)) {}
+
+  orthographic_camera(const numerical auto Width, const numerical auto Height, const numerical auto MSAA = 8)
+    : canvas(Width, Height, MSAA) {}
+
+  /// updates the matrices.
+  void update() {
+    constexpr fat4 f = 1048576.0f, n = 0.25f;
+    xvview(position, rotation, offset, view);
+    auto a = xvload(-2.f * factor / width, -2.f * factor / height, cev(1.f / (f - n)), cev(n / (f - n)));
+    view_proj[0] = xvmul(view[0], xvpermute<0, 0, 0, 0>(a));
+    view_proj[1] = xvmul(view[1], xvpermute<1, 1, 1, 1>(a));
+    view_proj[2] = xvsub(xvmul(view[2], xvpermute<2, 2, 2, 2>(a)), xvsetzero<1, 1, 1, 0>(a));
+    view_proj[3] = view[3];
+  }
+};
+}
+
+#include <CommCtrl.h>
+#pragma comment(lib, "Comctl32.lib")
+
+namespace yw { // control classes
+
+/// base class to create a control.
+class control {
+public:
+  inline static constexpr nat max_groups = 16; // maximum number of control groups
+  const HWND hwnd{};     // handle of this control
+  const HFONT hfont{};   // handle of the font
+  const nat gourp{npos}; // group id of this control
+
+  /// shows this contorl.
+  virtual void show() const {
+
+    ::ShowWindow(hwnd, SW_SHOW); }
+  virtual void hide() const { ::ShowWindow(hwnd, SW_HIDE); }
+  virtual void setfocus() const { ::SetFocus(hwnd); }
+  virtual void text(const string<cat2>& Text) const { ::SetWindowText(hwnd, Text.c_str()); }
+
 };
 }

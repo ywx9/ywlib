@@ -4,6 +4,7 @@ using namespace yw;
 #include <iostream>
 
 int main() {
+  std::cout << now << std::endl;
   string<cat1> svgpath = R"(M 10 315
            L 110 215
            A 30 50 0 0 1 162.55 162.45
