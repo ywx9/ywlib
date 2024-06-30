@@ -9,13 +9,24 @@ static_assert(sizeof(nat) == 8, "ywlib requires 64-bit platform");
 #define ywlib_wrapper(...) noexcept(noexcept(__VA_ARGS__)) requires requires { __VA_ARGS__; } { return __VA_ARGS__; }
 
 #include <bit>
+#include <chrono>
 #include <compare>
 #include <limits>
+#include <filesystem>
+#include <format>
+#include <fstream>
+#include <iostream>
 #include <numbers>
 #include <ranges>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
-namespace yw {
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+
+namespace yw { // Core Definitions
 
 using cat1 = char;
 using cat2 = wchar_t;
@@ -71,8 +82,11 @@ template<typename T, typename... Ts> concept castable_to = requires(T (&f)()) { 
 template<typename T, typename... Ts> concept nt_castable_to = castable_to<T, Ts...> && requires(T (&f)() noexcept) { { ((static_cast<Ts>(f())), ...) } noexcept; };
 template<typename T, typename... Ts> concept convertible_to = requires { requires (std::convertible_to<T, Ts> && ...); };
 template<typename T, typename... Ts> concept nt_convertible_to = convertible_to<T, Ts...> && requires { requires (std::is_nothrow_convertible_v<T, Ts> && ...); };
-template<typename T> concept numerical = nt_convertible_to<T, int4, int8, nat4, nat8, fat4, fat8>;
 
+/// checks if the type can be explicitly converted to signed/unsigned integer and floating point types
+template<typename T> concept numerical = nt_castable_to<T, int4, int8, nat4, nat8, fat4, fat8>;
+
+/// struct to represent a constant value
 template<auto V, typename T = decltype(V)> requires convertible_to<decltype(V), T> struct constant {
   using type = T;
   static constexpr type value = V;
@@ -80,6 +94,7 @@ template<auto V, typename T = decltype(V)> requires convertible_to<decltype(V), 
   consteval type operator()() const noexcept { return value; }
 };
 
+/// struct to represent a null value
 struct none {
   constexpr none() noexcept = default;
   constexpr none(auto&&...) noexcept {}
@@ -100,6 +115,7 @@ struct none {
   constexpr none& operator/=(none) noexcept { return *this; }
 };
 
+/// struct to represent a generic value
 struct value {
   fat8 _{};
   constexpr value() noexcept = default;
@@ -116,16 +132,16 @@ struct value {
   template<numerical T> constexpr value& operator/=(T&& Value) noexcept { return _ /= double(static_cast<T&&>(Value)), *this; }
 };
 
-inline constexpr value e = std::numbers::e_v<fat8>;
-inline constexpr value pi = std::numbers::pi_v<fat8>;
-inline constexpr value phi = std::numbers::phi_v<fat8>;
-inline constexpr value gamma = std::numbers::egamma_v<fat8>;
-inline constexpr value ln2 = std::numbers::ln2_v<fat8>;
-inline constexpr value ln10 = std::numbers::ln10_v<fat8>;
-inline constexpr value sqrt2 = std::numbers::sqrt2_v<fat8>;
-inline constexpr value sqrt3 = std::numbers::sqrt3_v<fat8>;
-inline constexpr value inf = std::numeric_limits<fat8>::infinity();
-inline constexpr value nan = std::numeric_limits<fat8>::quiet_NaN();
+inline constexpr value e = std::numbers::e_v<fat8>;                  // Euler's number
+inline constexpr value pi = std::numbers::pi_v<fat8>;                // Pi
+inline constexpr value phi = std::numbers::phi_v<fat8>;              // Golden ratio
+inline constexpr value gamma = std::numbers::egamma_v<fat8>;         // Euler-Mascheroni constant
+inline constexpr value ln2 = std::numbers::ln2_v<fat8>;              // Natural logarithm of 2
+inline constexpr value ln10 = std::numbers::ln10_v<fat8>;            // Natural logarithm of 10
+inline constexpr value sqrt2 = std::numbers::sqrt2_v<fat8>;          // Square root of 2
+inline constexpr value sqrt3 = std::numbers::sqrt3_v<fat8>;          // Square root of 3
+inline constexpr value inf = std::numeric_limits<fat8>::infinity();  // Positive infinity
+inline constexpr value nan = std::numeric_limits<fat8>::quiet_NaN(); // Quiet NaN
 
 template<typename T> concept is_const = std::is_const_v<T>;
 template<typename T> concept is_volatile = std::is_volatile_v<T>;
@@ -190,6 +206,7 @@ template<typename T, nat N> using add_extent = typename _::_add_extent<T, N>::ty
 
 inline consteval auto cev(auto a) noexcept { return a; }
 inline consteval auto arraysize(const is_bounded_array auto& Array) noexcept { return std::extent_v<remove_ref<decltype(Array)>>; }
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreturn-type"
 template<typename T> inline constexpr auto declval = []() noexcept -> add_fwref<T> {};
@@ -211,6 +228,16 @@ template<typename T> inline constexpr auto fwd = [](auto&& Ref) noexcept -> decl
 template<typename T> inline constexpr auto construct = []<typename... Ts>(Ts&&... Args) noexcept(nt_constructible<T, Ts...>) -> T requires constructible<T, Ts...> { return T{fwd<Ts>(Args)...}; };
 inline constexpr auto assign = []<typename L, typename R>(L&& Lhs, R&& Rhs) noexcept(nt_assignable<L, R>) -> decltype(auto) requires assignable<L, R> { return fwd<L>(Lhs) = fwd<R>(Rhs); };
 inline constexpr auto exchange = []<typename T, typename U = T>(T& A, U&& B) noexcept(nt_exchangeable<T&, U>) -> T requires exchangeable<T&, U> { auto a = mv(A); A = fwd<U>(B); return a; };
+
+
+
+}
+
+namespace yw {
+
+
+
+
 
 template<convertible_to<nat> auto I, nat N> inline constexpr bool selectable = (is_bool<decltype(I)> && N == 2) || (!is_bool<decltype(I)> && static_cast<nat>(I) < N);
 namespace _ { template<typename T, T I, typename... Ts> struct _select_type; }
@@ -558,14 +585,23 @@ template<typename Lt, typename Rt> concept nt_vassignable = tuple<Lt> && nt_vapp
 inline constexpr auto vassign = []<typename Lt, typename Rt>(Lt&& L, Rt&& R) noexcept(nt_vassignable<Lt, Rt>) requires vassignable<Lt, Rt> { return vapply(assign, fwd<Lt>(L), fwd<Rt>(R)); };
 
 template<typename... Fs> struct caster : public Fs... {
-private:
   template<typename T> static constexpr nat i = []<typename... Ts>(typepack<Ts...>) { return inspects<same_as<Ts, T>...>; }(typepack<invoke_result<Fs>...>{});
   template<typename T> static constexpr nat j = i<T> < sizeof...(Fs) ? i<T> : []<typename... Ts>(typepack<Ts...>) { return inspects<convertible_to<Ts, T>...>; }(typepack<invoke_result<Fs>...>{});
   template<typename... As> static constexpr nat k = inspects<invocable<Fs, As...>...>;
 public:
-  template<typename T> requires(j<T> < sizeof...(Fs)) constexpr operator T() const noexcept(nt_convertible_to<invoke_result<select_type<j<T>, Fs...>>, T>) { return select_type<j<T>, Fs...>::operator()(); }
+  template<typename T> requires(j<T> < sizeof...(Fs)) constexpr operator T() const
+    noexcept(nt_convertible_to<invoke_result<select_type<j<T>, Fs...>>, T>)
+    requires convertible_to<invoke_result<select_type<j<T>, Fs...>>, T> {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreturn-stack-address"
+    return select_type<j<T>, Fs...>::operator()();
+#pragma clang diagnostic pop
+  }
   template<typename... As> requires(k<As...> != sizeof...(Fs)) constexpr auto operator()(As&&... Args) const
-    noexcept(nt_invocable<select_type<k<As...>, Fs...>, As...>) -> invoke_result<select_type<k<As...>, Fs...>> { return select_type<k<As...>, Fs...>::operator()(fwd<As>(Args)...); }
+    noexcept(nt_invocable<select_type<k<As...>, Fs...>, As...>)
+    -> invoke_result<select_type<k<As...>, Fs...>> {
+    return select_type<k<As...>, Fs...>::operator()(fwd<As>(Args)...);
+  }
 };
 
 inline constexpr caster is_cev{[]() noexcept { return std::is_constant_evaluated(); }};
@@ -699,15 +735,6 @@ template<iterator It> struct _iter_t<It> { using v = std::iter_value_t<It>; usin
                                            using r = std::iter_reference_t<It>; using rr = std::iter_rvalue_reference_t<It>; };
 }
 
-#include <chrono>
-#include <filesystem>
-#include <format>
-#include <fstream>
-#include <iostream>
-#include <string>
-#include <string_view>
-#include <utility>
-
 namespace yw {
 
 template<character Ct> using string = std::basic_string<Ct>;
@@ -717,6 +744,8 @@ using str2 = string<cat2>;
 using stv1 = string_view<cat1>;
 using stv2 = string_view<cat2>;
 
+#pragma clang diagnostic push
+// #pragma clang diagnostic ignored "-Wreturn-type"
 /// returns the current date and time.
 /// \return `std::chrono::system_time`, `value`, `str1`, `str2`, `string<uct1>`, `string<uct2>`, or `string<uct4>`.
 inline constexpr caster now{
@@ -728,6 +757,7 @@ inline constexpr caster now{
   []() noexcept -> string<uct2> { return reinterpret_cast<string<uct2>&&>(mv(std::format(L"{:%FT%T}", std::chrono::system_clock::now()))); },
   []() noexcept -> string<uct4> { return [](string<cat1> s1, string<uct4> s4) noexcept { return std::ranges::copy(s1, s4.begin()), mv(s4); }(std::format("{:%FT%T}", std::chrono::system_clock::now()), string<uct4>(19, uct4{})); }
 };
+#pragma clang diagnostic pop
 
 template<arithmetic T> struct t_stov {
 
@@ -775,7 +805,7 @@ inline constexpr auto vtos = []<arithmetic T>(const T v) noexcept {
 
 /// returns the length of the specified string.
 inline constexpr overload strlen{
-  []<character Ct>(const Ct* const Str) { return std::char_traits<Ct>>::length(Str); },
+  []<character Ct>(const Ct* const Str) { return std::char_traits<Ct>::length(Str); },
   []<range Rg>(Rg&& Str) requires character<iter_value<Rg>> { return std::ranges::distance(Str); }
 };
 
@@ -821,24 +851,6 @@ template<character Ct> struct literal {
 template<character Ct, nat N> literal(const Ct (&)[N]) -> literal<Ct>;
 
 using path = std::filesystem::path;
-
-/// class for logging text; the text is written to a file when the object is destroyed.
-class logger {
-  string<cat1> text;
-  path file;
-public:
-  /// constructs a logger object with the specified file name to write the text to.
-  logger(const path& LogFileName) : file(LogFileName) {}
-  /// saves the text to the file.
-  ~logger() { if (std::ofstream ofs(file, std::ios::app); ofs) ofs << text << std::endl; }
-  /// appends the text to the logger object.
-  logger& operator<<(const string_view<cat1> s) { return (text += s) += "\n", *this; }
-  /// outputs the text of the logger object to the specified output stream.
-  template<typename Tr> friend std::basic_ostream<cat1, Tr>& operator<<(std::basic_ostream<cat1, Tr>& os, const logger& l) { return os << l.text; }
-};
-
-/// default logger object for ywlib
-inline logger log("ywlib.log");
 }
 
 namespace yw::file {
@@ -846,26 +858,31 @@ namespace yw::file {
 inline constexpr auto exists = [](const path& p) noexcept -> bool {
   try { return std::filesystem::exists(p); }
   catch (const std::exception& e) { log << "runtime error : yw::file::exists : " << e.what(); }
+  return {};
 };
 /// removes the specified path.
 inline constexpr auto remove = [](const path& p) noexcept -> bool {
   try { return std::filesystem::remove(p); }
   catch (const std::exception& e) { log << "runtime error : yw::file::remove : " << e.what(); }
+  return {};
 };
 /// checks if the specified path is a regular file.
 inline constexpr auto is_file = [](const path& p) noexcept -> bool {
   try { return std::filesystem::is_regular_file(p); }
   catch (const std::exception& e) { log << "runtime error : yw::file::is_file : " << e.what(); }
+  return {};
 };
 /// checks if the specified path is a directory.
 inline constexpr auto is_directory = [](const path& p) noexcept -> bool {
   try { return std::filesystem::is_directory(p); }
   catch (const std::exception& e) { log << "runtime error : yw::file::is_directory : " << e.what(); }
+  return {};
 };
 /// returns the size of the specified file.
 inline constexpr auto size = [](const path& p) noexcept -> nat {
   try { return std::filesystem::file_size(p); }
   catch (const std::exception& e) { log << "runtime error : yw::file::size : " << e.what(); }
+  return {};
 };
 /// returns the file list of the specified directory.
 inline constexpr auto list = [](const path& p, bool Recursive = false) noexcept -> array<path> {
@@ -941,7 +958,8 @@ template<typename Ct, typename Tr> basic_ostream<Ct, Tr>& operator<<(basic_ostre
 
 #include <immintrin.h>
 
-namespace yw {
+namespace yw { // Extended Vector Definitions
+
 using xvector = __m128;
 using xwector = __m256d;
 using xrect = __m128i;
@@ -1918,9 +1936,7 @@ private:
 inline constexpr t_xveuler xveuler;
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-namespace yw {
+namespace yw { // yw::vector, yw::wector, yw::rect
 
 struct wector;
 struct rect;
@@ -2268,9 +2284,7 @@ template<typename Ct> struct formatter<yw::rect, Ct> : formatter<basic_string<Ct
     else return base::format(format(L"({}, {}, {}, {})", r.left, r.top, r.right, r.bottom), c); } };
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-namespace yw {
+namespace yw { // yw::color
 
 /// class to repreesnt a color in RGB format.
 struct color {
@@ -2539,10 +2553,6 @@ template<typename Ct> struct formatter<yw::color::hsv, Ct> : formatter<basic_str
     else return base::format(std::format(L"HSVA({}, {}, {}, {})", a.h, a.s, a.v, a.a), c); } };
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
 
 #include <commdlg.h>
 #include <d2d1_3.h>
@@ -2741,7 +2751,9 @@ struct t_to_wcs {
   }
   /// Convert a utf-16 string to wide-char-string.
   constexpr string<cat2> operator()(const string_view<uct2>& utf16) const {
-    return string<cat2>(reinterpret_cast<const string_view<cat2>&>(utf16));
+    string<cat2> r(utf16.size(), cat2{});
+    std::char_traits<cat2>::copy(r.data(), (const cat2*)utf16.data(), r.size());
+    return r;
   }
   /// Convert a utf-32 string to wide-char-string.
   string<cat2> operator()(const string_view<uct4>& utf32) const {
@@ -2770,6 +2782,37 @@ struct t_to_wcs {
   } };
 /// Convert a string to wide-char-string.
 inline constexpr t_to_wcs to_wcs;
+
+/// class for logging text; the text is written to a file when the object is destroyed.
+class logger {
+  string<uct1> text;
+  path file;
+public:
+  /// constructs a logger object with the specified file name to write the text to.
+  logger(const path& LogFileName) : file(LogFileName) {}
+  /// saves the text to the file when the object is destroyed.
+  ~logger() {
+    if (text.empty()) return;
+    if (auto dir = file.parent_path(); !dir.empty() && !std::filesystem::exists(dir)) std::filesystem::create_directories(dir);
+    if (std::ofstream ofs(file, std::ios::app); ofs) ofs << text << std::endl;
+  }
+  /// appends the text to the logger object; the text should be ended with a newline character.
+  logger& operator<<(const string_view<cat1> s) { return text += to_utf8(s), *this; }
+  /// appends the text to the logger object; the text should be ended with a newline character.
+  logger& operator<<(const string_view<cat2> s) { return text += to_utf8(s), *this; }
+  /// appends the text to the logger object; the text should be ended with a newline character.
+  logger& operator<<(const string_view<uct1> s) { return text += to_utf8(s), *this; }
+  /// appends the text to the logger object; the text should be ended with a newline character.
+  logger& operator<<(const string_view<uct2> s) { return text += to_utf8(s), *this; }
+  /// appends the text to the logger object; the text should be ended with a newline character.
+  logger& operator<<(const string_view<uct4> s) { return text += to_utf8(s), *this; }
+  /// outputs the text of the logger object to the specified output stream.
+  template<typename Tr> friend std::basic_ostream<cat1, Tr>&
+  operator<<(std::basic_ostream<cat1, Tr>& os, const logger& l) { return os << l.text; }
+};
+
+/// default logger object for ywlib
+inline logger log("ywlib.log");
 
 /// class to handle a status needing to be checked the change.
 template<typename T, typename Setter = none> class status {
@@ -3012,7 +3055,7 @@ template<typename Com> struct com_deleter {
 template<typename Com> class comptr : public std::unique_ptr<Com, com_deleter<Com>> {
 public:
   using base = std::unique_ptr<Com, com_deleter<Com>>;
-  using base::unique_ptr;
+  using base::unique_ptr::unique_ptr;
   using base::operator->;
   using base::operator bool;
   constexpr operator Com*() const noexcept { return base::get(); }
@@ -4002,7 +4045,7 @@ public:
 
   /// creates a bitmap with the specified width and height.
   bitmap(const numerical auto Width, const numerical auto Height) : width(unsigned(Width)), height(unsigned(Height)) {
-    auto p = D2D1::BitmapProperties(D2D1_BITMAP_OPTIONS_TARGET, D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+    auto p = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET, D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
     tiff(main::d2d_context->CreateBitmap(D2D1::SizeU(width, height), nullptr, 0, p, d2d_bitmap.init()));
   }
   /// creates a bitmap from the specified file.
@@ -4303,12 +4346,33 @@ public:
   const nat gourp{npos}; // group id of this control
 
   /// shows this contorl.
-  virtual void show() const {
-
-    ::ShowWindow(hwnd, SW_SHOW); }
+  virtual void show() const { ::ShowWindow(hwnd, SW_SHOW); }
+  /// hides this contorl.
   virtual void hide() const { ::ShowWindow(hwnd, SW_HIDE); }
+  /// sets the focus to this contorl.
   virtual void setfocus() const { ::SetFocus(hwnd); }
+  /// sets the text of this control.
   virtual void text(const string<cat2>& Text) const { ::SetWindowText(hwnd, Text.c_str()); }
-
+  /// gets the text of this control.
+  virtual string<cat2> text() const {
+    if (!hwnd) return {};
+    str2 s(::GetWindowTextLengthW(hwnd), L'\0');
+    ::GetWindowTextW(hwnd, s.data(), s.size() + 1);
+    return s;
+  }
 };
+}
+
+namespace yw { // GPGPU Functions
+
+/// calculates the distance from each point to the nearest point in the point cloud.
+/// \param Points points
+/// \param PointCloud point cloud
+/// \param [out] Distances distances
+void calc_distance_point_to_point(
+  const structured_buffer<vector>& Points,
+  const structured_buffer<vector>& PointCloud,
+  structured_buffer<fat4>& Distances) {
+
+}
 }
