@@ -940,6 +940,9 @@ using stv1 = string_view<cat1>;
 using stv2 = string_view<cat2>;
 using path = std::filesystem::path;
 
+namespace _ {
+
+
 template<character Ct> struct literal {
   Ct string[256]{};
   nat count;
