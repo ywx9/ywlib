@@ -25,6 +25,8 @@ static_assert(sizeof(nat) == 8, "ywlib requires 64-bit platform");
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#undef max
+#undef min
 
 namespace yw { // Core Definitions
 
@@ -221,38 +223,59 @@ template<typename T, typename... As> concept nt_constructible = constructible<T,
 template<typename T, typename U = T> concept exchangeable = constructible<remove_cvref<T>, add_rvref<T>> && assignable<T, U>;
 template<typename T, typename U = T> concept nt_exchangeable = nt_constructible<remove_cvref<T>, add_rvref<T>> && nt_assignable<T, U>;
 
-inline constexpr auto addressof = []<is_lvref T>(T&& Ref) noexcept { return __builtin_addressof(Ref); };
-inline constexpr auto asconst = []<typename T>(T&& Ref) noexcept -> add_const<T&&> { return Ref; };
-inline constexpr auto mv = []<typename T>(T&& Ref) noexcept -> decltype(auto) { return static_cast<add_rvref<T>>(Ref); };
-template<typename T> inline constexpr auto fwd = [](auto&& Ref) noexcept -> decltype(auto) { return static_cast<T&&>(Ref); };
-template<typename T> inline constexpr auto construct = []<typename... Ts>(Ts&&... Args) noexcept(nt_constructible<T, Ts...>) -> T requires constructible<T, Ts...> { return T{fwd<Ts>(Args)...}; };
-inline constexpr auto assign = []<typename L, typename R>(L&& Lhs, R&& Rhs) noexcept(nt_assignable<L, R>) -> decltype(auto) requires assignable<L, R> { return fwd<L>(Lhs) = fwd<R>(Rhs); };
-inline constexpr auto exchange = []<typename T, typename U = T>(T& A, U&& B) noexcept(nt_exchangeable<T&, U>) -> T requires exchangeable<T&, U> { auto a = mv(A); A = fwd<U>(B); return a; };
+/// returns the address of `Ref`.
+inline constexpr auto addressof = []<is_lvref T>(T&& Ref)
+  noexcept { return __builtin_addressof(Ref); };
+/// returns `Ref` as const reference.
+inline constexpr auto asconst = []<typename T>(T&& Ref)
+  noexcept -> add_const<T&&> { return Ref; };
+/// moves `Ref`.
+inline constexpr auto mv = []<typename T>(T&& Ref) noexcept
+  -> decltype(auto) { return static_cast<add_rvref<T>>(Ref); };
+/// forwards `Ref` as `T`.
+template<typename T> inline constexpr auto fwd = [](auto&& Ref) noexcept
+  -> decltype(auto) { return static_cast<T&&>(Ref); };
+/// constructs an object of type `T` with `Args`.
+template<typename T> inline constexpr auto construct =
+  []<typename... Ts>(Ts&&... Args) noexcept(nt_constructible<T, Ts...>)
+  -> T requires constructible<T, Ts...> { return T{fwd<Ts>(Args)...}; };
+/// assigns `Rhs` to `Lhs`.
+inline constexpr auto assign = []<typename L, typename R>(L&& Lhs, R&& Rhs)
+  noexcept(nt_assignable<L, R>) -> decltype(auto)
+  requires assignable<L, R> { return fwd<L>(Lhs) = fwd<R>(Rhs); };
+/// sets `Ref` to `Value` and returns the original value of `Ref`.
+inline constexpr auto exchange = []<typename T, typename U = T>(T& Ref, U&& Value)
+  noexcept(nt_exchangeable<T&, U>) -> T
+  requires exchangeable<T&, U> { auto a = mv(Ref); Ref = fwd<U>(Value); return a; };
 
-
-
-}
-
-namespace yw {
-
-
-
-
-
-template<convertible_to<nat> auto I, nat N> inline constexpr bool selectable = (is_bool<decltype(I)> && N == 2) || (!is_bool<decltype(I)> && static_cast<nat>(I) < N);
+/// checks `I` is less than `N` if `decltype(I)` is not `bool`; otherwise, checks `N` is 2.
+template<convertible_to<nat> auto I, nat N> inline constexpr bool selectable =
+  (is_bool<decltype(I)> && N == 2) || (!is_bool<decltype(I)> && static_cast<nat>(I) < N);
 namespace _ { template<typename T, T I, typename... Ts> struct _select_type; }
-template<convertible_to<nat> auto I, typename... Ts> requires selectable<I, sizeof...(Ts)> using select_type = typename _::_select_type<decltype(I), I, Ts...>::type;
-template<convertible_to<nat> auto I, auto... Vs> requires selectable<I, sizeof...(Vs)> inline constexpr auto select_value = select_type<I, constant<Vs>...>::value;
-
+/// selects a type from `Ts...` by `I`.
+template<convertible_to<nat> auto I, typename... Ts> requires selectable<I, sizeof...(Ts)>
+using select_type = typename _::_select_type<decltype(I), I, Ts...>::type;
+/// selects a value from `Vs...` by `I`.
+template<convertible_to<nat> auto I, auto... Vs> requires selectable<I, sizeof...(Vs)>
+inline constexpr auto select_value = select_type<I, constant<Vs>...>::value;
+/// selects a parameter from `Refrg` and `Refrgs...` by `I`.
 template<convertible_to<nat> auto I> inline constexpr auto select_parameter =
-  []<typename A, typename... As>(A&& Arg, As&&... Args) noexcept -> decltype(auto) requires selectable<I, 1 + sizeof...(As)> {
+  []<typename A, typename... As>(A&& Arg, As&&... Args) noexcept
+  -> decltype(auto) requires selectable<I, 1 + sizeof...(As)> {
   if constexpr (is_bool<decltype(I)>) return select_parameter<nat(!I)>(fwd<A>(Arg), fwd<As>(Args)...);
-  else if constexpr (same_as<decltype(I), nat>) { if constexpr (I == 0) return fwd<A>(Arg); else return select_parameter<I - 1>(fwd<As>(Args)...); }
-  else return select_parameter<nat(I)>(fwd<A>(Arg), fwd<As>(Args)...); };
+  else if constexpr (same_as<decltype(I), nat>) {
+    if constexpr (I == 0) return fwd<A>(Arg);
+    else return select_parameter<I - 1>(fwd<As>(Args)...);
+  } else return select_parameter<nat(I)>(fwd<A>(Arg), fwd<As>(Args)...);
+};
 
+/// function object type to pass a value as is.
 struct pass { template<typename T> constexpr T&& operator()(T&& a) const noexcept { return static_cast<T&&>(a); } };
+/// function object type which can be overloaded.
 template<typename... Fs> struct overload : public Fs... { using Fs::operator()...; };
+/// returns the number of `true` in `Bs...`.
 template<bool... Bs> inline constexpr nat counts = (nat(0) + ... + Bs);
+/// returns the index of the first `true` in `Bs...`.
 template<bool... Bs> inline constexpr nat inspects = 0;
 template<bool B, bool... Bs> inline constexpr nat inspects<B, Bs...> = B ? 0 : 1 + inspects<Bs...>;
 
@@ -266,58 +289,88 @@ namespace _ { template<typename T, typename Src> struct _copy_extent : t_type<T>
 template<typename T, typename Src> using copy_extent = typename _::_copy_extent<T, Src>::type;
 template<typename T, typename Src> using copy_pointer = select_type<is_pointer<Src>, copy_cv<add_pointer<T>, Src>, T>;
 
+/// checks if `F` is invocable with `As...`.
 template<typename F, typename... As> concept invocable = std::invocable<F, As...>;
-template<typename F, typename... As> concept nt_invocable = invocable<F, As...> && requires { requires std::is_nothrow_invocable_v<F, As...>; };
-template<typename F, typename... As> using invoke_result = select_type<is_void<std::invoke_result_t<F, As...>>, none, std::invoke_result_t<F, As...>>;
-template<typename F, typename R, typename... As> concept invocable_r = invocable<F, As...> && convertible_to<invoke_result<F, As...>, R>;
-template<typename F, typename R, typename... As> concept nt_invocable_r = nt_invocable<F, As...> && nt_convertible_to<invoke_result<F, As...>, R>;
+/// checks if `F` is invocable with `As...` without throwing exceptions.
+template<typename F, typename... As> concept nt_invocable =
+  invocable<F, As...> && requires { requires std::is_nothrow_invocable_v<F, As...>; };
+/// return type of `yw::invoke(F, As...)`.
+template<typename F, typename... As> using invoke_result =
+  select_type<is_void<std::invoke_result_t<F, As...>>, none, std::invoke_result_t<F, As...>>;
+/// checks if `F` is invocable with `As...` and returns `R`.
+template<typename F, typename R, typename... As> concept invocable_r =
+  invocable<F, As...> && convertible_to<invoke_result<F, As...>, R>;
+/// checks if `F` is invocable with `As...` and returns `R` without throwing exceptions.
+template<typename F, typename R, typename... As> concept nt_invocable_r =
+  nt_invocable<F, As...> && nt_convertible_to<invoke_result<F, As...>, R>;
+/// checks if `F` is a predicate with `As...`.
 template<typename F, typename... As> concept predicate = invocable_r<F, bool, As...>;
-
+/// invokes `Func` with `Args...`.
+/// \return `none{}` if `Func` returns `void`; otherwise, returns the result of `Func`.
 inline constexpr auto invoke = []<typename F, typename... As>(F&& Func, As&&... Args)
   noexcept(nt_invocable<F, As...>) -> invoke_result<F, As...> requires invocable<F, As...> {
   if constexpr (is_void<std::invoke_result_t<F, As...>>) return std::invoke(fwd<F>(Func), fwd<As>(Args)...), none{};
   else return std::invoke(fwd<F>(Func), fwd<As>(Args)...); };
-
+/// invokes `Func` with `Args...` and returns the result as `R`.
 template<typename R> inline constexpr auto invoke_r = []<typename F, typename... As>(F&& f, As&&... as)
   noexcept(nt_invocable_r<F, R, As...>) -> R requires invocable_r<F, R, As...> {
   return static_cast<R>(invoke(fwd<F>(f), fwd<As>(as)...)); };
 
 namespace _ { template<typename... Ts> struct _common_type : t_type<none> {}; }
+/// returns the common type of `Ts...` if it exists; otherwise, returns `none`.
 template<typename... Ts> using common_type = typename _::_common_type<Ts...>::type;
+/// checks if `Ts...` have a common type except `none`.
 template<typename... Ts> concept common_with = requires {
-  requires !is_none<common_type<Ts...>>; requires (std::common_reference_with<common_type<Ts...>, Ts> && ...); };
+  requires !is_none<common_type<Ts...>>;
+  requires (std::common_reference_with<common_type<Ts...>, Ts> && ...); };
 
 namespace _ { template<typename T, template<typename...> typename Tm> struct _specialization_of : constant<false> {}; }
+/// checks if `T` is a specialization of `Tm`.
 template<typename T, template<typename...> typename Tm> concept specialization_of = _::_specialization_of<T, Tm>::value;
 namespace _ { template<typename T, typename U> struct _variation_of : constant<false> {}; }
+/// checks if `T` is a variation of `U`.
+/// \example `std::array<int, 4>` is a variation of `std::array<double, 3>`.
 template<typename T, typename U> concept variation_of = _::_variation_of<T, U>::value;
 
-inline constexpr auto eq = [](auto&& a, auto&& b) noexcept(noexcept(bool(a == b))) -> bool requires requires { { a == b } -> convertible_to<bool>; } { return a == b; };
-inline constexpr auto ne = [](auto&& a, auto&& b) noexcept(noexcept(bool(a != b))) -> bool requires requires { { a != b } -> convertible_to<bool>; } { return a != b; };
-inline constexpr auto lt = [](auto&& a, auto&& b) noexcept(noexcept(bool(a < b), 1 > 0)) -> bool requires requires { { a < b } -> convertible_to<bool>; } { return a < b; };
-inline constexpr auto le = [](auto&& a, auto&& b) noexcept(noexcept(bool(a <= b), 1 > 0)) -> bool requires requires { { a <= b } -> convertible_to<bool>; } { return a <= b; };
-inline constexpr auto gt = [](auto&& a, auto&& b) noexcept(noexcept(bool(a > b))) -> bool requires requires { { a > b } -> convertible_to<bool>; } { return a > b; };
-inline constexpr auto ge = [](auto&& a, auto&& b) noexcept(noexcept(bool(a >= b))) -> bool requires requires { { a >= b } -> convertible_to<bool>; } { return a >= b; };
-
+/// function object to compare two values.
+inline constexpr auto eq = [](auto&& a, auto&& b) noexcept(noexcept(bool(a == b)))
+  -> bool requires requires { { a == b } -> convertible_to<bool>; } { return a == b; };
+/// function object to compare two values.
+inline constexpr auto ne = [](auto&& a, auto&& b) noexcept(noexcept(bool(a != b)))
+  -> bool requires requires { { a != b } -> convertible_to<bool>; } { return a != b; };
+/// function object to compare two values.
+inline constexpr auto lt = [](auto&& a, auto&& b) noexcept(noexcept(bool(a < b), 1 > 0))
+  -> bool requires requires { { a < b } -> convertible_to<bool>; } { return a < b; };
+/// function object to compare two values.
+inline constexpr auto le = [](auto&& a, auto&& b) noexcept(noexcept(bool(a <= b), 1 > 0))
+  -> bool requires requires { { a <= b } -> convertible_to<bool>; } { return a <= b; };
+/// function object to compare two values.
+inline constexpr auto gt = [](auto&& a, auto&& b) noexcept(noexcept(bool(a > b)))
+  -> bool requires requires { { a > b } -> convertible_to<bool>; } { return a > b; };
+/// function object to compare two values.
+inline constexpr auto ge = [](auto&& a, auto&& b) noexcept(noexcept(bool(a >= b)))
+  -> bool requires requires { { a >= b } -> convertible_to<bool>; } { return a >= b; };
+/// function object type to compare two values.
 using equal = decltype(eq);
+/// function object type to compare two values.
 using not_equal = decltype(ne);
+/// function object type to compare two values.
 using less = decltype(lt);
+/// function object type to compare two values.
 using less_equal = decltype(le);
+/// function object type to compare two values.
 using greater = decltype(gt);
+/// function object type to compare two values.
 using greater_than = decltype(gt);
 
-template<trivial T> inline constexpr auto bitcast = [](const trivial auto& Ref) noexcept requires (sizeof(T) == sizeof(Ref)) { return __builtin_bit_cast(T, Ref); };
+template<trivial T> inline constexpr auto bitcast = [](const trivial auto& Ref) noexcept
+  requires (sizeof(T) == sizeof(Ref)) { return __builtin_bit_cast(T, Ref); };
 inline constexpr auto bitcount = [](const nat Value) noexcept -> nat { return std::popcount(Value); };
 inline constexpr auto bitfloor = [](const nat Value) noexcept -> nat { return std::bit_floor(Value); };
 inline constexpr auto bitceil = [](const nat Value) noexcept -> nat { return std::bit_ceil(Value); };
 inline constexpr auto bitwidth = [](const nat Value) noexcept -> nat { return std::bit_width(Value); };
 
-template<auto... Vs> struct sequence;
-template<typename... Ts> struct typepack;
-template<typename... Ts> struct list;
-}
-
-namespace yw::_ {
+namespace _ {
 template<is_pointer T> struct _remove_all_pointers<T> : _remove_all_pointers<remove_pointer<T>> {};
 template<typename M, typename C> struct _member_type<M C::*> { using m = M; using c = C; };
 template<typename T> struct _add_cv { using cv = const volatile T; using c = const T; using v = volatile T; };
@@ -347,8 +400,11 @@ template<template<auto...> typename Tm, auto... Vs, auto... Ws> struct _variatio
 template<template<typename, auto...> typename Tm, typename T, typename U, auto... Vs, auto... Ws> struct _variation_of<Tm<T, Vs...>, Tm<U, Ws...>> : constant<true> {};
 template<template<auto, typename...> typename Tm, auto V, auto W, typename... Ts, typename... Us> struct _variation_of<Tm<V, Ts...>, Tm<W, Us...>> : constant<true> {};
 }
+}
 
-namespace yw::_::_get {
+namespace yw { // Tuple Definitions
+
+namespace _::_get {
 template<nat I> void get(auto&&) = delete;
 template<nat I, typename T> inline constexpr auto pattern = []() -> int {
   if constexpr (is_bounded_array<remove_ref<T>>) return I < std::extent_v<remove_ref<T>> ? 16 : 8;
@@ -365,33 +421,60 @@ template<typename T> struct extent<T, 0> : std::extent<remove_ref<T>> {};
 template<typename T> struct extent<T, 4> : constant<1> {};
 }
 
-namespace yw {
-template<typename T> inline constexpr nat extent = _::_get::extent<remove_ref<T>>::value;
-template<typename T, typename... Ts> concept same_extent = ((extent<T> == extent<Ts>) && ...);
-template<typename T> concept tuple = requires { requires (_::_get::pattern<0, T> & 15) < 3; };
-template<typename T, nat I> concept gettable = requires { _::_get::call<I>(declval<T>()); };
-template<typename T, nat I> concept nt_gettable = gettable<T, I> && requires { { _::_get::call<I>(declval<T>()) } noexcept; };
-template<typename T, nat I> requires gettable<T, I> using element_t = decltype(_::_get::call<I>(declval<T>()));
-template<nat I> inline constexpr auto get = []<gettable<I> T>(T&& Ref) noexcept(nt_gettable<T, I>) -> element_t<T, I> { return _::_get::call<I>(static_cast<T&&>(Ref)); };
+template<auto... Vs> struct sequence;
+template<typename... Ts> struct typepack;
+template<typename... Ts> struct list;
 
+/// returns the number of elements in `T`.
+template<typename T> inline constexpr nat extent = _::_get::extent<remove_ref<T>>::value;
+/// checks if all of `Ts...` have the same number of elements as `T`.
+template<typename T, typename... Ts> concept same_extent = ((extent<T> == extent<Ts>) && ...);
+/// checks if `T` is a tuple-like type.
+template<typename T> concept tuple = requires { requires (_::_get::pattern<0, T> & 15) < 3; };
+/// checks if `yw::get<I>(T)` returns the element at index `I` of `T`.
+template<typename T, nat I> concept gettable = requires { _::_get::call<I>(declval<T>()); };
+/// checks if `yw::get<I>(T)` returns the element at index `I` of `T` without throwing exceptions.
+template<typename T, nat I> concept nt_gettable = gettable<T, I> && requires { { _::_get::call<I>(declval<T>()) } noexcept; };
+/// returns the type of the element at index `I` of `T`.
+template<typename T, nat I> requires gettable<T, I> using element_t = decltype(_::_get::call<I>(declval<T>()));
+/// returns the the element at index `I` of `T`.
+template<nat I> inline constexpr auto get = []<gettable<I> T>(T&& Ref)
+  noexcept(nt_gettable<T, I>) -> element_t<T, I> { return _::_get::call<I>(static_cast<T&&>(Ref)); };
+
+/// index sequence type
+template<nat... Is> using indices = sequence<Is...>;
 namespace _ { template<typename S, typename T> struct _to_sequence : t_type<none> {}; }
+/// converts `S` to a `yw::sequence`.
 template<typename S, typename T = none> using to_sequence = typename _::_to_sequence<S, T>::type;
+/// checks if `S` is a sequence-like type.
 template<typename S, typename T = none> concept sequence_of = variation_of<to_sequence<S, T>, sequence<>>;
 namespace _ { template<typename S, nat N> struct _indices_for : constant<false> {}; }
+/// checks if `S` is a sequence-like type whose all elements are convertible to `nat`.
 template<typename S, typename T> concept indices_for = _::_indices_for<to_sequence<S>, extent<T>>::value;
 namespace _ { template<nat I, nat N, auto F, nat... Vs> struct _make_sequence; }
-template<nat Begin, nat End, invocable<nat> auto Proj = pass{}> requires (Begin <= End) using make_sequence = typename _::_make_sequence<Begin, End, Proj>::type;
+/// creates a `yw::sequence` with the elements; `Proj(Begin)`, `Proj(Begin + 1)`, ..., `Proj(End - 1)`
+template<nat Begin, nat End, invocable<nat> auto Proj = pass{}> requires (Begin <= End)
+using make_sequence = typename _::_make_sequence<Begin, End, Proj>::type;
+/// creates a indices for getting all elements of `T`.
 template<typename Tp> using make_indices_for = make_sequence<0, extent<Tp>>;
 namespace _ { template<nat I, nat N, typename S, nat... Is> struct _extracting_indices; }
-template<typename S> using extracting_indices = typename _::_extracting_indices<0, extent<S>, S>::type;
+/// creates a `yw::indices` with the indices which are `true` in `Sq`.
+template<sequence_of<bool> Sq> using extracting_indices = typename _::_extracting_indices<0, extent<Sq>, Sq>::type;
 namespace _ { template<typename T, typename S> struct _common_element; }
+/// returns the common type of the elements of `T`.
 template<typename T> using common_element = typename _::_common_element<T, make_indices_for<T>>::type;
 namespace _ { template<typename T, typename S> struct _to_typepack; }
+/// returns a `yw::typepack` which contains the types of the elements of `T`.
 template<typename T> using to_typepack = typename _::_to_typepack<T, make_indices_for<T>>::type;
 namespace _ { template<typename T, typename U, typename S> struct _tuple_for : constant<0> {}; }
-template<typename T, typename U> concept tuple_for = requires { requires bool(_::_tuple_for<T, U, make_indices_for<T>>::value & 1); };
-template<typename T, typename U> concept nt_tuple_for = tuple_for<T, U> && requires { requires bool(_::_tuple_for<T, U, make_indices_for<T>>::value & 2); };
+/// checks if all elements of `T` are convertible to `U`.
+template<typename T, typename U> concept tuple_for =
+  requires { requires bool(_::_tuple_for<T, U, make_indices_for<T>>::value & 1); };
+/// checks if all elements of `T` are convertible to `U` without throwing exceptions.
+template<typename T, typename U> concept nt_tuple_for =
+  tuple_for<T, U> && requires { requires bool(_::_tuple_for<T, U, make_indices_for<T>>::value & 2); };
 
+/// struct to represent a sequence of values.
 template<auto... Vs> struct sequence {
 private:
   template<typename S> struct _append : _append<to_sequence<S, none>> {};
@@ -401,18 +484,30 @@ private:
   template<nat... Is> struct _extract<sequence<Is...>> : std::type_identity<sequence<select_value<Is, Vs...>...>> {};
   template<> struct _extract<none> : std::type_identity<none> {};
 public:
+  /// the number of values in the sequence.
   static constexpr nat count = sizeof...(Vs);
+  /// returns the value at index `I`.
   template<nat I> requires(lt(I, count)) static constexpr auto at = select_value<I, Vs...>;
+  /// returns the type of value at index `I`.
   template<nat I> requires(lt(I, count)) using type_at = select_type<I, decltype(Vs)...>;
+  /// returns a `yw::sequence` which contains `Vs...` and the values of `Sq`.
   template<sequence_of Sq> using append = typename _append<to_sequence<Sq>>::type;
-  template<indices_for<sequence> Sq> using extract = typename _extract<to_sequence<Sq, nat>>::type;
-  template<nat N> requires(N < count) using fore = extract<make_sequence<0, N>>;
-  template<nat N> requires(N < count) using back = extract<make_sequence<count, count - N>>;
-  template<nat I, sequence_of Sq> requires(I < count) using insert = typename fore<I>::template append<Sq>::template append<back<count - I>>;
+  /// extracts the values at the indices of `Ind`.
+  template<indices_for<sequence> Ind> using extract = typename _extract<to_sequence<Ind, nat>>::type;
+  /// extracts the first `N` values.
+  template<nat N> requires(N <= count) using fore = extract<make_sequence<0, N>>;
+  /// extracts the last `N` values.
+  template<nat N> requires(N <= count) using back = extract<make_sequence<count, count - N>>;
+  /// inserts the values of `Sq` at index `I`.
+  template<nat I, sequence_of Sq> requires(I < count)
+  using insert = typename fore<I>::template append<Sq>::template append<back<count - I>>;
+  /// expands the values to `Tm`.
   template<template<auto...> typename Tm> using expand = Tm<Vs...>;
+  /// used by the customization point object `yw::get`.
   template<nat I> requires(I < count) constexpr const auto&& get() const noexcept { return mv(at<I>); }
 };
 
+/// struct to represent a pack of types.
 template<typename... Ts> struct typepack {
 private:
   template<typename T, typename U> struct t_append {};
@@ -420,73 +515,130 @@ private:
   template<typename T, typename S> struct t_extract {};
   template<typename... Us, nat... Is> struct t_extract<typepack<Us...>, sequence<Is...>> : t_type<typepack<select_type<Is, Us...>...>> {};
 public:
+  /// the number of types in the pack.
   static constexpr nat count = sizeof...(Ts);
+  /// the common type of the types in the pack.
   using common = common_type<Ts...>;
+  /// returns the type at index `I`.
   template<nat I> requires(I < count) using at = select_type<I, Ts...>;
+  /// returns a `yw::typepack` which contains `Ts...` and the element types of `Tp`.
   template<tuple Tp> using append = typename t_append<typepack, to_typepack<Tp>>::type;
+  /// extracts the types at the indices of `Sq`.
   template<indices_for<typepack> Sq> using extract = typename t_extract<typepack, to_sequence<Sq, nat>>::type;
+  /// extracts the first `N` types.
   template<nat N> requires(N <= count) using fore = extract<make_sequence<0, N>>;
+  /// extracts the last `N` types.
   template<nat N> requires(N <= count) using back = extract<make_sequence<count, count - N>>;
-  template<nat I, tuple T> requires(I < count) using insert = typename fore<I>::template append<T>::template append<back<count - I>>;
+  /// inserts the types of `Tp` at index `I`.
+  template<nat I, tuple T> requires(I < count)
+  using insert = typename fore<I>::template append<T>::template append<back<count - I>>;
+  /// expands the types to `Tm`.
   template<template<typename...> typename Tm> using expand = Tm<Ts...>;
+  /// used by the customization point object `yw::get`.
   template<nat I> requires(I < count) constexpr at<I> get() const noexcept;
 };
 
+/// struct to represent a list of values.
 template<typename... Ts> struct list : typepack<Ts...>::template fore<sizeof...(Ts) - 1>::template expand<list> {
+  /// base class which contains the elements except the last one.
   using base = typepack<Ts...>::template fore<sizeof...(Ts) - 1>::template expand<list>;
+  /// the number of elements in the list.
   static constexpr nat count = sizeof...(Ts);
+  /// the type of the last element.
   using last_type = select_type<count - 1, Ts...>;
+  /// the last element.
   last_type last;
+  /// used by the customization point object `yw::get`.
   template<nat I> constexpr auto get() & noexcept -> select_type<I, Ts...>& {
     if constexpr (I == count - 1) return last;
     else return base::template get<I>();
   }
+  /// used by the customization point object `yw::get`.
   template<nat I> constexpr auto get() const& noexcept -> add_const<select_type<I, Ts...>&> {
     if constexpr (I == count - 1) return last;
     else return base::template get<I>();
   }
+  /// used by the customization point object `yw::get`.
   template<nat I> constexpr auto get() && noexcept -> select_type<I, Ts...>&& {
     if constexpr (I == count - 1) return fwd<last_type>(last);
     else return fwd<select_type<I, Ts...>>(base::template get<I>());
   }
+  /// used by the customization point object `yw::get`.
   template<nat I> constexpr auto get() const&& noexcept -> add_const<select_type<I, Ts...>&&> {
     if constexpr (I == count - 1) return fwd<add_const<last_type>>(last);
     else return fwd<add_const<select_type<I, Ts...>>>(base::template get<I>());
   }
 };
 
+/// specialization of `yw::list` for three elements.
 template<typename T1, typename T2, typename T3> struct list<T1, T2, T3> : list<T1, T2> {
+  /// base class; `yw::list<T1, T2>`.
   using base = list<T1, T2>;
+  /// the number of elements in the list.
   static constexpr nat count = 3;
+  /// the type of the third element.
   using third_type = T3;
+  /// the third element.
   third_type third;
-  template<nat I> constexpr auto get() & noexcept -> select_type<I, T1, T2, T3>& { if constexpr (I == 2) return third; else return base::template get<I>(); }
-  template<nat I> constexpr auto get() const& noexcept -> add_const<select_type<I, T1, T2, T3>&> { if constexpr (I == 2) return third; else return base::template get<I>(); }
-  template<nat I> constexpr auto get() && noexcept -> select_type<I, T1, T2, T3>&& { if constexpr (I == 2) return fwd<T3>(third); else return fwd<select_type<I, T1, T2>>(base::template get<I>()); }
-  template<nat I> constexpr auto get() const&& noexcept -> add_const<select_type<I, T1, T2, T3>&&> { if constexpr (I == 2) return fwd<add_const<T3>>(third); else return fwd<add_const<select_type<I, T1, T2>>>(base::template get<I>()); }
+  /// used by the customization point object `yw::get`.
+  template<nat I> constexpr auto get() & noexcept -> select_type<I, T1, T2, T3>&
+  { if constexpr (I == 2) return third; else return base::template get<I>(); }
+  /// used by the customization point object `yw::get`.
+  template<nat I> constexpr auto get() const& noexcept -> add_const<select_type<I, T1, T2, T3>&>
+  { if constexpr (I == 2) return third; else return base::template get<I>(); }
+  /// used by the customization point object `yw::get`.
+  template<nat I> constexpr auto get() && noexcept -> select_type<I, T1, T2, T3>&&
+  { if constexpr (I == 2) return fwd<T3>(third); else return fwd<select_type<I, T1, T2>>(base::template get<I>()); }
+  /// used by the customization point object `yw::get`.
+  template<nat I> constexpr auto get() const&& noexcept -> add_const<select_type<I, T1, T2, T3>&&>
+  { if constexpr (I == 2) return fwd<add_const<T3>>(third);
+    else return fwd<add_const<select_type<I, T1, T2>>>(base::template get<I>());
+  }
 };
 
+/// specialization of `yw::list` for two elements.
 template<typename T1, typename T2> struct list<T1, T2> : public list<T1> {
+  /// base class; `yw::list<T1>`.
   using base = list<T1>;
+  /// the number of elements in the list.
   static constexpr nat count = 2;
+  /// the type of the second element.
   using second_type = T2;
+  /// the second element.
   second_type second;
-  template<nat I> constexpr auto get() & noexcept -> select_type<I, T1, T2>& { if constexpr (I == 1) return second; else return base::first; }
-  template<nat I> constexpr auto get() const& noexcept -> add_const<select_type<I, T1, T2>&> { if constexpr (I == 1) return second; else return base::first; }
-  template<nat I> constexpr auto get() && noexcept -> select_type<I, T1, T2>&& { if constexpr (I == 1) return fwd<T2>(second); else return fwd<T1>(base::first); }
-  template<nat I> constexpr auto get() const&& noexcept -> add_const<select_type<I, T1, T2>&&> { if constexpr (I == 1) return fwd<add_const<T2>>(second); else return fwd<add_const<T1>>(base::first); }
+  /// used by the customization point object `yw::get`.
+  template<nat I> constexpr auto get() & noexcept -> select_type<I, T1, T2>&
+  { if constexpr (I == 1) return second; else return base::first; }
+  /// used by the customization point object `yw::get`.
+  template<nat I> constexpr auto get() const& noexcept -> add_const<select_type<I, T1, T2>&>
+  { if constexpr (I == 1) return second; else return base::first; }
+  /// used by the customization point object `yw::get`.
+  template<nat I> constexpr auto get() && noexcept -> select_type<I, T1, T2>&&
+  { if constexpr (I == 1) return fwd<T2>(second); else return fwd<T1>(base::first); }
+  /// used by the customization point object `yw::get`.
+  template<nat I> constexpr auto get() const&& noexcept -> add_const<select_type<I, T1, T2>&&>
+  { if constexpr (I == 1) return fwd<add_const<T2>>(second); else return fwd<add_const<T1>>(base::first); }
 };
 
+/// specialization of `yw::list` for one element.
 template<typename T> struct list<T> {
+  /// the number of elements in the list.
   static constexpr nat count = 1;
+  /// the type of the first element.
   using first_type = T;
+  /// the first element.
   first_type first;
+  /// used by the customization point object `yw::get`.
   template<nat I> requires(I == 0) constexpr T& get() & noexcept { return first; }
+  /// used by the customization point object `yw::get`.
   template<nat I> requires(I == 0) constexpr add_const<T&> get() const& noexcept { return first; }
+  /// used by the customization point object `yw::get`.
   template<nat I> requires(I == 0) constexpr T&& get() && noexcept { return fwd<T>(first); }
+  /// used by the customization point object `yw::get`.
   template<nat I> requires(I == 0) constexpr add_const<T&&> get() const&& noexcept { return fwd<add_const<T>>(first); }
 };
 
+/// specialization of `yw::list` for no elements; used to some utility functions.
 template<> struct list<> {
 private:
   template<typename T, typename U, typename V> struct _from_typepack {};
@@ -494,28 +646,44 @@ private:
   template<typename... Ts, typename U, template<typename, auto...> typename Tm, typename V, auto... Vs> struct _from_typepack<typepack<Ts...>, U, Tm<V, Vs...>> : t_type<list<copy_cvref<Tm<Ts, Vs...>, U>...>> {};
   template<typename... Ts, typename U, typename V> struct _from_typepack<typepack<Ts...>, U, V> : t_type<list<copy_cvref<Ts, U>...>> {};
 public:
+  /// the number of elements in the list.
   static constexpr nat count = 0;
-  template<typename... Ts> static constexpr auto asref(Ts&&... Args) noexcept { return list<Ts&&...>{fwd<Ts>(Args)...}; }
-  template<specialization_of<typepack> Tp, typename Template = none> using from_typepack = _from_typepack<Tp, Template, remove_cvref<Template>>::type;
+  /// returns a `yw::list` which contains the references to `Args...`.
+  template<typename... Ts> static constexpr auto asref(Ts&&... Args)
+    noexcept { return list<Ts&&...>{fwd<Ts>(Args)...}; }
+  /// returns a `yw::list` which is specialized by the types of `Tp`.
+  /// \tparam Tp a `yw::typepack` which contains the types.
+  /// \tparam Qualifier (optional) used to qualify the types.
+  /// \note `from_typepack<typepack<Ts...>, const array<int>&>` returns `list<const array<Ts>&...>`.
+  template<specialization_of<typepack> Tp, typename Qualifier = none>
+  using from_typepack = _from_typepack<Tp, Qualifier, remove_cvref<Qualifier>>::type;
 };
 
 template<typename... Ts> list(Ts...) -> list<Ts...>;
 
+/// struct to create a virtual tuple-like object; arranging and/or projecting elements.
+/// \note `projector(list{0, 1, 2, 3}, [](auto a){ return a * 2;}, sequence<2, 3, 1, 0>{})` is a tuple of `{4, 6, 2, 0}`.
 template<typename T, typename Pj = pass, sequence_of<nat> Sq = make_indices_for<T>> struct projector {
   static_assert(to_sequence<Sq, nat>::count > 0);
   static_assert(!tuple<T> || indices_for<Sq, T>);
+  /// indices to arrange the elements.
   using indices = to_sequence<Sq, nat>;
+  /// `extent<projector>`
   static constexpr nat count = indices::count;
+  /// reference to the object to project.
   add_fwref<T> ref;
+  /// function object for projection.
   remove_ref<Pj> proj = {};
   template<typename U = T> constexpr projector(U&& Ref, Pj p, Sq) noexcept(nt_constructible<Pj, Pj>) : ref(fwd<U>(Ref)), proj(mv(p)) {}
   template<typename U = T> constexpr projector(U&& Ref, Pj p) noexcept(nt_constructible<Pj, Pj>) : ref(fwd<U>(Ref)), proj(mv(p)) {}
   template<typename U = T> constexpr projector(U&& Ref, Sq) noexcept : ref(fwd<U>(Ref)) {}
   template<typename U = T> constexpr projector(U&& Ref) noexcept : ref(fwd<U>(Ref)) {}
+  /// used by the customization point object `yw::get`.
   template<nat I> requires(I < count && tuple<T>) constexpr auto get() const
     noexcept(nt_gettable<T, indices::template at<I>> && nt_invocable<Pj, element_t<T, indices::template at<I>>>)
     requires gettable<T, indices::template at<I>> && invocable<Pj, element_t<T, indices::template at<I>>>
   { return invoke(proj, yw::get<indices::template at<I>>(ref)); }
+  /// used by the customization point object `yw::get`.
   template<nat I> requires(I < count && !tuple<T>) constexpr auto get() const
     noexcept(nt_invocable<Pj, T>) requires invocable<Pj, T> { return invoke(proj, ref); }
 };
@@ -524,9 +692,8 @@ template<typename T, typename Pj, sequence_of<nat> Sq> projector(T&&, Pj, Sq) ->
 template<typename T, typename Pj> requires(!sequence_of<Pj, nat>) projector(T&&, Pj) -> projector<T, Pj>;
 template<typename T, sequence_of<nat> Sq> projector(T&&, Sq) -> projector<T, pass, Sq>;
 template<typename T> projector(T&&) -> projector<T>;
-}
 
-namespace yw::_ {
+namespace _ {
 template<template<auto...> typename Tm, typename T, auto... Vs> struct _to_sequence<Tm<Vs...>, T> : t_type<sequence<T(Vs)...>> {};
 template<template<typename, auto...> typename Tm, typename T, typename U, auto... Vs> struct _to_sequence<Tm<U, Vs...>, T> : t_type<sequence<T(Vs)...>> {};
 template<template<auto...> typename Tm, auto... Vs> struct _to_sequence<Tm<Vs...>, none> : t_type<sequence<Vs...>> {};
@@ -541,9 +708,6 @@ template<typename T, nat... Is> struct _common_element<T, sequence<Is...>> : _co
 template<typename T, nat... Is> struct _to_typepack<T, sequence<Is...>> : t_type<typepack<element_t<T, Is>...>> {};
 template<typename T, typename U, nat... Is> struct _tuple_for<T, U, sequence<Is...>>
   : constant<int((convertible_to<element_t<T, Is>, U> && ...)) + 2 * int((nt_convertible_to<element_t<T, Is>, U> && ...))> {};
-}
-
-namespace yw::_ {
 template<typename F, typename... Ts> requires (!(tuple<Ts> || ...)) constexpr decltype(auto) _apply(F&& f, Ts&&... ts)
   noexcept(nt_invocable<F, Ts...>) requires invocable<F, Ts...> { return invoke(fwd<F>(f), fwd<Ts>(ts)...); }
 template<nat I, nat... Is, nat... Js, nat... Ks, typename F, typename... Ts> constexpr decltype(auto) _apply_b(sequence<Is...>, sequence<Js...>, sequence<Ks...>, F&& f, Ts&&... ts)
@@ -568,23 +732,45 @@ template<typename F, typename... Ts> requires (!(tuple<Ts> && ...) && (tuple<Ts>
   ywlib_wrapper(_vapply_a<inspects<!tuple<Ts>...>, inspects<tuple<Ts>...>>(fwd<F>(f), fwd<Ts>(ts)...));
 }
 
-namespace yw {
-template<typename F, typename... Ts> concept applyable = requires(F&& f, Ts&&... ts) { { _::_apply(fwd<F>(f), fwd<Ts>(ts)...) }; };
-template<typename F, typename... Ts> concept nt_applyable = applyable<F, Ts...> && requires(F&& f, Ts&&... ts) { { _::_apply(fwd<F>(f), fwd<Ts>(ts)...) } noexcept; };
+/// checks if `F` is applyable to `Ts...`.
+template<typename F, typename... Ts> concept applyable =
+  requires(F&& f, Ts&&... ts) { { _::_apply(fwd<F>(f), fwd<Ts>(ts)...) }; };
+/// checks if `F` is applyable to `Ts...` without throwing exceptions.
+template<typename F, typename... Ts> concept nt_applyable =
+  applyable<F, Ts...> && requires(F&& f, Ts&&... ts) { { _::_apply(fwd<F>(f), fwd<Ts>(ts)...) } noexcept; };
+/// returns the result type of `yw::apply(F, Ts...)`.
 template<typename F, typename... Ts> using apply_result = decltype(_::_apply(declval<F>(), declval<Ts>()...));
-inline constexpr auto apply = []<typename F, typename... Ts>(F&& f, Ts&&... ts) noexcept(nt_applyable<F, Ts...>) requires applyable<F, Ts...> { return _::_apply(fwd<F>(f), fwd<Ts>(ts)...); };
+/// invokes `Func` to `Args...` with tuple-like objects expanded.
+inline constexpr auto apply = []<typename F, typename... Ts>(F&& Func, Ts&&... Args)
+  noexcept(nt_applyable<F, Ts...>) requires applyable<F, Ts...> { return _::_apply(fwd<F>(Func), fwd<Ts>(Args)...); };
+/// checks if `T` is constructible from the elements of `Tp`.
 template<typename T, typename Tp> concept buildable = applyable<decltype(construct<T>), Tp>;
+/// checks if `T` is constructible from the elements of `Tp` without throwing exceptions.
 template<typename T, typename Tp> concept nt_buildable = nt_applyable<decltype(construct<T>), Tp>;
-template<typename T> inline constexpr auto build = []<typename Tp>(Tp&& Tuple) noexcept(nt_buildable<T, Tp>) requires buildable<T, Tp> { return apply(construct<T>, fwd<Tp>(Tuple)); };
+/// constructs an object of `T` from the elements of `Tp`.
+template<typename T> inline constexpr auto build = []<typename Tp>(Tp&& Tuple)
+  noexcept(nt_buildable<T, Tp>) requires buildable<T, Tp> { return apply(construct<T>, fwd<Tp>(Tuple)); };
+/// checks if `F` is vapplyable to `T, Ts...`.
 template<typename T, typename... Ts> concept vapplyable = requires(T&& t, Ts&&... ts) { { _::_vapply(fwd<T>(t), fwd<Ts>(ts)...) }; };
-template<typename T, typename... Ts> concept nt_vapplyable = vapplyable<T, Ts...> && requires(T&& t, Ts&&... ts) { { _::_vapply(fwd<T>(t), fwd<Ts>(ts)...) } noexcept; };
+/// checks if `F` is vapplyable to `T, Ts...` without throwing exceptions.
+template<typename T, typename... Ts> concept nt_vapplyable =
+  vapplyable<T, Ts...> && requires(T&& t, Ts&&... ts) { { _::_vapply(fwd<T>(t), fwd<Ts>(ts)...) } noexcept; };
+/// returns the result type of `yw::vapply(F, T, Ts...)`.
 template<typename T, typename... Ts> using vapply_result = decltype(_::_vapply(declval<T>(), declval<Ts>()...));
-inline constexpr auto vapply = []<typename F, typename... Ts>(F&& f, Ts&&... ts) noexcept(nt_vapplyable<F, Ts...>) requires vapplyable<F, Ts...> { return _::_vapply(fwd<F>(f), fwd<Ts>(ts)...); };
+/// invokes `Func` to `T` and `Args...` with tuple-like objects vertically expanded.
+inline constexpr auto vapply = []<typename F, typename... Ts>(F&& f, Ts&&... ts)
+  noexcept(nt_vapplyable<F, Ts...>) requires vapplyable<F, Ts...> { return _::_vapply(fwd<F>(f), fwd<Ts>(ts)...); };
+/// checks if the elements of `Lt` are assignable from the elements of `Rt`.
 template<typename Lt, typename Rt> concept vassignable = tuple<Lt> && vapplyable<decltype(assign), Lt, Rt>;
+/// checks if the elements of `Lt` are assignable from the elements of `Rt` without throwing exceptions.
 template<typename Lt, typename Rt> concept nt_vassignable = tuple<Lt> && nt_vapplyable<decltype(assign), Lt, Rt>;
-inline constexpr auto vassign = []<typename Lt, typename Rt>(Lt&& L, Rt&& R) noexcept(nt_vassignable<Lt, Rt>) requires vassignable<Lt, Rt> { return vapply(assign, fwd<Lt>(L), fwd<Rt>(R)); };
+/// assigns the elements of `R` to the elements of `L`.
+inline constexpr auto vassign = []<typename Lt, typename Rt>(Lt&& L, Rt&& R)
+  noexcept(nt_vassignable<Lt, Rt>) requires vassignable<Lt, Rt> { return vapply(assign, fwd<Lt>(L), fwd<Rt>(R)); };
 
+/// struct to overload conversion operators.
 template<typename... Fs> struct caster : public Fs... {
+private:
   template<typename T> static constexpr nat i = []<typename... Ts>(typepack<Ts...>) { return inspects<same_as<Ts, T>...>; }(typepack<invoke_result<Fs>...>{});
   template<typename T> static constexpr nat j = i<T> < sizeof...(Fs) ? i<T> : []<typename... Ts>(typepack<Ts...>) { return inspects<convertible_to<Ts, T>...>; }(typepack<invoke_result<Fs>...>{});
   template<typename... As> static constexpr nat k = inspects<invocable<Fs, As...>...>;
@@ -604,8 +790,10 @@ public:
   }
 };
 
+/// checks if this is converted to `bool` in constant evaluation.
 inline constexpr caster is_cev{[]() noexcept { return std::is_constant_evaluated(); }};
 
+/// function object type to calculate the maximum or minimum value.
 template<bool Max> struct t_max {
   constexpr none operator()() const noexcept { return {}; }
   template<typename T> constexpr T operator()(T&& t) const noexcept { return t; }
@@ -617,9 +805,12 @@ private:
   template<typename R> static constexpr auto call(auto&& t, auto&& u) -> R { if constexpr (Max) return t < u ? u : t; else return u < t ? u : t; }
 };
 
+/// function object to calculate the maximum value.
 inline constexpr t_max<1> max;
+/// function object to calculate the minimum value.
 inline constexpr t_max<0> min;
 
+/// function object type to returns the index of the maximum or minimum value.
 template<bool Max> struct t_maxi {
   constexpr list<nat, none> operator()() const noexcept { return list<nat, none>{}; }
   template<typename T> constexpr list<nat, remove_ref<T>> operator()(T&& t) const noexcept { return {0, fwd<T>(t)}; }
@@ -632,8 +823,13 @@ private:
            else {               if (M.second > get<I>(L)) return call<I + 1>(fwd<Tp>(L), R{I, get<I>(L)}); else return call<I + 1>(fwd<Tp>(L), mv(M)); } } }
 };
 
+/// function object to returns the index of the maximum value.
 inline constexpr t_maxi<1> maxi;
+/// function object to returns the index of the minimum value.
 inline constexpr t_maxi<0> mini;
+}
+
+namespace yw { // Range Definitions
 
 template<typename It> concept iterator = std::input_or_output_iterator<It>;
 template<typename Se, typename It> concept sentinel_for = std::sentinel_for<Se, It>;
@@ -727,15 +923,14 @@ template<typename T, convertible_to<T>... Ts> array(T, Ts...) -> array<T, 1 + si
 template<typename T> array(nat, const T&) -> array<T, 0>;
 template<iterator It, sentinel_for<It> Se> array(It, Se) -> array<iter_value<It>, 0>;
 template<range Rg> array(Rg&&) -> array<iter_value<Rg>, 0>;
-}
 
-namespace yw::_ {
+namespace _ {
 template<range Rg> struct _iter_t<Rg> : _iter_t<iterator_t<Rg>> {};
-template<iterator It> struct _iter_t<It> { using v = std::iter_value_t<It>; using d = std::iter_difference_t<It>;
-                                           using r = std::iter_reference_t<It>; using rr = std::iter_rvalue_reference_t<It>; };
+template<iterator It> struct _iter_t<It> { using v = std::iter_value_t<It>; using d = std::iter_difference_t<It>; using r = std::iter_reference_t<It>; using rr = std::iter_rvalue_reference_t<It>; };
+}
 }
 
-namespace yw {
+namespace yw { // String Definitions
 
 template<character Ct> using string = std::basic_string<Ct>;
 template<character Ct> using string_view = std::basic_string_view<Ct>;
@@ -743,9 +938,197 @@ using str1 = string<cat1>;
 using str2 = string<cat2>;
 using stv1 = string_view<cat1>;
 using stv2 = string_view<cat2>;
+using path = std::filesystem::path;
+
+template<character Ct> struct literal {
+  Ct string[256]{};
+  nat count;
+  template<nat N> constexpr literal(const Ct (&S)[N]) noexcept : count(N - 1) { std::char_traits<Ct>::copy(string, S, N - 1); }
+  constexpr operator const Ct*() const noexcept { return string; }
+};
+template<character Ct, nat N> literal(const Ct (&)[N]) -> literal<Ct>;
+
+/// returns the length of the specified string.
+inline constexpr overload strlen{
+  []<character Ct>(const Ct* const Str) { return std::char_traits<Ct>::length(Str); },
+  []<range Rg>(Rg&& Str) requires character<iter_value<Rg>> { return std::ranges::distance(Str); }
+};
+
+namespace _ {
+template<typename Ct> constexpr string<Ct> _utf32_to_utf16(const string_view<uct4>& utf32) noexcept {
+  auto utf16 = string<Ct>(utf32.size() * 2, u'\0');
+  nat size = 0;
+  for (auto i = utf32.begin(); i < utf32.end(); ++i) {
+    if (*i < 0x10000) utf16[size++] = Ct(*i);
+    else if (*i < 0x110000) {
+      utf16[size++] = Ct(0xD800 + (*i - 0x10000) / 0x400);
+      utf16[size++] = Ct(0xDC00 + (*i - 0x10000) % 0x400);
+    } else break; } utf16.resize(size); return utf16; }
+template<typename Ct> constexpr string<uct4> _utf16_to_utf32(const string_view<Ct>& utf16) noexcept {
+  if (utf16.empty()) return {};
+  string<uct4> utf32(utf16.size(), 0);
+  nat size = 0;
+  for (auto i = utf16.begin(); i < utf16.end(); ++i) {
+    if (*i < 0xD800 || *i >= 0xDC00) utf32[size++] = uct4(*i);
+    else if (*i < 0xDC00) {
+      if (++i == utf16.end()) break;
+      utf32[size++] = uct4(0x10000 + (*i - 0xD800) * 0x400 + (*(i + 1) - 0xDC00));
+    } else break; } utf32.resize(size); return utf32; }
+}
+
+/// function object type to convert a string to a utf-32 string.
+struct t_to_utf32 {
+  /// converts a utf-8 string to utf-32 string.
+  constexpr string<uct4> operator()(const string_view<uct1>& utf8) const {
+    if (utf8.empty()) return {};
+    string<uct4> utf32(utf8.size(), 0);
+    nat size = 0;
+    for (auto i = utf8.begin(); i < utf8.end(); ++i) {
+      if (*i < 0x80) utf32[size++] = *i;
+      else if (*i < 0xE0) utf32[size++] = uct4((*i & 0x1F) << 6 | (*(++i) & 0x3F));
+      else if (*i < 0xF0) utf32[size++] = uct4((*i & 0x0F) << 12 | (*(++i) & 0x3F) << 6 | (*(++i) & 0x3F));
+      else if (*i < 0xF8) utf32[size++] = uct4((*i & 0x07) << 18 | (*(++i) & 0x3F) << 12 | (*(++i) & 0x3F) << 6 | (*(++i) & 0x3F));
+      else break; } utf32.resize(size); return utf32;
+  }
+  /// converts a utf-16 string to utf-32 string.
+  constexpr string<uct4> operator()(const string_view<uct2>& utf2) const {
+    return _::_utf16_to_utf32(utf2);
+  }
+  /// converts a utf-32 string to utf-32 string.
+  constexpr string<uct4> operator()(const string_view<uct4>& utf32) const {
+    return string<uct4>(utf32);
+  }
+  /// converts a multi-byte string to utf-32 string.
+  string<uct4> operator()(const string_view<cat1>& mbs) const {
+    if (mbs.empty()) return {};
+    if (auto size = ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, nullptr, 0); size) {
+      string<cat2> wcs(size - 1, L'\0');
+      ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, wcs.data(), size);
+      return operator()(wcs);
+    } else return {};
+  }
+  /// converts a wide-char string to utf-32 string.
+  constexpr string<uct4> operator()(const string_view<cat2>& wcs) const {
+    return _::_utf16_to_utf32(wcs);
+  }
+};
+/// function object to convert a string to a utf-32 string.
+inline constexpr t_to_utf32 to_utf32;
+
+/// function object type to convert a string to a utf-16 string.
+struct t_to_utf16 {
+  /// converts a utf-8 string to utf-16 string.
+  constexpr string<uct2> operator()(const string_view<uct1>& utf8) const {
+    return _::_utf32_to_utf16<uct2>(to_utf32(utf8));
+  }
+  /// converts a utf-16 string to utf-16 string.
+  constexpr string<uct2> operator()(const string_view<uct2>& wcs) const {
+    return string<uct2>(wcs);
+  }
+  /// converts a utf-32 string to utf-16 string.
+  constexpr string<uct2> operator()(const string_view<uct4>& utf32) const {
+    return _::_utf32_to_utf16<uct2>(utf32);
+  }
+  /// converts a multi-byte string to utf-16 string.
+  string<uct2> operator()(const string_view<cat1>& mbs) const {
+    if (mbs.empty()) return {};
+    if (auto size = ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, nullptr, 0); size) {
+      string<uct2> utf16(size - 1, L'\0');
+      ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, reinterpret_cast<cat2*>(utf16.data()), size);
+      return utf16;
+    } else return {};
+  }
+  /// converts a wide-char string to utf-16 string.
+  constexpr string<uct2> operator()(const string_view<cat2>& wcs) const {
+    return string<uct2>(bitcast<const uct2*>(wcs.data()), wcs.size());
+  }
+};
+/// function object to convert a string to a utf-16 string.
+inline constexpr t_to_utf16 to_utf16;
+
+/// function object type to convert a string to a utf-8 string.
+struct t_to_utf8 {
+  /// converts a utf-8 string to utf-8 string.
+  constexpr string<uct1> operator()(const string_view<uct1>& utf8) const {
+    return string<uct1>(utf8);
+  }
+  /// converts a utf-16 string to utf-8 string.
+  constexpr string<uct1> operator()(const string_view<uct2>& utf16) const {
+    return operator()(to_utf32(utf16));
+  }
+  /// converts a utf-32 string to utf-8 string.
+  constexpr string<uct1> operator()(const string_view<uct4>& utf32) const {
+    if (utf32.empty()) return {};
+    string<uct1> utf8(utf32.size() * 4, '\0');
+    nat size = 0;
+    for (auto i = utf32.begin(); i < utf32.end(); ++i) {
+      if (*i < 0x80) utf8[size++] = uct1(*i);
+      else if (*i < 0x800) {
+        utf8[size++] = uct1(0xC0 | *i >> 6);
+        utf8[size++] = uct1(0x80 | *i & 0x3F);
+      } else if (*i < 0x10000) {
+        utf8[size++] = uct1(0xE0 | *i >> 12);
+        utf8[size++] = uct1(0x80 | *i >> 6 & 0x3F);
+        utf8[size++] = uct1(0x80 | *i & 0x3F);
+      } else if (*i < 0x110000) {
+        utf8[size++] = uct1(0xF0 | *i >> 18);
+        utf8[size++] = uct1(0x80 | *i >> 12 & 0x3F);
+        utf8[size++] = uct1(0x80 | *i >> 6 & 0x3F);
+        utf8[size++] = uct1(0x80 | *i & 0x3F);
+      } else break; }
+    utf8.resize(size);
+    return utf8;
+  }
+  /// converts a multi-byte string to utf-8 string.
+  string<uct1> operator()(const string_view<cat1>& mbs) const {
+    if (mbs.empty()) return {};
+    if (auto size = ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, nullptr, 0); size) {
+      string<uct2> utf16(size - 1, L'\0');
+      ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, reinterpret_cast<cat2*>(utf16.data()), size);
+      return operator()(utf16);
+    } else return {};
+  }
+  /// converts a wide-char string to utf-8 string.
+  constexpr string<uct1> operator()(const string_view<cat2>& wcs) const {
+    return operator()(to_utf32(wcs));
+  }
+};
+/// function object to convert a string to a utf-8 string.
+inline constexpr t_to_utf8 to_utf8;
+
+/// function object type to convert a string to a wide-char string.
+struct t_to_wcs {
+  /// converts a utf-8 string to wide-char string.
+  constexpr string<cat2> operator()(const string_view<uct1>& utf8) const {
+    return _::_utf32_to_utf16<cat2>(to_utf32(utf8));
+  }
+  /// converts a utf-16 string to wide-char string.
+  constexpr string<cat2> operator()(const string_view<uct2>& utf16) const {
+    return string<cat2>(bitcast<const cat2*>(utf16.data()), utf16.size());
+  }
+  /// converts a utf-32 string to wide-char string.
+  constexpr string<cat2> operator()(const string_view<uct4>& utf32) const {
+    return _::_utf32_to_utf16<cat2>(utf32);
+  }
+  /// converts a multi-byte string to wide-char string.
+  string<cat2> operator()(const string_view<cat1>& mbs) const {
+    if (mbs.empty()) return {};
+    if (auto size = ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, nullptr, 0); size) {
+      string<cat2> wcs(size - 1, L'\0');
+      ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, reinterpret_cast<cat2*>(wcs.data()), size);
+      return wcs;
+    } else return {};
+  }
+  /// converts a wide-char string to wide-char string.
+  constexpr string<cat2> operator()(const string_view<cat2>& wcs) const {
+    return string<cat2>(wcs);
+  }
+};
+/// function object to convert a string to a wide-char string.
+inline constexpr t_to_wcs to_wcs;
 
 #pragma clang diagnostic push
-// #pragma clang diagnostic ignored "-Wreturn-type"
+#pragma clang diagnostic ignored "-W"
 /// returns the current date and time.
 /// \return `std::chrono::system_time`, `value`, `str1`, `str2`, `string<uct1>`, `string<uct2>`, or `string<uct4>`.
 inline constexpr caster now{
@@ -759,76 +1142,20 @@ inline constexpr caster now{
 };
 #pragma clang diagnostic pop
 
-template<arithmetic T> struct t_stov {
-
-  /// converts a string to a value of type T.
-  /// \param Str : the string to convert.
-  T operator()(string_view<cat1> Str) const noexcept { return call(Str); }
-
-  /// converts a wide string to a value of type T.
-  /// \param Str : the wide string to convert.
-  T operator()(string_view<cat2> Str) const noexcept { return call(Str); }
-
-  /// converts a string to a value of type T.
-  /// \param Str : the string to convert.
-  /// \param Rest (out) : the rest of the string after the conversion.
-  T operator()(string_view<cat1> Str, string_view<cat1>& Rest) const noexcept
-  { return [&](T v) noexcept { return Rest = Str, v; }(call(Str)); }
-
-  /// converts a wide string to a value of type T.
-  /// \param Str : the wide string to convert.
-  /// \param Rest (out) : the rest of the wide string after the conversion.
-  T operator()(string_view<cat2> Str, string_view<cat2>& Rest) const noexcept
-  { return [&](T v) noexcept { return Rest = Str, v; }(call(Str)); }
-
-private:
-  template<typename Ct> static T call(string_view<Ct>& s) noexcept {
-    T v{};
-    for (auto last = s.data() + s.size(); s.size(); s.remove_prefix(1)) {
-      auto [p, ec] = std::from_chars(s.data(), last, v);
-      if (p != s.data() || ec == std::errc{}) return s = string_view<Ct>(p, last), v;
-    }
-    return v;
-
-  }
-};
-
-/// converts a string to a value of type T.
-template<arithmetic T> inline constexpr t_stov<T> stov;
-
-/// converts a value of type T to a string.
-template<included_in<cat1, cat2> Ct>
-inline constexpr auto vtos = []<arithmetic T>(const T v) noexcept {
-  if constexpr (same_as<Ct, cat1>) return std::to_string(v);
-  else return std::to_wstring(v);
-};
-
-/// returns the length of the specified string.
-inline constexpr overload strlen{
-  []<character Ct>(const Ct* const Str) { return std::char_traits<Ct>::length(Str); },
-  []<range Rg>(Rg&& Str) requires character<iter_value<Rg>> { return std::ranges::distance(Str); }
-};
-
 /// struct to represent the source location.
 struct source {
   source(const char* const) = delete;
-
   const cat1* const file; // file name
   const int line;         // line number
   const int column;       // column number
-
   /// default constructor to initialize the source location.
-  constexpr source(
-    const char* const File = __builtin_FILE(), const int Line = __builtin_LINE(),
-    const int Column = __builtin_COLUMN()) noexcept : file(mv(File)), line(Line), column(Column) {}
-
+  constexpr source(const char* const File = __builtin_FILE(), const int Line = __builtin_LINE(),
+                   const int Column = __builtin_COLUMN()) noexcept : file(mv(File)), line(Line), column(Column) {}
   /// returns the string representation of the source location.
   str1 to_string() const { return std::format("{}({},{})", file, line, column); }
-
   /// returns the string representation of the source location.
   template<character Ct> string<Ct> to_string() const
   { return std::format(get_format<remove_cv<Ct>>(), std::filesystem::path(file).string<Ct>(), line, column); }
-
   /// outputs the string representation of the source location to the specified output stream.
   template<typename Ct, typename Tr> friend std::basic_ostream<char, Tr>&
   operator<<(std::basic_ostream<Ct, Tr>& os, const source& s) { return os << s.to_string<Ct>(); }
@@ -842,15 +1169,83 @@ private:
   }
 };
 
-template<character Ct> struct literal {
-  Ct string[256]{};
-  nat count;
-  template<nat N> constexpr literal(const Ct (&S)[N]) noexcept : count(N - 1) { std::char_traits<Ct>::copy(string, S, N - 1); }
-  constexpr operator const Ct*() const noexcept { return string; }
+/// function object type to convert a value to a string.
+template<arithmetic T> struct t_stov {
+  /// converts a string to a value of type T.
+  /// \param Str : the string to convert.
+  T operator()(string_view<cat1> Str) const noexcept { return call(Str); }
+  /// converts a wide string to a value of type T.
+  /// \param Str : the wide string to convert.
+  T operator()(string_view<cat2> Str) const noexcept { return call(Str); }
+  /// converts a string to a value of type T.
+  /// \param Str : the string to convert.
+  /// \param Rest (out) : the rest of the string after the conversion.
+  T operator()(string_view<cat1> Str, string_view<cat1>& Rest) const noexcept
+  { return [&](T v) noexcept { return Rest = Str, v; }(call(Str)); }
+  /// converts a wide string to a value of type T.
+  /// \param Str : the wide string to convert.
+  /// \param Rest (out) : the rest of the wide string after the conversion.
+  T operator()(string_view<cat2> Str, string_view<cat2>& Rest) const noexcept
+  { return [&](T v) noexcept { return Rest = Str, v; }(call(Str)); }
+private:
+  template<typename Ct> static T call(string_view<Ct>& s) noexcept {
+    T v{};
+    for (auto last = s.data() + s.size(); s.size(); s.remove_prefix(1)) {
+      auto [p, ec] = std::from_chars(s.data(), last, v);
+      if (p != s.data() || ec == std::errc{}) return s = string_view<Ct>(p, last), v;
+    }
+    return v;
+  }
 };
-template<character Ct, nat N> literal(const Ct (&)[N]) -> literal<Ct>;
 
-using path = std::filesystem::path;
+/// converts a string to a value of type T.
+template<arithmetic T> inline constexpr t_stov<T> stov;
+
+/// class for logging text; the text is written to a file when the object is destroyed.
+class logger {
+  string<uct1> text;
+  path file;
+public:
+  /// constructs a logger object with the specified file name to write the text to.
+  logger(const path& LogFileName) : file(LogFileName) {}
+  /// saves the text to the file when the object is destroyed.
+  ~logger() {
+    if (text.empty()) return;
+    if (auto dir = file.parent_path(); !dir.empty() && !std::filesystem::exists(dir)) std::filesystem::create_directories(dir);
+    if (std::basic_ofstream<uct1> ofs(file, std::ios::app); ofs) ofs << text << std::endl;
+  }
+  /// appends the text to the logger object; the text should be ended with a newline character.
+  logger& operator<<(const string_view<cat1> s) { return text += to_utf8(s), *this; }
+  /// appends the text to the logger object; the text should be ended with a newline character.
+  logger& operator<<(const string_view<cat2> s) { return text += to_utf8(s), *this; }
+  /// appends the text to the logger object; the text should be ended with a newline character.
+  logger& operator<<(const string_view<uct1> s) { return text += to_utf8(s), *this; }
+  /// appends the text to the logger object; the text should be ended with a newline character.
+  logger& operator<<(const string_view<uct2> s) { return text += to_utf8(s), *this; }
+  /// appends the text to the logger object; the text should be ended with a newline character.
+  logger& operator<<(const string_view<uct4> s) { return text += to_utf8(s), *this; }
+  /// outputs the text of the logger object to the specified output stream.
+  template<typename Tr> friend std::basic_ostream<cat1, Tr>&
+  operator<<(std::basic_ostream<cat1, Tr>& os, const logger& l) { return os << l.text; }
+};
+
+/// default logger object for ywlib
+inline logger log("ywlib.log");
+
+}
+
+
+
+namespace yw {
+
+
+/// converts a value of type T to a string.
+template<included_in<cat1, cat2> Ct>
+inline constexpr auto vtos = []<arithmetic T>(const T v) noexcept {
+  if constexpr (same_as<Ct, cat1>) return std::to_string(v);
+  else return std::to_wstring(v);
+};
+
 }
 
 namespace yw::file {
@@ -2601,218 +2996,6 @@ inline constexpr overload yes{
   [](const HWND Window, const str1& Text, const str1& Caption = "Yes?") -> bool { return ::MessageBoxA(Window, Text.c_str(), Caption.c_str(), MB_ICONQUESTION | MB_YESNO) == IDYES; },
   [](const HWND Window, const str2& Text, const str2& Caption = L"Yes?") -> bool { return ::MessageBoxW(Window, Text.c_str(), Caption.c_str(), MB_ICONQUESTION | MB_YESNO) == IDYES; }};
 
-struct t_to_utf16 {
-  /// Convert a utf-8 string to utf-16 string.
-  string<uct2> operator()(const string_view<uct1>& utf8) const {
-    if (utf8.empty()) return {};
-    if (auto size = ::MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const cat1*>(utf8.data()), -1, nullptr, 0); size) {
-      string<uct2> utf16(size - 1, L'\0');
-      ::MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const cat1*>(utf8.data()), -1, reinterpret_cast<cat2*>(utf16.data()), size);
-      return utf16;
-    } else return {};
-  }
-  /// Convert a utf-16 string to utf-16 string.
-  constexpr string<uct2> operator()(const string_view<uct2>& wcs) const {
-    return string<uct2>(wcs);
-  }
-  /// Convert a utf-32 string to utf-16 string.
-  constexpr string<uct2> operator()(const string_view<uct4>& utf32) const {
-    string<uct2> utf16(utf32.size() * 2, u'\0');
-    nat size = 0;
-    for (auto i = utf32.begin(); i < utf32.end(); ++i) {
-      if (*i < 0x10000) utf16[size++] = uct2(*i);
-      else if (*i < 0x110000) {
-        utf16[size++] = uct2(0xD800 + (*i - 0x10000) / 0x400);
-        utf16[size++] = uct2(0xDC00 + (*i - 0x10000) % 0x400);
-      } else break; }
-    utf16.resize(size); return utf16;
-  }
-  /// Convert a multi-byte-string to utf-16 string.
-  string<uct2> operator()(const string_view<cat1>& mbs) const {
-    if (mbs.empty()) return {};
-    if (auto size = ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, nullptr, 0); size) {
-      string<uct2> utf16(size - 1, L'\0');
-      ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, reinterpret_cast<cat2*>(utf16.data()), size);
-      return utf16;
-    } else return {};
-  }
-  /// Convert a wide-char-string to utf-16 string.
-  string<uct2> operator()(const string_view<cat2>& wcs) const {
-    return string<uct2>(reinterpret_cast<const string_view<uct2>&>(wcs));
-  } };
-/// Convert a string to utf-16 string.
-inline constexpr t_to_utf16 to_utf16;
-
-struct t_to_utf8 {
-  /// Convert a utf-8 string to utf-8 string.
-  constexpr string<uct1> operator()(const string_view<uct1>& utf8) const {
-    return string<uct1>(utf8);
-  }
-  /// Convert a utf-16 string to utf-8 string.
-  constexpr string<uct1> operator()(const string_view<uct2>& utf16) const {
-    if (utf16.empty()) return {};
-    if (auto size = ::WideCharToMultiByte(CP_UTF8, 0, reinterpret_cast<const cat2*>(utf16.data()), -1, nullptr, 0, nullptr, nullptr); size) {
-      string<uct1> utf8(size - 1, '\0');
-      ::WideCharToMultiByte(CP_UTF8, 0, reinterpret_cast<const cat2*>(utf16.data()), -1, reinterpret_cast<cat1*>(utf8.data()), size, nullptr, nullptr);
-      return utf8;
-    } else return {};
-  }
-  /// Convert a utf-32 string to utf-8 string.
-  string<uct1> operator()(const string_view<uct4>& utf32) const {
-    return operator()(to_utf16(utf32));
-  }
-  /// Convert a multi-byte-string to utf-8 string.
-  string<uct1> operator()(const string_view<cat1>& mbs) const {
-    return operator()(to_utf16(mbs));
-  }
-  /// Convert a wide-char-string to utf-8 string.
-  string<uct1> operator()(const string_view<cat2>& wcs) const {
-    return operator()(reinterpret_cast<const string_view<uct2>&>(wcs));
-  } };
-/// Convert a string to utf-8 string.
-inline constexpr t_to_utf8 to_utf8;
-
-struct t_to_utf32 {
-  /// Convert a utf-8 string to utf-32 string.
-  constexpr string<uct4> operator()(const string_view<uct1>& utf8) const {
-    string<uct4> utf32(utf8.size(), 0);
-    nat size = 0;
-    for (auto i = utf8.begin(); i < utf8.end(); ++i) {
-      if (*i < 0x80) utf32[size++] = *i;
-      else if (*i < 0xE0) utf32[size++] = (*i & 0x1F) << 6 | (*(++i) & 0x3F);
-      else if (*i < 0xF0) utf32[size++] = (*i & 0x0F) << 12 | (*(++i) & 0x3F) << 6 | (*(++i) & 0x3F);
-      else if (*i < 0xF8) utf32[size++] = (*i & 0x07) << 18 | (*(++i) & 0x3F) << 12 | (*(++i) & 0x3F) << 6 | (*(++i) & 0x3F);
-      else break; }
-    utf32.resize(size); return utf32;
-  }
-  /// Convert a utf-16 string to utf-32 string.
-  constexpr string<uct4> operator()(const string_view<uct2>& utf16) const {
-    string<uct4> utf32(utf16.size(), 0);
-    nat size = 0;
-    for (auto i = utf16.begin(); i < utf16.end(); ++i) {
-      if (*i < 0xD800 || *i >= 0xDC00) utf32[size++] = *i;
-      else if (*i < 0xDC00) utf32[size++] = 0x10000 + (*i - 0xD800) * 0x400 + (*(++i) - 0xDC00);
-      else break; }
-    utf32.resize(size); return utf32;
-  }
-  /// Convert a utf-32 string to utf-32 string.
-  constexpr string<uct4> operator()(const string_view<uct4>& utf32) const {
-    return string<uct4>(utf32);
-  }
-  /// Convert a multi-byte-string to utf-32 string.
-  string<uct4> operator()(const string_view<cat1>& mbs) const {
-    return operator()(to_utf16(mbs));
-  }
-  /// Convert a wide-char-string to utf-32 string.
-  string<uct4> operator()(const string_view<cat2>& wcs) const {
-    return operator()(reinterpret_cast<const string_view<uct2>&>(wcs));
-  } };
-/// Convert a string to utf-32 string.
-inline constexpr t_to_utf32 to_utf32;
-
-struct t_to_mbs {
-  /// Convert a utf-8 string to multi-byte-string.
-  string<cat1> operator()(const string_view<uct1>& utf8) const {
-    return operator()(to_utf16(utf8));
-  }
-  /// Convert a utf-16 string to multi-byte-string.
-  string<cat1> operator()(const string_view<uct2>& utf16) const {
-    return operator()(reinterpret_cast<const string_view<cat2>&>(utf16));
-  }
-  /// Convert a utf-32 string to multi-byte-string.
-  string<cat1> operator()(const string_view<uct4>& utf32) const {
-    return operator()(to_utf16(utf32));
-  }
-  /// Convert a multi-byte-string to multi-byte-string.
-  constexpr string<cat1> operator()(const string_view<cat1>& mbs) const {
-    return string<cat1>(mbs);
-  }
-  /// Convert a wide-char-string to multi-byte-string.
-  string<cat1> operator()(const string_view<cat2>& wcs) const {
-    if (wcs.empty()) return {};
-    if (auto size = ::WideCharToMultiByte(CP_ACP, 0, reinterpret_cast<const cat2*>(wcs.data()), -1, nullptr, 0, nullptr, nullptr); size) {
-      string<cat1> mbs(size - 1, '\0');
-      ::WideCharToMultiByte(CP_ACP, 0, reinterpret_cast<const cat2*>(wcs.data()), -1, reinterpret_cast<cat1*>(mbs.data()), size, nullptr, nullptr);
-      return mbs;
-    } else return {};
-  } };
-/// Convert a string to multi-byte-string.
-inline constexpr t_to_mbs to_mbs;
-
-struct t_to_wcs {
-  /// Convert a utf-8 string to wide-char-string.
-  string<cat2> operator()(const string_view<uct1>& utf8) const {
-    if (utf8.empty()) return {};
-    if (auto size = ::MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const cat1*>(utf8.data()), -1, nullptr, 0); size) {
-      string<cat2> wcs(size - 1, L'\0');
-      ::MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const cat1*>(utf8.data()), -1, reinterpret_cast<cat2*>(wcs.data()), size);
-      return wcs;
-    } else return {};
-  }
-  /// Convert a utf-16 string to wide-char-string.
-  constexpr string<cat2> operator()(const string_view<uct2>& utf16) const {
-    string<cat2> r(utf16.size(), cat2{});
-    std::char_traits<cat2>::copy(r.data(), (const cat2*)utf16.data(), r.size());
-    return r;
-  }
-  /// Convert a utf-32 string to wide-char-string.
-  string<cat2> operator()(const string_view<uct4>& utf32) const {
-    string<cat2> wcs(utf32.size() * 2, u'\0');
-    nat size = 0;
-    for (auto i = utf32.begin(); i < utf32.end(); ++i) {
-      if (*i < 0x10000) wcs[size++] = cat2(*i);
-      else if (*i < 0x110000) {
-        wcs[size++] = cat2(0xD800 + (*i - 0x10000) / 0x400);
-        wcs[size++] = cat2(0xDC00 + (*i - 0x10000) % 0x400);
-      } else break; }
-    wcs.resize(size); return wcs;
-  }
-  /// Convert a multi-byte-string to wide-char-string.
-  string<cat2> operator()(const string_view<cat1>& mbs) const {
-    if (mbs.empty()) return {};
-    if (auto size = ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, nullptr, 0); size) {
-      string<cat2> wcs(size - 1, L'\0');
-      ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, reinterpret_cast<cat2*>(wcs.data()), size);
-      return wcs;
-    } else return {};
-  }
-  /// Convert a wide-char-string to wide-char-string.
-  constexpr string<cat2> operator()(const string_view<cat2>& wcs) const {
-    return string<cat2>(wcs);
-  } };
-/// Convert a string to wide-char-string.
-inline constexpr t_to_wcs to_wcs;
-
-/// class for logging text; the text is written to a file when the object is destroyed.
-class logger {
-  string<uct1> text;
-  path file;
-public:
-  /// constructs a logger object with the specified file name to write the text to.
-  logger(const path& LogFileName) : file(LogFileName) {}
-  /// saves the text to the file when the object is destroyed.
-  ~logger() {
-    if (text.empty()) return;
-    if (auto dir = file.parent_path(); !dir.empty() && !std::filesystem::exists(dir)) std::filesystem::create_directories(dir);
-    if (std::ofstream ofs(file, std::ios::app); ofs) ofs << text << std::endl;
-  }
-  /// appends the text to the logger object; the text should be ended with a newline character.
-  logger& operator<<(const string_view<cat1> s) { return text += to_utf8(s), *this; }
-  /// appends the text to the logger object; the text should be ended with a newline character.
-  logger& operator<<(const string_view<cat2> s) { return text += to_utf8(s), *this; }
-  /// appends the text to the logger object; the text should be ended with a newline character.
-  logger& operator<<(const string_view<uct1> s) { return text += to_utf8(s), *this; }
-  /// appends the text to the logger object; the text should be ended with a newline character.
-  logger& operator<<(const string_view<uct2> s) { return text += to_utf8(s), *this; }
-  /// appends the text to the logger object; the text should be ended with a newline character.
-  logger& operator<<(const string_view<uct4> s) { return text += to_utf8(s), *this; }
-  /// outputs the text of the logger object to the specified output stream.
-  template<typename Tr> friend std::basic_ostream<cat1, Tr>&
-  operator<<(std::basic_ostream<cat1, Tr>& os, const logger& l) { return os << l.text; }
-};
-
-/// default logger object for ywlib
-inline logger log("ywlib.log");
 
 /// class to handle a status needing to be checked the change.
 template<typename T, typename Setter = none> class status {
@@ -4357,7 +4540,7 @@ public:
   virtual string<cat2> text() const {
     if (!hwnd) return {};
     str2 s(::GetWindowTextLengthW(hwnd), L'\0');
-    ::GetWindowTextW(hwnd, s.data(), s.size() + 1);
+    ::GetWindowTextW(hwnd, s.data(), UINT(s.size() + 1));
     return s;
   }
 };
