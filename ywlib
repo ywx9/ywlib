@@ -941,7 +941,7 @@ using stv2 = string_view<cat2>;
 using path = std::filesystem::path;
 
 /// checks if `T` is a string-like type.
-template<typename T, typename Ct = iter_value<T>> concept stringable = convertible_to<T&, string_view<Ct>>;
+template<typename T, typename Ct = iter_value<T>> concept stringable = nt_convertible_to<T&, string_view<Ct>>;
 
 /// struct to be used as a non-type template parameter.
 template<character Ct> struct literal {
@@ -950,7 +950,7 @@ template<character Ct> struct literal {
   template<nat N> constexpr literal(const Ct (&S)[N]) noexcept : count(N - 1) { std::char_traits<Ct>::copy(string, S, N - 1); }
   constexpr operator const Ct*() const noexcept { return string; }
   constexpr operator string_view<Ct>() const noexcept { return {string, count}; }
-  constexpr operator string<Ct>() const noexcept { return {string, count}; }
+  constexpr operator yw::string<Ct>() const noexcept { return {string, count}; }
   constexpr nat size() const noexcept { return count; }
   constexpr bool empty() const noexcept { return count == 0; }
   constexpr const Ct* begin() const noexcept { return string; }
@@ -992,8 +992,18 @@ template<typename Ct> constexpr string<uct4> _utf16_to_utf32(const string_view<C
 
 /// function object type to convert a string to a utf-32 string.
 struct t_to_utf32 {
+  /// converts a multi-byte string to utf-32 string.
+  string<uct4> operator()(stringable<cat1> auto&& s) const {
+    string_view<cat1> mbs(s);
+    if (mbs.empty()) return {};
+    if (auto size = ::MultiByteToWideChar(932, 0, mbs.data(), -1, nullptr, 0); size) {
+      string<cat2> wcs(size - 1, L'\0');
+      ::MultiByteToWideChar(932, 0, mbs.data(), -1, wcs.data(), size);
+      return operator()(wcs);
+    } else return {};
+  }
   /// converts a utf-8 string to utf-32 string.
-  constexpr string<uct4> operator()(const stringable<uct1> auto&& s) const {
+  constexpr string<uct4> operator()(stringable<uct1> auto&& s) const {
     string_view<uct1> utf8(s);
     if (utf8.empty()) return {};
     string<uct4> utf32(utf8.size(), 0);
@@ -1005,47 +1015,22 @@ struct t_to_utf32 {
       else if (*i < 0xF8) utf32[size++] = uct4((*i & 0x07) << 18 | (*(++i) & 0x3F) << 12 | (*(++i) & 0x3F) << 6 | (*(++i) & 0x3F));
       else break; } utf32.resize(size); return utf32;
   }
-  /// converts a utf-16 string to utf-32 string.
-  constexpr string<uct4> operator()(const string_view<uct2>& utf2) const {
-    return _::_utf16_to_utf32(utf2);
-  }
-  /// converts a utf-32 string to utf-32 string.
-  constexpr string<uct4> operator()(const string_view<uct4>& utf32) const {
-    return string<uct4>(utf32);
-  }
-  /// converts a multi-byte string to utf-32 string.
-  string<uct4> operator()(const string_view<cat1>& mbs) const {
-    if (mbs.empty()) return {};
-    if (auto size = ::MultiByteToWideChar(932, 0, mbs.data(), -1, nullptr, 0); size) {
-      string<cat2> wcs(size - 1, L'\0');
-      ::MultiByteToWideChar(932, 0, mbs.data(), -1, wcs.data(), size);
-      return operator()(wcs);
-    } else return {};
-  }
   /// converts a wide-char string to utf-32 string.
-  constexpr string<uct4> operator()(const string_view<cat2>& wcs) const {
-    return _::_utf16_to_utf32(wcs);
-  }
+  constexpr string<uct4> operator()(stringable<cat2> auto&& s) const { return _::_utf16_to_utf32(string_view<cat2>(s)); }
+  /// converts a utf-16 string to utf-32 string.
+  constexpr string<uct4> operator()(stringable<uct2> auto&& s) const { return _::_utf16_to_utf32(string_view<uct2>(s)); }
+  /// converts a utf-32 string to utf-32 string.
+  constexpr string<uct4> operator()(stringable<uct4> auto&& s) const { return string<uct4>(string_view<uct4>(s)); }
 };
+
 /// function object to convert a string to a utf-32 string.
 inline constexpr t_to_utf32 to_utf32;
 
 /// function object type to convert a string to a utf-16 string.
 struct t_to_utf16 {
-  /// converts a utf-8 string to utf-16 string.
-  constexpr string<uct2> operator()(const string_view<uct1>& utf8) const {
-    return _::_utf32_to_utf16<uct2>(to_utf32(utf8));
-  }
-  /// converts a utf-16 string to utf-16 string.
-  constexpr string<uct2> operator()(const string_view<uct2>& wcs) const {
-    return string<uct2>(wcs);
-  }
-  /// converts a utf-32 string to utf-16 string.
-  constexpr string<uct2> operator()(const string_view<uct4>& utf32) const {
-    return _::_utf32_to_utf16<uct2>(utf32);
-  }
   /// converts a multi-byte string to utf-16 string.
-  string<uct2> operator()(const string_view<cat1>& mbs) const {
+  string<uct2> operator()(stringable<cat1> auto&& s) const {
+    string_view<cat1> mbs(s);
     if (mbs.empty()) return {};
     if (auto size = ::MultiByteToWideChar(932, 0, mbs.data(), -1, nullptr, 0); size) {
       string<uct2> utf16(size - 1, L'\0');
@@ -1054,25 +1039,33 @@ struct t_to_utf16 {
     } else return {};
   }
   /// converts a wide-char string to utf-16 string.
-  constexpr string<uct2> operator()(const string_view<cat2>& wcs) const {
-    return string<uct2>(bitcast<const uct2*>(wcs.data()), wcs.size());
-  }
+  constexpr string<uct2> operator()(stringable<cat2> auto&& s) const { return string<uct2>(bitcast<string_view<uct2>>(string_view<cat2>(s))); }
+  /// converts a utf-8 string to utf-16 string.
+  constexpr string<uct2> operator()(stringable<uct1> auto&& s) const { return _::_utf32_to_utf16<uct2>(to_utf32(s)); }
+  /// converts a utf-16 string to utf-16 string.
+  constexpr string<uct2> operator()(stringable<uct2> auto&& s) const { return string<uct2>(string_view<uct2>(s)); }
+  /// converts a utf-32 string to utf-16 string.
+  constexpr string<uct2> operator()(stringable<uct4> auto&& s) const { return _::_utf32_to_utf16<uct2>(string_view<uct4>(s)); }
 };
+
 /// function object to convert a string to a utf-16 string.
 inline constexpr t_to_utf16 to_utf16;
 
 /// function object type to convert a string to a utf-8 string.
 struct t_to_utf8 {
-  /// converts a utf-8 string to utf-8 string.
-  constexpr string<uct1> operator()(const string_view<uct1>& utf8) const {
-    return string<uct1>(utf8);
-  }
-  /// converts a utf-16 string to utf-8 string.
-  constexpr string<uct1> operator()(const string_view<uct2>& utf16) const {
-    return operator()(to_utf32(utf16));
+  /// converts a multi-byte string to utf-8 string.
+  string<uct1> operator()(stringable<cat1> auto&& s) const {
+    string_view<cat1> mbs(s);
+    if (mbs.empty()) return {};
+    if (auto size = ::MultiByteToWideChar(932, 0, mbs.data(), -1, nullptr, 0); size) {
+      string<uct2> utf16(size - 1, L'\0');
+      ::MultiByteToWideChar(932, 0, mbs.data(), -1, reinterpret_cast<cat2*>(utf16.data()), size);
+      return operator()(utf16);
+    } else return {};
   }
   /// converts a utf-32 string to utf-8 string.
-  constexpr string<uct1> operator()(const string_view<uct4>& utf32) const {
+  constexpr string<uct1> operator()(stringable<uct4> auto&& s) const {
+    string_view<uct4> utf32(s);
     if (utf32.empty()) return {};
     string<uct1> utf8(utf32.size() * 4, '\0');
     nat size = 0;
@@ -1094,39 +1087,22 @@ struct t_to_utf8 {
     utf8.resize(size);
     return utf8;
   }
-  /// converts a multi-byte string to utf-8 string.
-  string<uct1> operator()(const string_view<cat1>& mbs) const {
-    if (mbs.empty()) return {};
-    if (auto size = ::MultiByteToWideChar(932, 0, mbs.data(), -1, nullptr, 0); size) {
-      string<uct2> utf16(size - 1, L'\0');
-      ::MultiByteToWideChar(932, 0, mbs.data(), -1, reinterpret_cast<cat2*>(utf16.data()), size);
-      return operator()(utf16);
-    } else return {};
-  }
   /// converts a wide-char string to utf-8 string.
-  constexpr string<uct1> operator()(const string_view<cat2>& wcs) const {
-    return operator()(to_utf32(wcs));
-  }
+  constexpr string<uct1> operator()(stringable<cat2> auto&& s) const { return operator()(to_utf32(s)); }
+  /// converts a utf-8 string to utf-8 string.
+  constexpr string<uct1> operator()(stringable<uct1> auto&& s) const { return string<uct1>(string_view<uct1>(s)); }
+  /// converts a utf-16 string to utf-8 string.
+  constexpr string<uct1> operator()(stringable<uct2> auto&& s) const { return operator()(to_utf32(s)); }
 };
+
 /// function object to convert a string to a utf-8 string.
 inline constexpr t_to_utf8 to_utf8;
 
 /// function object type to convert a string to a wide-char string.
 struct t_to_wcs {
-  /// converts a utf-8 string to wide-char string.
-  constexpr string<cat2> operator()(const string_view<uct1>& utf8) const {
-    return _::_utf32_to_utf16<cat2>(to_utf32(utf8));
-  }
-  /// converts a utf-16 string to wide-char string.
-  constexpr string<cat2> operator()(const string_view<uct2>& utf16) const {
-    return string<cat2>(bitcast<const cat2*>(utf16.data()), utf16.size());
-  }
-  /// converts a utf-32 string to wide-char string.
-  constexpr string<cat2> operator()(const string_view<uct4>& utf32) const {
-    return _::_utf32_to_utf16<cat2>(utf32);
-  }
   /// converts a multi-byte string to wide-char string.
-  string<cat2> operator()(const string_view<cat1>& mbs) const {
+  string<cat2> operator()(stringable<cat1> auto&& s) const {
+    string_view<cat1> mbs(s);
     if (mbs.empty()) return {};
     if (auto size = ::MultiByteToWideChar(932, 0, mbs.data(), -1, nullptr, 0); size) {
       string<cat2> wcs(size - 1, L'\0');
@@ -1135,29 +1111,23 @@ struct t_to_wcs {
     } else return {};
   }
   /// converts a wide-char string to wide-char string.
-  constexpr string<cat2> operator()(const string_view<cat2>& wcs) const {
-    return string<cat2>(wcs);
-  }
+  constexpr string<cat2> operator()(stringable<cat2> auto&& s) const { return string<cat2>(string_view<cat2>(s)); }
+  /// converts a utf-8 string to wide-char string.
+  constexpr string<cat2> operator()(stringable<uct1> auto&& s) const { return _::_utf32_to_utf16<cat2>(to_utf32(s)); }
+  /// converts a utf-16 string to wide-char string.
+  constexpr string<cat2> operator()(stringable<uct2> auto&& s) const { return string<cat2>(bitcast<string_view<cat2>>(string_view<uct2>(s))); }
+  /// converts a utf-32 string to wide-char string.
+  constexpr string<cat2> operator()(stringable<uct4> auto&& s) const { return _::_utf32_to_utf16<cat2>(s); }
 };
+
 /// function object to convert a string to a wide-char string.
 inline constexpr t_to_wcs to_wcs;
 
 /// function object type to convert a string to a multi-byte string.
 struct t_to_mbs {
-  /// converts a utf-8 string to multi-byte string.
-  string<cat1> operator()(const string_view<uct1>& utf8) const {
-    return operator()(to_wcs(utf8));
-  }
-  /// converts a utf-16 string to multi-byte string.
-  string<cat1> operator()(const string_view<uct2>& utf16) const {
-    return operator()(reinterpret_cast<const string_view<cat2>&>(utf16));
-  }
-  /// converts a utf-32 string to multi-byte string.
-  string<cat1> operator()(const string_view<uct4>& utf32) const {
-    return operator()(to_utf16(utf32));
-  }
   /// converts a wide-char string to multi-byte string.
-  string<cat1> operator()(const string_view<cat2>& wcs) const {
+  string<cat1> operator()(stringable<cat2> auto&& s) const {
+    string_view<cat2> wcs(s);
     if (wcs.empty()) return {};
     if (auto size = ::WideCharToMultiByte(932, 0, wcs.data(), UINT(wcs.size()), nullptr, 0, nullptr, nullptr); size) {
       string<cat1> mbs(size, '\0');
@@ -1166,16 +1136,20 @@ struct t_to_mbs {
     } else return {};
   }
   /// converts a multi-byte string to multi-byte string.
-  constexpr string<cat1> operator()(const string_view<cat1>& mbs) const {
-    return string<cat1>(mbs);
-  }
+  constexpr string<cat1> operator()(stringable<cat1> auto&& s) const { return string<cat1>(string_view<cat1>(s)); }
+  /// converts a utf-8 string to multi-byte string.
+  string<cat1> operator()(stringable<uct1> auto&& s) const { return operator()(to_wcs(s)); }
+  /// converts a utf-16 string to multi-byte string.
+  string<cat1> operator()(stringable<uct2> auto&& s) const { return operator()(bitcast<string_view<cat2>>(string_view<uct2>(s))); }
+  /// converts a utf-32 string to multi-byte string.
+  string<cat1> operator()(stringable<uct4> auto&& s) const { return operator()(to_utf16(s)); }
 };
 
 /// function object to convert a string to a multi-byte string.
 inline constexpr t_to_mbs to_mbs;
 
 /// converts a string to a string of the specified character type.
-template<character Ct> inline constexpr auto to_string = []<character Ct2>(const string_view<Ct2>& s) {
+template<character Ct> inline constexpr auto to_string = [](stringable auto&& s) {
   if constexpr (same_as<Ct, cat1>) return to_mbs(s);
   else if constexpr (same_as<Ct, cat2>) return to_wcs(s);
   else if constexpr (same_as<Ct, uct1>) return to_utf8(s);
@@ -1184,27 +1158,27 @@ template<character Ct> inline constexpr auto to_string = []<character Ct2>(const
 };
 
 /// generic string
-class generic_string {
-  string<uct1> _string{};
-public:
-  constexpr generic_string() noexcept = default;
-  constexpr generic_string(string<uct1>&& s) noexcept : _string(mv(s)) {}
-  generic_string(string_view<cat1> s) noexcept : _string(to_utf8(s)) {}
-  constexpr generic_string(string_view<cat2> s) noexcept : _string(to_utf8(s)) {}
-  constexpr generic_string(string_view<uct1> s) noexcept : _string(s) {}
-  constexpr generic_string(string_view<uct2> s) noexcept : _string(to_utf8(s)) {}
-  constexpr generic_string(string_view<uct4> s) noexcept : _string(to_utf8(s)) {}
-  constexpr operator string_view<uct1>() const noexcept { return _string; }
-  constexpr operator const string<uct1>&() const noexcept { return _string; }
-  constexpr bool empty() const noexcept { return _string.empty(); }
-  constexpr nat size() const noexcept { return _string.size(); }
-  constexpr const uct1* data() const noexcept { return _string.data(); }
-  constexpr const uct1* begin() const noexcept { return _string.data(); }
-  constexpr const uct1* end() const noexcept { return _string.data() + _string.size(); }
-  constexpr uct1& operator[](nat i) noexcept { return _string[i]; }
-  constexpr const uct1& operator[](nat i) const noexcept { return _string[i]; }
-  constexpr string<uct1> operator+(string_view<uct1> s) const { return _string + s.data(); }
-};
+// class generic_string {
+//   string<uct1> _string{};
+// public:
+//   constexpr generic_string() noexcept = default;
+//   constexpr generic_string(string<uct1>&& s) noexcept : _string(mv(s)) {}
+//   generic_string(string_view<cat1> s) noexcept : _string(to_utf8(s)) {}
+//   constexpr generic_string(string_view<cat2> s) noexcept : _string(to_utf8(s)) {}
+//   constexpr generic_string(string_view<uct1> s) noexcept : _string(s) {}
+//   constexpr generic_string(string_view<uct2> s) noexcept : _string(to_utf8(s)) {}
+//   constexpr generic_string(string_view<uct4> s) noexcept : _string(to_utf8(s)) {}
+//   constexpr operator string_view<uct1>() const noexcept { return _string; }
+//   constexpr operator const string<uct1>&() const noexcept { return _string; }
+//   constexpr bool empty() const noexcept { return _string.empty(); }
+//   constexpr nat size() const noexcept { return _string.size(); }
+//   constexpr const uct1* data() const noexcept { return _string.data(); }
+//   constexpr const uct1* begin() const noexcept { return _string.data(); }
+//   constexpr const uct1* end() const noexcept { return _string.data() + _string.size(); }
+//   constexpr uct1& operator[](nat i) noexcept { return _string[i]; }
+//   constexpr const uct1& operator[](nat i) const noexcept { return _string[i]; }
+//   constexpr string<uct1> operator+(string_view<uct1> s) const { return _string + s.data(); }
+// };
 
 namespace _ {
 template<typename Ct> string<Ct> _now() {
@@ -1214,28 +1188,22 @@ template<typename Ct> string<Ct> _now() {
   if constexpr (sizeof(Ct) == 1) s = reinterpret_cast<string<Ct>&&>(std::format("{:%F %H:%M:%S}.{:03}", std::chrono::floor<std::chrono::seconds>(now), ms));
   else if constexpr (sizeof(Ct) == 2) s = reinterpret_cast<string<Ct>&&>(std::format(L"{:%F %H:%M:%S}.{:03}", std::chrono::floor<std::chrono::seconds>(now), ms));
   else { s.resize(23, Ct(' ')), std::ranges::copy(std::format("{:%F %H:%M:%S}.{:03}", std::chrono::floor<std::chrono::seconds>(now), ms), s.begin()); }
-  return s;
-}
+  return s; }
 template<typename T> auto _date() {
   if constexpr (is_none<T>) return std::chrono::time_point_cast<std::chrono::days>(std::chrono::system_clock::now());
-  else if constexpr (same_as<T, value>) return _date<none>().time_since_epoch().count();
-}
+  else if constexpr (same_as<T, value>) return _date<none>().time_since_epoch().count(); }
 }
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-W"
 /// returns the current date and time.
 /// \return `std::chrono::system_time`, `value`, `str1`, `str2`, `string<uct1>`, `string<uct2>`, or `string<uct4>`.
 inline constexpr caster now{
   []() noexcept { return std::chrono::system_clock::now(); },
   []() noexcept -> value { return std::chrono::system_clock::now().time_since_epoch().count(); },
-  // "YYYY-MM-DD HH:MM:SS"
   []() noexcept -> string<cat1> { return _::_now<cat1>(); },
   []() noexcept -> string<cat2> { return _::_now<cat2>(); },
   []() noexcept -> string<uct1> { return _::_now<uct1>(); },
   []() noexcept -> string<uct2> { return _::_now<uct2>(); },
   []() noexcept -> string<uct4> { return _::_now<uct4>(); } };
-#pragma clang diagnostic pop
 
 /// returns the current date.
 inline constexpr caster date{
@@ -1250,12 +1218,13 @@ inline constexpr caster date{
 /// struct to represent the source location.
 struct source {
   source(const char* const) = delete;
-  const cat1* const file; // file name
-  const int line;         // line number
-  const int column;       // column number
+  const cat1* const file;     // file name
+  const cat1* const function; // function name
+  const int line;             // line number
+  const int column;           // column number
   /// default constructor to initialize the source location.
-  constexpr source(const char* const File = __builtin_FILE(), const int Line = __builtin_LINE(),
-                   const int Column = __builtin_COLUMN()) noexcept : file(mv(File)), line(Line), column(Column) {}
+  constexpr source(const char* const File = __builtin_FILE(), const char* const Func = __builtin_FUNCTION(),
+                   const int Line = __builtin_LINE(), const int Column = __builtin_COLUMN()) noexcept : file(mv(File)), line(Line), column(Column) {}
   /// returns the string representation of the source location.
   str1 to_string() const { return std::format("{}({},{})", file, line, column); }
   /// returns the string representation of the source location.
