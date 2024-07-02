@@ -940,16 +940,27 @@ using stv1 = string_view<cat1>;
 using stv2 = string_view<cat2>;
 using path = std::filesystem::path;
 
-namespace _ {
+/// checks if `T` is a string-like type.
+template<typename T, typename Ct = iter_value<T>> concept stringable = convertible_to<T&, string_view<Ct>>;
 
-
+/// struct to be used as a non-type template parameter.
 template<character Ct> struct literal {
   Ct string[256]{};
   nat count;
   template<nat N> constexpr literal(const Ct (&S)[N]) noexcept : count(N - 1) { std::char_traits<Ct>::copy(string, S, N - 1); }
   constexpr operator const Ct*() const noexcept { return string; }
+  constexpr operator string_view<Ct>() const noexcept { return {string, count}; }
+  constexpr operator string<Ct>() const noexcept { return {string, count}; }
+  constexpr nat size() const noexcept { return count; }
+  constexpr bool empty() const noexcept { return count == 0; }
+  constexpr const Ct* begin() const noexcept { return string; }
+  constexpr const Ct* end() const noexcept { return string + count; }
+  constexpr const Ct* data() const noexcept { return string; }
+  constexpr const Ct& front() const noexcept { return *string; }
+  constexpr const Ct& back() const noexcept { return string[count - 1]; }
 };
 template<character Ct, nat N> literal(const Ct (&)[N]) -> literal<Ct>;
+static_assert(stringable<literal<cat1>>);
 
 /// returns the length of the specified string.
 inline constexpr overload strlen{
@@ -959,7 +970,7 @@ inline constexpr overload strlen{
 
 namespace _ {
 template<typename Ct> constexpr string<Ct> _utf32_to_utf16(const string_view<uct4>& utf32) noexcept {
-  auto utf16 = string<Ct>(utf32.size() * 2, u'\0');
+  auto utf16 = string<Ct>(utf32.size() * 2, Ct('\0'));
   nat size = 0;
   for (auto i = utf32.begin(); i < utf32.end(); ++i) {
     if (*i < 0x10000) utf16[size++] = Ct(*i);
@@ -982,7 +993,8 @@ template<typename Ct> constexpr string<uct4> _utf16_to_utf32(const string_view<C
 /// function object type to convert a string to a utf-32 string.
 struct t_to_utf32 {
   /// converts a utf-8 string to utf-32 string.
-  constexpr string<uct4> operator()(const string_view<uct1>& utf8) const {
+  constexpr string<uct4> operator()(const stringable<uct1> auto&& s) const {
+    string_view<uct1> utf8(s);
     if (utf8.empty()) return {};
     string<uct4> utf32(utf8.size(), 0);
     nat size = 0;
@@ -1004,9 +1016,9 @@ struct t_to_utf32 {
   /// converts a multi-byte string to utf-32 string.
   string<uct4> operator()(const string_view<cat1>& mbs) const {
     if (mbs.empty()) return {};
-    if (auto size = ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, nullptr, 0); size) {
+    if (auto size = ::MultiByteToWideChar(932, 0, mbs.data(), -1, nullptr, 0); size) {
       string<cat2> wcs(size - 1, L'\0');
-      ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, wcs.data(), size);
+      ::MultiByteToWideChar(932, 0, mbs.data(), -1, wcs.data(), size);
       return operator()(wcs);
     } else return {};
   }
@@ -1035,9 +1047,9 @@ struct t_to_utf16 {
   /// converts a multi-byte string to utf-16 string.
   string<uct2> operator()(const string_view<cat1>& mbs) const {
     if (mbs.empty()) return {};
-    if (auto size = ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, nullptr, 0); size) {
+    if (auto size = ::MultiByteToWideChar(932, 0, mbs.data(), -1, nullptr, 0); size) {
       string<uct2> utf16(size - 1, L'\0');
-      ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, reinterpret_cast<cat2*>(utf16.data()), size);
+      ::MultiByteToWideChar(932, 0, mbs.data(), -1, reinterpret_cast<cat2*>(utf16.data()), size);
       return utf16;
     } else return {};
   }
@@ -1085,9 +1097,9 @@ struct t_to_utf8 {
   /// converts a multi-byte string to utf-8 string.
   string<uct1> operator()(const string_view<cat1>& mbs) const {
     if (mbs.empty()) return {};
-    if (auto size = ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, nullptr, 0); size) {
+    if (auto size = ::MultiByteToWideChar(932, 0, mbs.data(), -1, nullptr, 0); size) {
       string<uct2> utf16(size - 1, L'\0');
-      ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, reinterpret_cast<cat2*>(utf16.data()), size);
+      ::MultiByteToWideChar(932, 0, mbs.data(), -1, reinterpret_cast<cat2*>(utf16.data()), size);
       return operator()(utf16);
     } else return {};
   }
@@ -1116,9 +1128,9 @@ struct t_to_wcs {
   /// converts a multi-byte string to wide-char string.
   string<cat2> operator()(const string_view<cat1>& mbs) const {
     if (mbs.empty()) return {};
-    if (auto size = ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, nullptr, 0); size) {
+    if (auto size = ::MultiByteToWideChar(932, 0, mbs.data(), -1, nullptr, 0); size) {
       string<cat2> wcs(size - 1, L'\0');
-      ::MultiByteToWideChar(CP_ACP, 0, mbs.data(), -1, reinterpret_cast<cat2*>(wcs.data()), size);
+      ::MultiByteToWideChar(932, 0, mbs.data(), -1, reinterpret_cast<cat2*>(wcs.data()), size);
       return wcs;
     } else return {};
   }
@@ -1130,6 +1142,86 @@ struct t_to_wcs {
 /// function object to convert a string to a wide-char string.
 inline constexpr t_to_wcs to_wcs;
 
+/// function object type to convert a string to a multi-byte string.
+struct t_to_mbs {
+  /// converts a utf-8 string to multi-byte string.
+  string<cat1> operator()(const string_view<uct1>& utf8) const {
+    return operator()(to_wcs(utf8));
+  }
+  /// converts a utf-16 string to multi-byte string.
+  string<cat1> operator()(const string_view<uct2>& utf16) const {
+    return operator()(reinterpret_cast<const string_view<cat2>&>(utf16));
+  }
+  /// converts a utf-32 string to multi-byte string.
+  string<cat1> operator()(const string_view<uct4>& utf32) const {
+    return operator()(to_utf16(utf32));
+  }
+  /// converts a wide-char string to multi-byte string.
+  string<cat1> operator()(const string_view<cat2>& wcs) const {
+    if (wcs.empty()) return {};
+    if (auto size = ::WideCharToMultiByte(932, 0, wcs.data(), UINT(wcs.size()), nullptr, 0, nullptr, nullptr); size) {
+      string<cat1> mbs(size, '\0');
+      ::WideCharToMultiByte(932, 0, wcs.data(), UINT(wcs.size()), mbs.data(), size, nullptr, nullptr);
+      return mbs;
+    } else return {};
+  }
+  /// converts a multi-byte string to multi-byte string.
+  constexpr string<cat1> operator()(const string_view<cat1>& mbs) const {
+    return string<cat1>(mbs);
+  }
+};
+
+/// function object to convert a string to a multi-byte string.
+inline constexpr t_to_mbs to_mbs;
+
+/// converts a string to a string of the specified character type.
+template<character Ct> inline constexpr auto to_string = []<character Ct2>(const string_view<Ct2>& s) {
+  if constexpr (same_as<Ct, cat1>) return to_mbs(s);
+  else if constexpr (same_as<Ct, cat2>) return to_wcs(s);
+  else if constexpr (same_as<Ct, uct1>) return to_utf8(s);
+  else if constexpr (same_as<Ct, uct2>) return to_utf16(s);
+  else return to_utf32(s);
+};
+
+/// generic string
+class generic_string {
+  string<uct1> _string{};
+public:
+  constexpr generic_string() noexcept = default;
+  constexpr generic_string(string<uct1>&& s) noexcept : _string(mv(s)) {}
+  generic_string(string_view<cat1> s) noexcept : _string(to_utf8(s)) {}
+  constexpr generic_string(string_view<cat2> s) noexcept : _string(to_utf8(s)) {}
+  constexpr generic_string(string_view<uct1> s) noexcept : _string(s) {}
+  constexpr generic_string(string_view<uct2> s) noexcept : _string(to_utf8(s)) {}
+  constexpr generic_string(string_view<uct4> s) noexcept : _string(to_utf8(s)) {}
+  constexpr operator string_view<uct1>() const noexcept { return _string; }
+  constexpr operator const string<uct1>&() const noexcept { return _string; }
+  constexpr bool empty() const noexcept { return _string.empty(); }
+  constexpr nat size() const noexcept { return _string.size(); }
+  constexpr const uct1* data() const noexcept { return _string.data(); }
+  constexpr const uct1* begin() const noexcept { return _string.data(); }
+  constexpr const uct1* end() const noexcept { return _string.data() + _string.size(); }
+  constexpr uct1& operator[](nat i) noexcept { return _string[i]; }
+  constexpr const uct1& operator[](nat i) const noexcept { return _string[i]; }
+  constexpr string<uct1> operator+(string_view<uct1> s) const { return _string + s.data(); }
+};
+
+namespace _ {
+template<typename Ct> string<Ct> _now() {
+  auto now = std::chrono::system_clock::now();
+  auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() % 1000;
+  string<Ct> s;
+  if constexpr (sizeof(Ct) == 1) s = reinterpret_cast<string<Ct>&&>(std::format("{:%F %H:%M:%S}.{:03}", std::chrono::floor<std::chrono::seconds>(now), ms));
+  else if constexpr (sizeof(Ct) == 2) s = reinterpret_cast<string<Ct>&&>(std::format(L"{:%F %H:%M:%S}.{:03}", std::chrono::floor<std::chrono::seconds>(now), ms));
+  else { s.resize(23, Ct(' ')), std::ranges::copy(std::format("{:%F %H:%M:%S}.{:03}", std::chrono::floor<std::chrono::seconds>(now), ms), s.begin()); }
+  return s;
+}
+template<typename T> auto _date() {
+  if constexpr (is_none<T>) return std::chrono::time_point_cast<std::chrono::days>(std::chrono::system_clock::now());
+  else if constexpr (same_as<T, value>) return _date<none>().time_since_epoch().count();
+}
+}
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-W"
 /// returns the current date and time.
@@ -1137,13 +1229,23 @@ inline constexpr t_to_wcs to_wcs;
 inline constexpr caster now{
   []() noexcept { return std::chrono::system_clock::now(); },
   []() noexcept -> value { return std::chrono::system_clock::now().time_since_epoch().count(); },
-  []() noexcept -> str1 { return std::format("{:%FT%T}", std::chrono::system_clock::now()); },
-  []() noexcept -> str2 { return std::format(L"{:%FT%T}", std::chrono::system_clock::now()); },
-  []() noexcept -> string<uct1> { return reinterpret_cast<string<uct1>&&>(mv(std::format("{:%FT%T}", std::chrono::system_clock::now()))); },
-  []() noexcept -> string<uct2> { return reinterpret_cast<string<uct2>&&>(mv(std::format(L"{:%FT%T}", std::chrono::system_clock::now()))); },
-  []() noexcept -> string<uct4> { return [](string<cat1> s1, string<uct4> s4) noexcept { return std::ranges::copy(s1, s4.begin()), mv(s4); }(std::format("{:%FT%T}", std::chrono::system_clock::now()), string<uct4>(19, uct4{})); }
-};
+  // "YYYY-MM-DD HH:MM:SS"
+  []() noexcept -> string<cat1> { return _::_now<cat1>(); },
+  []() noexcept -> string<cat2> { return _::_now<cat2>(); },
+  []() noexcept -> string<uct1> { return _::_now<uct1>(); },
+  []() noexcept -> string<uct2> { return _::_now<uct2>(); },
+  []() noexcept -> string<uct4> { return _::_now<uct4>(); } };
 #pragma clang diagnostic pop
+
+/// returns the current date.
+inline constexpr caster date{
+  []() noexcept { return _::_date<none>(); },
+  []() noexcept -> value { return _::_date<value>(); },
+  []() noexcept -> string<cat1> { return std::format("{:%F}", _::_date<none>()); },
+  []() noexcept -> string<cat2> { return std::format(L"{:%F}", _::_date<none>()); },
+  []() noexcept -> string<uct1> { return to_string<uct1>(std::format(L"{:%F}", _::_date<none>())); },
+  []() noexcept -> string<uct2> { return to_string<uct2>(std::format(L"{:%F}", _::_date<none>())); },
+  []() noexcept -> string<uct4> { return to_string<uct4>(std::format(L"{:%F}", _::_date<none>())); } };
 
 /// struct to represent the source location.
 struct source {
@@ -1157,13 +1259,12 @@ struct source {
   /// returns the string representation of the source location.
   str1 to_string() const { return std::format("{}({},{})", file, line, column); }
   /// returns the string representation of the source location.
-  template<character Ct> string<Ct> to_string() const
-  { return std::format(get_format<remove_cv<Ct>>(), std::filesystem::path(file).string<Ct>(), line, column); }
+  template<character Ct> string<Ct> to_string() const { return yw::to_string<Ct>(stv1(this->to_string())); }
   /// outputs the string representation of the source location to the specified output stream.
   template<typename Ct, typename Tr> friend std::basic_ostream<char, Tr>&
   operator<<(std::basic_ostream<Ct, Tr>& os, const source& s) { return os << s.to_string<Ct>(); }
 private:
-  template<typename Ct> static constexpr const Ct* get_format() {
+  template<typename Ct> static constexpr string_view<Ct> get_format() {
     if constexpr (same_as<Ct, cat1>) return "{}({},{})";
     else if constexpr (same_as<Ct, cat2>) return L"{}({},{})";
     else if constexpr (same_as<Ct, uct1>) return u8"{}({},{})";
@@ -1171,6 +1272,78 @@ private:
     else if constexpr (same_as<Ct, uct4>) return U"{}({},{})";
   }
 };
+
+/// checks if the character is a digit.
+inline constexpr auto is_digit = []<character Ct>(const Ct c) noexcept -> int {
+  if (is_cev) return c >= Ct('0') && c <= Ct('9');
+  else return std::isdigit(static_cast<cat1>(c)); };
+
+namespace _ {
+template<typename Ct> constexpr int8 _stoi(string_view<Ct>& s) noexcept {
+  int8 v{};
+  bool neg = false;
+  while (!s.empty()) {
+    if (s.front() == Ct('-')) {
+      s.remove_prefix(1);
+      if (s.empty()) return {};
+      if (is_digit(s.front())) { neg = true; v = s.front() - '0'; break; }
+    } else if (is_digit(s.front())) { v = s.front() - '0'; break; }
+    s.remove_prefix(1);
+  }
+  s.remove_prefix(1);
+  while (!s.empty()) {
+    if (is_digit(s.front())) v = v * 10 + s.front() - '0';
+    else break;
+    s.remove_prefix(1);
+  }
+  return neg ? -v : v;
+}
+template<typename Ct> constexpr nat8 _ston(string_view<Ct>& s) noexcept {
+  nat8 v{};
+  while (!s.empty()) {
+    if (is_digit(s.front())) { v = s.front() - '0'; break; }
+    s.remove_prefix(1);
+  }
+  s.remove_prefix(1);
+  while (!s.empty()) {
+    if (is_digit(s.front())) v = v * 10 + s.front() - '0';
+    else return v;
+    s.remove_prefix(1);
+  }
+  return v;
+}
+template<typename Ct> constexpr fat8 _stof(string_view<Ct>& s) noexcept {
+  fat8 v{};
+  bool neg = false, dot = false;
+  while (!s.empty()) {
+    if (s.front() == Ct('-')) {
+      s.remove_prefix(1);
+      if (s.empty()) return {};
+      if (is_digit(s.front())) { neg = true; v = s.front() - '0'; break; }
+      else if (s.front() == Ct('.')) { neg = true; dot = true; break; }
+    } else if (is_digit(s.front())) { v = s.front() - '0'; break; }
+    else if (s.front() == Ct('.')) { dot = true; break; }
+    s.remove_prefix(1);
+  }
+  s.remove_prefix(1);
+  if (!dot) {
+    while (!s.empty()) {
+      if (is_digit(s.front())) v = v * 10 + s.front() - '0';
+      else if (s.front() == Ct('.')) { dot = true; break; }
+      else return neg ? -v : v;
+      s.remove_prefix(1);
+    }
+    s.remove_prefix(1);
+  }
+  fat8 p = 0.1;
+  while (!s.empty()) {
+    if (is_digit(s.front())) { v += (s.front() - '0') * p; p *= 0.1; }
+    else return neg ? -v : v;
+    s.remove_prefix(1);
+  }
+  return neg ? -v : v;
+}
+}
 
 /// function object type to convert a value to a string.
 template<arithmetic T> struct t_stov {
@@ -1180,6 +1353,15 @@ template<arithmetic T> struct t_stov {
   /// converts a wide string to a value of type T.
   /// \param Str : the wide string to convert.
   T operator()(string_view<cat2> Str) const noexcept { return call(Str); }
+  /// converts a utf-8 string to a value of type T.
+  /// \param Str : the utf-8 string to convert.
+  T operator()(string_view<uct1> Str) const noexcept { return call(Str); }
+  /// converts a utf-16 string to a value of type T.
+  /// \param Str : the utf-16 string to convert.
+  T operator()(string_view<uct2> Str) const noexcept { return call(Str); }
+  /// converts a utf-32 string to a value of type T.
+  /// \param Str : the utf-32 string to convert.
+  T operator()(string_view<uct4> Str) const noexcept { return call(Str); }
   /// converts a string to a value of type T.
   /// \param Str : the string to convert.
   /// \param Rest (out) : the rest of the string after the conversion.
@@ -1190,14 +1372,26 @@ template<arithmetic T> struct t_stov {
   /// \param Rest (out) : the rest of the wide string after the conversion.
   T operator()(string_view<cat2> Str, string_view<cat2>& Rest) const noexcept
   { return [&](T v) noexcept { return Rest = Str, v; }(call(Str)); }
+  /// converts a utf-8 string to a value of type T.
+  /// \param Str : the utf-8 string to convert.
+  /// \param Rest (out) : the rest of the utf-8 string after the conversion.
+  T operator()(string_view<uct1> Str, string_view<uct1>& Rest) const noexcept
+  { return [&](T v) noexcept { return Rest = Str, v; }(call(Str)); }
+  /// converts a utf-16 string to a value of type T.
+  /// \param Str : the utf-16 string to convert.
+  /// \param Rest (out) : the rest of the utf-16 string after the conversion.
+  T operator()(string_view<uct2> Str, string_view<uct2>& Rest) const noexcept
+  { return [&](T v) noexcept { return Rest = Str, v; }(call(Str)); }
+  /// converts a utf-32 string to a value of type T.
+  /// \param Str : the utf-32 string to convert.
+  /// \param Rest (out) : the rest of the utf-32 string after the conversion.
+  T operator()(string_view<uct4> Str, string_view<uct4>& Rest) const noexcept
+  { return [&](T v) noexcept { return Rest = Str, v; }(call(Str)); }
 private:
   template<typename Ct> static T call(string_view<Ct>& s) noexcept {
-    T v{};
-    for (auto last = s.data() + s.size(); s.size(); s.remove_prefix(1)) {
-      auto [p, ec] = std::from_chars(s.data(), last, v);
-      if (p != s.data() || ec == std::errc{}) return s = string_view<Ct>(p, last), v;
-    }
-    return v;
+    if constexpr (std::floating_point<T>) return static_cast<T>(_::_stof(s));
+    else if constexpr (std::signed_integral<T>) return static_cast<T>(_::_stoi(s));
+    else return static_cast<T>(_::_ston(s));
   }
 };
 
@@ -1208,46 +1402,50 @@ template<arithmetic T> inline constexpr t_stov<T> stov;
 class logger {
   string<uct1> text;
   path file;
+  void output(const string<uct1>& l, const string<uct1>& s) { text += string<uct1>(now) + l + s + u8"\n"; }
 public:
   /// constructs a logger object with the specified file name to write the text to.
-  logger(const path& LogFileName) : file(LogFileName) {}
+  logger(const path& LogFileName) : file(LogFileName) { text.reserve(1024); }
   /// saves the text to the file when the object is destroyed.
   ~logger() {
+    std::cout << "A" << std::endl;
     if (text.empty()) return;
+    std::cout << "A" << std::endl;
     if (auto dir = file.parent_path(); !dir.empty() && !std::filesystem::exists(dir)) std::filesystem::create_directories(dir);
+    std::cout << "A" << std::endl;
     if (std::basic_ofstream<uct1> ofs(file, std::ios::app); ofs) ofs << text << std::endl;
+    else std::cerr << "failed to open the file (" << file.string() << ")" << std::endl;
+    std::cout << "A" << std::endl;
   }
-  /// appends the text to the logger object; the text should be ended with a newline character.
-  logger& operator<<(const string_view<cat1> s) { return text += to_utf8(s), *this; }
-  /// appends the text to the logger object; the text should be ended with a newline character.
-  logger& operator<<(const string_view<cat2> s) { return text += to_utf8(s), *this; }
-  /// appends the text to the logger object; the text should be ended with a newline character.
-  logger& operator<<(const string_view<uct1> s) { return text += to_utf8(s), *this; }
-  /// appends the text to the logger object; the text should be ended with a newline character.
-  logger& operator<<(const string_view<uct2> s) { return text += to_utf8(s), *this; }
-  /// appends the text to the logger object; the text should be ended with a newline character.
-  logger& operator<<(const string_view<uct4> s) { return text += to_utf8(s), *this; }
+  /// appends debug log.
+  void debug   (const generic_string& s, const source& _ = {}) { output(u8" [DEBUG]    ", to_utf8(s) + u8" (" + _.to_string<uct1>() + u8")"); }
+  /// appends info log.
+  void info    (const generic_string& s) { output(u8" [INFO]     ", s); }
+  /// appends warning log.
+  void warning (const generic_string& s) { output(u8" [WARNING]  ", s); }
+  /// appends error log.
+  void error   (const generic_string& s) { output(u8" [ERROR]    ", s); }
+  /// appends critical log.
+  void critical(const generic_string& s) { output(u8" [CRITICAL] ", s); }
+
+
+  // /// appends the text to the logger object; the text should be ended with a newline character.
+  // logger& operator<<(const string_view<cat1> s) { return text += to_utf8(s), *this; }
+  // /// appends the text to the logger object; the text should be ended with a newline character.
+  // logger& operator<<(const string_view<cat2> s) { return text += to_utf8(s), *this; }
+  // /// appends the text to the logger object; the text should be ended with a newline character.
+  // logger& operator<<(const string_view<uct1> s) { return text += to_utf8(s), *this; }
+  // /// appends the text to the logger object; the text should be ended with a newline character.
+  // logger& operator<<(const string_view<uct2> s) { return text += to_utf8(s), *this; }
+  // /// appends the text to the logger object; the text should be ended with a newline character.
+  // logger& operator<<(const string_view<uct4> s) { return text += to_utf8(s), *this; }
   /// outputs the text of the logger object to the specified output stream.
   template<typename Tr> friend std::basic_ostream<cat1, Tr>&
-  operator<<(std::basic_ostream<cat1, Tr>& os, const logger& l) { return os << l.text; }
+  operator<<(std::basic_ostream<cat1, Tr>& os, const logger& l) { return os << to_mbs(l.text); }
 };
 
 /// default logger object for ywlib
-inline logger log("ywlib.log");
-
-}
-
-
-
-namespace yw {
-
-
-/// converts a value of type T to a string.
-template<included_in<cat1, cat2> Ct>
-inline constexpr auto vtos = []<arithmetic T>(const T v) noexcept {
-  if constexpr (same_as<Ct, cat1>) return std::to_string(v);
-  else return std::to_wstring(v);
-};
+inline auto log = logger(std::format("log/{}.log", str1(now)));
 
 }
 
@@ -1255,31 +1453,30 @@ namespace yw::file {
 /// checks if the specified path exists.
 inline constexpr auto exists = [](const path& p) noexcept -> bool {
   try { return std::filesystem::exists(p); }
-  catch (const std::exception& e) { log << "runtime error : yw::file::exists : " << e.what(); }
-  return {};
+  catch (...) { return false; }
 };
 /// removes the specified path.
 inline constexpr auto remove = [](const path& p) noexcept -> bool {
   try { return std::filesystem::remove(p); }
-  catch (const std::exception& e) { log << "runtime error : yw::file::remove : " << e.what(); }
+  catch (const std::exception& e) { yw::log.error(stv1(e.what())); }
   return {};
 };
 /// checks if the specified path is a regular file.
 inline constexpr auto is_file = [](const path& p) noexcept -> bool {
   try { return std::filesystem::is_regular_file(p); }
-  catch (const std::exception& e) { log << "runtime error : yw::file::is_file : " << e.what(); }
+  catch (const std::exception& e) { yw::log.error(stv1(e.what())); }
   return {};
 };
 /// checks if the specified path is a directory.
 inline constexpr auto is_directory = [](const path& p) noexcept -> bool {
   try { return std::filesystem::is_directory(p); }
-  catch (const std::exception& e) { log << "runtime error : yw::file::is_directory : " << e.what(); }
+  catch (const std::exception& e) { yw::log.error(stv1(e.what())); }
   return {};
 };
 /// returns the size of the specified file.
 inline constexpr auto size = [](const path& p) noexcept -> nat {
   try { return std::filesystem::file_size(p); }
-  catch (const std::exception& e) { log << "runtime error : yw::file::size : " << e.what(); }
+  catch (const std::exception& e) { yw::log.error(stv1(e.what())); }
   return {};
 };
 /// returns the file list of the specified directory.
@@ -1290,7 +1487,7 @@ inline constexpr auto list = [](const path& p, bool Recursive = false) noexcept 
         if (Recursive) for (const auto& e : std::filesystem::recursive_directory_iterator(p)) a.push_back(e.path());
         else for (const auto& e : std::filesystem::directory_iterator(p)) a.push_back(e.path());
         return a; }
-  catch (const std::exception& e) { log << "runtime error : yw::file::list : " << e.what(); return {}; }
+  catch (const std::exception& e) { yw::log.error(stv1(e.what())); return {}; }
 };
 /// reads the specified file and writes the data to the output range.
 inline void read(const path& p, cnt_range auto&& Out) noexcept requires (!is_const<decltype(yw::data(Out))>) {
@@ -1298,12 +1495,12 @@ inline void read(const path& p, cnt_range auto&& Out) noexcept requires (!is_con
           if (std::ifstream ifs(p, std::ios::binary); ifs) return void(ifs.read(reinterpret_cast<char*>(yw::data(Out)), n));
           else throw std::runtime_error(std::format("failed to open the file ({})", p.string()));
         } else throw std::runtime_error(std::format("the byte size of the output range ({}) is not equal to the file size ({})", n, p.string()));
-  } catch (const std::exception& e) { log << "runtime error : yw::file::read : " << e.what(); }
+  } catch (const std::exception& e) { yw::log.error(stv1(e.what())); }
 }
 /// reads the specified file and returns the byte array.
 inline array<nat1> read(const path& p) noexcept {
   try { array<nat1> a(file_size(p), nat1{}); read(p, a); return a; }
-  catch (const std::exception& e) { log << "runtime error : yw::file::read : " << e.what(); return {}; }
+  catch (const std::exception& e) { yw::log.error(stv1(e.what())); return {}; }
 }
 /// writes the data of the input range to the specified file.
 inline void write(const path& p, cnt_range auto&& In) {
@@ -1312,25 +1509,23 @@ inline void write(const path& p, cnt_range auto&& In) {
       if (const auto n = yw::size(In) * sizeof(iter_value<decltype(In)>); ofs.write(reinterpret_cast<const char*>(yw::data(In)), n)) return;
       else throw std::runtime_error(std::format("failed to write to the file ({})", p.string()));
     } else throw std::runtime_error(std::format("failed to open the file ({})", p.string()));
-  } catch (const std::exception& e) { log << "runtime error : yw::file::write : " << e.what(); }
+  } catch (const std::exception& e) { yw::log.error(stv1(e.what())); }
 }
 /// canonicalizes the specified path.
 inline constexpr auto canonical = [](const path& p) noexcept {
   try { return std::filesystem::canonical(p); }
-  catch (const std::exception& e) { log << "runtime error : yw::file::canonical : " << e.what(); return path{}; }
+  catch (const std::exception& e) { yw::log.error(stv1(e.what())); }
 };
 /// weakly canonicalizes the specified path.
 inline constexpr auto weakly_canonical = [](const path& p) noexcept {
   try { return std::filesystem::weakly_canonical(p); }
-  catch (const std::exception& e) { log << "runtime error : yw::file::weakly_canonical : " << e.what(); return path{}; }
+  catch (const std::exception& e) { yw::log.error(stv1(e.what())); }
 };
 }
 
 namespace std {
 template<typename T> struct common_type<yw::none, T> : type_identity<yw::none> {};
 template<typename T> struct common_type<T, yw::none> : type_identity<yw::none> {};
-template<typename Tr> basic_ostream<char, Tr>& operator<<(basic_ostream<char, Tr>& os, yw::none) { return os << "none"; }
-template<typename Tr> basic_ostream<wchar_t, Tr>& operator<<(basic_ostream<wchar_t, Tr>& os, yw::none) { return os << L"none"; }
 template<> struct formatter<yw::none, char> : formatter<const char*, char> { auto format(yw::none, auto& ctx) const { return formatter<const char*, char>::format("none", ctx); } };
 template<> struct formatter<yw::none, wchar_t> : formatter<const wchar_t*, wchar_t> { auto format(yw::none, auto& ctx) const { return formatter<const wchar_t*, wchar_t>::format(L"none", ctx); } };
 template<common_with<double> T> struct common_type<yw::value, T> : type_identity<double> {};
@@ -3050,7 +3245,7 @@ inline void tiff(HRESULT hr, const source& _ = {}) {
   ::FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
                    hr, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buffer.data(), 256, nullptr);
   auto text = std::format("runtime error: {}\n at {}\n", buffer, _);
-  log << text;
+  log.error(string_view(text));
   throw std::runtime_error(text.data());
 }
 
@@ -3058,7 +3253,7 @@ inline void tiff(const convertible_to<bool> auto& Result, const std::string_view
   if (Result) return;
   // health.set(false);
   auto text = std::format("runtime error: {}\n at {}\n", Message, _);
-  log << text;
+  log.error(string_view(text));
   throw std::runtime_error(text.data());
 }
 
@@ -3790,14 +3985,14 @@ public:
           else if (SvgPath.front() == 'M' || SvgPath.front() == 'm') {
             break;
           } else {
-            log << std::format("Warning: yw::geometry : Invalid SVG path code: {}\n", SvgPath);
+            log.warning(SvgPath);
             SvgPath = {};
             break;
           }
         }
         break;
       default:
-        log << std::format("Warning: yw::geometry : Invalid SVG path code: {}\n", SvgPath);
+        log.warning(SvgPath);
         SvgPath = {};
         break;
       }
