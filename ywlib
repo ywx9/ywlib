@@ -775,13 +775,11 @@ private:
   template<typename T> static constexpr nat j = i<T> < sizeof...(Fs) ? i<T> : []<typename... Ts>(typepack<Ts...>) { return inspects<convertible_to<Ts, T>...>; }(typepack<invoke_result<Fs>...>{});
   template<typename... As> static constexpr nat k = inspects<invocable<Fs, As...>...>;
 public:
+  using Fs::operator()...;
   template<typename T> requires(j<T> < sizeof...(Fs)) constexpr operator T() const
     noexcept(nt_convertible_to<invoke_result<select_type<j<T>, Fs...>>, T>)
     requires convertible_to<invoke_result<select_type<j<T>, Fs...>>, T> {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wreturn-stack-address"
-    return select_type<j<T>, Fs...>::operator()();
-#pragma clang diagnostic pop
+    return mv(select_type<j<T>, Fs...>::operator()());
   }
   template<typename... As> requires(k<As...> != sizeof...(Fs)) constexpr auto operator()(As&&... Args) const
     noexcept(nt_invocable<select_type<k<As...>, Fs...>, As...>)
@@ -1157,74 +1155,64 @@ template<character Ct> inline constexpr auto to_string = [](stringable auto&& s)
   else return to_utf32(s);
 };
 
-/// generic string
-// class generic_string {
-//   string<uct1> _string{};
-// public:
-//   constexpr generic_string() noexcept = default;
-//   constexpr generic_string(string<uct1>&& s) noexcept : _string(mv(s)) {}
-//   generic_string(string_view<cat1> s) noexcept : _string(to_utf8(s)) {}
-//   constexpr generic_string(string_view<cat2> s) noexcept : _string(to_utf8(s)) {}
-//   constexpr generic_string(string_view<uct1> s) noexcept : _string(s) {}
-//   constexpr generic_string(string_view<uct2> s) noexcept : _string(to_utf8(s)) {}
-//   constexpr generic_string(string_view<uct4> s) noexcept : _string(to_utf8(s)) {}
-//   constexpr operator string_view<uct1>() const noexcept { return _string; }
-//   constexpr operator const string<uct1>&() const noexcept { return _string; }
-//   constexpr bool empty() const noexcept { return _string.empty(); }
-//   constexpr nat size() const noexcept { return _string.size(); }
-//   constexpr const uct1* data() const noexcept { return _string.data(); }
-//   constexpr const uct1* begin() const noexcept { return _string.data(); }
-//   constexpr const uct1* end() const noexcept { return _string.data() + _string.size(); }
-//   constexpr uct1& operator[](nat i) noexcept { return _string[i]; }
-//   constexpr const uct1& operator[](nat i) const noexcept { return _string[i]; }
-//   constexpr string<uct1> operator+(string_view<uct1> s) const { return _string + s.data(); }
-// };
+struct date {
+  int year{}, month{}, day{};
+  template<typename Clock, typename Duration> date(const std::chrono::time_point<Clock, Duration>& tp) {
+    auto d = std::chrono::floor<std::chrono::days>(tp);
+    auto ymd = std::chrono::year_month_day(d);
+    year = int(ymd.year()), month = int(nat4(ymd.month())), day = int(nat4(ymd.day()));
+  }
+  date() : date(std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time()) {}
+  date(numerical auto Y, numerical auto M, numerical auto D) : year(Y), month(M), day(D) {}
+  operator str1() const { return std::format("{:0>4}-{:0>2}-{:0>2}", year, month, day); }
+  explicit operator str2() const { return std::format(L"{:0>4}-{:0>2}-{:0>2}", year, month, day); }
+  explicit operator string<uct1>() const { string<uct1> s(10, u8'-'); std::ranges::copy(operator str1(), s.begin()); return s; }
+  explicit operator string<uct2>() const { string<uct2> s(10, u' '); std::ranges::copy(operator str2(), s.begin()); return s; }
+  explicit operator string<uct4>() const { string<uct4> s(10, U' '); std::ranges::copy(operator str1(), s.begin()); return s; }
+};
 
-namespace _ {
-template<typename Ct> string<Ct> _now() {
-  auto now = std::chrono::system_clock::now();
-  auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() % 1000;
-  string<Ct> s;
-  if constexpr (sizeof(Ct) == 1) s = reinterpret_cast<string<Ct>&&>(std::format("{:%F %H:%M:%S}.{:03}", std::chrono::floor<std::chrono::seconds>(now), ms));
-  else if constexpr (sizeof(Ct) == 2) s = reinterpret_cast<string<Ct>&&>(std::format(L"{:%F %H:%M:%S}.{:03}", std::chrono::floor<std::chrono::seconds>(now), ms));
-  else { s.resize(23, Ct(' ')), std::ranges::copy(std::format("{:%F %H:%M:%S}.{:03}", std::chrono::floor<std::chrono::seconds>(now), ms), s.begin()); }
-  return s; }
-template<typename T> auto _date() {
-  if constexpr (is_none<T>) return std::chrono::time_point_cast<std::chrono::days>(std::chrono::system_clock::now());
-  else if constexpr (same_as<T, value>) return _date<none>().time_since_epoch().count(); }
-}
+struct time {
+  int4 hour{}, minute{}, second{};
+  template<typename Clock, typename Duration> time(const std::chrono::time_point<Clock, Duration>& tp) {
+    auto d = std::chrono::floor<std::chrono::days>(tp);
+    auto hms = std::chrono::hh_mm_ss(std::chrono::floor<std::chrono::seconds>(tp - d));
+    hour = int4(hms.hours().count()), minute = int4(hms.minutes().count()), second = int4(hms.seconds().count());
+  }
+  time() : time(std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time()) {}
+  time(numerical auto H, numerical auto M, numerical auto S) : hour(H), minute(M), second(S) {}
+  operator str1() const { return std::format("{:0>2}:{:0>2}:{:0>2}", hour, minute, second); }
+  explicit operator str2() const { return std::format(L"{:0>2}:{:0>2}:{:0>2}", hour, minute, second); }
+  explicit operator string<uct1>() const { string<uct1> s(8, u8':'); std::ranges::copy(operator str1(), s.begin()); return s; }
+  explicit operator string<uct2>() const { string<uct2> s(8, u':'); std::ranges::copy(operator str2(), s.begin()); return s; }
+  explicit operator string<uct4>() const { string<uct4> s(8, U':'); std::ranges::copy(operator str1(), s.begin()); return s; }
+};
 
-/// returns the current date and time.
-/// \return `std::chrono::system_time`, `value`, `str1`, `str2`, `string<uct1>`, `string<uct2>`, or `string<uct4>`.
-inline constexpr caster now{
-  []() noexcept { return std::chrono::system_clock::now(); },
-  []() noexcept -> value { return std::chrono::system_clock::now().time_since_epoch().count(); },
-  []() noexcept -> string<cat1> { return _::_now<cat1>(); },
-  []() noexcept -> string<cat2> { return _::_now<cat2>(); },
-  []() noexcept -> string<uct1> { return _::_now<uct1>(); },
-  []() noexcept -> string<uct2> { return _::_now<uct2>(); },
-  []() noexcept -> string<uct4> { return _::_now<uct4>(); } };
-
-/// returns the current date.
-inline constexpr caster date{
-  []() noexcept { return _::_date<none>(); },
-  []() noexcept -> value { return _::_date<value>(); },
-  []() noexcept -> string<cat1> { return std::format("{:%F}", _::_date<none>()); },
-  []() noexcept -> string<cat2> { return std::format(L"{:%F}", _::_date<none>()); },
-  []() noexcept -> string<uct1> { return to_string<uct1>(std::format(L"{:%F}", _::_date<none>())); },
-  []() noexcept -> string<uct2> { return to_string<uct2>(std::format(L"{:%F}", _::_date<none>())); },
-  []() noexcept -> string<uct4> { return to_string<uct4>(std::format(L"{:%F}", _::_date<none>())); } };
+struct now {
+  yw::date date;
+  yw::time time;
+  now() : now(std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time()) {}
+  template<typename Clock, typename Duration> now(const std::chrono::time_point<Clock, Duration>& tp) : date(tp), time(tp) {}
+  now(const yw::date& d, const yw::time& t) : date(d), time(t) {}
+  operator const yw::date&() const { return date; }
+  operator const yw::time&() const { return time; }
+  operator str1() const { return std::format("{:0>4}-{:0>2}-{:0>2} {:0>2}:{:0>2}:{:0>2}", date.year, date.month, date.day, time.hour, time.minute, time.second); }
+  explicit operator str2() const { return std::format(L"{:0>4}-{:0>2}-{:0>2} {:0>2}:{:0>2}:{:0>2}", date.year, date.month, date.day, time.hour, time.minute, time.second); }
+  explicit operator string<uct1>() const { string<uct1> s(19, u8' '); std::ranges::copy(operator str1(), s.begin()); return s; }
+  explicit operator string<uct2>() const { string<uct2> s(19, u' '); std::ranges::copy(operator str2(), s.begin()); return s; }
+  explicit operator string<uct4>() const { string<uct4> s(19, U' '); std::ranges::copy(operator str1(), s.begin()); return s; }
+};
 
 /// struct to represent the source location.
 struct source {
   source(const char* const) = delete;
-  const cat1* const file;     // file name
-  const cat1* const function; // function name
-  const int line;             // line number
-  const int column;           // column number
+  const cat1* const file; // file name
+  const cat1* const func; // function name
+  const int line;         // line number
+  const int column;       // column number
   /// default constructor to initialize the source location.
-  constexpr source(const char* const File = __builtin_FILE(), const char* const Func = __builtin_FUNCTION(),
-                   const int Line = __builtin_LINE(), const int Column = __builtin_COLUMN()) noexcept : file(mv(File)), line(Line), column(Column) {}
+  constexpr source(const cat1* const File = __builtin_FILE(), const cat1* const Func = __builtin_FUNCTION(),
+                   const int Line = __builtin_LINE(), const int Column = __builtin_COLUMN()) noexcept
+    : file(File), func(Func), line(Line), column(Column) {}
   /// returns the string representation of the source location.
   str1 to_string() const { return std::format("{}({},{})", file, line, column); }
   /// returns the string representation of the source location.
@@ -1369,53 +1357,43 @@ template<arithmetic T> inline constexpr t_stov<T> stov;
 
 /// class for logging text; the text is written to a file when the object is destroyed.
 class logger {
-  string<uct1> text;
-  path file;
-  void output(const string<uct1>& l, const string<uct1>& s) { text += string<uct1>(now) + l + s + u8"\n"; }
+protected:
+  string<uct1> text{}; // log text
 public:
-  /// constructs a logger object with the specified file name to write the text to.
-  logger(const path& LogFileName) : file(LogFileName) { text.reserve(1024); }
-  /// saves the text to the file when the object is destroyed.
+  path file; // file name
+  logger(const path& LogFileName) : file(LogFileName) {}
+
+  /// while destructing, writes the log text to the file.
   ~logger() {
-    std::cout << "A" << std::endl;
-    if (text.empty()) return;
-    std::cout << "A" << std::endl;
-    if (auto dir = file.parent_path(); !dir.empty() && !std::filesystem::exists(dir)) std::filesystem::create_directories(dir);
-    std::cout << "A" << std::endl;
-    if (std::basic_ofstream<uct1> ofs(file, std::ios::app); ofs) ofs << text << std::endl;
-    else std::cerr << "failed to open the file (" << file.string() << ")" << std::endl;
-    std::cout << "A" << std::endl;
+    try {
+      if (std::basic_ofstream<uct1> ofs(file, std::ios::app); ofs) ofs << text, text.clear();
+      else std::cerr << "failed to open the file (" << file.string() << ")" << std::endl;
+    } catch (const std::exception& e) { std::cerr << e.what() << std::endl; }
+  }
+  /// writes the specified text to the log.
+  /// \param Level : the log level; only the first 7 ASCII characters are used.
+  /// \param Text : the log text.
+  void output(stringable<cat1> auto&& Level, stringable<uct1> auto&& Text, const source& _ = {}) {
+    auto lv = std::format(" [{:^7}] ", stv1(Level));
+    text += string<uct1>(now{});
+    text += reinterpret_cast<string<uct1>&>(lv);
+    text += Text;
+    text += to_utf8(std::format(" (at {}({},{}))\n", _.file, _.line, _.column));
   }
   /// appends debug log.
-  void debug   (const generic_string& s, const source& _ = {}) { output(u8" [DEBUG]    ", to_utf8(s) + u8" (" + _.to_string<uct1>() + u8")"); }
+  void debug(stringable auto&& s, const source& _ = {}) { output("DEBUG", to_utf8(s), _); }
   /// appends info log.
-  void info    (const generic_string& s) { output(u8" [INFO]     ", s); }
+  void info(stringable auto&& s, const source& _ = {}) { output("INFO", to_utf8(s), _); }
   /// appends warning log.
-  void warning (const generic_string& s) { output(u8" [WARNING]  ", s); }
+  void warning(stringable auto&& s, const source& _ = {}) { output("WARNING", to_utf8(s), _); }
   /// appends error log.
-  void error   (const generic_string& s) { output(u8" [ERROR]    ", s); }
+  void error(stringable auto&& s, const source& _ = {}) { output("ERROR", to_utf8(s), _); }
   /// appends critical log.
-  void critical(const generic_string& s) { output(u8" [CRITICAL] ", s); }
-
-
-  // /// appends the text to the logger object; the text should be ended with a newline character.
-  // logger& operator<<(const string_view<cat1> s) { return text += to_utf8(s), *this; }
-  // /// appends the text to the logger object; the text should be ended with a newline character.
-  // logger& operator<<(const string_view<cat2> s) { return text += to_utf8(s), *this; }
-  // /// appends the text to the logger object; the text should be ended with a newline character.
-  // logger& operator<<(const string_view<uct1> s) { return text += to_utf8(s), *this; }
-  // /// appends the text to the logger object; the text should be ended with a newline character.
-  // logger& operator<<(const string_view<uct2> s) { return text += to_utf8(s), *this; }
-  // /// appends the text to the logger object; the text should be ended with a newline character.
-  // logger& operator<<(const string_view<uct4> s) { return text += to_utf8(s), *this; }
-  /// outputs the text of the logger object to the specified output stream.
-  template<typename Tr> friend std::basic_ostream<cat1, Tr>&
-  operator<<(std::basic_ostream<cat1, Tr>& os, const logger& l) { return os << to_mbs(l.text); }
+  void fatal(stringable auto&& s, const source& _ = {}) { output("CRITICAL", to_utf8(s), _); }
 };
 
 /// default logger object for ywlib
-inline auto log = logger(std::format("log/{}.log", str1(now)));
-
+inline auto log = logger(std::format("log/{}.log", date{}));
 }
 
 namespace yw::file {
@@ -1484,11 +1462,13 @@ inline void write(const path& p, cnt_range auto&& In) {
 inline constexpr auto canonical = [](const path& p) noexcept {
   try { return std::filesystem::canonical(p); }
   catch (const std::exception& e) { yw::log.error(stv1(e.what())); }
+  return path{};
 };
 /// weakly canonicalizes the specified path.
 inline constexpr auto weakly_canonical = [](const path& p) noexcept {
   try { return std::filesystem::weakly_canonical(p); }
   catch (const std::exception& e) { yw::log.error(stv1(e.what())); }
+  return path{};
 };
 }
 
@@ -1515,7 +1495,12 @@ template<typename Ct> struct formatter<yw::source, Ct> : formatter<basic_string<
 template<typename Ct> struct formatter<yw::path, Ct> : formatter<basic_string<Ct>, Ct> { auto format(const yw::path& p, auto& c) const {
   if constexpr (same_as<remove_cv<Ct>, char>) return std::format("\"{}\"", formatter<basic_string<Ct>, Ct>::format(p.string<Ct>(), c));
   else return std::format(L"\"{}\"", formatter<basic_string<Ct>, Ct>::format(p.string<Ct>(), c)); } };
-template<typename Ct, typename Tr> basic_ostream<Ct, Tr>& operator<<(basic_ostream<Ct, Tr>& os, decltype(yw::now)) { return os << yw::string<Ct>(yw::now); }
+template<typename Ct, typename Tr> basic_ostream<Ct, Tr>& operator<<(basic_ostream<Ct, Tr>& os, const yw::date& d) { return os << yw::string<Ct>(d); }
+template<typename Ct, typename Tr> basic_ostream<Ct, Tr>& operator<<(basic_ostream<Ct, Tr>& os, const yw::time& t) { return os << yw::string<Ct>(t); }
+template<typename Ct, typename Tr> basic_ostream<Ct, Tr>& operator<<(basic_ostream<Ct, Tr>& os, const yw::now& n) { return os << yw::string<Ct>(n); }
+template<typename Ct> struct formatter<yw::date, Ct> : formatter<basic_string<Ct>, Ct> { auto format(const yw::date& d, auto& c) const { return formatter<basic_string<Ct>, Ct>::format(basic_string<Ct>(d), c); } };
+template<typename Ct> struct formatter<yw::time, Ct> : formatter<basic_string<Ct>, Ct> { auto format(const yw::time& t, auto& c) const { return formatter<basic_string<Ct>, Ct>::format(basic_string<Ct>(t), c); } };
+template<typename Ct> struct formatter<yw::now, Ct> : formatter<basic_string<Ct>, Ct> { auto format(const yw::now& n, auto& c) const { return formatter<basic_string<Ct>, Ct>::format(basic_string<Ct>(n), c); } };
 }
 
 #include <immintrin.h>
@@ -3214,7 +3199,7 @@ inline void tiff(HRESULT hr, const source& _ = {}) {
   ::FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
                    hr, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buffer.data(), 256, nullptr);
   auto text = std::format("runtime error: {}\n at {}\n", buffer, _);
-  log.error(string_view(text));
+  log.error(text);
   throw std::runtime_error(text.data());
 }
 
@@ -3222,7 +3207,7 @@ inline void tiff(const convertible_to<bool> auto& Result, const std::string_view
   if (Result) return;
   // health.set(false);
   auto text = std::format("runtime error: {}\n at {}\n", Message, _);
-  log.error(string_view(text));
+  log.error(text);
   throw std::runtime_error(text.data());
 }
 
@@ -4720,9 +4705,45 @@ namespace yw { // GPGPU Functions
 /// \param PointCloud point cloud
 /// \param [out] Distances distances
 void calc_distance_point_to_point(
+  unordered_buffer<fat4>& Distances,
+  unordered_buffer<nat4>& Nearests,
   const structured_buffer<vector>& Points,
   const structured_buffer<vector>& PointCloud,
-  structured_buffer<fat4>& Distances) {
-
+  const constant_buffer<xmatrix>& World) {
+  try {
+    if (Points.count == 0) throw std::runtime_error("runtime error : yw::calc_distance_point_to_point : `Points` is empty");
+    if (PointCloud.count == 0) throw std::runtime_error("runtime error : yw::calc_distance_point_to_point : `PointCloud` is empty");
+    if (Distances.count != Points.count) throw std::runtime_error("runtime error : yw::calc_distance_point_to_point : `Distances` is invalid");
+    if (Nearests.count != Points.count) throw std::runtime_error("runtime error : yw::calc_distance_point_to_point : `Nearests` is invalid");
+    static constexpr string_view<cat1> hlsl = R"(
+#pragma pack_matrix(row_major)
+struct Point { float x, y, z, w; };
+struct Distance { float d; };
+struct Index { uint i; };
+StructuredBuffer<Point> Points : register(t0);
+StructuredBuffer<Point> PointCloud : register(t1);
+RWStructuredBuffer<Distance> Distances : register(u0);
+RWStructuredBuffer<Index> Nearests : register(u1);
+cbuffer Matrix : register(b0) { matrix w; };
+cbuffer Info : register(b1) { uint m; uint n; uint dummy[2]; };
+[numthreads(1024, 1, 1)] void csmain(uint i : SV_DispatchThreadID) {
+  if (i >= m) return;
+  const float3 p = mul(w, Points[i]).xyz;
+  Distances[i].d = 1e+38;
+  for (uint j = 0; j < n; ++j) {
+    float3 d = p - PointCloud[j].xyz;
+    float s = dot(d, d);
+    if (s < Distances[i].d) Distances[i].d = s, Nearests[i].i = j;
+  }
+})";
+    computer<
+      typepack<unordered_buffer<fat4>, unordered_buffer<int4>>,
+      typepack<structured_buffer<vector>, structured_buffer<vector>>,
+      typepack<constant_buffer<xmatrix>, constant_buffer<list<nat4, nat4, nat8>>>> c(hlsl);
+    constant_buffer<list<nat4, nat4, nat8>> cb({Points.count, PointCloud.count, 0});
+    c(Points.count, {Distances, Nearests}, {Points, PointCloud}, {World, cb});
+  } catch (const std::exception& e) {
+    log.error(e.what());
+  }
 }
 }

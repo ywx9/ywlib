@@ -1,21 +1,35 @@
 #include "ywlib"
 using namespace yw;
 
-#include <iostream>
-
 int main() {
   try {
-    std::cout << str1(now) << std::endl;
-    std::wcout << str2(now) << std::endl;
-    std::cout << to_mbs(string_view<uct1>(now)) << std::endl;
-    std::wcout << to_wcs(string_view<uct2>(now)) << std::endl;
-    auto s = to_wcs(string_view<uct4>(now));
-    std::wcout << s << std::endl;
-    std::wcout << s.size() << std::endl;
+    /// ランダムな２０個の頂点の座標を生成
+    array<vector, 20> points1;
+    for (int i = 0; i < 20; i++) {
+      points1[i] = vector(rand() % 100, rand() % 100);
+    }
+    /// ランダムな100個の頂点の座標を再生成
+    array<vector, 100> points2;
+    for (int i = 0; i < points2.count; i++) {
+      points2[i] = vector(rand() % 100, rand() % 100);
+    }
+    /// create structured_buffers
+    structured_buffer<vector> points(points1);
+    structured_buffer<vector> point_cloud(points2);
+    /// create unordered_buffers
+    unordered_buffer<fat4> distances(points.count);
+    unordered_buffer<nat4> nearests(points.count);
+    /// create constant_buffers
+    constant_buffer<xmatrix> world(xv_identity);
 
+    calc_distance_point_to_point(distances, nearests, points, point_cloud, world);
+    auto result = distances.to_cpu();
+    auto indices = nearests.to_cpu();
 
-    yw::log.debug(string_view<uct1>(u8"debug test"));
-    std::cout << yw::log;
+    for (nat i = 0; i < points.count; i++) {
+      std::cout << "Point " << i << " is nearest to Point " << indices[i] << " with distance " << result[i] << std::endl;
+    }
+
   } catch (const std::exception& E) {
     std::cout << E.what();
     return -1;
