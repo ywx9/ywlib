@@ -1,0 +1,57 @@
+2024-07-04 09:42:15 [ ERROR ] runtime error : yw::computer::computer : Failed to compile the compute shader
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF6A578DD90(14,20-36): error X3013: 'mul': no matching 2 parameter intrinsic function
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF6A578DD90(14,20-36): error X3013: Possible intrinsic functions are:
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF6A578DD90(14,20-36): error X3013:     mul(float|half|double|min10float|min16float|int|uint|min12int|min16int|min16uint, float|half|double|min10float|min16float|int|uint|min12int|min16int|min16uint)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF6A578DD90(14,20-36): error X3013:     mul(float|half|double|min10float|min16float|int|uint|min12int|min16int|min16uint, floatK|halfK|doubleK|min10floatK|min16floatK|intK|uintK|min12intK|min16intK|min16uintK)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF6A578DD90(14,20-36): error X3013:     mul(float|half|double|min10float|min16float|int|uint|min12int|min16int|min16uint, floatLxK|halfLxK|doubleLxK|min10floatLxK|min16floatLxK|intLxK|uintLxK|min12intLxK|min16intLxK|min16uintLxK)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF6A578DD90(14,20-36): error X3013:     mul(floatM|halfM|doubleM|min10floatM|min16floatM|intM|uintM|min12intM|min16intM|min16uintM, float|half|double|min10float|min16float|int|uint|min12int|min16int|min16uint)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF6A578DD90(14,20-36): error X3013:     mul(floatM|halfM|doubleM|min10floatM|min16floatM|intM|uintM|min12intM|min16intM|min16uintM, floatM|halfM|doubleM|min10floatM|min16floatM|intM|uintM|min12intM|min16intM|min16uintM)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF6A578DD90(14,20-36): error X3013:     mul(floatM|halfM|doubleM|min10floatM|min16floatM|intM|uintM|min12intM|min16intM|min16uintM, floatMxK|halfMxK|doubleMxK|min10floatMxK|min16floatMxK|intMxK|uintMxK|min12intMxK|min16intMxK|min16uintMxK)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF6A578DD90(14,20-36): error X3013:     mul(floatNxM|halfNxM|doubleNxM|min10floatNxM|min16floatNxM|intNxM|uintNxM|min12intNxM|min16intNxM|min16uintNxM, float|half|double|min10float|min16float|int|uint|min12int|min16int|min16uint)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF6A578DD90(14,20-36): error X3013:     mul(floatNxM|halfNxM|doubleNxM|min10floatNxM|min16floatNxM|intNxM|uintNxM|min12intNxM|min16intNxM|min16uintNxM, floatM|halfM|doubleM|min10floatM|min16floatM|intM|uintM|min12intM|min16intM|min16uintM)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF6A578DD90(14,20-36): error X3013:     mul(floatNxM|halfNxM|doubleNxM|min10floatNxM|min16floatNxM|intNxM|uintNxM|min12intNxM|min16intNxM|min16uintNxM, floatMxK|halfMxK|doubleMxK|min10floatMxK|min16floatMxK|intMxK|uintMxK|min12intMxK|min16intMxK|min16uintMxK)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF6A578DD90(14,16-36): error X3012: 'p': missing initial value
+ (at C:\Users\AA1W017\workspace\ywlib\ywlib(4747,8))
+2024-07-04 09:43:36 [ ERROR ] runtime error : yw::computer::computer : Failed to compile the compute shader
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF63971DD90(14,20-36): error X3013: 'mul': no matching 2 parameter intrinsic function
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF63971DD90(14,20-36): error X3013: Possible intrinsic functions are:
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF63971DD90(14,20-36): error X3013:     mul(float|half|double|min10float|min16float|int|uint|min12int|min16int|min16uint, float|half|double|min10float|min16float|int|uint|min12int|min16int|min16uint)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF63971DD90(14,20-36): error X3013:     mul(float|half|double|min10float|min16float|int|uint|min12int|min16int|min16uint, floatK|halfK|doubleK|min10floatK|min16floatK|intK|uintK|min12intK|min16intK|min16uintK)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF63971DD90(14,20-36): error X3013:     mul(float|half|double|min10float|min16float|int|uint|min12int|min16int|min16uint, floatLxK|halfLxK|doubleLxK|min10floatLxK|min16floatLxK|intLxK|uintLxK|min12intLxK|min16intLxK|min16uintLxK)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF63971DD90(14,20-36): error X3013:     mul(floatM|halfM|doubleM|min10floatM|min16floatM|intM|uintM|min12intM|min16intM|min16uintM, float|half|double|min10float|min16float|int|uint|min12int|min16int|min16uint)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF63971DD90(14,20-36): error X3013:     mul(floatM|halfM|doubleM|min10floatM|min16floatM|intM|uintM|min12intM|min16intM|min16uintM, floatM|halfM|doubleM|min10floatM|min16floatM|intM|uintM|min12intM|min16intM|min16uintM)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF63971DD90(14,20-36): error X3013:     mul(floatM|halfM|doubleM|min10floatM|min16floatM|intM|uintM|min12intM|min16intM|min16uintM, floatMxK|halfMxK|doubleMxK|min10floatMxK|min16floatMxK|intMxK|uintMxK|min12intMxK|min16intMxK|min16uintMxK)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF63971DD90(14,20-36): error X3013:     mul(floatNxM|halfNxM|doubleNxM|min10floatNxM|min16floatNxM|intNxM|uintNxM|min12intNxM|min16intNxM|min16uintNxM, float|half|double|min10float|min16float|int|uint|min12int|min16int|min16uint)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF63971DD90(14,20-36): error X3013:     mul(floatNxM|halfNxM|doubleNxM|min10floatNxM|min16floatNxM|intNxM|uintNxM|min12intNxM|min16intNxM|min16uintNxM, floatM|halfM|doubleM|min10floatM|min16floatM|intM|uintM|min12intM|min16intM|min16uintM)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF63971DD90(14,20-36): error X3013:     mul(floatNxM|halfNxM|doubleNxM|min10floatNxM|min16floatNxM|intNxM|uintNxM|min12intNxM|min16intNxM|min16uintNxM, floatMxK|halfMxK|doubleMxK|min10floatMxK|min16floatMxK|intMxK|uintMxK|min12intMxK|min16intMxK|min16uintMxK)
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF63971DD90(14,16-36): error X3012: 'p': missing initial value
+ (at C:\Users\AA1W017\workspace\ywlib\ywlib(4748,8))
+2024-07-04 09:46:12 [ ERROR ] runtime error : yw::computer::computer : Failed to compile the compute shader
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF7C3F1DD90(14,20-42): error X3018: invalid subscript 'xyz'
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF7C3F1DD90(14,16-42): error X3012: 'p': missing initial value
+ (at C:\Users\AA1W017\workspace\ywlib\ywlib(4748,8))
+2024-07-04 09:46:43 [ ERROR ] runtime error : yw::computer::computer : Failed to compile the compute shader
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF7F43CDD90(17,20-36): error X3018: invalid subscript 'xyz'
+ (at C:\Users\AA1W017\workspace\ywlib\ywlib(4748,8))
+2024-07-04 09:47:30 [ ERROR ] runtime error : yw::computer::computer : Failed to compile the compute shader
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF6D856DD90(17,20-36): error X3018: invalid subscript 'xyz'
+ (at C:\Users\AA1W017\workspace\ywlib\ywlib(4748,8))
+2024-07-04 09:50:43 [ ERROR ] runtime error : yw::computer::computer : Failed to compile the compute shader
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF677B5DD90(14,39): error X3000: syntax error: unexpected token ')'
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF677B5DD90(17,16-32): error X3022: scalar, vector, or matrix expected
+ (at C:\Users\AA1W017\workspace\ywlib\ywlib(4748,8))
+2024-07-04 09:51:06 [ ERROR ] runtime error : yw::computer::computer : Failed to compile the compute shader
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF6299EDD90(17,16-32): error X3022: scalar, vector, or matrix expected
+ (at C:\Users\AA1W017\workspace\ywlib\ywlib(4748,8))
+2024-07-04 15:55:44 [ ERROR ] runtime error : yw::computer::computer : Failed to compile the compute shader
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF619BC1E70(14,3-11): error X3004: undeclared identifier 'Distances'
+ (at C:\Users\AA1W017\workspace\ywlib\ywlib(4881,42))
+2024-07-04 16:39:26 [ ERROR ] runtime error : yw::computer::computer : Failed to compile the compute shader
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF68A541E70(23,50-52): error X3004: undeclared identifier 'inf'
+ (at C:\Users\AA1W017\workspace\ywlib\ywlib(4883,42))
+2024-07-04 16:59:56 [ ERROR ] runtime error : yw::computer::computer : Failed to compile the compute shader
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF61D111E70(21,22): error X3000: syntax error: unexpected token '{'
+ (at C:\Users\AA1W017\workspace\ywlib\ywlib(4884,42))
+2024-07-04 17:00:50 [ ERROR ] runtime error : yw::computer::computer : Failed to compile the compute shader
+C:\Users\AA1W017\workspace\ywlib\Shader@0x00007FF6E0C51E70(21,22): error X3000: syntax error: unexpected token '{'
+ (at C:\Users\AA1W017\workspace\ywlib\ywlib(4884,42))

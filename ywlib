@@ -671,7 +671,7 @@ template<typename T, typename Pj = pass, sequence_of<nat> Sq = make_indices_for<
   /// `extent<projector>`
   static constexpr nat count = indices::count;
   /// reference to the object to project.
-  add_fwref<T> ref;
+add_fwref<T> ref;
   /// function object for projection.
   remove_ref<Pj> proj = {};
   template<typename U = T> constexpr projector(U&& Ref, Pj p, Sq) noexcept(nt_constructible<Pj, Pj>) : ref(fwd<U>(Ref)), proj(mv(p)) {}
@@ -679,12 +679,12 @@ template<typename T, typename Pj = pass, sequence_of<nat> Sq = make_indices_for<
   template<typename U = T> constexpr projector(U&& Ref, Sq) noexcept : ref(fwd<U>(Ref)) {}
   template<typename U = T> constexpr projector(U&& Ref) noexcept : ref(fwd<U>(Ref)) {}
   /// used by the customization point object `yw::get`.
-  template<nat I> requires(I < count && tuple<T>) constexpr auto get() const
+  template<nat I> requires(I < count && tuple<T>) constexpr decltype(auto) get() const
     noexcept(nt_gettable<T, indices::template at<I>> && nt_invocable<Pj, element_t<T, indices::template at<I>>>)
     requires gettable<T, indices::template at<I>> && invocable<Pj, element_t<T, indices::template at<I>>>
   { return invoke(proj, yw::get<indices::template at<I>>(ref)); }
   /// used by the customization point object `yw::get`.
-  template<nat I> requires(I < count && !tuple<T>) constexpr auto get() const
+  template<nat I> requires(I < count && !tuple<T>) constexpr decltype(auto) get() const
     noexcept(nt_invocable<Pj, T>) requires invocable<Pj, T> { return invoke(proj, ref); }
 };
 
@@ -2465,6 +2465,14 @@ private:
 /// Create a perspective (or orthographic) projection matrix.
 inline constexpr t_xvprojection xvprojection;
 
+inline constexpr auto xvinverse_transformation = [](const xmatrix& Transformation, xmatrix& O) noexcept {
+  xvtranspose(Transformation, O);
+  xvblend<0, 0, 0, 1>(get<0>(O), xvneg(get<0>(Transformation)));
+  xvblend<0, 0, 0, 1>(get<1>(O), xvneg(get<1>(Transformation)));
+  xvblend<0, 0, 0, 1>(get<2>(O), xvneg(get<2>(Transformation)));
+  get<3>(O) = xv_w;
+};
+
 struct t_xveuler {
   /// Calculate the Euler angles from a rotation matrix.
   template<tuple_for<xvector> Matrix> requires (le(3, extent<Matrix>) && le(extent<Matrix>, 4))
@@ -2815,6 +2823,8 @@ template<typename Ct> struct formatter<yw::vector, Ct> : formatter<basic_string<
   auto format(const yw::vector& v, auto& c) const {
     if constexpr (same_as<Ct, char>) return base::format(format("({}, {}, {}, {})", v.x, v.y, v.z, v.w), c);
     else return base::format(format(L"({}, {}, {}, {})", v.x, v.y, v.z, v.w), c); } };
+template<typename Ct, typename Tr> basic_ostream<Ct, Tr>& operator<<(basic_ostream<Ct, Tr>& os, const yw::vector& v) {
+  return os << "XYZW(" << v.x << ", " << v.y << ", " << v.z << ", " << v.w << ')'; }
 template<> struct tuple_size<yw::wector> : integral_constant<size_t, 4> {};
 template<size_t I> requires (I < 4) struct tuple_element<I, yw::wector> : type_identity<double> {};
 template<typename Ct> struct formatter<yw::wector, Ct> : formatter<basic_string<Ct>, Ct> {
@@ -4060,6 +4070,7 @@ public:
   using buffer<T>::operator bool;
   using buffer<T>::operator ID3D11Buffer*;
   constant_buffer() noexcept = default;
+  constant_buffer(const constant_buffer&) = delete;
 
   /// creates a constant buffer with the specified value.
   constant_buffer(const T& Value) : buffer<T>(1) {
@@ -4332,21 +4343,21 @@ public:
   }
 
   /// performs general-purpose computing on the GPU.
-  void operator()(ub_list ub, sb_list sb, cb_list cb, const numerical auto ThreadGroupX,
-                  const numerical auto ThreadGroupY = 1, const numerical auto ThreadGroupZ = 1) const {
+  void operator()(ub_list ub, sb_list sb, cb_list cb, const nat4 ThreadGroupX,
+                  const nat4 ThreadGroupY = 1, const nat4 ThreadGroupZ = 1) const {
     if (!d3d_cs) throw std::runtime_error("runtime error : yw::computer::operator() : Compute shader is not initialized");
     for (nat i = 0; i < Unordered::count; ++i) if (!ub[i]) throw std::runtime_error(std::format("runtime error : yw::computer::operator() : {}-th unordered access view is not initialized", i));
     for (nat i = 0; i < Structured::count; ++i) if (!sb[i]) throw std::runtime_error(std::format("runtime error : yw::computer::operator() : {}-th shader resource view is not initialized", i));
     for (nat i = 0; i < Constant::count; ++i) if (!cb[i]) throw std::runtime_error(std::format("runtime error : yw::computer::operator() : {}-th constant buffer is not initialized", i));
     main::d3d_context->CSSetShader(d3d_cs, nullptr, 0);
     main::d3d_context->CSSetUnorderedAccessViews(0, Unordered::count, ub.data(), nullptr);
-    main::d3d_context->CSSetShaderResources(0, Structured::count, sb.data(), nullptr);
-    main::d3d_context->CSSetConstantBuffers(0, Constant::count, cb.data(), nullptr);
+    main::d3d_context->CSSetShaderResources(0, Structured::count, sb.data());
+    main::d3d_context->CSSetConstantBuffers(0, Constant::count, cb.data());
     main::d3d_context->Dispatch(unsigned(ThreadGroupX), unsigned(ThreadGroupY), unsigned(ThreadGroupZ));
     std::ranges::fill(ub, nullptr), std::ranges::fill(sb, nullptr), std::ranges::fill(cb, nullptr);
     main::d3d_context->CSSetUnorderedAccessViews(0, Unordered::count, ub.data(), nullptr);
-    main::d3d_context->CSSetShaderResources(0, Structured::count, sb.data(), nullptr);
-    main::d3d_context->CSSetConstantBuffers(0, Constant::count, cb.data(), nullptr);
+    main::d3d_context->CSSetShaderResources(0, Structured::count, sb.data());
+    main::d3d_context->CSSetConstantBuffers(0, Constant::count, cb.data());
   }
 
   /// performs general-purpose computing on the GPU.
@@ -4704,7 +4715,9 @@ namespace yw { // GPGPU Functions
 /// \param Points points
 /// \param PointCloud point cloud
 /// \param [out] Distances distances
-void calc_distance_point_to_point(
+/// \param [out] Nearests nearest points
+/// \param World world matrix
+void calc_distance_point_to_points(
   unordered_buffer<fat4>& Distances,
   unordered_buffer<nat4>& Nearests,
   const structured_buffer<vector>& Points,
@@ -4717,7 +4730,7 @@ void calc_distance_point_to_point(
     if (Nearests.count != Points.count) throw std::runtime_error("runtime error : yw::calc_distance_point_to_point : `Nearests` is invalid");
     static constexpr string_view<cat1> hlsl = R"(
 #pragma pack_matrix(row_major)
-struct Point { float x, y, z, w; };
+struct Point { float4 p; };
 struct Distance { float d; };
 struct Index { uint i; };
 StructuredBuffer<Point> Points : register(t0);
@@ -4728,22 +4741,151 @@ cbuffer Matrix : register(b0) { matrix w; };
 cbuffer Info : register(b1) { uint m; uint n; uint dummy[2]; };
 [numthreads(1024, 1, 1)] void csmain(uint i : SV_DispatchThreadID) {
   if (i >= m) return;
-  const float3 p = mul(w, Points[i]).xyz;
+  const float4 p = mul(w, Points[i].p);
   Distances[i].d = 1e+38;
   for (uint j = 0; j < n; ++j) {
-    float3 d = p - PointCloud[j].xyz;
-    float s = dot(d, d);
-    if (s < Distances[i].d) Distances[i].d = s, Nearests[i].i = j;
+    float4 d = p - PointCloud[j].p;
+    d.w = dot(d.xyz, d.xyz);
+    if (d.w < Distances[i].d) Distances[i].d = d.w, Nearests[i].i = j;
   }
+  Distances[i].d = sqrt(Distances[i].d);
 })";
+    constant_buffer<list<nat4, nat4, nat8>> cb({Points.count, PointCloud.count, 0});
     computer<
       typepack<unordered_buffer<fat4>, unordered_buffer<int4>>,
       typepack<structured_buffer<vector>, structured_buffer<vector>>,
       typepack<constant_buffer<xmatrix>, constant_buffer<list<nat4, nat4, nat8>>>> c(hlsl);
-    constant_buffer<list<nat4, nat4, nat8>> cb({Points.count, PointCloud.count, 0});
     c(Points.count, {Distances, Nearests}, {Points, PointCloud}, {World, cb});
-  } catch (const std::exception& e) {
-    log.error(e.what());
+  } catch (const std::exception& e) { log.error(e.what()); }
+}
+
+/// calculates the distance from each point to the nearest facet in the mesh.
+/// \param Points points
+/// \param Facets facets
+/// \param [out] Distances distances
+/// \param [out] Nearests nearest facets
+/// \param World world matrix
+void calc_distance_point_to_facets(
+  unordered_buffer<fat4>& Distances,
+  unordered_buffer<int4>& Nearests,
+  const structured_buffer<vector>& Points,
+  const structured_buffer<array<fat4, 28>>& Facets,
+  const constant_buffer<xmatrix>& World) {
+  try {
+    if (Points.count == 0) throw std::runtime_error("runtime error : yw::calc_distance_point_to_facets : `Points` is empty");
+    if (Facets.count == 0) throw std::runtime_error("runtime error : yw::calc_distance_point_to_facets : `Facets` is empty");
+    if (Distances.count != Points.count) throw std::runtime_error("runtime error : yw::calc_distance_point_to_facets : `Distances` is invalid");
+    if (Nearests.count != Points.count) throw std::runtime_error("runtime error : yw::calc_distance_point_to_facets : `Nearests` is invalid");
+    static constexpr string_view<cat1> hlsl = R"(
+#pragma pack_matrix(row_major)
+struct Point { float4 p; };
+struct Facet {  float3 a, b, c; float3 ab, bc, ca; float3 sq, nisq; float4 plane; };
+struct Distance { float d; };
+struct Index { uint i; };
+StructuredBuffer<Point> Points : register(t0);
+StructuredBuffer<Facet> Facets : register(t1);
+RWStructuredBuffer<Distance> Distances : register(u0);
+RWStructuredBuffer<Index> Nearests : register(u1);
+cbuffer Matrix : register(b0) { matrix w; };
+cbuffer Info : register(b1) { uint m; uint n; uint dummy[2]; };
+[numthreads(1024, 1, 1)] void csmain(uint i : SV_DispatchThreadID) {
+  if (i >= m) return;
+  const float3 p = mul(w, Points[i].p).xyz;
+  Distances[i].d = 1e+38;
+  float3 a, b, c;
+  float d, e;
+  for (uint j = 0; j < n; ++j) {
+    a = p - Facets[j].a.xyz, b = p - Facets[j].b.xyz, c = p - Facets[j].c.xyz;
+    d = dot(p, Facets[j].plane.xyz) - Facets[j].plane.w;
+    if (Distances[i].d < d * d) continue;
+    if (dot(cross(a, b), Facets[j].plane.xyz) < 0) {
+      e = dot(a, Facets[j].ab);
+      if (e < 0) e = dot(a, a);
+      else if (Facets[j].sq.x < e) e = dot(b, b);
+      else e = dot(a, a) + e * e * Facets[j].nisq.x;
+      if (e < Distances[i].d) Distances[i].d = e, Nearests[i].i = j;
+    } else if (dot(cross(b, c), Facets[j].plane.xyz) < 0) {
+      e = dot(b, Facets[j].bc);
+      if (e < 0) e = dot(b, b);
+      else if (Facets[j].sq.y < e) e = dot(c, c);
+      else e = dot(b, b) + e * e * Facets[j].nisq.y;
+      if (e < Distances[i].d) Distances[i].d = e, Nearests[i].i = j;
+    } else if (dot(cross(c, a), Facets[j].plane.xyz) < 0) {
+      e = dot(c, Facets[j].ca);
+      if (e < 0) e = dot(c, c);
+      else if (Facets[j].sq.z < e) e = dot(a, a);
+      else e = dot(c, c) + e * e * Facets[j].nisq.z;
+      if (e < Distances[i].d) Distances[i].d = e, Nearests[i].i = j;
+    } else Distances[i].d = d * d, Nearests[i].i = j;
   }
+  Distances[i].d = sqrt(Distances[i].d);
+})";
+    constant_buffer<list<nat4, nat4, nat8>> cb({Points.count, Facets.count, 0});
+    computer<
+      typepack<unordered_buffer<fat4>, unordered_buffer<int4>>,
+      typepack<structured_buffer<vector>, structured_buffer<array<fat4, 28>>>,
+      typepack<constant_buffer<xmatrix>, constant_buffer<list<nat4, nat4, nat8>>>> c(hlsl);
+    c(Points.count, {Distances, Nearests}, {Points, Facets}, {World, cb});
+  } catch (const std::exception& e) { log.error(e.what()); }
+}
+
+/// calculates the nearest intersection of the ray (half line) and the mesh.
+/// \param Rays rays; each ray consists of a point and a normalized vector
+/// \param Facets facets
+/// \param [out] Intersections nearest intersections
+/// \param World world matrix
+void calc_intersection_line_to_facets(
+  unordered_buffer<vector>& Intersections,
+  unordered_buffer<fat4>& Distances,
+  const structured_buffer<list<vector, vector>>& Rays,
+  const structured_buffer<array<fat4, 28>>& Facets,
+  const xmatrix& World) {
+  try {
+    if (Rays.count == 0) throw std::runtime_error("runtime error : yw::calc_intersection_line_to_facets : `Rays` is empty");
+    if (Facets.count == 0) throw std::runtime_error("runtime error : yw::calc_intersection_line_to_facets : `Facets` is empty");
+    if (Intersections.count != Rays.count) throw std::runtime_error("runtime error : yw::calc_intersection_line_to_facets : `Intersections` is invalid");
+    static constexpr string_view<cat1> hlsl = R"(
+#pragma pack_matrix(row_major)
+struct Ray { float4 p, v; };
+struct Facet {  float3 a, b, c; float3 ab, bc, ca; float3 sq, nisq; float4 plane; };
+struct Intersection { float4 p; };
+struct Distance { float w; };
+cbuffer Matrix : register(b0) { matrix invw; };
+cbuffer Info : register(b1) { uint m; uint n; uint dummy[2]; };
+StructuredBuffer<Ray> Rays : register(t0);
+StructuredBuffer<Facet> Facets : register(t1);
+RWStructuredBuffer<Intersection> Intersections : register(u0);
+RWStructuredBuffer<Distance> Distances : register(u1);
+[numthreads(1024, 1, 1)] void csmain(uint i : SV_DispatchThreadID) {
+  if (i >= m) return;
+  const float3 p = mul(invw, Rays[i].p).xyz, v = mul(invw, Rays[i].v).xyz;
+  Distances[i].w = 1e+38;
+  float d;
+  for (uint j = 0; j < n; ++j) {
+    d = (Facets[j].plane.w - dot(p, Facets[j].plane.xyz)) / dot(v, Facets[j].plane.xyz);
+    if (Distances[i].w < d) continue;
+    float3 q = float3(1, 2, 102); //p + d * v;
+    float3 a = Facets[j].a.xyz - q, b = Facets[j].b.xyz - q, c = Facets[j].c.xyz - q;
+    if (true
+        // dot(cross(a, b), Facets[j].plane.xyz) > 0 &&
+        // dot(cross(b, c), Facets[j].plane.xyz) > -1e20 &&
+        // dot(cross(c, a), Facets[j].plane.xyz) > -1e20
+    ) Distances[i].w = d, Intersections[i].p = float4(q, 1);
+  }
+})";
+    constant_buffer<xmatrix> cb;
+    cb.from([&](xmatrix& m) { xvinverse_transformation(World, m); });
+    auto test = cb.to_cpu();
+    std::cout << vector(test[0][0]) << std::endl;
+    std::cout << vector(test[0][1]) << std::endl;
+    std::cout << vector(test[0][2]) << std::endl;
+    std::cout << vector(test[0][3]) << std::endl;
+    constant_buffer<list<nat4, nat4, nat8>> ci({Rays.count, Facets.count, 0});
+    computer<
+      typepack<unordered_buffer<vector>, unordered_buffer<fat4>>,
+      typepack<structured_buffer<list<vector, vector>>, structured_buffer<array<fat4, 28>>>,
+      typepack<constant_buffer<xmatrix>, constant_buffer<list<nat4, nat4, nat8>>>> c(hlsl);
+    c(Rays.count, {Intersections, Distances}, {Rays, Facets}, {cb, ci});
+  } catch (const std::exception& e) { log.error(e.what()); }
 }
 }
