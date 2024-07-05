@@ -92,29 +92,14 @@ RWStructuredBuffer<Facet> Facets : register(u0);
 
 int main() {
   try {
-    auto mm = xmatrix{xvload(1.f, 2.f, 3.f, 4.f), xvload(5.f, 6.f, 7.f, 8.f), xvload(9.f, 10.f, 11.f, 12.f), xvload(13.f, 14.f, 15.f, 16.f)};
-    xmatrix nn;
-    xvtranspose(mm, nn);
-    std::cout << vector(nn[0]) << std::endl;
-    std::cout << vector(nn[1]) << std::endl;
-    std::cout << vector(nn[2]) << std::endl;
-    std::cout << vector(nn[3]) << std::endl;
-    std::cout << vector(xvpermute<1, 5, -1, -1>(mm[0], mm[1])) << std::endl;
-    std::cout << vector(t_xvpermute<1, 5, 2, 3>::call(mm[0])) << std::endl;
-
     stl Stl(R"(C:\Users\AA1W017\Documents\Z20335D-3　5月24日_標準.stl)");
     auto ub_facets = make_facets(Stl);
     auto sb_facets = structured_buffer(ub_facets);
     auto test = sb_facets.to_cpu();
-    // for (nat i = 0; i < 100; ++i) {
-    //   for (nat j = 0; j < 28; ++j) {
-    //     std::cout << test[i][j] << ' ';
-    //   }
-    //   std::cout << std::endl;
-    // }
 
-    array<list<vector, vector>> Rays(1);
+    array<list<vector, vector>> Rays(2);
     Rays[0] = {vector{0, 2200, 0}, vector{0, -1, 0}};
+    Rays[1] = {vector{0, 2000, 0}, vector{0, 1, 0}};
     structured_buffer sb_rays(Rays);
     xmatrix World = xv_identity;
     unordered_buffer<vector> ub_intersections(sb_rays.count);
@@ -122,7 +107,8 @@ int main() {
     calc_intersection_line_to_facets(ub_intersections, ub_distances, sb_rays, sb_facets, World);
     auto result_intersections = ub_intersections.to_cpu();
     auto result_distances = ub_distances.to_cpu();
-    std::cout << result_intersections[0] << ' ' << result_distances[0] << std::endl;
+    for (nat i = 0; i < result_intersections.size(); ++i)
+      std::cout << result_intersections[i] << ' ' << result_distances[i] << std::endl;
   } catch (const std::exception& E) {
     std::cout << E.what();
     return -1;

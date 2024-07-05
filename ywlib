@@ -1613,68 +1613,90 @@ template<bool X, bool Y, bool Z, bool W> struct t_xvsetzero {
 };
 template<bool X, bool Y, bool Z, bool W> inline constexpr t_xvsetzero<X, Y, Z, W> xvsetzero;
 
-template<int X, int Y, int Z, int W> struct t_xvpermute {
-  template<int A, int B, int C, int D> friend struct t_xvpermute;
-private:
-  template<included_in<xvector, xwector> Xv> static auto call(const Xv& A) noexcept {
-    constexpr auto f = [](auto a, auto b) { return a == b || a < 0 || a >= 4; };
-    constexpr nat x = (f(X, 0) ? 0 : X), y = (f(Y, 1) ? 1 : Y), z = (f(Z, 2) ? 2 : Z), w = (f(W, 3) ? 3 : W);
-    if constexpr (f(X, 0) && f(Y, 1) && f(Z, 2) && f(W, 3)) return A;
-    else if constexpr (f(X, 0) && f(Y, 0) && f(Z, 2) && f(W, 2) && same_as<Xv, xvector>) return _mm_moveldup_ps(A);
-    else if constexpr (f(X, 1) && f(Y, 1) && f(Z, 3) && f(W, 3) && same_as<Xv, xvector>) return _mm_movehdup_ps(A);
-    else if constexpr ((x | y) < 2 && 2 <= (z & w) && same_as<Xv, xwector>) return _mm256_permute_pd(A, int(x + y * 2 + (z - 2) * 4 + (w - 2) * 8));
-    else if constexpr (same_as<Xv, xvector>) return _mm_permute_ps(A, int(x + y * 4 + z * 16 + w * 64));
-    else if constexpr (same_as<Xv, xwector>) return _mm256_permute4x64_pd(A, int(x + y * 4 + z * 16 + w * 64));
+namespace _ {
+template<int x, int y, int z, int w> xvector _xvpermute1(const xvector& a) noexcept {
+  constexpr auto f = [](auto a, auto b) { return a == b || a < 0 || 4 <= a; };
+  if constexpr (f(x, 0) && f(y, 1) && f(z, 2) && f(w, 3)) return a;
+  else if constexpr (f(x, 0) && f(y, 0) && f(z, 2) && f(w, 2)) return _mm_moveldup_ps(a);
+  else if constexpr (f(x, 1) && f(y, 1) && f(z, 3) && f(w, 3)) return _mm_movehdup_ps(a);
+  else return _mm_permute_ps(a, (x & 3) + (y & 3) * 4 + (z & 3) * 16 + (w & 3) * 64); }
+template<int x, int y, int z, int w> xvector _xvpermute2(const xvector& a, const xvector& b) noexcept {
+  constexpr auto f = [](auto a, auto b) { return a == b || a < 0; };
+  if constexpr (f(x, 0) && f(y, 1) && f(z, 2) && f(w, 3)) return a;
+  else if constexpr (f(x, 4) && f(y, 5) && f(z, 6) && f(w, 7)) return b;
+  else if constexpr ((x < 0 || (x & 3) == 0) && (y < 0 || (y & 3) == 1) && (z < 0 || (z & 3) == 2) && (w < 0 || (w & 3) == 3))
+    return xvblend<lt(x, 4), lt(y, 4), lt(z, 4), lt(w, 4)>(b, a);
+  else if constexpr ((x < 4) && (y < 4) && (z < 0 || 4 <= z) && (w < 0 || 4 <= w))
+    return _mm_shuffle_ps(a, b, (x & 3) + (y & 3) * 4 + ((z - 4) & 3) * 16 + ((w - 4) & 3) * 64);
+  else if constexpr ((x < 0 || 4 <= x) && (y < 0 || 4 <= y) && (z < 4) && (w < 4))
+    return _mm_shuffle_ps(b, a, (x - 4) & 3 | ((y - 4) & 3) * 4 | (z & 3) * 16 | (w & 3) * 64);
+  else if constexpr (x < 4 && y < 4 && z < 4 && w < 4) return _::_xvpermute1<x, y, z, w>(a);
+  else if constexpr ((x < 0 || 4 <= x) && (y < 0 || 4 <= y) && (z < 0 || 4 <= z) && (w < 0 || 4 <= w))
+    return _::_xvpermute1<x - 4, y - 4, z - 4, w - 4>(b);
+  else if constexpr (f(x, 0) + f(y, 1) + f(z, 2) + f(w, 3) == 3) {
+    constexpr nat i = inspects<!f(x, 0), !f(y, 1), !f(z, 2), !f(w, 3)>;
+    return _mm_insert_ps(a, b, int((select_value<i, x, y, z, w> - 4) << 6 | i << 4));
+  } else if constexpr (f(x, 4) + f(y, 5) + f(z, 6) + f(w, 7) == 3) {
+    constexpr nat i = inspects<!f(x, 4), !f(y, 5), !f(z, 6), !f(w, 7)>;
+    return _mm_insert_ps(b, a, int(select_value<i, x, y, z, w>) << 6 | i << 4);
   }
-public:
-  xvector operator()(const xvector& A) const noexcept requires (lt(max(X, Y, Z, W), 4)) { return call(A); }
-  xwector operator()(const xwector& A) const noexcept requires (lt(max(X, Y, Z, W), 4)) { return call(A); }
-  xrect operator()(const xrect& A) const noexcept requires (lt(max(X, Y, Z, W), 4)) { return xvbitcast(call(xvbitcast(A))); }
-  xvector operator()(const xvector& A, const xvector& B) const noexcept requires (lt(max(X, Y, Z, W), 8)) {
-    constexpr auto f = [](auto a, auto b) { return a == b || a < 0; };
-    constexpr int xa = (f(X, 0) ? 0 : X), ya = (f(Y, 1) ? 1 : Y), za = (f(Z, 2) ? 2 : Z), wa = (f(W, 3) ? 3 : W),
-                  xb = (f(X, 4) ? 4 : X), yb = (f(Y, 5) ? 5 : Y), zb = (f(Z, 6) ? 6 : Z), wb = (f(W, 7) ? 7 : W);
-    if constexpr ((xa | ya | za | wa) < 4) return t_xvpermute<xa, ya, za, wa>::call(A);
-    else if constexpr (4 <= (xb & yb & zb & wb)) return t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B);
-    else if constexpr ((xa & 3) == 0 && (ya & 3) == 1 && (za & 3) == 2 && (wa & 3) == 3) return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(B, A);
-    else if constexpr ((xa | ya) < 4 && 4 <= (zb & wb)) return _mm_shuffle_ps(A, B, xa + ya * 4 + (zb - 4) * 16 + (wb - 4) * 64);
-    else if constexpr (4 <= (xb & yb) && (za | wa) < 4) return _mm_shuffle_ps(B, A, xb - 4 | (yb - 4) * 4 | za * 16 | wa * 64);
-    else if constexpr ((xa == 0) + (ya == 1) + (za == 2) + (wa == 3) == 3) {
-      constexpr nat i = inspects<xa != 0, ya != 1, za != 2, wa != 3>;
-      return _mm_insert_ps(A, B, int((select_value<i, xa, ya, za, wa> - 4) << 6 | i << 4));
-    } else if constexpr ((xb == 4) + (yb == 5) + (zb == 6) + (wb == 7) == 3) {
-      constexpr nat i = inspects<xb != 4, yb != 5, zb != 6, wb != 7>;
-      return _mm_insert_ps(A, B, int(select_value<i, xb, yb, zb, wb> << 6 | i << 4));
-    } else if constexpr ((xa < 4 || xb == 4) && (ya < 4 || yb == 5) && (za < 4 || zb == 6) && (wa < 4 || wb == 7))
-      return xvblend<xb == 4, yb == 5, zb == 6, wb == 7>(t_xvpermute<xa, ya, za, wa>::call(A), B);
-    else if constexpr ((4 <= xb || xa == 0) && (4 <= yb || ya == 1) && (4 <= zb || za == 2) && (4 <= wb || wa == 3))
-      return xvblend<xa == 0, ya == 1, za == 2, wa == 3>(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), A);
-    else if constexpr ((xa < 4) + (ya < 4) + (za < 4) + (wa < 4) == 3) {
-      constexpr nat i = inspects<(xa > 3), (ya > 3), (za > 3), (wa > 3)>;
-      return _mm_insert_ps(t_xvpermute<xa, ya, za, wa>::call(A), B, int((select_value<i, xa, ya, za, wa> - 4) << 6 | i << 4));
-    } else if constexpr ((xb < 4) + (yb < 4) + (zb < 4) + (wb < 4) == 1) {
-      constexpr nat i = inspects<(xb < 4), (yb < 4), (zb < 4), (wb < 4)>;
-      return _mm_insert_ps(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), A, int(select_value<i, xb, yb, zb, wb> << 6 | i << 4));
-    } else return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), t_xvpermute<xa, ya, za, wa>::call(A));
-  }
-  xwector operator()(const xwector& A, const xwector& B) const noexcept requires (lt(max(X, Y, Z, W), 8)) {
-    constexpr auto f = [](auto a, auto b) { return a == b || a < 0; };
-    constexpr int xa = (f(X, 0) ? 0 : X), ya = (f(Y, 1) ? 1 : Y), za = (f(Z, 2) ? 2 : Z), wa = (f(W, 3) ? 3 : W),
-                  xb = (f(X, 4) ? 4 : X), yb = (f(Y, 5) ? 5 : Y), zb = (f(Z, 6) ? 6 : Z), wb = (f(W, 7) ? 7 : W);
-    if constexpr ((xa | ya | za | wa) < 4) return t_xvpermute<xa, ya, za, wa>::call(A);
-    else if constexpr (4 <= (xb & yb & zb & wb)) return t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B);
-    else if constexpr ((xa & 3) == 0 && (ya & 3) == 1 && (za & 3) == 2 && (wa & 3) == 3) return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(B, A);
-    else if constexpr (xa < 2 && (yb == 4 || yb == 5) && (za == 2 || zb == 3) && wb > 5) return _mm256_shuffle_pd(A, B, (xa == 1) + (yb == 5) * 2 + (za == 3) * 4 + (wb == 7) * 8);
-    else if constexpr ((xb == 4 || xb == 5) && ya < 2 && zb > 5 && (wa == 2 || wa == 3)) return _mm256_shuffle_pd(B, A, (xb == 5) + (ya == 1) * 2 + (zb == 7) * 4 + (wa == 3) * 8);
-    else if constexpr ((xa | ya | za | wa) < 4) return t_xvpermute<xa, ya, za, wa>::call(A);
-    else if constexpr ((xb & yb & zb & wb) > 3) return t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B);
-    else if constexpr (((xa == 0 && ya == 1) || (xa == 2 && ya == 3)) && ((zb == 4 && wb == 5) || (zb == 6 && wb == 7))) return _mm256_shuffle_f64x2(A, B, (xa == 2) + (zb == 6) * 2);
-    else if constexpr (((xb == 4 && yb == 5) || (xb == 6 && yb == 7)) && ((za == 0 && wa == 1) || (za == 2 && wa == 3))) return _mm256_shuffle_f64x2(B, A, (xb == 6) + (za == 2) * 2);
-    else return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), t_xvpermute<xa, ya, za, wa>::call(A));
-  }
-  xrect operator()(const xrect& A, const xrect& B) const noexcept requires (lt(max(X, Y, Z, W), 8)) { return xvbitcast(call(xvbitcast(A), xvbitcast(B))); }
-};
-template<int X, int Y, int Z, int W> inline constexpr t_xvpermute<X, Y, Z, W> xvpermute;
+  else if constexpr ((x < 4 || x == 4) && (y < 4 || y == 5) && (z < 4 || z == 6) && (w < 4 || w == 7))
+    return xvblend<x == 4, y == 5, z == 6, w == 7>(_::_xvpermute1<x, y, z, w>(a), b);
+  else if constexpr ((x < 0 || x == 0 || 4 <= x) && (y < 0 || y == 1 || 4 <= y) && (z < 0 || z == 2 || 4 <= z) && (w < 0 || w == 3 || 4 <= w))
+    return xvblend<x == 0, y == 1, z == 2, w == 3>(_::_xvpermute1<x - 4, y - 4, z - 4, w - 4>(b), a);
+  else if constexpr ((0 <= x && x < 4) + (0 <= y && y < 4) + (0 <= z && z < 4) + (0 <= w && w < 4) == 1) {
+    constexpr nat i = inspects<(0 <= x && x < 4), (0 <= y && y < 4), (0 <= z && z < 4), (0 <= w && w < 4)>;
+    return _mm_insert_ps(_::_xvpermute1<x - 4, y - 4, z - 4, w - 4>(b), a, i << 4 | select_value<i, x, y, z, w> << 6);
+  } else if constexpr ((4 <= x) + (4 <= y) + (4 <= z) + (4 <= w) == 1) {
+    constexpr nat i = inspects<(4 <= x), (4 <= y), (4 <= z), (4 <= w)>;
+    return _mm_insert_ps(_::_xvpermute1<x, y, z, w>(a), b, i << 4 | (select_value<i, x, y, z, w> - 4) << 6);
+  } else return xvblend<lt(x, 4), lt(y, 4), lt(z, 4), lt(w, 4)>(_::_xvpermute1<x - 4, y - 4, z - 4, w - 4>(b), _::_xvpermute1<x, y, z, w>(a));
+  return xvload(-1.f, -1.f, -1.f, -1.f);
+}
+}
+
+/// permutes the elements of the specified vector.
+/// \note if the index is less than 0, the element is chosen to optimize the operation.
+template<int X, int Y, int Z, int W> requires (max(X, Y, Z, W) < 4)
+xvector xvpermute(const xvector& A) noexcept { return _::_xvpermute1<X, Y, Z, W>(A); }
+
+/// permutes the elements of the specified vectors.
+/// \note if the index is less than 0, the element is chosen to optimize the operation.
+template<int X, int Y, int Z, int W> requires (max(X, Y, Z, W) < 8)
+xvector xvpermute(const xvector& A, const xvector& B) noexcept { return _::_xvpermute2<X, Y, Z, W>(A, B); }
+
+template<int X, int Y, int Z, int W> requires (max(X, Y, Z, W) < 4)
+xrect xvpermute(const xrect& A) noexcept { return xvbitcast(xvpermute<X, Y, Z, W>(xvbitcast(A))); }
+
+template<int X, int Y, int Z, int W> requires (max(X, Y, Z, W) < 8)
+xrect xvpermute(const xrect& A, const xrect& B) noexcept { return xvbitcast(xvpermute<X, Y, Z, W>(xvbitcast(A), xvbitcast(B))); }
+
+template<int X, int Y, int Z, int W> requires (max(X, Y, Z, W) < 4)
+xwector xvpermute(const xwector& A) noexcept { return _mm256_permute4x64_pd(A, X + Y * 4 + Z * 16 + W * 64); }
+
+// template<int X, int Y, int Z, int W> requires (max(X, Y, Z, W) < 8)
+// xwector xvpermute(const xwector& A, const xwector& B) noexcept { return _mm256_permute2f128_pd(A, B, X + Y * 2 + Z * 4 + W * 8); }
+
+// template<int X, int Y, int Z, int W> struct t_xvpermute {
+//   template<int A, int B, int C, int D> friend struct t_xvpermute;
+//   xwector operator()(const xwector& A, const xwector& B) const noexcept requires (lt(max(X, Y, Z, W), 8)) {
+//     constexpr auto f = [](auto a, auto b) { return a == b || a < 0; };
+//     constexpr int xa = (f(X, 0) ? 0 : X), ya = (f(Y, 1) ? 1 : Y), za = (f(Z, 2) ? 2 : Z), wa = (f(W, 3) ? 3 : W),
+//                   xb = (f(X, 4) ? 4 : X), yb = (f(Y, 5) ? 5 : Y), zb = (f(Z, 6) ? 6 : Z), wb = (f(W, 7) ? 7 : W);
+//     if constexpr ((xa | ya | za | wa) < 4) return t_xvpermute<xa, ya, za, wa>::call(A);
+//     else if constexpr (4 <= (xb & yb & zb & wb)) return t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B);
+//     else if constexpr ((xa & 3) == 0 && (ya & 3) == 1 && (za & 3) == 2 && (wa & 3) == 3) return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(B, A);
+//     else if constexpr (xa < 2 && (yb == 4 || yb == 5) && (za == 2 || zb == 3) && wb > 5) return _mm256_shuffle_pd(A, B, (xa == 1) + (yb == 5) * 2 + (za == 3) * 4 + (wb == 7) * 8);
+//     else if constexpr ((xb == 4 || xb == 5) && ya < 2 && zb > 5 && (wa == 2 || wa == 3)) return _mm256_shuffle_pd(B, A, (xb == 5) + (ya == 1) * 2 + (zb == 7) * 4 + (wa == 3) * 8);
+//     else if constexpr ((xa | ya | za | wa) < 4) return t_xvpermute<xa, ya, za, wa>::call(A);
+//     else if constexpr ((xb & yb & zb & wb) > 3) return t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B);
+//     else if constexpr (((xa == 0 && ya == 1) || (xa == 2 && ya == 3)) && ((zb == 4 && wb == 5) || (zb == 6 && wb == 7))) return _mm256_shuffle_f64x2(A, B, (xa == 2) + (zb == 6) * 2);
+//     else if constexpr (((xb == 4 && yb == 5) || (xb == 6 && yb == 7)) && ((za == 0 && wa == 1) || (za == 2 && wa == 3))) return _mm256_shuffle_f64x2(B, A, (xb == 6) + (za == 2) * 2);
+//     else return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(t_xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>::call(B), t_xvpermute<xa, ya, za, wa>::call(A));
+//   }
+//   xrect operator()(const xrect& A, const xrect& B) const noexcept requires (lt(max(X, Y, Z, W), 8)) { return xvbitcast(call(xvbitcast(A), xvbitcast(B))); }
+// };
+// template<int X, int Y, int Z, int W> inline constexpr t_xvpermute<X, Y, Z, W> xvpermute;
 
 template<nat To, nat From, nat Zero = 0> requires ((To | From) < 4 && Zero < 16) struct t_xvinsert {
   xvector operator()(const xvector& Inserted, const xvector& Picked) const noexcept {
@@ -4863,23 +4885,14 @@ RWStructuredBuffer<Distance> Distances : register(u1);
   float d;
   for (uint j = 0; j < n; ++j) {
     d = (Facets[j].plane.w - dot(p, Facets[j].plane.xyz)) / dot(v, Facets[j].plane.xyz);
-    if (Distances[i].w < d) continue;
-    float3 q = float3(1, 2, 102); //p + d * v;
-    float3 a = Facets[j].a.xyz - q, b = Facets[j].b.xyz - q, c = Facets[j].c.xyz - q;
-    if (true
-        // dot(cross(a, b), Facets[j].plane.xyz) > 0 &&
-        // dot(cross(b, c), Facets[j].plane.xyz) > -1e20 &&
-        // dot(cross(c, a), Facets[j].plane.xyz) > -1e20
-    ) Distances[i].w = d, Intersections[i].p = float4(q, 1);
+    if (d < 0 || Distances[i].w < d) continue;
+    float3 q = p + d * v, a = Facets[j].a.xyz - q, b = Facets[j].b.xyz - q, c = Facets[j].c.xyz - q;
+    if (dot(cross(a, b), Facets[j].plane.xyz) >= 0 && dot(cross(b, c), Facets[j].plane.xyz) >= 0 &&
+        dot(cross(c, a), Facets[j].plane.xyz) >= 0) Distances[i].w = d, Intersections[i].p = float4(q, 1);
   }
 })";
     constant_buffer<xmatrix> cb;
     cb.from([&](xmatrix& m) { xvinverse_transformation(World, m); });
-    auto test = cb.to_cpu();
-    std::cout << vector(test[0][0]) << std::endl;
-    std::cout << vector(test[0][1]) << std::endl;
-    std::cout << vector(test[0][2]) << std::endl;
-    std::cout << vector(test[0][3]) << std::endl;
     constant_buffer<list<nat4, nat4, nat8>> ci({Rays.count, Facets.count, 0});
     computer<
       typepack<unordered_buffer<vector>, unordered_buffer<fat4>>,
