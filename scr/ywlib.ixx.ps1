@@ -1,0 +1,1 @@
+Invoke-Expression "cl /std:c++latest /EHsc /nologo /W4 /DYWLIB /utf-8 /c inc\ywlib.ixx /reference std=out\std.ifc /Foout\ /ifcOutputout\ywlib.ifc /I`"$env:YW_MSVC_INC`" /I`"$env:YW_WTK_INC_UCRT`" /I`"$env:YW_WTK_INC_UM`" /I`"$env:YW_WTK_INC_SHARED`" /I`"$env:YW_WTK_INC_WINRT`" /I`"$env:YW_WTK_INC_CPPWINRT`""

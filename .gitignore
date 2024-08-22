@@ -1,5 +1,1 @@
-.compile
-.doxygen
-test.*
-!test.cpp
-!test.vcxproj
+out/*
