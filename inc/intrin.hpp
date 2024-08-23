@@ -297,28 +297,57 @@ inline vector unpack_low(const vector& a, const vector& b) noexcept { return _mm
 /// \return `{a.x ^ b.x, ...}`
 inline vector xor_(const vector& a, const vector& b) noexcept { return _mm_xor_ps(a, b); }
 
-/// transposes 4x4 matrix
-inline void transpose(vector& r0, vector& r1, vector& r2, vector& r3) noexcept {
-  auto t0 = _mm_unpacklo_ps(r0, r1);
-  auto t1 = _mm_unpackhi_ps(r0, r1);
-  auto t2 = _mm_unpacklo_ps(r2, r3);
-  r0 = _mm_movelh_ps(t0, t2);
-  r1 = _mm_movehl_ps(t2, t0);
-  t2 = _mm_unpackhi_ps(r2, r3);
-  r2 = _mm_movelh_ps(t1, t2);
-  r3 = _mm_movehl_ps(t2, t1);
-}
-
 
 // avx family //////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
+/// \return `{*ptr, ...}`
+inline vector broadcast(const float* ptr) noexcept { return _mm_broadcast_ss(ptr); }
 
+/// \return `{a.x, a.x, a.x, a.x}`
+inline vector broadcast(const vector& a) noexcept { return _mm_broadcastss_ps(a); }
 
+/// \return `{a.x * b.x + c.x, ...}`
+inline vector fmadd(const vector& a, const vector& b, const vector& c) noexcept { return _mm_fmadd_ps(a, b, c); }
 
+/// \return `{a.x * b.x + c.x, a.y, a.z, a.w}`
+inline vector fmadd_single(const vector& a, const vector& b, const vector& c) noexcept { return _mm_fmadd_ss(a, b, c); }
 
+/// \return `{a.x * b.x - c.x, a.x * b.y + c.y, a.x * b.z - c.z, a.x * b.w + c.w}`
+inline vector fmaddsub(const vector& a, const vector& b, const vector& c) noexcept { return _mm_fmsubadd_ps(a, b, c); }
 
+/// \return `{a.x * b.x - c.x, ...}`
+inline vector fmsub(const vector& a, const vector& b, const vector& c) noexcept { return _mm_fmsub_ps(a, b, c); }
 
+/// \return `{a.x * b.x - c.x, a.y, a.z, a.w}`
+inline vector fmsub_single(const vector& a, const vector& b, const vector& c) noexcept { return _mm_fmsub_ss(a, b, c); }
+
+/// \return `{a.x * b.x + c.x, a.x * b.y - c.y, a.x * b.z + c.z, a.x * b.w - c.w}`
+inline vector fmsubadd(const vector& a, const vector& b, const vector& c) noexcept { return _mm_fmsubadd_ps(a, b, c); }
+
+/// \return `{-a.x * b.x + c.x, ...}`
+inline vector fnmadd(const vector& a, const vector& b, const vector& c) noexcept { return _mm_fnmadd_ps(a, b, c); }
+
+/// \return `{-a.x * b.x + c.x, a.y, a.z, a.w}`
+inline vector fnmadd_single(const vector& a, const vector& b, const vector& c) noexcept { return _mm_fnmadd_ss(a, b, c); }
+
+/// \return `{-a.x * b.x - c.x, ...}`
+inline vector fnmsub(const vector& a, const vector& b, const vector& c) noexcept { return _mm_fnmsub_ps(a, b, c); }
+
+/// \return `{-a.x * b.x - c.x, a.y, a.z, a.w}`
+inline vector fnmsub_single(const vector& a, const vector& b, const vector& c) noexcept { return _mm_fnmsub_ss(a, b, c); }
+
+/// \return `{extract<imm8[0:1]>(a), extract<imm8[2:3]>(a), extract<imm8[4:5]>(a), extract<imm8[6:7]>(a)}`
+template<int imm8> inline vector permute(const vector& a) noexcept { return _mm_permute_ps(a, imm8); }
+
+/// \return `t.x == 0 && t.y == 0 && t.z == 0 && t.w == 0` where `t = andnot(a, b)`
+inline bool testc(const vector& a, const vector& b) noexcept { return _mm_testc_ps(a, b); }
+
+/// \return `t.x == 0 && t.y == 0 && t.z == 0 && t.w == 0` where `t = and(a, b)`
+inline bool testz(const vector& a, const vector& b) noexcept { return _mm_testz_ps(a, b); }
+
+/// \return `testc(a, b) == false && testz(a, b) == false`
+inline bool testnzc(const vector& a, const vector& b) noexcept { return _mm_testnzc_ps(a, b); }
 
 
 } ////////////////////////////////////////////////////////////////////////////// namespace yw

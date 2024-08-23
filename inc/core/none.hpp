@@ -1,5 +1,4 @@
 /// \file none.hpp
-/// \brief defines `struct none`
 
 #pragma once
 
@@ -13,6 +12,9 @@ import std;
 
 
 export namespace yw {
+
+
+using nat = decltype(sizeof(int));
 
 
 /// struct to represent a null value

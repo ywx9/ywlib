@@ -142,8 +142,8 @@ import std;
 // #include "logger.hpp"
 // #include "main.hpp"
 
-#include "intrin.hpp"
-#include "none.hpp"
+// #include "intrin.hpp"
+#include "core.hpp"
 
 // #include "projector.hpp"
 // #include "sequence.hpp"
