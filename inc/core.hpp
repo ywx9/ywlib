@@ -12,6 +12,7 @@
 #include "core/range.hpp"
 #include "core/value.hpp"
 
+#include "core/array.hpp"
 #include "core/sequence.hpp"
 
 #include "core/apply.hpp"

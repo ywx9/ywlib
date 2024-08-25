@@ -42,4 +42,22 @@ struct source {
 };
 
 
-}
+} ////////////////////////////////////////////////////////////////////////////// namespace yw
+
+
+namespace std {
+
+// formatter
+
+template<typename Ct> struct formatter<yw::source, Ct> : formatter<basic_string<Ct>, Ct> {
+  auto format(const yw::source& src, auto& ctx) const {
+    if constexpr (std::is_same_v<Ct, char>)
+      return formatter<basic_string<Ct>, Ct>::format(
+        std::format("{}({},{})({})", src.file, src.line, src.column, src.func), ctx);
+    else
+      return formatter<basic_string<Ct>, Ct>::format(
+        std::format(L"{}({},{})({})", src.file, src.line, src.column, src.func), ctx);
+  }
+};
+
+} ////////////////////////////////////////////////////////////////////////////// namespace std

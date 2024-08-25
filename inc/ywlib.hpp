@@ -126,6 +126,9 @@ import std;
 #pragma warning(push)
 #pragma warning(disable : 4459) // declaration of '...' hides global declaration
 
+#include "core.hpp"
+#include "io.hpp"
+
 // #include "apply.hpp"
 // #include "array.hpp"
 // #include "chrono.hpp"
@@ -143,7 +146,6 @@ import std;
 // #include "main.hpp"
 
 // #include "intrin.hpp"
-#include "core.hpp"
 
 // #include "projector.hpp"
 // #include "sequence.hpp"
