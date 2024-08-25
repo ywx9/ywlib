@@ -8,49 +8,42 @@
 
 namespace _ {
 
-template<int x, int y, int z, int w>
+template<int X, int Y, int Z, int W>
 __m128 _xvpermute(const __m128& a) noexcept {
   constexpr auto f = [](auto a, auto b) { return a == b || a < 0 || 4 <= a; };
-  constexpr auto xa =
-  if constexpr (f(x, 0) && f(y, 1) && f(z, 2) && f(w, 3)) return a;
-  else if constexpr (f(x, 0) && f(y, 0) && f(z, 0) && f(w, 0)) return _mm_broadcastss_ps(a);
-  else if constexpr (f(x, 0) && f(y, 0) && f(z, 2) && f(w, 2)) return _mm_moveldup_ps(a);
-  else if constexpr (f(x, 1) && f(y, 1) && f(z, 3) && f(w, 3)) return _mm_movehdup_ps(a);
-  else return _mm_permute_ps(a, (x & 3) | (y & 3) << 2 | (z & 3) << 4 | (w & 3) << 6);
+  constexpr auto x = f(X, 0) ? 0 : X, y = f(Y, 1) ? 1 : Y, z = f(Z, 2) ? 2 : Z, w = f(W, 3) ? 3 : W;
+  if constexpr (f(X, 0) && f(Y, 1) && f(Z, 2) && f(W, 3)) return a;
+  else if constexpr (f(X, 0) && f(Y, 0) && f(Z, 0) && f(W, 0)) return _mm_broadcastss_ps(a);
+  else if constexpr (f(X, 0) && f(Y, 0) && f(Z, 2) && f(W, 2)) return _mm_moveldup_ps(a);
+  else if constexpr (f(X, 1) && f(Y, 1) && f(Z, 3) && f(W, 3)) return _mm_movehdup_ps(a);
+  else return _mm_permute_ps(a, x | y << 2 | z << 4 | w << 6);
 }
 
-template<int x, int y, int z, int w>
+template<int X, int Y, int Z, int W>
 __m128 _xvpermute(const __m128& a, const __m128& b) noexcept {
-  constexpr auto f = [](auto a, bool b) { return b || a < 0 || 8 <= a; };
-  if constexpr (f(x, x < 4) && f(y, y < 4) && f(z, z < 4) && f(w, w < 4))
-    return _xvpermute<x, y, z, w>(a);
-  else if constexpr (f(x, x >= 4), f(y, y >= 4), f(z, z >= 4), f(w, w >= 4))
-    return _xvpermute<x - 4, y - 4, z - 4, w - 4>(b);
-  else if constexpr (f(x, !(x & 3)) && f(y, !(y & 3 ^ 1)) && f(z, !(z & 3 ^ 2)) && f(w, !(w & 3 ^ 3)))
-    return _mm_blend_ps(a, b, x < 4 | (y < 4) << 1 | (z < 4) << 2 | (w < 4) << 3);
-  else if constexpr (f(x, x < 4) && f(y, y < 4) && f(z, z >= 4) && f(w, w >= 4))
-    return _mm_shuffle_ps(a, b, (x & 3) | (y & 3) << 2 | (z - 4 & 3) << 4 | (w - 4 & 3) << 6);
-
-
-  if constexpr (f(x, 0) && f(y, 1) && f(z, 2) && f(w, 3)) return a;
-  else if constexpr (f(x, 4) && f(y, 5) && f(z, 6) && f(w, 7)) return b;
-  else if constexpr ((x < 0 || (x & 3) == 0) && (y < 0 || (y & 3) == 1) && (z < 0 || (z & 3) == 2) && (w < 0 || (w & 3) == 3))
-    return xvblend<lt(x, 4), lt(y, 4), lt(z, 4), lt(w, 4)>(b, a);
-  else if constexpr ((x < 4) && (y < 4) && (z < 0 || 4 <= z) && (w < 0 || 4 <= w))
-    return _mm_shuffle_ps(a, b, (x & 3) + (y & 3) * 4 + ((z - 4) & 3) * 16 + ((w - 4) & 3) * 64);
-  else if constexpr ((x < 0 || 4 <= x) && (y < 0 || 4 <= y) && (z < 4) && (w < 4))
-    return _mm_shuffle_ps(b, a, (x - 4) & 3 | ((y - 4) & 3) * 4 | (z & 3) * 16 | (w & 3) * 64);
-  else if constexpr (x < 4 && y < 4 && z < 4 && w < 4) return _::_xvpermute1<x, y, z, w>(a);
-  else if constexpr ((x < 0 || 4 <= x) && (y < 0 || 4 <= y) && (z < 0 || 4 <= z) && (w < 0 || 4 <= w))
-    return _::_xvpermute1<x - 4, y - 4, z - 4, w - 4>(b);
-  else if constexpr (f(x, 0) + f(y, 1) + f(z, 2) + f(w, 3) == 3) {
-    constexpr nat i = inspects<!f(x, 0), !f(y, 1), !f(z, 2), !f(w, 3)>;
+  constexpr auto f = [](auto a) { return a < 0 || 8 <= a; };
+  if constexpr ((f(X) || X < 4) && (f(Y) || Y < 4) && (f(Z) || Z < 4) && (f(W) || W < 4))
+    return _xvpermute<X, Y, Z, W>(a);
+  else if constexpr ((f(X) || X >= 4) && (f(Y) || Y >= 4) && (f(Z) || Z >= 4) && (f(W) || W >= 4))
+    return _xvpermute<X - 4, Y - 4, Z - 4, W - 4>(b);
+  else if constexpr ((f(X) || !(X & 3 ^ 0)) && (f(Y) || !(Y & 3 ^ 1)) && (f(Z) || !(Z & 3 ^ 2)) && (f(W) || !(W & 3 ^ 3))) {
+    constexpr auto x = f(X) ? false : X < 4, y = f(Y) ? false : Y < 4, z = f(Z) ? false : Z < 4, w = f(W) ? false : W < 4;
+    return _mm_blend_ps(a, b, x | y << 1 | z << 2 | w << 3);
+  } else if constexpr ((f(X) || X < 4) && (f(Y) || Y < 4) && (f(Z) || Z >= 4) && (f(W) || W >= 4)) {
+    constexpr auto x = f(X) ? 0 : X, y = f(Y) ? 1 : Y, z = f(Z) ? 2 : Z - 4, w = f(W) ? 3 : W - 4;
+    return _mm_shuffle_ps(a, b, x | y << 2 | z << 4 | w << 6);
+  } else if constexpr ((f(X) || X >= 4) && (f(Y) || Y >= 4) && (f(Z) || Z < 4) && (f(W) || W < 4)) {
+    constexpr auto x = f(X) ? 0 : X - 4, y = f(Y) ? 1 : Y - 4, z = f(Z) ? 2 : Z, w = f(W) ? 3 : W;
+    return _mm_shuffle_ps(b, a, x | y << 2 | z << 4 | w << 6);
+  } else if constexpr ((f(X) || X == 0) + (f(Y) || Y == 1) + (f(Z) || Z == 2) + (f(W) || W == 3) == 3) {
+    constexpr auto x = f(X) ? 0 : X, y = f(Y) ? 1 : Y, z = f(Z) ? 2 : Z, w = f(W) ? 3 : W;
+    constexpr nat i = inspects<ge(x, 4), ge(y, 4), ge(z, 4), ge(w, 4)>;
     return _mm_insert_ps(a, b, int((select_value<i, x, y, z, w> - 4) << 6 | i << 4));
-  } else if constexpr (f(x, 4) + f(y, 5) + f(z, 6) + f(w, 7) == 3) {
-    constexpr nat i = inspects<!f(x, 4), !f(y, 5), !f(z, 6), !f(w, 7)>;
+  } else if constexpr ((f(X) || X == 4) + (f(Y) || Y == 5) + (f(Z) || Z == 6) + (f(W) || W == 7) == 3) {
+    constexpr auto x = f(X) ? 4 : X, y = f(Y) ? 5 : Y, z = f(Z) ? 6 : Z, w = f(W) ? 7 : W;
+    constexpr nat i = inspects<lt(x, 4), lt(y, 4), lt(z, 4), lt(w, 4)>;
     return _mm_insert_ps(b, a, int(select_value<i, x, y, z, w>) << 6 | i << 4);
-  }
-  else if constexpr ((x < 4 || x == 4) && (y < 4 || y == 5) && (z < 4 || z == 6) && (w < 4 || w == 7))
+  } else if constexpr ((X < 4 || X == 4) && (Y < 4 || Y == 5) && (Z < 4 || Z == 6) && (w < 4 || w == 7))
     return xvblend<x == 4, y == 5, z == 6, w == 7>(_::_xvpermute1<x, y, z, w>(a), b);
   else if constexpr ((x < 0 || x == 0 || 4 <= x) && (y < 0 || y == 1 || 4 <= y) && (z < 0 || z == 2 || 4 <= z) && (w < 0 || w == 3 || 4 <= w))
     return xvblend<x == 0, y == 1, z == 2, w == 3>(_::_xvpermute1<x - 4, y - 4, z - 4, w - 4>(b), a);
@@ -230,6 +223,6 @@ xvector xvpermute(const xvector& a, const xvector& b) noexcept {
     return _mm_insert_ps(xvpermute<X & 3, Y & 3, Z & 3, W & 3>(a), b, int(j << 6 | i << 4));
   } else return xvblend<X < 4, Y < 4, Z < 4, W < 4>(
     xvpermute<X & 3, Y & 3, Z & 3, W & 3>(a), xvpermute<X & 3, Y & 3, Z & 3, W & 3>(b));
-
+}
 
 } ////////////////////////////////////////////////////////////////////////////// namespace yw
