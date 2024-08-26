@@ -636,17 +636,24 @@ template<trivial T> inline constexpr auto bitcast =
 
 template<typename... Fs> struct caster : public Fs... {
 private:
+public:
+
+  static constexpr nat count = sizeof...(Fs);
+
   template<typename T> static constexpr nat i =
     inspects<same_as<T, invoke_result<Fs>>...>;
+
   template<typename T> static constexpr nat j =
     i<T> < sizeof...(Fs) ? i<T> : inspects<invocable_r<T, Fs>...>;
+
   template<typename... As> static constexpr nat k =
     inspects<invocable<Fs, As...>...>;
+
 public:
 
   using Fs::operator()...;
 
-  template<typename T> requires (j<T> < sizeof...(Fs))
+  template<typename T>
   constexpr operator T() const
     noexcept(nt_convertible_to<invoke_result<select_type<j<T>, Fs...>>, T>)
     requires convertible_to<invoke_result<select_type<j<T>, Fs...>>, T>

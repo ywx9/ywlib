@@ -154,7 +154,7 @@ public:
 
   /// constructor with the rvalue reference to `std::vector<T>`
   constexpr array(std::vector<T>&& v)
-    noexcept(nt_constructible<std::vector<T>, std::vector<T>)
+    noexcept(nt_constructible<std::vector<T>, std::vector<T>>)
     : std::vector<T>(mv(v)) {}
 
   /// constructor with the initializer list
@@ -177,16 +177,18 @@ public:
   /// constructor with the iterator range
   template<fwd_iterator I, sentinel_for<I> S> requires (!same_as<I, S>)
   constexpr array(I first, S last)
-    : std::vector<T>(std::common_iterator<It, Se>(first),
-                     std::common_iterator<It, Se>(last)) {}
+    : std::vector<T>(std::common_iterator<I, S>(first),
+                     std::common_iterator<I, S>(last)) {}
 
   /// constructor with the iterator range
   template<range Rg> constexpr array(Rg&& r)
-    : std::vector<T>(begin(fwd<Rg>(r)), end(fwd<Rg>(r))) {}
+    : std::vector<T>(std::vector<T>::begin(fwd<Rg>(r)),
+                     std::vector<T>::end(fwd<Rg>(r))) {}
 
   /// conversion operator to `std::basic_string_view<T>`
   constexpr operator std::basic_string_view<T>() const noexcept
-    requires character<T> { return std::basic_string_view<T>(data(), size()); }
+    requires character<T> { return std::basic_string_view<T>(
+      std::vector<T>::data(), std::vector<T>::size()); }
 
 }; ///////////////////////////////////////////////////////////////////////////// class array<T, npos>
 

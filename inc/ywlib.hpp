@@ -128,6 +128,7 @@ import std;
 
 #include "core.hpp"
 #include "io.hpp"
+#include "vector.hpp"
 
 // #include "apply.hpp"
 // #include "array.hpp"
