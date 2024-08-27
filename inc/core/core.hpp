@@ -3,6 +3,7 @@
 #pragma once
 
 #ifndef YWLIB
+#include <bit>
 #include <compare>
 #else
 import std;
@@ -629,14 +630,26 @@ inline constexpr auto tw = []<typename T, typename U>(T&& Lhs, U&& Rhs)
 { return Lhs <=> Rhs; };
 
 
+/// nat-type whose size is the same as the type
+template<typename T> using nattype = select_type<
+  inspects<sizeof(T) == 1, sizeof(T) == 2, sizeof(T) == 4, sizeof(T) == 8>,
+  nat1, nat2, nat4, nat8, none>;
+
+
+/// bit-casts the value
 template<trivial T> inline constexpr auto bitcast =
 [](const trivial auto& Ref) noexcept
   requires (sizeof(T) == sizeof(Ref)) { return __builtin_bit_cast(T, Ref); };
 
 
+/// returns the popcount of the value
+constexpr int bitcount(const arithmetic auto v)
+noexcept { return std::popcount(bitcast<nattype<decltype(v)>>(v)); }
+
+
 template<typename... Fs> struct caster : public Fs... {
 private:
-public:
+// public:
 
   static constexpr nat count = sizeof...(Fs);
 

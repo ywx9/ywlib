@@ -63,8 +63,6 @@ export namespace yw {
 /// extended vector type
 using xvector = __m128;
 
-/// extended matrix type
-using xmatrix = array<xvector, 4>;
 
 /// constant extended vector type
 template<value X, value Y = X, value Z = Y, value W = Z>
@@ -75,60 +73,38 @@ struct xvconstant {
   }
 };
 
+
 /// specialization for zero vector
 template<> struct xvconstant<0, 0, 0, 0> {
   operator xvector() const noexcept { return _mm_setzero_ps(); }
 };
 
+
 /// constant extended vector; {0, 0, 0, 0}
 inline constexpr xvconstant<0> xvzero;
 
+
 /// constant extended vector; {-0, -0, -0, -0}
 inline constexpr xvconstant<-0.> xvnegzero;
-
-/// constant extended vector; {1, 1, 1, 1}
-inline constexpr xvconstant<1> xvone;
-
-/// constant extended vector; {-1, -1, -1, -1}
-inline constexpr xvconstant<-1> xvnegone;
-
-/// constant extended vector; {1, 0, 0, 0}
-inline constexpr xvconstant<1, 0> xvx;
-
-/// constant extended vector; {0, 1, 0, 0}
-inline constexpr xvconstant<0, 1, 0> xvy;
-
-/// constant extended vector; {0, 0, 1, 0}
-inline constexpr xvconstant<0, 0, 1, 0> xvz;
-
-/// constant extended vector; {0, 0, 0, 1}
-inline constexpr xvconstant<0, 0, 0, 1> xvw;
-
-/// constant extended vector; {-1, 0, 0, 0}
-inline constexpr xvconstant<-1, 0> xvnegx;
-
-/// constant extended vector; {0, -1, 0, 0}
-inline constexpr xvconstant<0, -1, 0> xvnegy;
-
-/// constant extended vector; {0, 0, -1, 0}
-inline constexpr xvconstant<0, 0, -1, 0> xvnegz;
-
-/// constant extended vector; {0, 0, 0, -1}
-inline constexpr xvconstant<0, 0, 0, -1> xvnegw;
 
 
 /// loads an extended vector from `ptr`
 inline xvector xvload(const fat4* ptr) noexcept { return _mm_loadu_ps(ptr); }
 
+
 /// fills an extended vector with `val`
 inline xvector xvfill(const fat4 val) noexcept { return _mm_set1_ps(val); }
+
 
 /// sets an extended vector with four values
 inline xvector xvset(const fat4 x, const fat4 y, const fat4 z, const fat4 w)
   noexcept { return _mm_set_ps(w, z, y, x); }
 
+
 /// stores an extended vector to `ptr`
-inline void xvstore(fat4* ptr, const xvector& v) noexcept { _mm_storeu_ps(ptr, v); }
+inline void xvstore(fat4* ptr, const xvector& v)
+  noexcept { _mm_storeu_ps(ptr, v); }
+
 
 /// inserts the `J`-th element of `b` to `I`-th element of `a`
 template<nat I, nat J, nat Zero = 0b0000>
@@ -136,12 +112,14 @@ requires ((I | J) < 4 && Zero < 16)
 xvector xvinsert(const xvector& a, const xvector& b)
   noexcept { return _mm_insert_ps(a, b, (I << 4) | (J << 6) | Zero); }
 
+
 /// extracts the `I`-th element of `a`
 template<nat I> requires (I < 4)
 fat4 xvextract(const xvector& a) noexcept {
   if constexpr (I == 0) return _mm_cvtss_f32(a);
   else return bitcast<fat4>(_mm_extract_ps(a, I));
 }
+
 
 /// blends two extended vectors
 /// \return `{X ? b.x : a.x, Y ? b.y : a.y, Z ? b.z : a.z, W ? b.w : a.w}`
@@ -152,6 +130,7 @@ xvector xvblend(const xvector& a, const xvector& b) noexcept {
   else return _mm_blend_ps(a, b, X | Y << 1 | Z << 2 | W << 3);
 }
 
+
 /// permutes an extended vector
 /// \return `{a[X], a[Y], a[Z], a[W]}`
 template<int X, int Y, int Z, int W>
@@ -160,6 +139,7 @@ xvector xvpermute(const xvector& a) noexcept {
   return _::_xvpermute<X, Y, Z, W>(a);
 }
 
+
 /// permutes two extended vectors
 template<int X, int Y, int Z, int W>
 requires ((X | Y | Z | W) < 8)
@@ -167,345 +147,337 @@ xvector xvpermute(const xvector& a, const xvector& b) noexcept {
   return _::_xvpermute<X, Y, Z, W>(a, b);
 }
 
+
 /// checks if all elements of `A` are equal to `B`
 inline xvector xveq(const xvector& a, const xvector& b)
   noexcept { return _mm_cmpeq_ps(a, b); }
+
 
 /// checks if all elements of `A` are not equal to `B`
 inline xvector xvne(const xvector& a, const xvector& b)
   noexcept { return _mm_cmpneq_ps(a, b); }
 
+
 /// checks if all elements of `A` are less than `B`
 inline xvector xvlt(const xvector& a, const xvector& b)
   noexcept { return _mm_cmplt_ps(a, b); }
+
 
 /// checks if all elements of `A` are less than or equal to `B`
 inline xvector xvle(const xvector& a, const xvector& b)
   noexcept { return _mm_cmple_ps(a, b); }
 
+
 /// checks if all elements of `A` are greater than `B`
 inline xvector xvgt(const xvector& a, const xvector& b)
   noexcept { return _mm_cmpgt_ps(a, b); }
+
 
 /// checks if all elements of `A` are greater than or equal to `B`
 inline xvector xvge(const xvector& a, const xvector& b)
   noexcept { return _mm_cmpge_ps(a, b); }
 
+
 /// returns `{abs(a.x), ...}`
 inline xvector xvabs(const xvector& a)
   noexcept { return _mm_andnot_ps(xvnegzero, a); }
+
 
 /// returns `{-a.x, ...}`
 inline xvector xvneg(const xvector& a)
   noexcept { return _mm_xor_ps(a, xvnegzero); }
 
+
 /// returns `{a.x + b.x, ...}`
 inline xvector xvadd(const xvector& a, const xvector& b)
   noexcept { return _mm_add_ps(a, b); }
+
 
 /// returns `{a.x - b.x, ...}`
 inline xvector xvsub(const xvector& a, const xvector& b)
   noexcept { return _mm_sub_ps(a, b); }
 
+
 /// returns `{a.x * b.x, ...}`
 inline xvector xvmul(const xvector& a, const xvector& b)
   noexcept { return _mm_mul_ps(a, b); }
+
 
 /// returns `{a.x / b.x, ...}`
 inline xvector xvdiv(const xvector& a, const xvector& b)
   noexcept { return _mm_div_ps(a, b); }
 
+
 /// returns `{a.x * b.x + c.x, ...}`
 inline xvector xvfma(const xvector& a, const xvector& b, const xvector& c)
   noexcept { return _mm_fmadd_ps(a, b, c); }
+
 
 /// returns `{a.x * b.x - c.x, ...}`
 inline xvector xvfms(const xvector& a, const xvector& b, const xvector& c)
   noexcept { return _mm_fmsub_ps(a, b, c); }
 
+
 /// returns `{-a.x * b.x + c.x, ...}`
 inline xvector xvfnma(const xvector& a, const xvector& b, const xvector& c)
   noexcept { return _mm_fnmadd_ps(a, b, c); }
+
 
 /// returns `{-a.x * b.x - c.x, ...}`
 inline xvector xvfnms(const xvector& a, const xvector& b, const xvector& c)
   noexcept { return _mm_fnmsub_ps(a, b, c); }
 
+
 /// returns `{ceil(a.x), ...}`
 inline xvector xvceil(const xvector& a)
   noexcept { return _mm_ceil_ps(a); }
 
+
 /// returns `{floor(a.x), ...}`
 inline xvector xvfloor(const xvector& a)
   noexcept { return _mm_floor_ps(a); }
+
 
 /// returns `{round(a.x), ...}`
 inline xvector xvround(const xvector& a)
   noexcept { return _mm_round_ps(
     a, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC); }
 
+
 /// returns `{trunc(a.x), ...}`
 inline xvector xvtrunc(const xvector& a)
   noexcept { return _mm_round_ps(
     a, _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC); }
 
+
 /// returns `{max(a.x, b.x), ...}`
 inline xvector xvmax(const xvector& a, const xvector& b)
   noexcept { return _mm_max_ps(a, b); }
+
 
 /// returns `{min(a.x, b.x), ...}`
 inline xvector xvmin(const xvector& a, const xvector& b)
   noexcept { return _mm_min_ps(a, b); }
 
+
 /// returns `{cos(a.x), ...}`
 inline xvector xvcos(const xvector& a)
   noexcept { return _mm_cos_ps(a); }
+
 
 /// returns `{sin(a.x), ...}`
 inline xvector xvsin(const xvector& a)
   noexcept { return _mm_sin_ps(a); }
 
+
 /// returns `{tan(a.x), ...}`
 inline xvector xvtan(const xvector& a)
   noexcept { return _mm_tan_ps(a); }
+
 
 /// returns `{acos(a.x), ...}`
 inline xvector xvacos(const xvector& a)
   noexcept { return _mm_acos_ps(a); }
 
+
 /// returns `{asin(a.x), ...}`
 inline xvector xvasin(const xvector& a)
   noexcept { return _mm_asin_ps(a); }
+
 
 /// returns `{atan(a.x), ...}`
 inline xvector xvatan(const xvector& a)
   noexcept { return _mm_atan_ps(a); }
 
+
 /// returns `{cosh(a.x), ...}`
 inline xvector xvcosh(const xvector& a)
   noexcept { return _mm_cosh_ps(a); }
+
 
 /// returns `{sinh(a.x), ...}`
 inline xvector xvsinh(const xvector& a)
   noexcept { return _mm_sinh_ps(a); }
 
+
 /// returns `{tanh(a.x), ...}`
 inline xvector xvtanh(const xvector& a)
   noexcept { return _mm_tanh_ps(a); }
+
 
 /// returns `{acosh(a.x), ...}`
 inline xvector xvacosh(const xvector& a)
   noexcept { return _mm_acosh_ps(a); }
 
+
 /// returns `{asinh(a.x), ...}`
 inline xvector xvasinh(const xvector& a)
   noexcept { return _mm_asinh_ps(a); }
+
 
 /// returns `{atanh(a.x), ...}`
 inline xvector xvatanh(const xvector& a)
   noexcept { return _mm_atanh_ps(a); }
 
+
 /// returns `xvsin(a)` and assigns `xvcos(a)` to `cos`
 inline xvector xvsincos(const xvector& a, xvector& cos)
   noexcept { return _mm_sincos_ps(&cos, a); }
+
 
 /// return `{atan2(y.x, x.x), ...}`
 inline xvector xvatan2(const xvector& y, const xvector& x)
   noexcept { return _mm_atan2_ps(y, x); }
 
+
 /// returns `{pow(a.x, b.x), ...}`
 inline xvector xvpow(const xvector& a, const xvector& b)
   noexcept { return _mm_pow_ps(a, b); }
+
 
 /// returns `{exp(a.x), ...}`
 inline xvector xvexp(const xvector& a)
   noexcept { return _mm_exp_ps(a); }
 
+
 /// returns `{exp2(a.x), ...}`
 inline xvector xvexp2(const xvector& a)
   noexcept { return _mm_exp2_ps(a); }
+
 
 /// returns `{exp10(a.x), ...}`
 inline xvector xvexp10(const xvector& a)
   noexcept { return _mm_exp10_ps(a); }
 
+
 /// returns `{expm1(a.x), ...}`
 inline xvector xvexpm1(const xvector& a)
   noexcept { return _mm_expm1_ps(a); }
+
 
 /// returns `{ln(a.x), ...}`
 inline xvector xvln(const xvector& a)
   noexcept { return _mm_log_ps(a); }
 
+
 /// returns `{log2(a.x), ...}`
 inline xvector xvlog2(const xvector& a)
   noexcept { return _mm_log2_ps(a); }
+
 
 /// returns `{log10(a.x), ...}`
 inline xvector xvlog10(const xvector& a)
   noexcept { return _mm_log10_ps(a); }
 
+
 /// returns `{log1p(a.x), ...}`
 inline xvector xvlog1p(const xvector& a)
   noexcept { return _mm_log1p_ps(a); }
+
 
 /// returns `{logb(a.x), ...}`
 inline xvector xvlogb(const xvector& a)
   noexcept { return _mm_logb_ps(a); }
 
+
 /// returns `{sqrt(a.x), ...}`
 inline xvector xvsqrt(const xvector& a)
   noexcept { return _mm_sqrt_ps(a); }
+
 
 /// returns `{1 / sqrt(a.x), ...}`
 inline xvector xvsqrt_r(const xvector& a)
   noexcept { return _mm_invsqrt_ps(a); }
 
+
 /// returns `{cbrt(a.x), ...}`
 inline xvector xvcbrt(const xvector& a)
   noexcept { return _mm_cbrt_ps(a); }
+
 
 /// returns `{1 / cbrt(a.x), ...}`
 inline xvector xvcbrt_r(const xvector& a)
   noexcept { return _mm_invcbrt_ps(a); }
 
+
 /// returns `{hypot(a.x, b.x), ...}`
 inline xvector xvhypot(const xvector& a, const xvector& b)
   noexcept { return _mm_hypot_ps(a, b); }
+
 
 /// returns `{erf(a.x), ...}`
 inline xvector xverf(const xvector& a)
   noexcept { return _mm_erf_ps(a); }
 
+
 /// returns `{erfc(a.x), ...}`
 inline xvector xverfc(const xvector& a)
   noexcept { return _mm_erfc_ps(a); }
 
+
 /// returns `{1 / erf(a.x), ...}`
 inline xvector xverf_r(const xvector& a)
   noexcept { return _mm_erfinv_ps(a); }
+
 
 /// returns `{1 / erfc(a.x), ...}`
 inline xvector xverfc_r(const xvector& a)
   noexcept { return _mm_erfcinv_ps(a); }
 
 
+/// returns dot product of two extended vectors
+template<nat N, nat Zero = 0b0000>
+requires (N <= 4 && Zero < 16)
+inline xvector xvdot(const xvector& a, const xvector& b) noexcept {
+  if constexpr (N == 0) return _mm_setzero_ps();
+  else if constexpr (N == 1 && (bitcount(Zero) == 3)) {
+    constexpr nat i = inspects<!(Zero & 1), !(Zero & 2), !(Zero & 4), !(Zero & 8)>;
+    return xvinsert<i, 0, Zero>(a, xvmul(a, b));
+  } else if constexpr (N == 1 && Zero == 0) return xvpermute<0, 0, 0, 0>(xvmul(a, b));
+  else return _mm_dp_ps(a, b, value_switch<N, 0, 16, 48, 112, 240> | (15 ^ Zero));
+}
 
 
+/// returns cross product of two extended vectors
+inline xvector xvcross(const xvector& a, const xvector& b) noexcept {
+  return xvfms(xvpermute<2, 0, 1, 3>(a), xvpermute<1, 2, 0, 3>(b),
+               xvmul(xvpermute<1, 2, 0, 3>(a), xvpermute<2, 0, 1, 3>(b)));
+}
 
 
+/// returns length of an extended vector; `xvsqrt(xvdot<N, Zero>(a, a))`
+template<nat N, nat Zero = 0> requires (N <= 4 && Zero < 16)
+constexpr xvector xvlength(const xvector& a) noexcept {
+  return xvsqrt(xvdot<N, Zero>(a, a));
+}
 
 
+/// returns reciprocal length of an extended vector; `xvsqrt_r(xvdot<N, Zero>(a, a))`
+template<nat N, nat Zero = 0> requires (0 < N && N <= 4 && Zero < 16)
+constexpr xvector xvlength_r(const xvector& a) noexcept {
+  return xvsqrt_r(xvdot<N, Zero>(a, a));
+}
 
 
+/// returns normalized vector; `xvmul(a, xvlength_r<N>(a))`
+template<nat N> requires(0 < N && N <= 4)
+constexpr xvector xvnormalize(const xvector& a) noexcept {
+  return xvmul(a, xvlength_r<N>(a));
+}
 
 
-template<nat N, nat Zero = 0> requires(0 < N && N <= 4 && Zero < 16) struct t_xvdot {
-  xvector operator()(const xvector& A, const xvector& B) const noexcept {
-    if constexpr (N == 0 && (Zero == 0b1110 || Zero == 0b1101 || Zero == 0b1011 || Zero == 0b0111))
-      return xvinsert<inspects<!(Zero & 1), !(Zero & 2), !(Zero & 4), !(Zero & 8)>, 0, Zero>(A, xvmul(A, B));
-    else return _mm_dp_ps(A, B, value_switch<N, 0, 16, 48, 112, 240> | (15 ^ Zero));
-  }
-  xwector operator()(const xwector& A, const xwector& B) const noexcept {
-    if constexpr (N == 0 || Zero == 0b1111) return xv_zero;
-    xwector a;
-    if constexpr (N == 1) a = xvmul(A, B);
-    else if constexpr (N == 2) a = _mm256_hadd_pd(xvmul(A, B), A);
-    else if constexpr (N == 3) (a = xvmul(A, B)), a = xvadd(_mm256_hadd_pd(a, A), _mm256_castpd128_pd256(_mm256_extractf128_pd(a, 1)));
-    else if constexpr (N == 4) (a = _mm256_hadd_pd(xvmul(A, B), A)), a = xvadd(a, _mm256_castpd128_pd256(_mm256_extractf128_pd(a, 1)));
-    return xvsetzero<Zero & 1, Zero & 2, Zero & 4, Zero & 8>(xvpermute<0, 0, 0, 0>(a));
-  }
-  template<nat M> requires(M <= 4) void operator()(const xvector (&A)[M], const xvector& B, xvector& Result) const noexcept {
-    if constexpr (1 <= N) Result = t_xvdot<N, 0b1110>{}(A[0], B);
-    if constexpr (2 <= N) Result = xvpermute<0, 5, 2, 3>(Result, t_xvdot<N>{}(A[1], B));
-    if constexpr (3 <= N) Result = xvpermute<0, 1, 6, 3>(Result, t_xvdot<N>{}(A[2], B));
-    if constexpr (4 == N) Result = xvpermute<0, 1, 2, 7>(Result, t_xvdot<N>{}(A[3], B));
-  }
-  template<tuple TpB> void operator()(const xvector& A, TpB&& B, xvector& Result) const noexcept {
-    constexpr nat m = extent<TpB>;
-    if constexpr (1 <= m) Result = xvmul(xvpermute<0, 0, 0, 0>(A), get<0>(B));
-    if constexpr (2 <= m) Result = xvfma(xvpermute<1, 1, 1, 1>(A), get<1>(B), Result);
-    if constexpr (3 <= m) Result = xvfma(xvpermute<2, 2, 2, 2>(A), get<2>(B), Result);
-    if constexpr (4 == m) Result = xvfma(xvpermute<3, 3, 3, 3>(A), get<3>(B), Result);
-    if constexpr (4 <= m) Result = _mm_blend_ps(xv_zero, Result, (1 << N) - 1);
-  }
-  template<tuple TpA, tuple TpB, same_size_tuple<TpA> TpR> void operator()(TpA&& A, TpB&& B, TpR&& Result) const noexcept {
-    constexpr nat m = extent<TpA>;
-    if constexpr (1 <= m) (*this)(get<0>(A), B, get<0>(Result));
-    if constexpr (2 <= m) (*this)(get<1>(A), B, get<1>(Result));
-    if constexpr (3 <= m) (*this)(get<2>(A), B, get<2>(Result));
-    if constexpr (4 <= m) (*this)(get<3>(A), B, get<3>(Result));
-  }
-  xmatrix& operator()(xmatrix& A, const xmatrix& B) const noexcept {
-    static constexpr auto f = [](xvector& A, const xmatrix& B, xvector& C) noexcept {
-      C = xvmul(xvpermute<0, 0, 0, 0>(A), get<0>(B));
-      C = xvfma(xvpermute<1, 1, 1, 1>(A), get<1>(B), C);
-      C = xvfma(xvpermute<2, 2, 2, 2>(A), get<2>(B), C);
-      A = xvfma(xvpermute<3, 3, 3, 3>(A), get<3>(B), C);
-    };
-    xvector C;
-    f(A[0], B, C), f(A[1], B, C), f(A[2], B, C), f(A[3], B, C);
-    return A;
-  }
-};
-template<nat N, nat Zero = 0> requires(0 < N && N <= 4 && Zero < 16) inline constexpr t_xvdot<N, Zero> xvdot;
+/// converts degrees to radians
+inline xvector xvradian(const xvector& a) noexcept {
+  return xvmul(a, xvconstant<pi / 180>{});
+}
 
-inline constexpr overload xvcross{
-  [](const xvector& A, const xvector& B) noexcept {
-    auto a = xvpermute<2, 0, 1, 3>(A), b = xvpermute<1, 2, 0, 3>(B);
-    return xvfms(xvpermute<1, 2, 0, 3>(A), xvpermute<2, 0, 1, 3>(B), xvmul(a, b)); },
-  [](const xwector& A, const xwector& B) noexcept {
-    auto a = xvpermute<2, 0, 1, 3>(A), b = xvpermute<1, 2, 0, 3>(B);
-    return xvfms(xvpermute<1, 2, 0, 3>(A), xvpermute<2, 0, 1, 3>(B), xvmul(a, b)); }};
 
-template<nat N, nat Zero = 0> requires(N <= 4 && Zero < 16) inline constexpr overload xvlength{
-  [](const xvector& A) noexcept { return xvsqrt(xvdot<N, Zero>(A, A)); },
-  [](const xwector& A) noexcept { return xvsqrt(xvdot<N, Zero>(A, A)); }};
+/// converts radians to degrees
+inline xvector xvdegree(const xvector& a) noexcept {
+  return xvmul(a, xvconstant<180 / pi>{});
+}
 
-template<nat N, nat Zero = 0> requires(N <= 4 && Zero < 16) inline constexpr overload xvlength_r{
-  [](const xvector& A) noexcept { return xvsqrt_r(xvdot<N, Zero>(A, A)); },
-  [](const xwector& A) noexcept { return xvsqrt_r(xvdot<N, Zero>(A, A)); }};
 
-template<nat N> requires(N <= 4) inline constexpr overload xvnormalize{
-  [](const xvector& A) noexcept { return xvmul(A, xvlength_r<N>(A)); },
-  [](const xwector& A) noexcept { return xvmul(A, xvlength_r<N>(A)); }};
-
-inline constexpr overload xvradian{
-  [](const xvector& A) noexcept { return xvmul(A, xv_constant<pi / 180>); },
-  [](const xwector& A) noexcept { return xvmul(A, xv_constant<pi / 180>); }};
-
-inline constexpr overload xvdegree{
-  [](const xvector& A) noexcept { return xvmul(A, xv_constant<180 / pi>); },
-  [](const xwector& A) noexcept { return xvmul(A, xv_constant<180 / pi>); }};
-
-inline constexpr overload xvtranspose{
-  []<typename T, typename U>(T&& A, U&& Result) noexcept
-  requires((nt_tuple_for<T, const xvector&> && nt_tuple_for<U, xvector&>) || (nt_tuple_for<T, const xwector&> && nt_tuple_for<U, xwector&>)) {
-    constexpr nat M = extent<T>, N = extent<U>;
-    if constexpr (1 == M) {
-      if constexpr (1 <= N) get<0>(Result) = xvsetzero<0, 1, 1, 1>(get<0>(A));
-      if constexpr (2 <= N) get<1>(Result) = xvinsert<0, 1, 0b1110>(get<0>(A), get<0>(A));
-      if constexpr (3 <= N) get<2>(Result) = xvinsert<0, 2, 0b1110>(get<0>(A), get<0>(A));
-      if constexpr (4 == N) get<3>(Result) = xvinsert<0, 3, 0b1110>(get<0>(A), get<0>(A));
-    } else if constexpr (2 == M) {
-      if constexpr (1 <= N) get<0>(Result) = xvinsert<1, 0, 0b1100>(get<0>(A), get<1>(A));
-      if constexpr (2 <= N) get<1>(Result) = xvinsert<0, 1, 0b1100>(get<1>(A), get<0>(A));
-      if constexpr (3 <= N) get<2>(Result) = xvinsert<1, 2, 0b1100>(xvpermute<2, -1, -1, -1>(get<0>(A)), get<1>(A));
-      if constexpr (4 == N) get<3>(Result) = xvinsert<1, 3, 0b1100>(xvpermute<3, -1, -1, -1>(get<0>(A)), get<1>(A));
-    } else if constexpr (3 == M) {
-      if constexpr (1 <= N) get<0>(Result) = xvinsert<2, 0, 0b1000>(xvpermute<0, 4, -1, -1>(get<0>(A), get<1>(A)), get<2>(A));
-      if constexpr (2 <= N) get<1>(Result) = xvinsert<2, 1, 0b1000>(xvpermute<1, 5, -1, -1>(get<0>(A), get<1>(A)), get<2>(A));
-      if constexpr (3 <= N) get<2>(Result) = xvinsert<2, 2, 0b1000>(xvpermute<2, 6, -1, -1>(get<0>(A), get<1>(A)), get<2>(A));
-      if constexpr (4 == N) get<3>(Result) = xvinsert<2, 3, 0b1000>(xvpermute<3, 7, -1, -1>(get<0>(A), get<1>(A)), get<2>(A));
-    } else {
-      if constexpr (N == 1) get<0>(Result) = xvpermute<0, 1, 4, 5>(xvpermute<0, 4, -1, -1>(get<0>(A), get<1>(A)), xvpermute<0, 4, -1, -1>(get<2>(A), get<3>(A)));
-      if constexpr (N >= 2) {
-        auto a = xvpermute<0, 1, 4, 5>(get<0>(A), get<1>(A)), b = xvpermute<0, 1, 4, 5>(get<2>(A), get<3>(A));
-        get<0>(Result) = xvpermute<0, 2, 4, 6>(a, b), get<1>(Result) = xvpermute<1, 3, 5, 7>(a, b); }
-      if constexpr (N == 3) get<3>(Result) = xvpermute<0, 1, 4, 5>(xvpermute<2, 6, -1, -1>(get<0>(A), get<1>(A)), xvpermute<2, 6, -1, -1>(get<2>(A), get<3>(A)));
-      if constexpr (N == 4) {
-        auto a = xvpermute<2, 3, 6, 7>(get<0>(A), get<1>(A)), b = xvpermute<2, 3, 6, 7>(get<2>(A), get<3>(A));
-        get<2>(Result) = xvpermute<0, 2, 4, 6>(a, b), get<3>(Result) = xvpermute<1, 3, 5, 7>(a, b); } } }};
 
 inline constexpr auto xvtranslate = []<typename T>(const xvector& Offset, T&& Result) noexcept requires(nt_tuple_for<T, xvector&>) {
   constexpr nat N = extent<T>;
