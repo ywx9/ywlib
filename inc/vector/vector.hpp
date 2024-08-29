@@ -2,10 +2,11 @@
 
 #pragma once
 
-#include "vector3.hpp"
-#include "xvector.hpp"
+#include <immintrin.h>
 
-namespace yw {
+#include "vector3.hpp"
+
+export namespace yw {
 
 
 /// struct to represent a 4D vector
@@ -79,8 +80,8 @@ struct vector {
   constexpr vector(const vector3& v, numeric auto&& W) noexcept
     : x(v.x), y(v.y), z(v.z), w(fat4(W)) {}
 
-  /// constructor with `xvector`
-  vector(const xvector& v) noexcept { xvstore(&x, v); }
+  /// constructor with __m128
+  vector(const __m128& v) noexcept { _mm_storeu_ps(&x, v); }
 
   /// conversion to `vector2`
   constexpr operator vector2() const noexcept { return {x, y}; }
@@ -88,8 +89,28 @@ struct vector {
   /// conversion to `vector3`
   constexpr operator vector3() const noexcept { return {x, y, z}; }
 
-  /// conversion to `xvector`
-  operator xvector() const noexcept { return xvload(&x); }
+  /// conversion to __m128
+  operator __m128() const noexcept { return _mm_loadu_ps(&x); }
+
+  /// performs `get` operation
+  template<nat I> requires (I < count)
+  constexpr fat4& get() &
+  noexcept { return select<I>(x, y, z, w); }
+
+  /// performs `get` operation
+  template<nat I> requires (I < count)
+  constexpr const fat4& get() const &
+  noexcept { return select<I>(x, y, z, w); }
+
+  /// performs `get` operation
+  template<nat I> requires (I < count)
+  constexpr fat4&& get() &&
+  noexcept { return select<I>(mv(x), mv(y), mv(z), mv(w)); }
+
+  /// performs `get` operation
+  template<nat I> requires (I < count)
+  constexpr const fat4&& get() const &&
+  noexcept { return select<I>(mv(x), mv(y), mv(z), mv(w)); }
 
   /// number of elements
   constexpr nat size() const noexcept { return count; }
@@ -152,9 +173,8 @@ struct vector {
     noexcept { return a; }
 
   /// unary minus
-  friend constexpr vector operator-(const vector& a) noexcept {
-    if (is_cev) return {xvneg(a)};
-    else return {-a.x, -a.y, -a.z, -a.w}; }
+  friend constexpr vector operator-(const vector& a)
+  noexcept { return {-a.x, -a.y, -a.z, -a.w}; }
 
   /// addition
   friend constexpr vector operator+(const vector& a, const vector& b)
@@ -207,30 +227,6 @@ struct vector {
   /// division assignment
   constexpr vector& operator/=(const fat4& a)
     noexcept { return operator*=(1.f / a); }
-
-  /// dot product
-  friend constexpr fat4 dot(const vector& a, const vector& b)
-    noexcept { return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w; }
-
-  /// cross product
-  friend constexpr vector cross(const vector& a, const vector& b) noexcept {
-    return {a.y * b.z - a.z * b.y,
-            a.z * b.x - a.x * b.z,
-            a.x * b.y - a.y * b.x};
-  }
-
-  /// squared length
-  constexpr fat4 length2() const
-    noexcept { return x * x + y * y + z * z + w * w; }
-
-  /// length
-  fat4 length() const noexcept { return sqrt(length2()); }
-
-  /// normalizes the vector
-  vector normalize() const noexcept {
-    return *this / length();
-  }
-
 };
 
 

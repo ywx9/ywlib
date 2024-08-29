@@ -3,4 +3,8 @@
 
 #pragma once
 
-#include "vector/xvector.hpp"
+#include "vector/vector2.hpp"
+#include "vector/vector3.hpp"
+#include "vector/vector.hpp"
+
+#include "vector/function.hpp"

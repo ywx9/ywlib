@@ -46,6 +46,9 @@ struct vector3 {
     numeric auto&& X, numeric auto&& Y, numeric auto&& Z) noexcept
     : x(fat4(X)), y(fat4(Y)), z(fat4(Z)) {}
 
+  /// conversion to `vector2`
+  constexpr operator vector2() const noexcept { return {x, y}; }
+
   /// number of elements
   constexpr nat size() const noexcept { return count; }
 

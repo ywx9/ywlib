@@ -43,8 +43,10 @@ __m128 _xvpermute(const __m128& a, const __m128& b) noexcept {
     return _mm_insert_ps(b, a, int(select_value<i, x, y, z, w>) << 6 | i << 4);
   } else if constexpr ((X < 4 || X == 4) && (Y < 4 || Y == 5) && (Z < 4 || Z == 6) && (W < 4 || W == 7))
     return _mm_blend_ps(_xvpermute<X, Y, Z, W>(a), b, X >= 4 | (Y >= 4) << 1 | (Z >= 4) << 2 | (W >= 4) << 3);
-  else if constexpr ((bx || X >= 4 || X == 0) && (by || Y >= 4 || Y == 1) && (bz || Z >= 4 || Z == 2) && (bw || W >= 4 || W == 3))
-    return _mm_blend_ps(a, _xvpermute<X - 4, Y - 4, Z - 4, W - 4>(b), X >= 4 | (Y >= 4) << 1 | (Z >= 4) << 2 | (W >= 4) << 3);
+  else if constexpr ((bx || X >= 4 || X == 0) && (by || Y >= 4 || Y == 1) &&
+                     (bz || Z >= 4 || Z == 2) && (bw || W >= 4 || W == 3))
+    return _mm_blend_ps(a, _xvpermute<X - 4, Y - 4, Z - 4, W - 4>(b),
+                        X >= 4 | (Y >= 4) << 1 | (Z >= 4) << 2 | (W >= 4) << 3);
   else if constexpr ((0 <= X && X < 4) + (0 <= Y && Y < 4) + (0 <= Z && Z < 4) + (0 <= W && W < 4) == 1) {
     constexpr nat i = inspects<(0 <= X && X < 4), (0 <= Y && Y < 4), (0 <= Z && Z < 4), (0 <= W && W < 4)>;
     return _mm_insert_ps(_xvpermute<X - 4, Y - 4, Z - 4, W - 4>(b), a, i << 4 | select_value<i, X, Y, Z, W> << 6);
@@ -58,6 +60,16 @@ __m128 _xvpermute(const __m128& a, const __m128& b) noexcept {
 } ////////////////////////////////////////////////////////////////////////////// namespace yw::_
 
 export namespace yw {
+
+
+
+
+struct xvector {
+
+  __m128&& m128;
+
+  xvector()
+};
 
 
 /// extended vector type
