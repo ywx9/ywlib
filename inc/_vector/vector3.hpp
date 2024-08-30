@@ -49,6 +49,9 @@ struct vector3 {
   /// conversion to `vector2`
   constexpr operator vector2() const noexcept { return {x, y}; }
 
+  /// conversion to __m128
+  operator __m128() const noexcept { return _mm_loadu_ps(&x); }
+
   /// number of elements
   constexpr nat size() const noexcept { return count; }
 
@@ -162,27 +165,42 @@ struct vector3 {
   constexpr vector3& operator/=(const fat4& a)
     noexcept { return operator*=(1.f / a); }
 
-  /// dot product
-  friend constexpr fat4 dot(const vector3& a, const vector3& b)
-    noexcept { return a.x * b.x + a.y * b.y + a.z * b.z; }
+  /// returns the absolute value
+  friend constexpr vector3 abs(const vector3& v)
+    noexcept { return {std::abs(v.x), std::abs(v.y), std::abs(v.z)}; }
 
-  /// cross product
+  /// returns the dot product
+  friend constexpr fat4 dot(const vector3& a, const vector3& b) noexcept {
+    if (!is_cev) {
+      return _mm_cvtss_f32(_mm_dp_ps(a, b, 0x7f));
+    } return a.x * b.x + a.y * b.y;
+  }
+
+  /// returns the dot product of the first three elements
+  friend constexpr fat4 dot3(const vector3& a, const vector3& b)
+    noexcept { return dot(a, b); }
+
+  /// returns the cross product
   friend constexpr vector3 cross(const vector3& a, const vector3& b) noexcept {
-    return {a.y * b.z - a.z * b.y,
-            a.z * b.x - a.x * b.z,
+    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z,
             a.x * b.y - a.y * b.x};
   }
 
-  /// squared length
-  constexpr fat4 length2() const noexcept { return x * x + y * y + z * z; }
+  /// returns the length
+  friend fat4 length(const vector3& v)
+    noexcept { return std::sqrt(dot(v, v)); }
 
-  /// length
-  fat4 length() const noexcept { return std::hypot(x, y, z); }
+  /// returns the length of the first three elements
+  friend fat4 length3(const vector3& v)
+    noexcept { return length(v); }
 
-  /// normalizes the vector
-  vector3 normalize() const noexcept {
-    return *this / length();
-  }
+  /// returns the normalized vector
+  friend vector3 normalize(const vector3& v)
+    noexcept { return v / length(v); }
+
+  /// returns the normalized vector of the first three elements
+  friend vector3 normalize3(const vector3& v)
+    noexcept { return normalize(v); }
 
 };
 

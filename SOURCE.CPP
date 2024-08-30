@@ -7,27 +7,15 @@ import ywlib;
 #endif
 using namespace yw;
 
-int A[1000];
-void test() {
-#pragma loop(hint_parallel(0))
-  for (int i=0; i<1000; ++i) {
-    A[i] = A[i] + 1;
-  }
-
-  // for (int i=1000; i<2000; ++i) {
-  //   A[i] = A[i] + 1;
-  // }
-}
-
 int main() {
 
-auto a = vector{1, 2, 3, 4};
-auto b = vector{5, 6, 7, 8};
+  xvector a(1, 2, 3, 4);
+  xvector b(-1, -2, -3, -4);
 
-auto c = a + b;
-std::print("c = a + b = {}\n", c);
+  auto c = a + b;
 
-c = vector{a.x, a.y, b.x, b.y};
-std::print("{}\n", c);
+  fat4 r[4];
+  store(r, c);
 
+  std::print("{}, {}, {}, {}\n", r[0], r[1], r[2], r[3]);
 }

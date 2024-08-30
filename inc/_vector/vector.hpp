@@ -9,6 +9,10 @@
 export namespace yw {
 
 
+/// negative zero intrinsic constant
+inline const auto mm_neg_zero = _mm_set_ps1(-0.f);
+
+
 /// struct to represent a 4D vector
 struct vector {
 
@@ -122,25 +126,25 @@ struct vector {
   constexpr const fat4* data() const noexcept { return &x; }
 
   /// accesses the first element
-  constexpr fat4& operator[](nat Index) {
+  constexpr fat4& operator[](nat i) {
     if (is_cev) {
-      if (Index == 0) return x;
-      else if (Index == 1) return y;
-      else if (Index == 2) return z;
-      else if (Index == 3) return w;
+      if (i == 0) return x;
+      else if (i == 1) return y;
+      else if (i == 2) return z;
+      else if (i == 3) return w;
       else cannot_be_constant_evaluated();
-    } else return data()[Index];
+    } else return data()[i];
   }
 
   /// accesses the first element
-  constexpr fat4 operator[](nat Index) const {
+  constexpr fat4 operator[](nat i) const {
     if (is_cev) {
-      if (Index == 0) return x;
-      else if (Index == 1) return y;
-      else if (Index == 2) return z;
-      else if (Index == 3) return w;
+      if (i == 0) return x;
+      else if (i == 1) return y;
+      else if (i == 2) return z;
+      else if (i == 3) return w;
       else cannot_be_constant_evaluated();
-    } else return data()[Index];
+    } else return data()[i];
   }
 
   /// obtains the iterator to the first element
@@ -156,8 +160,11 @@ struct vector {
   constexpr const fat4* end() const noexcept { return data() + count; }
 
   /// equality comparison
-  friend constexpr bool operator==(const vector& a, const vector& b)
-    noexcept { return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w; }
+  friend constexpr bool operator==(const vector& a, const vector& b) noexcept {
+    if (is_cev) {
+      return _mm_test_all_ones(_mm_castps_si128(_mm_cmpeq_ps(a, b)));
+    } else return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w;
+  }
 
   /// three-way comparison
   friend constexpr auto operator<=>(
@@ -169,12 +176,13 @@ struct vector {
   }
 
   /// unary plus
-  friend constexpr vector operator+(const vector& a)
-    noexcept { return a; }
+  friend constexpr vector operator+(const vector& a) noexcept { return a; }
 
   /// unary minus
-  friend constexpr vector operator-(const vector& a)
-  noexcept { return {-a.x, -a.y, -a.z, -a.w}; }
+  friend constexpr vector operator-(const vector& a) noexcept {
+    if (is_cev) return {-a.x, -a.y, -a.z, -a.w};
+    else _mm_xor_ps(a, mm_neg_zero);
+  }
 
   /// addition
   friend constexpr vector operator+(const vector& a, const vector& b)
@@ -227,6 +235,68 @@ struct vector {
   /// division assignment
   constexpr vector& operator/=(const fat4& a)
     noexcept { return operator*=(1.f / a); }
+
+  /// returns the absolute value
+  friend constexpr vector abs(const vector& v) noexcept {
+    if (is_cev) return {std::abs(v.x), std::abs(v.y), std::abs(v.z), std::abs(v.w)};
+    else return _mm_andnot_ps(mm_neg_zero, v);
+  }
+
+  /// returns the dot product
+  friend constexpr fat4 dot(const vector& a, const vector& b) noexcept {
+    if (is_cev) return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+    else return _mm_cvtss_f32(_mm_dp_ps(a, b, 0xff));
+  }
+
+  /// returns the dot product of the first three elements
+  friend constexpr fat4 dot3(const vector& a, const vector& b) noexcept {
+    if (is_cev) return a.x * b.x + a.y * b.y + a.z * b.z;
+    else return _mm_cvtss_f32(_mm_dp_ps(a, b, 0x7f));
+  }
+
+  /// returns the cross product
+  friend constexpr vector cross(const vector& a, const vector& b) noexcept {
+    if (!is_cev) {
+      auto aa = _mm_loadu_ps(a.data()), bb = _mm_loadu_ps(b.data());
+      return _mm_sub_ps(_mm_mul_ps(_mm_permute_ps(aa, 0b11001001),
+                                   _mm_permute_ps(bb, 0b11010010)),
+                        _mm_mul_ps(_mm_permute_ps(aa, 0b11010010),
+                                   _mm_permute_ps(bb, 0b11001001)));
+    } else return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z,
+                   a.x * b.y - a.y * b.x};
+  }
+
+  /// returns the length
+  friend fat4 length(const vector& v) noexcept {
+    if (!is_cev) {
+      auto vv = _mm_loadu_ps(v.data());
+      return _mm_cvtss_f32(_mm_sqrt_ps(_mm_dp_ps(vv, vv, 0xff)));
+    } else return std::sqrt(dot(v, v));
+  }
+
+  /// returns the length of the first three elements
+  friend fat4 length3(const vector& v) noexcept {
+    if (!is_cev) {
+      auto vv = _mm_loadu_ps(v.data());
+      return _mm_cvtss_f32(_mm_sqrt_ps(_mm_dp_ps(vv, vv, 0x7f)));
+    } else return std::sqrt(dot3(v, v));
+  }
+
+  /// returns the normalized vector
+  friend vector normalize(const vector& v) noexcept {
+    if (!is_cev) {
+      auto vv = _mm_loadu_ps(v.data());
+      return _mm_mul_ps(vv, _mm_rsqrt_ps(_mm_dp_ps(vv, vv, 0xff)));
+    } else return v / length(v);
+  }
+
+  /// returns the normalized vector of the first three elements
+  friend vector normalize3(const vector& v) noexcept {
+    if (!is_cev) {
+      auto vv = _mm_loadu_ps(v.data());
+      return _mm_mul_ps(vv, _mm_rsqrt_ps(_mm_dp_ps(vv, vv, 0x7f)));
+    } else return v / length3(v);
+  }
 };
 
 

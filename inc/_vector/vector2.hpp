@@ -153,25 +153,37 @@ struct vector2 {
   constexpr vector2& operator/=(const fat4& a)
     noexcept { return operator*=(1.f / a); }
 
-  /// dot product
+  /// returns the absolute value
+  friend constexpr vector2 abs(const vector2& v)
+    noexcept { return {std::abs(v.x), std::abs(v.y)}; }
+
+  /// returns the dot product
   friend constexpr fat4 dot(const vector2& a, const vector2& b)
     noexcept { return a.x * b.x + a.y * b.y; }
 
-  /// cross product
+  /// returns the dot product of the first three elements
+  friend constexpr fat4 dot3(const vector2& a, const vector2& b)
+    noexcept { return dot(a, b); }
+
+  /// returns the cross product
   friend constexpr fat4 cross(const vector2& a, const vector2& b)
     noexcept { return a.x * b.y - a.y * b.x; }
 
-  /// squared length
-  constexpr fat4 length2() const noexcept { return x * x + y * y; }
+  /// returns the length
+  friend fat4 length(const vector2& v)
+    noexcept { return std::sqrt(dot(v, v)); }
 
-  /// length
-  fat4 length() const noexcept { return std::hypot(x, y); }
+  /// returns the length of the first three elements
+  friend fat4 length3(const vector2& v)
+    noexcept { return length(v); }
 
-  /// normalizes the vector
-  vector2 normalize() const noexcept {
-    return *this / length();
-  }
+  /// returns the normalized vector
+  friend vector2 normalize(const vector2& v)
+    noexcept { return v / length(v); }
 
+  /// returns the normalized vector of the first three elements
+  friend vector2 normalize3(const vector2& v)
+    noexcept { return normalize(v); }
 };
 
 
