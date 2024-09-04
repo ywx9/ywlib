@@ -1,21 +1,15 @@
 // for test
 
-#ifndef YWLIB
-#include "inc/ywlib.hpp"
-#else
-import ywlib;
-#endif
+#include "YWLIB"
+
 using namespace yw;
 
 int main() {
 
-  xvector a(1, 2, 3, 4);
-  xvector b(-1, -2, -3, -4);
+  float a[4]{1, 2, 3, 4};
+  auto b = _mm_loadu_ps(a);
+  auto c = _mm_add_ps(b, _mm_set_ps1(3.f));
+  _mm_storeu_ps(a, c);
+  std::print("a = [{}, {}, {}, {}]\n", a[0], a[1], a[2], a[3]);
 
-  auto c = a + b;
-
-  fat4 r[4];
-  store(r, c);
-
-  std::print("{}, {}, {}, {}\n", r[0], r[1], r[2], r[3]);
 }

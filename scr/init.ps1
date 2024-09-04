@@ -6,7 +6,7 @@ $temp = (Get-ChildItem cl.exe -Path "C:\Program Files*\Microsoft Visual Studio\*
 
 $env:PATH += ";$(Split-Path $temp -Parent)"
 
-$std_ixx = $temp -replace "\\bin\\Hostx64\\x64\\cl.exe", "\modules\std.ixx"
+# $std_ixx = $temp -replace "\\bin\\Hostx64\\x64\\cl.exe", "\modules\std.ixx"
 $env:YW_MSVC_LIB = $temp -replace "\\bin\\Hostx64\\x64\\cl.exe", "\lib\x64"
 $env:YW_MSVC_INC = $temp -replace "\\bin\\Hostx64\\x64\\cl.exe", "\include"
 
@@ -22,4 +22,7 @@ $env:YW_WTK_INC_WINRT = $env:YW_WTK_INC_UCRT -replace "ucrt", "winrt"
 $env:YW_WTK_INC_CPPWINRT = $env:YW_WTK_INC_UCRT -replace "ucrt", "cppwinrt"
 
 # compiles `std.ixx`
-Invoke-Expression "cl /std:c++latest /EHsc /nologo /W4 /O2 /Qpar /Qpar-report:1 /Qvec-report:1 /utf-8 /c `"$std_ixx`" /Foout\std.obj /ifcOutputout\std.ifc /I`"$env:YW_MSVC_INC`" /I`"$env:YW_WTK_INC_UCRT`" /I`"$env:YW_WTK_INC_UM`" /I`"$env:YW_WTK_INC_SHARED`" /I`"$env:YW_WTK_INC_WINRT`" /I`"$env:YW_WTK_INC_CPPWINRT`""
+Invoke-Expression "cl /std:c++latest /EHsc /nologo /W4 /O2 /Qpar /Qpar-report:1 /Qvec-report:1 /utf-8 /c inc/std.ixx /Foout\std.obj /ifcOutputout\std.ifc /I`"$env:YW_MSVC_INC`" /I`"$env:YW_WTK_INC_UCRT`" /I`"$env:YW_WTK_INC_UM`" /I`"$env:YW_WTK_INC_SHARED`" /I`"$env:YW_WTK_INC_WINRT`" /I`"$env:YW_WTK_INC_CPPWINRT`""
+
+# compiles `intrin.ixx`
+Invoke-Expression "cl /std:c++latest /EHsc /nologo /W4 /O2 /Qpar /Qpar-report:1 /Qvec-report:1 /utf-8 /c inc/intrin.ixx /Foout\intrin.obj /ifcOutputout\intrin.ifc /I`"$env:YW_MSVC_INC`" /I`"$env:YW_WTK_INC_UCRT`" /I`"$env:YW_WTK_INC_UM`" /I`"$env:YW_WTK_INC_SHARED`" /I`"$env:YW_WTK_INC_WINRT`" /I`"$env:YW_WTK_INC_CPPWINRT`""

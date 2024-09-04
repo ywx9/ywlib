@@ -1,0 +1,13 @@
+/// \file YWLIB
+
+#pragma once
+
+#ifndef YWLIB
+#include "inc/intrin.hpp"
+#include "inc/std.hpp"
+#include "inc/ywlib.hpp"
+#else
+import intrin;
+import std;
+import ywlib;
+#endif

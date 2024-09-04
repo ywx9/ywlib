@@ -10,7 +10,7 @@ import std;
 #endif
 
 #include "core.hpp"
-#include "range.hpp"
+#include "ranges.hpp"
 
 export namespace yw {
 
