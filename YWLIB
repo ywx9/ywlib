@@ -10,4 +10,5 @@
 import intrin;
 import std;
 import ywlib;
+#define nat size_t
 #endif
