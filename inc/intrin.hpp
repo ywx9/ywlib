@@ -11,12 +11,7 @@
 #define ywlib_intrin_macro_imm8(return_type, name, args, params) \
   template<int imm8> return_type name args noexcept { return _##name params ; }
 
-export namespace yw {
-
-template<typename T, typename U> constexpr bool _same = false;
-template<typename T> constexpr bool _same<T, T> = true;
-
-#pragma region TYPES
+export namespace intrin {
 
 using m128 = __m128;
 using m128i = __m128i;
@@ -24,8 +19,6 @@ using m128d = __m128d;
 using m256 = __m256;
 using m256i = __m256i;
 using m256d = __m256d;
-
-#pragma endregion
 
 #pragma region ARITHMETIC
 
@@ -158,7 +151,6 @@ ywlib_intrin_macro(m128i, mm_madd_epi16, (const m128i& a, const m128i& b), (a, b
 ywlib_intrin_macro(m256i, mm256_madd_epi16, (const m256i& a, const m256i& b), (a, b))
 ywlib_intrin_macro(m128i, mm_maddubs_epi16, (const m128i& a, const m128i& b), (a, b))
 ywlib_intrin_macro(m256i, mm256_maddubs_epi16, (const m256i& a, const m256i& b), (a, b))
-ywlib_intrin_macro(m128i, mm_mpsadbw_epu8, (const m128i& a, const m128i& b, const int imm8), (a, b, imm8))
 
 ywlib_intrin_macro(m128i, mm_mul_epi32, (const m128i& a, const m128i& b), (a, b))
 ywlib_intrin_macro(m256i, mm256_mul_epi32, (const m256i& a, const m256i& b), (a, b))
@@ -470,8 +462,6 @@ ywlib_intrin_macro(long long, mm_cvttsd_si64, (const m128d& a), (a))
 ywlib_intrin_macro(int, mm_cvttss_si32, (const m128& a), (a))
 ywlib_intrin_macro(long long, mm_cvttss_si64, (const m128& a), (a))
 
-ywlib_intrin_macro(m128i, mm_packus_epi32, (const m128i& a, const m128i& b), (a, b))
-
 #pragma endregion
 
 #pragma region CRYPTOGRAPHY
@@ -489,6 +479,11 @@ ywlib_intrin_macro(m128d, mm_cbrt_pd, (const m128d& a), (a))
 ywlib_intrin_macro(m256d, mm256_cbrt_pd, (const m256d& a), (a))
 ywlib_intrin_macro(m128, mm_cbrt_ps, (const m128& a), (a))
 ywlib_intrin_macro(m256, mm256_cbrt_ps, (const m256& a), (a))
+
+ywlib_intrin_macro(m128d, mm_hypot_pd, (const m128d& a, const m128d& b), (a, b))
+ywlib_intrin_macro(m256d, mm256_hypot_pd, (const m256d& a, const m256d& b), (a, b))
+ywlib_intrin_macro(m128, mm_hypot_ps, (const m128& a, const m128& b), (a, b))
+ywlib_intrin_macro(m256, mm256_hypot_ps, (const m256& a, const m256& b), (a, b))
 
 ywlib_intrin_macro(m128, mm_cexp_ps, (const m128& a), (a))
 ywlib_intrin_macro(m256, mm256_cexp_ps, (const m256& a), (a))
@@ -583,11 +578,25 @@ ywlib_intrin_macro(m256, mm256_svml_sqrt_ps, (const m256& a), (a))
 
 #pragma region LOAD
 
-ywlib_intrin_macro(m256d, mm256_broadcast_pd, (const m128d* a), (a))
-ywlib_intrin_macro(m256, mm256_broadcast_ps, (const m128* a), (a))
-ywlib_intrin_macro(m256d, mm256_broadcast_sd, (const double* a), (a))
-ywlib_intrin_macro(m128, mm_broadcast_ss, (const float* a), (a))
-ywlib_intrin_macro(m256, mm256_broadcast_ss, (const float* a), (a))
+
+ywlib_intrin_macro(m128i, mm_broadcastb_epi8, (const m128i& a), (a))
+ywlib_intrin_macro(m256i, mm256_broadcastb_epi8, (const m128i& a), (a))
+ywlib_intrin_macro(m128i, mm_broadcastw_epi16, (const m128i& a), (a))
+ywlib_intrin_macro(m256i, mm256_broadcastw_epi16, (const m128i& a), (a))
+ywlib_intrin_macro(m128i, mm_broadcastd_epi32, (const m128i& a), (a))
+ywlib_intrin_macro(m256i, mm256_broadcastd_epi32, (const m128i& a), (a))
+ywlib_intrin_macro(m128i, mm_broadcastq_epi64, (const m128i& a), (a))
+ywlib_intrin_macro(m256i, mm256_broadcastq_epi64, (const m128i& a), (a))
+ywlib_intrin_macro(m128d, mm_broadcastsd_pd, (const m128d& a), (a))
+ywlib_intrin_macro(m256d, mm256_broadcastsd_pd, (const m128d& a), (a))
+ywlib_intrin_macro(m128, mm_broadcastss_ps, (const m128& a), (a))
+ywlib_intrin_macro(m256, mm256_broadcastss_ps, (const m128& a), (a))
+ywlib_intrin_macro(m256d, mm256_broadcast_pd, (const m128d* mem_addr), (mem_addr))
+ywlib_intrin_macro(m256, mm256_broadcast_ps, (const m128* mem_addr), (mem_addr))
+ywlib_intrin_macro(m256d, mm256_broadcast_sd, (const double* mem_addr), (mem_addr))
+ywlib_intrin_macro(m128, mm_broadcast_ss, (const float* mem_addr), (mem_addr))
+// ywlib_intrin_macro(m256i, mm_broadcastsi128_si256, (const m128i& a), (a))
+ywlib_intrin_macro(m256i, mm256_broadcastsi128_si256, (const m128i& a), (a))
 
 ywlib_intrin_macro_imm8(m128i, mm_i32gather_epi32, (const int* ptr, const m128i& vindex), (ptr, vindex, imm8))
 ywlib_intrin_macro_imm8(m128i, mm_mask_i32gather_epi32, (const m128i& src, const int* ptr, const m128i& vindex, const m128i& mask), (src, ptr, vindex, mask, imm8))
@@ -760,8 +769,6 @@ ywlib_intrin_macro(m128i, mm_packus_epi16, (const m128i& a, const m128i& b), (a,
 ywlib_intrin_macro(m256i, mm256_packus_epi16, (const m256i& a, const m256i& b), (a, b))
 ywlib_intrin_macro(m128i, mm_packus_epi32, (const m128i& a, const m128i& b), (a, b))
 ywlib_intrin_macro(m256i, mm256_packus_epi32, (const m256i& a, const m256i& b), (a, b))
-
-ywlib_intrin_macro(m128i, mm_sad_epu8, (const m128i& a, const m128i& b), (a, b))
 
 #pragma endregion
 
@@ -1136,25 +1143,6 @@ ywlib_intrin_macro(m128d, mm_blendv_pd, (const m128d& a, const m128d& b, const m
 ywlib_intrin_macro(m256d, mm256_blendv_pd, (const m256d& a, const m256d& b, const m256d& mask), (a, b, mask))
 ywlib_intrin_macro(m128, mm_blendv_ps, (const m128& a, const m128& b, const m128& mask), (a, b, mask))
 ywlib_intrin_macro(m256, mm256_blendv_ps, (const m256& a, const m256& b, const m256& mask), (a, b, mask))
-
-ywlib_intrin_macro(m256d, mm256_broadcast_pd, (const m128d* mem_addr), (mem_addr))
-ywlib_intrin_macro(m256, mm256_broadcast_ps, (const m128* mem_addr), (mem_addr))
-ywlib_intrin_macro(m256d, mm256_broadcast_sd, (const double* mem_addr), (mem_addr))
-ywlib_intrin_macro(m128, mm_broadcast_ss, (const float* mem_addr), (mem_addr))
-ywlib_intrin_macro(m128i, mm_broadcastb_epi8, (const m128i& a), (a))
-ywlib_intrin_macro(m256i, mm256_broadcastb_epi8, (const m128i& a), (a))
-ywlib_intrin_macro(m128i, mm_broadcastd_epi32, (const m128i& a), (a))
-ywlib_intrin_macro(m256i, mm256_broadcastd_epi32, (const m128i& a), (a))
-ywlib_intrin_macro(m128i, mm_broadcastq_epi64, (const m128i& a), (a))
-ywlib_intrin_macro(m256i, mm256_broadcastq_epi64, (const m128i& a), (a))
-ywlib_intrin_macro(m128d, mm_broadcastsd_pd, (const m128d& a), (a))
-ywlib_intrin_macro(m256d, mm256_broadcastsd_pd, (const m128d& a), (a))
-// ywlib_intrin_macro(m256i, mm_broadcastsi128_si256, (const m128i& a), (a))
-ywlib_intrin_macro(m256i, mm256_broadcastsi128_si256, (const m128i& a), (a))
-ywlib_intrin_macro(m128, mm_broadcastss_ps, (const m128& a), (a))
-ywlib_intrin_macro(m256, mm256_broadcastss_ps, (const m128& a), (a))
-ywlib_intrin_macro(m128i, mm_broadcastw_epi16, (const m128i& a), (a))
-ywlib_intrin_macro(m256i, mm256_broadcastw_epi16, (const m128i& a), (a))
 
 ywlib_intrin_macro_imm8(m128i, mm_extract_epi8, (const m128i& a), (a, imm8))
 ywlib_intrin_macro_imm8(m256i, mm256_extract_epi8, (const m256i& a), (a, imm8))

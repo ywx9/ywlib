@@ -229,9 +229,9 @@ inline constexpr value inf = std::numeric_limits<fat8>::infinity();
 inline constexpr value nan = std::numeric_limits<fat8>::quiet_NaN();
 
 ywlib_namespace_std_begin
-template<typename T> struct common_type<T, yw::value> : common_type<T, fat8> {};
-template<typename T> struct common_type<yw::value, T> : common_type<fat8, T> {};
-template<typename Ct> struct formatter<yw::value, Ct> : formatter<fat8, Ct> {};
+template<typename T> struct common_type<T, yw::value> : common_type<T, double> {};
+template<typename T> struct common_type<yw::value, T> : common_type<double, T> {};
+template<typename Ct> struct formatter<yw::value, Ct> : formatter<double, Ct> {};
 ywlib_namespace_std_end
 
 /// checks if the type has `const` qualifier
@@ -270,7 +270,7 @@ template<typename T> concept is_function = std::is_function_v<T>;
 ywlib_namespace_internal_begin
 template<typename T> struct _type { using type = T; };
 template<typename T> struct _remove_all_pointers : _type<T> {};
-template<is_pointer T> struct _remove_all_pointers<T> : _remove_all_pointers<remove_pointer<T>> {};
+template<is_pointer T> struct _remove_all_pointers<T> : _remove_all_pointers<std::remove_pointer_t<T>> {};
 ywlib_namespace_internal_end
 
 /// removes `const` and `volatile` qualifiers
@@ -459,7 +459,7 @@ struct _common_type<Ts...> : std::common_reference<Ts...> {};
 template<typename T, template<typename...> typename Tm> struct _specialization_of : std::false_type {};
 template<template<typename...> typename Tm, typename... Ts>
 struct _specialization_of<Tm<Ts...>, Tm> : std::true_type {};
-template<typename T, typename U> struct _variation_of : std::false_type` {};
+template<typename T, typename U> struct _variation_of : std::false_type {};
 template<template<typename...> typename Tm, typename... Ts, typename... Us>
 struct _variation_of<Tm<Ts...>, Tm<Us...>> : std::true_type {};
 template<template<auto...> typename Tm, auto... Vs, auto... Ws>
@@ -1413,5 +1413,190 @@ inline constexpr auto iter_move = []<iterator It>(It&& i)
 
 inline constexpr auto iter_swap = []<iterator It, iterator Jt>(It&& i, Jt&& j)
   ywlib_wrapper_auto(std::ranges::iter_swap(fwd<It>(i), fwd<Jt>(j)));
+
+/// class to represent an array; dynamic-size if `N == npos`, otherwise fixed-size
+template<typename T, nat N = npos> class array {
+public:
+  T _data[N]{};
+
+  /// number of elements
+  static constexpr nat count = N;
+
+  /// type of elements
+  using value_type = T;
+
+  /// assignment to copy the elements from a bounded array
+  constexpr array& operator=(const T (&a)[N]) noexcept {
+    for (nat i = 0; i < N; ++i) _data[i] = a[i];
+    return *this;
+  }
+
+  /// conversion operator to lvalue reference to the array
+  constexpr operator add_lvref<T[N]>() noexcept { return _data; }
+
+  /// conversion operator to const lvalue reference to the array
+  constexpr operator add_lvref<const T[N]>() const noexcept { return _data; }
+
+  /// conversion operator to `std::basic_string_view<T>`
+  constexpr operator std::basic_string_view<T>() const noexcept
+    requires character<T> { return std::basic_string_view<T>(_data, N); }
+
+  /// index operator to access the element
+  constexpr T& operator[](nat i) noexcept { return _data[i]; }
+
+  /// index operator to access the element
+  constexpr const T& operator[](nat i) const noexcept { return _data[i]; }
+
+  /// returns the number of elements
+  constexpr nat size() const noexcept { return N; }
+
+  /// checks if the array is empty
+  constexpr bool empty() const noexcept { return N == 0; }
+
+  /// returns the pointer to the first element
+  constexpr T* data() noexcept { return _data; }
+
+  /// returns the pointer to the first element
+  constexpr const T* data() const noexcept { return _data; }
+
+  /// returns the iterator to the first element
+  constexpr T* begin() noexcept { return _data; }
+
+  /// returns the iterator to the first element
+  constexpr const T* begin() const noexcept { return _data; }
+
+  /// returns the iterator to the end of the array
+  constexpr T* end() noexcept { return _data + N; }
+
+  /// returns the iterator to the end of the array
+  constexpr const T* end() const noexcept { return _data + N; }
+
+  /// returns the reference to the first element
+  constexpr T& front() noexcept { return _data[0]; }
+
+  /// returns the reference to the first element
+  constexpr const T& front() const noexcept { return _data[0]; }
+
+  /// returns the reference to the last element
+  constexpr T& back() noexcept { return _data[N - 1]; }
+
+  /// returns the reference to the last element
+  constexpr const T& back() const noexcept { return _data[N - 1]; }
+
+  /// `get` function
+  template<nat I> requires (I < N)
+  constexpr T& get() & noexcept { return _data[I]; }
+
+  /// `get` function
+  template<nat I> requires (I < N)
+  constexpr const T& get() const & noexcept { return _data[I]; }
+
+  /// `get` function
+  template<nat I> requires (I < N)
+  constexpr T&& get() && noexcept { return mv(_data[I]); }
+
+  /// `get` function
+  template<nat I> requires (I < N)
+  constexpr const T&& get() const && noexcept { return mv(_data[I]); }
+
+};
+
+/// specialization of `array` for empty array
+template<typename T> class array<T, 0> {
+public:
+
+  /// number of elements
+  static constexpr nat count = 0;
+
+  /// type of elements
+  using value_type = T;
+
+  /// conversion operator to `std::basic_string_view<T>`
+  constexpr operator std::basic_string_view<T>() const noexcept
+    requires character<T> { return std::basic_string_view<T>(); }
+
+  /// returns the number of elements
+  constexpr nat size() const noexcept { return 0; }
+
+  /// checks if the array is empty
+  constexpr bool empty() const noexcept { return true; }
+
+  /// returns the pointer to the first element
+  constexpr T* data() noexcept { return nullptr; }
+
+  /// returns the pointer to the first element
+  constexpr const T* data() const noexcept { return nullptr; }
+
+  /// returns the iterator to the first element
+  constexpr T* begin() noexcept { return nullptr; }
+
+  /// returns the iterator to the first element
+  constexpr const T* begin() const noexcept { return nullptr; }
+
+  /// returns the iterator to the end of the array
+  constexpr T* end() noexcept { return nullptr; }
+
+  /// returns the iterator to the end of the array
+  constexpr const T* end() const noexcept { return nullptr; }
+
+};
+
+/// specialization of `array` for dynamic-size array
+template<typename T> class array<T, npos> : std::vector<T> {
+public:
+
+  /// default constructor
+  constexpr array() noexcept = default;
+
+  /// constructor with the rvalue reference to `std::vector<T>`
+  constexpr array(std::vector<T>&& v)
+    noexcept(nt_constructible<std::vector<T>, std::vector<T>>)
+    : std::vector<T>(mv(v)) {}
+
+  /// constructor with the initializer list
+  constexpr array(std::initializer_list<T> il)
+    : std::vector<T>(mv(il)) {}
+
+  /// constructor with the number of elements
+  constexpr array(nat n)
+    : std::vector<T>(n) {}
+
+  /// constructor with the number of elements and the value
+  constexpr array(nat n, const T& v)
+    : std::vector<T>(n, v) {}
+
+  /// constructor with the iterator range
+  template<fwd_iterator I>
+  constexpr array(I first, I last)
+    : std::vector<T>(first, last) {}
+
+  /// constructor with the iterator range
+  template<fwd_iterator I, sentinel_for<I> S> requires (!same_as<I, S>)
+  constexpr array(I first, S last)
+    : std::vector<T>(std::common_iterator<I, S>(first),
+                     std::common_iterator<I, S>(last)) {}
+
+  /// constructor with the iterator range
+  template<range Rg> constexpr array(Rg&& r)
+    : std::vector<T>(std::vector<T>::begin(fwd<Rg>(r)),
+                     std::vector<T>::end(fwd<Rg>(r))) {}
+
+  /// conversion operator to `std::basic_string_view<T>`
+  constexpr operator std::basic_string_view<T>() const noexcept
+    requires character<T> { return std::basic_string_view<T>(
+      std::vector<T>::data(), std::vector<T>::size()); }
+
+};
+
+template<typename T, convertible_to<T>... Ts> array(T, Ts...) -> array<T, 1 + sizeof...(Ts)>;
+template<typename T, nat N> array(const T (&)[N]) -> array<T, N>;
+template<typename T> array(nat, const T&) -> array<T, npos>;
+template<iterator I, sentinel_for<I> S> array(I, S) -> array<iter_value<I>>;
+template<range Rg> array(Rg&&) -> array<iter_value<Rg>, npos>;
+
+ywlib_namespace_std_begin
+template<typename T, nat N> struct tuple_size<yw::array<T, N>> : integral_constant<size_t, N> {};
+template<size_t I, typename T, nat N> struct tuple_element<I, yw::array<T, N>> : type_identity<T> {};
+ywlib_namespace_std_end
 
 }
