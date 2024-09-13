@@ -139,7 +139,7 @@ ywlib_namespace_internal_end
 template<int X, int Y, int Z, int W>
 requires (X < 4 && Y < 4 && Z < 4 && W < 4)
 xvector xvpermute(const xvector& a) noexcept {
-  return _xvpermute<X, Y, Z, W>(a);
+  return _::_xvpermute<X, Y, Z, W>(a);
 }
 
 /// permutes the elements of `a` and `b`
@@ -147,7 +147,7 @@ xvector xvpermute(const xvector& a) noexcept {
 template<int X, int Y, int Z, int W>
 requires (X < 8 && Y < 8 && Z < 8 && W < 8)
 xvector xvpermute(const xvector& a, const xvector& b) noexcept {
-  return _xvpermute<X, Y, Z, W>(a, b);
+  return _::_xvpermute<X, Y, Z, W>(a, b);
 }
 
 /// constant vector
@@ -501,8 +501,15 @@ xvector xvdot(const xvector& a, const xvector& b) noexcept {
   else return intrin::mm_dp_ps(a, b, ((1 << N) - 1) << 4 | Zero);
 }
 
+/// returns the dot product between matrix and vector
+template<nat N, nat Zero = 0>
+requires (0 < N && N <= 4 && Zero < 16)
+xvector xvdot(const xmatrix& m, const xvector& v) noexcept {
+
+}
+
 /// returns the cross product
 inline xvector xvcross(const xvector& a, const xvector& b) noexcept {
-  return xvpermute<1, 2, 0, 3>(a) * xvpermute<2, 0, 1, 3>(b) -
-         xvpermute<2, 0, 1, 3>(a) * xvpermute<1, 2, 0, 3>(b);
+  return xvfms(xvpermute<1, 2, 0, 3>(a), xvpermute<2, 0, 1, 3>(b),
+               xvpermute<2, 0, 1, 3>(a) * xvpermute<1, 2, 0, 3>(b));
 }
