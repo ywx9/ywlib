@@ -24,9 +24,16 @@
 
 export namespace yw {
 
-using ID3D11Buffer = ::ID3D11Buffer;
-using ID3D11ShaderResourceView = ::ID3D11ShaderResourceView;
-using ID3D11UnorderedAccessView = ::ID3D11UnorderedAccessView;
+namespace d3d11 {
+using buffer = ::ID3D11Buffer;
+using device = ::ID3D11Device;
+using device_context = ::ID3D11DeviceContext;
+using pixel_shader = ::ID3D11PixelShader;
+using shader_resource_view = ::ID3D11ShaderResourceView;
+using texture2d = ::ID3D11Texture2D;
+using unordered_access_view = ::ID3D11UnorderedAccessView;
+using vertex_shader = ::ID3D11VertexShader;
+}
 
 /// \brief deleter for COM objects
 template<typename Com> struct com_deleter {
@@ -182,7 +189,7 @@ template<typename T> class staging_buffer;
 /// @brief base class for GPU buffers
 template<typename T> class buffer {
 protected:
-  comptr<ID3D11Buffer> d3d_buffer;
+  comptr<d3d11::buffer> d3d_buffer;
   buffer(const buffer&) = delete;
   buffer& operator=(const buffer&) = delete;
   buffer(numeric auto&& Count) noexcept : count(nat4(Count)) {}
@@ -191,7 +198,7 @@ public:
   const nat4 count{};
   buffer() noexcept = default;
   buffer(buffer&& B) noexcept : d3d_buffer{mv(B.d3d_buffer)}, count{B.count} {}
-  operator add_pointer<ID3D11Buffer>() const noexcept { return d3d_buffer; }
+  operator add_pointer<d3d11::buffer>() const noexcept { return d3d_buffer; }
   explicit operator bool() const noexcept { return bool(d3d_buffer); }
 
   buffer& operator=(buffer&& B) noexcept {
@@ -222,7 +229,7 @@ template<typename T> class staging_buffer : public buffer<T> {
 public:
   staging_buffer() noexcept = default;
   explicit staging_buffer(const buffer<T>& Src) : staging_buffer(Src.count) { buffer<T>::from(Src); }
-  operator ::ID3D11Buffer*() const noexcept { return buffer<T>::d3d_buffer; }
+  operator d3d11::buffer*() const noexcept { return buffer<T>::d3d_buffer; }
 
   /// \brief creates a staging buffer with the specified size
   explicit staging_buffer(numeric auto&& Count) noexcept : buffer<T>(Count) {
@@ -276,7 +283,7 @@ template<typename T> std::vector<T> buffer<T>::to_cpu(staging_buffer<T>& Staging
 template<typename T> requires ((sizeof(T) % 16) == 0) class constant_buffer : public buffer<T> {
   static constexpr D3D11_BUFFER_DESC bd = {sizeof(T), D3D11_USAGE(2), D3D11_BIND_FLAG(4), D3D11_CPU_ACCESS_WRITE};
 public:
-  using buffer<T>::operator ID3D11Buffer*;
+  using buffer<T>::operator d3d11::buffer*;
   constant_buffer() noexcept = default;
 
   /// \brief creates a constant buffer and loads the specified value
@@ -359,11 +366,11 @@ template<typename T> constant_buffer(const T&) -> constant_buffer<T>;
 /// \brief structured buffer class
 template<typename T> class structured_buffer : public buffer<T> {
 protected:
-  comptr<ID3D11ShaderResourceView> d3d_srv{};
+  comptr<d3d11::shader_resource_view> d3d_srv{};
 public:
-  using buffer<T>::operator ID3D11Buffer*;
+  using buffer<T>::operator d3d11::buffer*;
   structured_buffer() noexcept = default;
-  operator ::ID3D11ShaderResourceView*() const noexcept { return d3d_srv; }
+  operator d3d11::shader_resource_view*() const noexcept { return d3d_srv; }
   explicit operator bool() const noexcept { return buffer<T>::operator bool() && d3d_srv; }
   explicit structured_buffer(const buffer<T>& Src) noexcept : structured_buffer(Src.count) { buffer<T>::from(Src); }
 
@@ -439,11 +446,11 @@ template<contiguous_range Rg> structured_buffer(Rg&&) -> structured_buffer<iter_
 /// \brief unordered access buffer class
 template<typename T> class unordered_buffer : public buffer<T> {
 protected:
-  comptr<ID3D11UnorderedAccessView> d3d_uav{};
+  comptr<d3d11::unordered_access_view> d3d_uav{};
 public:
   unordered_buffer() noexcept = default;
-  operator ID3D11Buffer*() const noexcept { return buffer<T>::d3d_buffer; }
-  operator ID3D11UnorderedAccessView*() const noexcept { return d3d_uav; }
+  operator d3d11::buffer*() const noexcept { return buffer<T>::d3d_buffer; }
+  operator d3d11::unordered_access_view*() const noexcept { return d3d_uav; }
   explicit operator bool() const noexcept { return buffer<T>::operator bool() && d3d_uav; }
   explicit unordered_buffer(const buffer<T>& Src) noexcept : unordered_buffer(Src.count) { buffer<T>::from(Src); }
 
@@ -518,12 +525,12 @@ protected:
   comptr<ID3D11GeometryShader> d3d_gs{};
   comptr<ID3D11PixelShader> d3d_ps{};
 public:
-  using vs_resource_list = array<ID3D11ShaderResourceView*, VSResources::size>;
-  using gs_resource_list = array<ID3D11ShaderResourceView*, GSResources::size>;
-  using ps_resource_list = array<ID3D11ShaderResourceView*, PSResources::size>;
-  using vs_constant_list = array<ID3D11Buffer*, VSConstants::size>;
-  using gs_constant_list = array<ID3D11Buffer*, GSConstants::size>;
-  using ps_constant_list = array<ID3D11Buffer*, PSConstants::size>;
+  using vs_resource_list = array<d3d11::shader_resource_view*, VSResources::size>;
+  using gs_resource_list = array<d3d11::shader_resource_view*, GSResources::size>;
+  using ps_resource_list = array<d3d11::shader_resource_view*, PSResources::size>;
+  using vs_constant_list = array<d3d11::buffer*, VSConstants::size>;
+  using gs_constant_list = array<d3d11::buffer*, GSConstants::size>;
+  using ps_constant_list = array<d3d11::buffer*, PSConstants::size>;
   yw::topology topology = yw::topology::triangle_list;
   rendering_shader() noexcept = default;
   explicit operator bool() const noexcept { return bool(d3d_vs) && bool(d3d_ps); }
@@ -592,14 +599,14 @@ template<specialization_of<typepack> Unordered,               //
          specialization_of<typepack> Constant = typepack<>>
 class computing_shader {
   static_assert(Unordered::count > 0, "unordered access views must be specified");
-  static_assert([]<typename... Ts>(typepack<Ts...>) { return (convertible_to<Ts, ID3D11UnorderedAccessView*> && ...); }(Unordered{}));
-  static_assert([]<typename... Ts>(typepack<Ts...>) { return (convertible_to<Ts, ID3D11ShaderResourceView*> && ...); }(Structured{}));
-  static_assert([]<typename... Ts>(typepack<Ts...>) { return (convertible_to<Ts, ID3D11Buffer*> && ...); }(Constant{}));
+  static_assert([]<typename... Ts>(typepack<Ts...>) { return (convertible_to<Ts, d3d11::unordered_access_view*> && ...); }(Unordered{}));
+  static_assert([]<typename... Ts>(typepack<Ts...>) { return (convertible_to<Ts, d3d11::shader_resource_view*> && ...); }(Structured{}));
+  static_assert([]<typename... Ts>(typepack<Ts...>) { return (convertible_to<Ts, d3d11::buffer*> && ...); }(Constant{}));
 protected:
   comptr<ID3D11ComputeShader> d3d_cs{};
-  bool call(array<ID3D11UnorderedAccessView*, extent<Unordered>> u, //
-            array<ID3D11ShaderResourceView*, extent<Structured>> s, //
-            array<ID3D11Buffer*, extent<Constant>> c,               //
+  bool call(array<d3d11::unordered_access_view*, extent<Unordered>> u, //
+            array<d3d11::shader_resource_view*, extent<Structured>> s, //
+            array<d3d11::buffer*, extent<Constant>> c,                 //
             nat4 x, nat4 y, nat4 z) const {
     if (!(x && y && z)) return false;
     main::d3d_context->CSSetUnorderedAccessViews(0, u.count, u.data(), nullptr);
@@ -637,12 +644,20 @@ public:
                   numeric auto&& y, numeric auto&& z, const source& _ = {}) const noexcept {
     try {
       if (!(*this)) throw std::runtime_error("the computing shader is not valid");
-      using ub_array = array<ID3D11UnorderedAccessView*, extent<Unordered>>;
-      using sb_array = array<ID3D11ShaderResourceView*, extent<Structured>>;
-      using cb_array = array<ID3D11Buffer*, extent<Constant>>;
-      return call([&]<nat... Is>(sequence<Is...>) { return ub_array{static_cast<ID3D11UnorderedAccessView*>(get<Is>(ub))...}; }(make_indices_for<ub_list>{}), //
-                  [&]<nat... Is>(sequence<Is...>) { return sb_array{static_cast<ID3D11ShaderResourceView*>(get<Is>(sb))...}; }(make_indices_for<sb_list>{}),  //
-                  [&]<nat... Is>(sequence<Is...>) { return cb_array{static_cast<ID3D11Buffer*>(get<Is>(cb))...}; }(make_indices_for<cb_list>{}), nat4(x), nat4(y), nat4(z));
+      using ub_array = array<d3d11::unordered_access_view*, extent<Unordered>>;
+      using sb_array = array<d3d11::shader_resource_view*, extent<Structured>>;
+      using cb_array = array<d3d11::buffer*, extent<Constant>>;
+      static_assert(same_as<ub_list, list<const unordered_buffer<fat4>&>>);
+      static_assert(convertible_to<element_t<ub_list, 0>, d3d11::unordered_access_view*>);
+      auto u = ub_array{static_cast<d3d11::unordered_access_view*>(get<0>(ub))};
+      static_assert(same_as<sb_list, list<>>);
+      static_assert(sb_list::count == 0);
+      auto s = sb_array{};
+      auto c = cb_array{};
+      // auto u = [&]<nat... Is>(sequence<Is...>) { return ub_array{static_cast<d3d11::unordered_access_view*>(get<Is>(ub))...}; }(make_indices_for<ub_list>{});
+      // auto s = [&]<nat... Is>(sequence<Is...>) { return sb_array{static_cast<d3d11::shader_resource_view*>(get<Is>(sb))...}; }(make_indices_for<sb_list>{});
+      // auto c = [&]<nat... Is>(sequence<Is...>) { return cb_array{static_cast<d3d11::buffer*>(get<Is>(cb))...}; }(make_indices_for<cb_list>{});
+      return call(u, s, c, nat4(x), nat4(y), nat4(z));
     } catch (const std::exception& e) {
       main::log(logger::error, e.what());
       main::log(logger::error, "failed to perform GPGPU calculation", _);
