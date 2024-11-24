@@ -60,6 +60,56 @@
         "kind": "build",
         "isDefault": true,
       },
+    },
+    {
+      "label": "compile-ixx",
+      "type": "shell",
+      "command": "ywstd/ywstd.ps1 --ixx",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true,
+      },
+    },
+    {
+      "label": "compile-ixx-cpp",
+      "type": "shell",
+      "command": "ywstd/ywstd.ps1 --ixx --cpp",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true,
+      },
+    },
+    {
+      "label": "compile-ixx-cpp-run",
+      "type": "shell",
+      "command": "ywstd/ywstd.ps1 --ixx --cpp --run",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true,
+      },
+    },
+    {
+      "label": "compile-cpp",
+      "type": "shell",
+      "command": "ywstd/ywstd.ps1 --cpp",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true,
+      },
+    },
+    {
+      "label": "compile-cpp-run",
+      "type": "shell",
+      "command": "ywstd/ywstd.ps1 --cpp --run",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true,
+      },
     }
   ],
 }
