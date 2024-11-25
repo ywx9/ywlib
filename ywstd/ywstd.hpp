@@ -1,15 +1,8 @@
 #pragma once
-
 #if defined(YWLIB) && YWLIB == 2 // for executable
 import ywstd;
-#else // for coding or module
+#else // for coding or compiling module
 #define _BUILD_STD_MODULE
+#include "intrin.hpp"
 #include "std.hpp"
-#include "win.hpp"
 #endif
-
-////////////////////////////////////////////////////////////////////////////////
-/// \note template variables need to be defined in header not in module
-////////////////////////////////////////////////////////////////////////////////
-
-namespace yw {}
