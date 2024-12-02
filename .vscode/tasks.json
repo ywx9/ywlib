@@ -2,69 +2,9 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "build",
-      "type": "shell",
-      "command": ".vscode/build.ps1",
-      "problemMatcher": [],
-      "group": {
-        "kind": "build",
-        "isDefault": true,
-      },
-    },
-    {
-      "label": "rebuild",
-      "type": "shell",
-      "command": ".vscode/build.ps1 --rebuild",
-      "problemMatcher": [],
-      "group": {
-        "kind": "build",
-        "isDefault": true,
-      },
-    },
-    {
-      "label": "build&run",
-      "type": "shell",
-      "command": ".vscode/build.ps1 --run",
-      "problemMatcher": [],
-      "group": {
-        "kind": "build",
-        "isDefault": true,
-      },
-    },
-    {
-      "label": "rebuild&run",
-      "type": "shell",
-      "command": ".vscode/build.ps1 --rebuild --run",
-      "problemMatcher": [],
-      "group": {
-        "kind": "build",
-        "isDefault": true,
-      },
-    },
-    {
-      "label": "build-module",
-      "type": "shell",
-      "command": ".vscode/build.ps1 --rebuild --moduleonly",
-      "problemMatcher": [],
-      "group": {
-        "kind": "build",
-        "isDefault": true,
-      },
-    },
-    {
-      "label": "run",
-      "type": "shell",
-      "command": ".vscode/build.ps1 --run",
-      "problemMatcher": [],
-      "group": {
-        "kind": "build",
-        "isDefault": true,
-      },
-    },
-    {
       "label": "compile-ixx",
       "type": "shell",
-      "command": "ywstd/ywstd.ps1 --ixx",
+      "command": "module/.ps1 --ixx",
       "problemMatcher": [],
       "group": {
         "kind": "build",
@@ -74,7 +14,7 @@
     {
       "label": "compile-ixx-cpp",
       "type": "shell",
-      "command": "ywstd/ywstd.ps1 --ixx --cpp",
+      "command": "module/.ps1 --ixx --cpp",
       "problemMatcher": [],
       "group": {
         "kind": "build",
@@ -84,7 +24,7 @@
     {
       "label": "compile-ixx-cpp-run",
       "type": "shell",
-      "command": "ywstd/ywstd.ps1 --ixx --cpp --run",
+      "command": "module/.ps1 --ixx --cpp --run",
       "problemMatcher": [],
       "group": {
         "kind": "build",
@@ -94,7 +34,7 @@
     {
       "label": "compile-cpp",
       "type": "shell",
-      "command": "ywstd/ywstd.ps1 --cpp",
+      "command": "module/.ps1 --cpp",
       "problemMatcher": [],
       "group": {
         "kind": "build",
@@ -104,12 +44,22 @@
     {
       "label": "compile-cpp-run",
       "type": "shell",
-      "command": "ywstd/ywstd.ps1 --cpp --run",
+      "command": "module/.ps1 --cpp --run",
       "problemMatcher": [],
       "group": {
         "kind": "build",
         "isDefault": true,
       },
-    }
+    },
+    {
+      "label": "run",
+      "type": "shell",
+      "command": "module/.ps1 --run",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true,
+      },
+    },
   ],
 }
