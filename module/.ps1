@@ -45,15 +45,13 @@ if ($Args -contains "--cpp") {
   Write-Host "[TASK] Compiling $($cpp.Name)"
   Remove-Item -Path .\$($cpp.BaseName).exe -ErrorAction SilentlyContinue
   Invoke-Expression "&`"$($e.cl)`" /std:c++latest /EHsc /nologo /W4 /O2 /Qpar /utf-8 /DYWLIB=2 $cpp /reference ywlib=ywlib.ifc /link ywlib.obj /LIBPATH:`"$($e.msvc_lib)`" /LIBPATH:`"$($e.ucrt_lib)`" /LIBPATH:`"$($e.um_lib)`""
+  Remove-Item -Path .\$($cpp.BaseName).obj
   if (-not (Test-Path .\$($cpp.BaseName).exe)) {
     Write-Host "[TASK] Failed to compile $($cpp.Name)"
     exit 2
   } else {
     Write-Host "[TASK] Compiled $($cpp.Name)"
   }
-
-  # deletes object files
-  Remove-Item -Path .\$($cpp.BaseName).obj
 }
 
 

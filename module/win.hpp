@@ -98,7 +98,7 @@ inline bool yes(stringable auto&& Text)                             //
  *  \brief formats a windows error code
  ******************************************************************************/
 
-inline string<cat1> format_error(same_as<unsigned long> auto hr) {
+inline string<cat1> format_error(same_as<long> auto hr) {
   string<cat1> buffer(256, {});
   auto n = ::FormatMessageA(0x1200, nullptr, hr, 0, buffer.data(), 255, nullptr);
   buffer.resize(n);
@@ -907,7 +907,6 @@ constexpr auto operator<=>(nat a, virtual_key b) noexcept { return a <=> nat(b);
 class window {
 protected:
   HWND _hwnd{};
-  MSG _msg{};
   vector2<int4> _pad{};
   window(HWND Hwnd) noexcept : _hwnd(Hwnd) {}
 public:
@@ -1095,9 +1094,10 @@ public:
     void translate() noexcept { ::TranslateMessage(reinterpret_cast<MSG*>(this)); }
     void dispatch() noexcept { ::DispatchMessageW(reinterpret_cast<MSG*>(this)); }
   };
-  message_t& message = reinterpret_cast<message_t&>(_msg);
+  static_assert(sizeof(message_t) == sizeof(MSG));
+  message_t message{};
   window() noexcept = default;
-  window(window&& w) noexcept : _hwnd(exchange(w._hwnd, nullptr)), _msg(w._msg), _pad(w._pad) {}
+  window(window&& w) noexcept : _hwnd(exchange(w._hwnd, nullptr)), message(w.message), _pad(w._pad) {}
   operator HWND() const noexcept { return _hwnd; }
   explicit operator bool() const noexcept { return _hwnd != nullptr; }
   [[nodiscard]] window(                                                                            //
@@ -1136,7 +1136,7 @@ public:
   window& operator=(window&& w) noexcept {
     if (_hwnd) {
       if (!::DestroyWindow(_hwnd)) {
-        auto ee = ::GetLastError();
+        auto ee = long(::GetLastError());
         if (ee == ERROR_INVALID_WINDOW_HANDLE) return *this;
         main::log(logger::error, format_error(ee));
         main::log(logger::error, "failed to destroy window");
@@ -1148,7 +1148,7 @@ public:
   ~window() noexcept {
     if (_hwnd) {
       if (!::DestroyWindow(_hwnd)) {
-        auto ee = ::GetLastError();
+        auto ee = long(::GetLastError());
         if (ee == ERROR_INVALID_WINDOW_HANDLE) return;
         main::log(logger::error, format_error(ee));
         main::log(logger::error, "failed to destroy window");
@@ -1236,18 +1236,49 @@ public:
              different_from<remove_cvref<decltype(Text)>, string<cat2>> {
     return yes(cvt<cat1>(fwd<decltype(Text)>(Text)));
   }
-  bool wait_message() noexcept { return ::GetMessageW(&_msg, _hwnd, 0, 0) > 0; }
-  bool wait_message(nat4 Min, nat4 Max) noexcept { return ::GetMessageW(&_msg, _hwnd, Min, Max) > 0; }
-  bool peek_message(nat4 Remove = 1) noexcept { return ::PeekMessageW(&_msg, _hwnd, 0, 0, Remove); }
-  bool peek_message(nat4 Min, nat4 Max, nat4 Remove = 1) noexcept { return ::PeekMessageW(&_msg, _hwnd, Min, Max, Remove); }
-  void send_message(wmessage Message, nat8 WParam = 0, int8 LParam = 0) noexcept { ::SendMessageW(_hwnd, nat4(Message), WParam, LParam); }
-  void post_message(wmessage Message, nat8 WParam = 0, int8 LParam = 0) noexcept { ::PostMessageW(_hwnd, nat4(Message), WParam, LParam); }
+  /// waits for a message to be posted to the window
+  bool wait_message() noexcept { //
+    return ::GetMessageW(reinterpret_cast<MSG*>(&message), _hwnd, 0, 0) > 0;
+  }
+  /// waits for a message to be posted to the window within a range
+  bool wait_message(nat4 Min, nat4 Max) noexcept { //
+    return ::GetMessageW(reinterpret_cast<MSG*>(&message), _hwnd, Min, Max) > 0;
+  }
+  /// peeks for a message to be posted to the window
+  bool peek_message(nat4 Remove = 1) noexcept { //
+    return ::PeekMessageW(reinterpret_cast<MSG*>(&message), _hwnd, 0, 0, Remove);
+  }
+  /// peeks for a message to be posted to the window within a range
+  bool peek_message(nat4 Min, nat4 Max, nat4 Remove = 1) noexcept { //
+    return ::PeekMessageW(reinterpret_cast<MSG*>(&message), _hwnd, Min, Max, Remove);
+  }
+  /// sends a message to the window
+  void send_message(wmessage Message, nat8 WParam = 0, int8 LParam = 0) noexcept { //
+    ::SendMessageW(_hwnd, nat4(Message), WParam, LParam);
+  }
+  /// posts a message to the window
+  void post_message(wmessage Message, nat8 WParam = 0, int8 LParam = 0) noexcept { //
+    ::PostMessageW(_hwnd, nat4(Message), WParam, LParam);
+  }
+  /// posts a quit message to the window
   void post_quit_message(nat4 ExitCode = 0) noexcept { ::PostQuitMessage(ExitCode); }
 };
-
+static_assert(sizeof(window) == sizeof(HWND) + sizeof(window::message_t) + sizeof(vector2<int>));
 using enum window::style;
 
-using hwnd = HWND;
-inline auto* default_window_proc = ::DefWindowProcW;
+/** \class yw::wprocedure
+ *  \brief defines a window procedure
+ *  \note usage: `window_procedure wp{[](window& w, wmessage m, nat8 wp, int8 lp) -> bool { ... }};`
+ */
 
-}
+template<invocable_r<bool, window&, wmessage, nat8, int8> Fn> struct window_procedure : public Fn {
+  inline static Fn fn{};
+  static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) noexcept {
+    list<HWND, vector2<int>, window::message_t> Dummy{hwnd, {}, {hwnd, wmessage(msg), wp, lp}};
+    if (fn(reinterpret_cast<window&>(Dummy), wmessage(msg), wp, lp)) return 0;
+    else return ::DefWindowProcW(hwnd, msg, wp, lp);
+  }
+  operator WNDPROC() const noexcept { return wndproc; }
+};
+
+} // namespace yw
