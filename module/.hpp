@@ -3885,10 +3885,7 @@ inline double query_performance_frequency() noexcept {
   return ::QueryPerformanceFrequency(&li), double(li.QuadPart);
 }
 
-inline long long query_performance_counter() noexcept {
-  static LARGE_INTEGER li;
-  return ::QueryPerformanceCounter(&li), li.QuadPart;
-}
+inline void query_performance_counter(long long& i) noexcept { ::QueryPerformanceCounter((LARGE_INTEGER*)&i); }
 
 using hinstance = HINSTANCE;
 
@@ -3904,6 +3901,38 @@ inline std::vector<std::wstring> get_command_line() noexcept {
   return r;
 }
 
+inline std::wstring get_username() {
+  std::wstring r(256, L'\0');
+  unsigned long n;
+  ::GetUserNameW(r.data(), &n);
+  r.resize(n);
+  return r;
 }
+
+using hicon = HICON;
+
+inline hicon create_icon_from_file(const wchar_t* FileName) {
+  auto bm = (HBITMAP)::LoadImageW(nullptr, FileName, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
+  if (!bm) throw std::runtime_error("failed to load image");
+  ICONINFO ii{.fIcon = true, .hbmMask = bm, .hbmColor = bm};
+  auto hi = ::CreateIconIndirect(&ii);
+  ::DeleteObject(bm);
+  return hi;
+}
+
+inline bool destroy_icon(hicon hi) { return ::DestroyIcon(hi); }
+
+inline hicon load_icon(hinstance hi, const char* IconName) noexcept { return ::LoadIconA(hi, IconName); }
+inline hicon load_icon(hinstance hi, const wchar_t* IconName) noexcept { return ::LoadIconW(hi, IconName); }
+
+using hcursor = HCURSOR;
+
+inline hcursor create_cursor_from_file(const char* FileName) noexcept { return ::LoadCursorFromFileA(FileName); }
+inline hcursor create_cursor_from_file(const wchar_t* FileName) noexcept { return ::LoadCursorFromFileW(FileName); }
+
+inline bool destroy_cursor(hcursor hc) noexcept { return ::DestroyCursor(hc); }
+
+inline hcursor load_cursor(hinstance hi, const char* CursorName) noexcept { return ::LoadCursorA(hi, CursorName); }
+} // namespace win
 
 #endif
