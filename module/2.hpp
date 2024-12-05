@@ -789,149 +789,564 @@ inline constexpr cat2 sjis_table2[29][192] = {
   0xfffd, 0xfffd, 0xfffd, 0xfffd, 0xfffd, 0xfffd, 0xfffd, 0xfffd, 0xfffd, 0xfffd, 0xfffd, 0xfffd, 0xfffd, 0xfffe, 0xfffe, 0xfffe, },
 };
 
+inline constexpr cat1 vtos_codes[36]{
+  '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', //
+  'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',                     //
+};
+
+auto get_zoned_time() { return std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()); }
+
 // clang-format on
 } // namespace yw::_
 
 export namespace yw {
 
 /// converts a Shift-JIS encoded string to UTF-16 encoded string
-constexpr string<cat2> from_sjis(const string_view<cat1> s) noexcept {
-  try {
-    string<cat2> r(s.size(), {});
-    auto out = r.begin();
-    for (auto in = s.begin(); in != s.end();) {
-      cat2 c(*in++);
-      if (c < 0x80) *out++ = c;
-      else if (c < 0xa0) {
-        if (c == 0x80) *out++ = 0xfffd;
-        else if (in == s.end()) break;
-        else if (cat2 d(*in++); d < 0x40) *out++ = 0xfffd;
-        else *out++ = _::sjis_table1[c - 0x81][d - 0x40];
-      } else if (c < 0xe0) *out++ = c == 0xa0 ? 0xfffd : 0xfec0 + c;
-      else if (c < 0xfd) {
-        if (in == s.end()) break;
-        else if (cat2 d(*in++); d < 0x40) *out++ = 0xfffd;
-        else *out++ = _::sjis_table2[c - 0xe0][d - 0x40];
-      } else *out++ = 0xfffd;
-    }
-    r.resize(out - r.begin());
-    return r;
-  } catch (...) { return {}; }
+constexpr string<cat2> from_sjis(const string_view<cat1> s) {
+  string<cat2> r(s.size(), cat2{});
+  auto out = r.begin();
+  for (auto in = s.begin(), se = s.end(); in != se;) {
+    cat2 c(*in++);
+    if (c < 0x80) *out++ = c;
+    else if (c < 0xa0) {
+      if (c == 0x80) *out++ = 0xfffd;
+      else if (in == se) break;
+      else if (cat2 d(*in++); d < 0x40) *out++ = 0xfffd;
+      else *out++ = _::sjis_table1[c - 0x81][d - 0x40];
+    } else if (c < 0xe0) *out++ = c == 0xa0 ? 0xfffd : (0xfec0 + c);
+    else if (c < 0xfd) {
+      if (in == se) break;
+      else if (cat2 d(*in++); d < 0x40) *out++ = 0xfffd;
+      else *out++ = _::sjis_table2[c - 0xe0][d - 0x40];
+    } else *out++ = 0xfffd;
+  }
+  r.resize(out - r.begin());
+  return r;
 }
 
 /// converts a UTF-8 encoded string to UTF-32 encoded string
-constexpr string<uct4> to_utf32(const string_view<cat1> s) noexcept {
-  try {
-    string<uct4> r(s.size(), {});
-    auto out = r.begin();
-    for (auto in = s.begin(); in != s.end();) {
-      uct4 c(*in++);
-      if (c < 0x80) *out++ = c;
-      else if (c < 0xc0) *out++ = 0xfffd;
-      else if (c < 0xe0) {
-        if (in == s.end()) *out++ = 0xfffd;
-        else *out++ = (c & 0x1f) << 6 | (uct4(*in++) & 0x3f);
-      } else if (c < 0xf0) {
-        if (in == s.end()) *out++ = 0xfffd;
-        else if (uct4 d(*in++); in == s.end()) *out++ = 0xfffd;
-        else *out++ = (c & 0x0f) << 12 | (d & 0x3f) << 6 | (uct4(*in++) & 0x3f);
-      } else if (c < 0xf8) {
-        if (in == s.end()) *out++ = 0xfffd;
-        else if (uct4 d(*in++); in == s.end()) *out++ = 0xfffd;
-        else if (uct4 e(*in++); in == s.end()) *out++ = 0xfffd;
-        else *out++ = (c & 0x07) << 18 | (d & 0x3f) << 12 | (e & 0x3f) << 6 | (uct4(*in++) & 0x3f);
-      } else *out++ = 0xfffd;
-    }
-    r.resize(out - r.begin());
-    return r;
-  } catch (...) { return {}; }
+constexpr string<uct4> to_utf32(const string_view<cat1> s) {
+  string<uct4> r(s.size(), {});
+  auto out = r.begin();
+  for (auto in = s.begin(); in != s.end();) {
+    uct4 c(*in++);
+    if (c < 0x80) *out++ = c;
+    else if (c < 0xc0) *out++ = 0xfffd;
+    else if (c < 0xe0) {
+      if (in == s.end()) *out++ = 0xfffd;
+      else *out++ = (c & 0x1f) << 6 | (uct4(*in++) & 0x3f);
+    } else if (c < 0xf0) {
+      if (in == s.end()) *out++ = 0xfffd;
+      else if (uct4 d(*in++); in == s.end()) *out++ = 0xfffd;
+      else *out++ = (c & 0x0f) << 12 | (d & 0x3f) << 6 | (uct4(*in++) & 0x3f);
+    } else if (c < 0xf8) {
+      if (in == s.end()) *out++ = 0xfffd;
+      else if (uct4 d(*in++); in == s.end()) *out++ = 0xfffd;
+      else if (uct4 e(*in++); in == s.end()) *out++ = 0xfffd;
+      else *out++ = (c & 0x07) << 18 | (d & 0x3f) << 12 | (e & 0x3f) << 6 | (uct4(*in++) & 0x3f);
+    } else *out++ = 0xfffd;
+  }
+  r.resize(out - r.begin());
+  return r;
 }
 
 /// converts a UTF-8 encoded string to UTF-32 encoded string
-constexpr string<uct4> to_utf32(const string_view<uct1> s) noexcept {
+constexpr string<uct4> to_utf32(const string_view<uct1> s) {
   static_assert(sizeof(string_view<cat1>) == sizeof(string_view<uct1>));
-  return to_utf32(std::bit_cast<string_view<cat1>>(s));
+  return to_utf32(bitcast<string_view<cat1>>(s));
 }
 
 /// converts a UTF-16 encoded string to UTF-32 encoded string
-constexpr string<uct4> to_utf32(const string_view<cat2> s) noexcept {
-  try {
-    string<uct4> r(s.size(), {});
-    auto out = r.begin();
-    for (auto in = s.begin(); in != s.end();) {
-      uct4 c(*in++);
-      if (c < 0xd800 || c >= 0xe000) *out++ = c;
-      else if (in == s.end()) *out++ = 0xfffd;
-      else if (uct4 d(*in++); d < 0xdc00 || d >= 0xe000) *out++ = 0xfffd;
-      else *out++ = (c & 0x03ff) << 10 | (d & 0x03ff) | 0x10000;
-    }
-    r.resize(out - r.begin());
-    return r;
-  } catch (...) { return {}; }
+constexpr string<uct4> to_utf32(const string_view<cat2> s) {
+  string<uct4> r(s.size(), {});
+  auto out = r.begin();
+  for (auto in = s.begin(); in != s.end();) {
+    uct4 c(*in++);
+    if (c < 0xd800 || c >= 0xe000) *out++ = c;
+    else if (in == s.end()) *out++ = 0xfffd;
+    else if (uct4 d(*in++); d < 0xdc00 || d >= 0xe000) *out++ = 0xfffd;
+    else *out++ = (c & 0x03ff) << 10 | (d & 0x03ff) | 0x10000;
+  }
+  r.resize(out - r.begin());
+  return r;
 }
 
 /// converts a UTF-16 encoded string to UTF-32 encoded string
-constexpr string<uct4> to_utf32(const string_view<uct2> s) noexcept {
+constexpr string<uct4> to_utf32(const string_view<uct2> s) {
   static_assert(sizeof(string_view<cat2>) == sizeof(string_view<uct2>));
-  return to_utf32(std::bit_cast<std::wstring_view>(s));
+  return to_utf32(bitcast<string_view<uct2>>(s));
 }
 
 /// converts a UTF-32 encoded string to UTF-8 encoded string
 /// \note `to_utf8<Ct>(s) -> string<Ct>` where `included_in<Ct, cat1, uct1>`
-template<included_in<cat1, uct1> Ct> constexpr string<Ct> to_utf8(const string_view<uct4> s) noexcept {
-  try {
-    string<Ct> r(s.size() * 4, {});
-    auto out = r.begin();
-    for (auto in = s.begin(); in != s.end();) {
-      uct4 c(*in++);
-      if (c < 0x80) *out++ = Ct(c);
-      else if (c < 0x800) {
-        *out++ = Ct(0xc0 | c >> 6);
-        *out++ = Ct(0x80 | (c & 0x3f));
-      } else if (c < 0x10000) {
-        *out++ = Ct(0xe0 | c >> 12);
-        *out++ = Ct(0x80 | (c >> 6 & 0x3f));
-        *out++ = Ct(0x80 | (c & 0x3f));
-      } else {
-        *out++ = Ct(0xf0 | c >> 18);
-        *out++ = Ct(0x80 | (c >> 12 & 0x3f));
-        *out++ = Ct(0x80 | (c >> 6 & 0x3f));
-        *out++ = Ct(0x80 | (c & 0x3f));
-      }
+template<included_in<cat1, uct1> Ct> constexpr string<Ct> to_utf8(const string_view<uct4> s) {
+  string<Ct> r(s.size() * 4, {});
+  auto out = r.begin();
+  for (auto in = s.begin(); in != s.end();) {
+    uct4 c(*in++);
+    if (c < 0x80) *out++ = Ct(c);
+    else if (c < 0x800) {
+      *out++ = Ct(0xc0 | c >> 6);
+      *out++ = Ct(0x80 | (c & 0x3f));
+    } else if (c < 0x10000) {
+      *out++ = Ct(0xe0 | c >> 12);
+      *out++ = Ct(0x80 | (c >> 6 & 0x3f));
+      *out++ = Ct(0x80 | (c & 0x3f));
+    } else {
+      *out++ = Ct(0xf0 | c >> 18);
+      *out++ = Ct(0x80 | (c >> 12 & 0x3f));
+      *out++ = Ct(0x80 | (c >> 6 & 0x3f));
+      *out++ = Ct(0x80 | (c & 0x3f));
     }
-    r.resize(out - r.begin());
-    return r;
-  } catch (...) { return {}; }
+  }
+  r.resize(out - r.begin());
+  return r;
 }
 
 /// converts a UTF-32 encoded string to UTF-8 encoded string
-constexpr string<cat1> to_utf8(const string_view<uct4> s) noexcept { return to_utf8<cat1>(s); }
+constexpr string<cat1> to_utf8(const string_view<uct4> s) { return to_utf8<cat1>(s); }
 
 /// converts a UTF-32 encoded string to UTF-8 encoded string
-constexpr string<uct1> to_utf8_u(const string_view<uct4> s) noexcept { return to_utf8<uct1>(s); }
+constexpr string<uct1> to_utf8_u(const string_view<uct4> s) { return to_utf8<uct1>(s); }
 
 /// converts a UTF-32 encoded string to UTF-16 encoded string
 /// \note `to_utf16<Ct>(s) -> string<Ct>` where `included_in<Ct, cat2, uct2>`
-template<included_in<cat2, uct2> Ct> constexpr string<Ct> to_utf16(const string_view<uct4> s) noexcept {
-  try {
-    string<Ct> r(s.size() * 2, {});
-    auto out = r.begin();
-    for (auto in = s.begin(); in != s.end();) {
-      uct4 c(*in++);
-      if (c >= 0x10000) {
-        c -= 0x10000;
-        *out++ = Ct(0xd800 | c >> 10);
-        *out++ = Ct(0xdc00 | (c & 0x3ff));
-      } else *out++ = Ct(c);
-    }
-    r.resize(out - r.begin());
-    return r;
-  } catch (...) { return {}; }
+template<included_in<cat2, uct2> Ct> constexpr string<Ct> to_utf16(const string_view<uct4> s) {
+  string<Ct> r(s.size() * 2, {});
+  auto out = r.begin();
+  for (auto in = s.begin(); in != s.end();) {
+    uct4 c(*in++);
+    if (c >= 0x10000) {
+      c -= 0x10000;
+      *out++ = Ct(0xd800 | c >> 10);
+      *out++ = Ct(0xdc00 | (c & 0x3ff));
+    } else *out++ = Ct(c);
+  }
+  r.resize(out - r.begin());
+  return r;
 }
 
 /// converts a UTF-32 encoded string to UTF-16 encoded string
-constexpr string<cat2> to_utf16(const string_view<uct4> s) noexcept { return to_utf16<cat2>(s); }
+constexpr string<cat2> to_utf16(const string_view<uct4> s) { return to_utf16<cat2>(s); }
 
 /// converts a UTF-32 encoded string to UTF-16 encoded string
-constexpr string<uct2> to_utf16_u(const string_view<uct4> s) noexcept { return to_utf16<uct2>(s); }
+constexpr string<uct2> to_utf16_u(const string_view<uct4> s) { return to_utf16<uct2>(s); }
+
+/// converts a string to a string of another encoding
+template<character Out> constexpr auto cvt = []<stringable Str>(Str&& s) {
+  using Ct = iter_value<Str>;
+  if constexpr (same_as<Out, Ct>) return fwd<Str>(s);
+  else if constexpr (sizeof(Ct) == sizeof(Out)) {
+    return string<Out>(bitcast<string_view<Out>>(string_view<Ct>(fwd<Str>(s))));
+  } else if constexpr (same_as<Out, uct4>) {
+    return to_utf32(string_view<Ct>(fwd<Str>(s)));
+  } else {
+    auto temp = to_utf32(string_view<Ct>(fwd<Str>(s)));
+    if constexpr (same_as<Out, cat1>) return to_utf8(temp);
+    else if constexpr (same_as<Out, cat2>) return to_utf16(temp);
+    else if constexpr (same_as<Out, uct1>) return to_utf8_u(temp);
+    else if constexpr (same_as<Out, uct2>) return to_utf16_u(temp);
+  }
+};
+
+/// returns the length of a string
+inline constexpr auto strlen = []<stringable St>(St&& Str) -> nat {
+  if constexpr (is_array<remove_ref<St>>) return extent<St> - 1;
+  else if constexpr (is_pointer<remove_ref<St>>) return std::char_traits<iter_value<St>>::length(Str);
+  else if constexpr (specialization_of<remove_cvref<St>, std::basic_string>) return Str.size();
+  else if constexpr (specialization_of<remove_cvref<St>, std::basic_string_view>) return Str.size();
+  else return string_view<iter_value<St>>(Str).size();
+};
+
+/// checks if a character is a digit
+inline constexpr auto is_digit = []<character Ct>(const Ct c) noexcept { return (natcast(c) ^ 0x30) < 10; };
+
+/// converts a string to a natural number
+/// \note If `same_as<decltype(s), string_view<Ct>&>`, unparsed part is stored in `s`.
+/// \note Digits, and `+` at the beginning of the string are permitted. The others stop the parsing.
+inline constexpr auto to_nat = []<stringable Str>(Str&& s) noexcept -> nat8 {
+  using Ct = iter_value<Str>;
+  nat8 v{}, i{};
+  string_view<Ct> sv(s);
+  if (sv.empty()) return 0;
+  if (sv.front() == Ct('+')) ++i;
+  for (; i < sv.size(); ++i) {
+    if (is_digit(sv[i])) v = v * 10 + sv[i] - '0';
+    else break;
+  }
+  if constexpr (same_as<Str, string_view<Ct>&>) s.remove_prefix(i);
+  return v;
+};
+static_assert(to_nat("123") == 123);
+static_assert(to_nat("+123") == 123);
+
+/// converts a string to an integer
+/// \note If `same_as<decltype(s), string_view<Ct>&>`, unparsed part is stored in `s`.
+/// \note Digits, and `+` or `-` at the beginning of the string are permitted. The others stop the parsing.
+inline constexpr auto to_int = []<stringable Str>(Str&& s) noexcept -> int8 {
+  using Ct = iter_value<Str>;
+  nat8 v{}, neg{}, i{};
+  string_view<Ct> sv(s);
+  if (sv.empty()) return 0;
+  if (sv.front() == Ct('+')) ++i;
+  else if (sv.front() == Ct('-')) neg = nat8(-1), ++i;
+  for (; i < sv.size(); ++i) {
+    if (is_digit(sv[i])) v = v * 10 + sv[i] - '0';
+    else break;
+  }
+  if constexpr (same_as<Str, string_view<Ct>&>) s.remove_prefix(i);
+  return neg ? -bitcast<int8>(v) : bitcast<int8>(v);
+};
+static_assert(to_int("123") == 123);
+static_assert(to_int("+123") == 123);
+static_assert(to_int("-123") == -123);
+
+/// converts a string to a floating point number
+/// \note If `same_as<decltype(s), string_view<Ct>&>`, unparsed part is stored in `s`.
+/// \note `+` or `-` at the beginning of the string are permitted.
+/// \note `.` is permitted only once. The second one stops the parsing.
+inline constexpr auto to_fat = []<stringable Str>(Str&& s) noexcept -> fat8 {
+  using Ct = iter_value<Str>;
+  nat8 w{}, neg{}, i{}, dot{npos};
+  string_view<Ct> sv(s);
+  if (sv.empty()) return 0;
+  if (sv.front() == Ct('+')) ++i;
+  else if (sv.front() == Ct('-')) neg = cev(1_n8 << 63), ++i;
+  for (; i < sv.size(); ++i) {
+    if (is_digit(sv[i])) w = w * 10 + sv[i] - '0';
+    else if (sv[i] == Ct('.') && (dot = i++, true)) break;
+    else break;
+  }
+  if (dot == npos) {
+    if constexpr (same_as<Str, string_view<Ct>&>) s.remove_prefix(i);
+    return bitcast<fat8>(neg | natcast(fat8(w)));
+  }
+  for (; i < sv.size(); ++i) {
+    if (is_digit(sv[i])) w = w * 10 + sv[i] - '0';
+    else break;
+  }
+  fat8 p = fat8(w);
+  for (w = 1; ++dot < i;) w *= 10;
+  if constexpr (same_as<Str, string_view<Ct>&>) s.remove_prefix(i);
+  return bitcast<fat8>(neg | natcast(p / w));
+};
+static_assert(to_fat("123") == 123);
+static_assert(to_fat("+123") == 123);
+static_assert(to_fat("-123") == -123);
+static_assert(to_fat("123.") == 123);
+static_assert(to_fat("123.456789") == 123.456789);
+static_assert(to_fat("-123.456789") == -123.456789);
+static_assert(to_fat(".123456789") == .123456789);
+static_assert(to_fat("-.123456789") == -.123456789);
+
+/// converts a scalar to a hexadecimal string
+template<character Ct> constexpr string<Ct> to_hex(const scalar auto v) {
+  using T = remove_cv<decltype(v)>;
+  if constexpr (is_nullptr<T>) return string<Ct>(16, Ct('0'));
+  else {
+    if constexpr (is_pointer<T>)
+      if (is_cev) return string<Ct>(16, Ct('0'));
+    string<Ct> r(sizeof(T) * 2, Ct('0'));
+    for (nat i = r.size(), n = natcast(v); 0 < i; n >>= 4) r[--i] = _::vtos_codes[n & 0xf];
+    return r;
+  }
+}
+
+/// converts a scalar to a hexadecimal string
+constexpr string<cat1> to_hex(const scalar auto v) { return to_hex<cat1>(v); }
+
+/// converts none to a string
+template<typename Ct> constexpr string<Ct> to_string(is_none auto) noexcept { //
+  return to_string(array{Ct('n'), Ct('o'), Ct('n'), Ct('e')});
+}
+
+/// converts a nullptr to a string
+template<typename Ct> constexpr string<Ct> to_string(is_nullptr auto) noexcept { //
+  return string<Ct>(16, '0');
+}
+
+/// converts a pointer to a string
+template<typename Ct> constexpr string<Ct> to_string(is_pointer auto v) noexcept {
+  if (is_cev) return string<Ct>(16, '0');
+  else return to_hex<Ct>(reinterpret_cast<nat>(v));
+}
+
+/// converts an integral number to a string
+template<typename Ct> constexpr string<Ct> to_string(integral auto v) noexcept {
+  if constexpr (is_bool<decltype(v)>) {
+    if (v) return to_string(array{Ct('t'), Ct('r'), Ct('u'), Ct('e')});
+    else return to_string(array{Ct('f'), Ct('a'), Ct('l'), Ct('s'), Ct('e')});
+  } else if constexpr (unsigned_integral<decltype(v)>) {
+    if (v == 0) return string<Ct>(1, Ct('0'));
+    Ct temp[20];
+    nat it = 20;
+    for (; v != 0; v /= 10) temp[--it] = Ct(v % 10 + '0');
+    return string<Ct>(temp + it, 20 - it);
+  } else {
+    if (v == 0) return string<Ct>(1, Ct('0'));
+    const bool neg = v < 0 ? v = -v, true : false;
+    Ct temp[20];
+    nat it = 20;
+    for (; v != 0; v /= 10) temp[--it] = Ct(v % 10 + '0');
+    if (neg) temp[--it] = Ct('-');
+    return string<Ct>(temp + it, 20 - it);
+  }
+}
+
+/// converts an enum to a string
+template<typename Ct> constexpr string<Ct> to_string(is_enum auto v) noexcept {
+  if constexpr (unsigned_integral<underlying_type<decltype(v)>>) return to_hex(v);
+  else return to_string(to_underlying(v));
+}
+
+/// converts a floating point number to a string
+template<typename Ct> constexpr string<Ct> to_string(fat8 v) noexcept {
+  const nat bitn = bitcast<nat8>(v);
+  if ((bitn & 0x7fffffffffffffff) == 0) {
+    if (bitn == 0) return to_string(array{Ct('0')});
+    else return to_string(array{Ct('-'), Ct('0')});
+  } else if ((bitn & 0x7ff0000000000000) == 0x7ff0000000000000) {
+    if (bitn == 0x7ff0000000000000) return to_string(array{Ct('i'), Ct('n'), Ct('f')});
+    else if (bitn == 0xfff0000000000000) return to_string(array{Ct('-'), Ct('i'), Ct('n'), Ct('f')});
+    else return to_string(array{Ct('n'), Ct('a'), Ct('n')});
+  } else {
+    if (v > 1e+16) return to_string(array{Ct('>'), Ct('1'), Ct('e'), Ct('+'), Ct('1'), Ct('6')});
+    else if (v < -1e+16) return to_string(array{Ct('<'), Ct('-'), Ct('1'), Ct('e'), Ct('+'), Ct('1'), Ct('6')});
+    const auto ii = static_cast<int8>(v);
+    auto s0 = to_string<Ct>(ii);
+    if (ii < 0) v = static_cast<fat8>(ii) - v;
+    else v -= static_cast<fat8>(ii);
+    nat m = 20 - (s0.size() + 1);
+    for (auto n(m); n > 0; --n) v *= 10;
+    auto s1 = string<Ct>(m, '0');
+    auto jj = std::abs(static_cast<int8>(v));
+    for (; m > 0; jj /= 10) s1[--m] = Ct('0' + jj % 10);
+    if (auto sr = std::ranges::search(s1, array<Ct, 5>::fill(Ct('9'))); !sr.empty()) {
+      if (auto it = sr.begin(); it == s1.begin()) return ii < 0 ? to_string<Ct>(ii - 1) : to_string<Ct>(ii + 1);
+      else s1.resize(it - s1.begin()), ++*--it;
+    }
+    if (auto sr = std::ranges::search(s1, array<Ct, 5>::fill(Ct('0'))); !sr.empty()) s1.resize(sr.begin() - s1.begin());
+    if (s1.empty()) return s0;
+    else return s0.push_back(Ct('.')), s0.append(s1), mv(s0);
+  }
+}
+
+struct source {
+  explicit source(const cat1*) = delete;
+  const cat1* const file;
+  const cat1* const func;
+  const nat4 line, column;
+  consteval source(const cat1* File = __builtin_FILE(), const cat1* Func = __builtin_FUNCTION(), //
+                   nat4 Line = __builtin_LINE(), nat4 Column = __builtin_COLUMN()) noexcept
+    : file(File), func(Func), line(Line), column(Column) {}
+  template<character Ct> string<Ct> to_string() const {
+    string_view<Ct> f(file);
+    string<Ct> s0{}, s1 = yw::to_string<Ct>(line), s2 = yw::to_string<Ct>(column);
+    s0.reserve(f.size() + s1.size() + s2.size() + 3);
+    s0.append(f), s0.push_back(Ct('(')), s0.append(s1), s0.push_back(Ct(',')), s0.append(s2), s0.push_back(Ct(')'));
+    return s0;
+  }
+  string<cat1> to_string() const { return to_string<cat1>(); }
+};
+
+struct date {
+  int4 year{}, month{}, day{};
+  date() : date(_::get_zoned_time().get_local_time()) {}
+  date(numeric auto&& Year, numeric auto&& Month, numeric auto&& Day) noexcept //
+    : year(int4(Year)), month(int4(Month)), day(int4(Day)) {}
+  template<typename Clock, typename Duration> date(const std::chrono::time_point<Clock, Duration>& tp) {
+    const auto ymd = std::chrono::year_month_day(std::chrono::floor<std::chrono::days>(tp));
+    year = int4(ymd.year()), month = int4(nat4(ymd.month())), day = int4(nat4(ymd.day()));
+  }
+  template<character Ct> string<Ct> to_string() const {
+    string<Ct> s(10, {});
+    if constexpr (sizeof(Ct) == 4) {
+      auto t = std::format("{:04d}-{:02d}-{:02d}", year, month, day);
+      std::ranges::copy(t, s.data());
+    } else if constexpr (sizeof(Ct) == 1) std::format_to(s.data(), "{:04d}-{:02d}-{:02d}", year, month, day);
+    else if constexpr (sizeof(Ct) == 2) std::format_to(s.data(), L"{:04d}-{:02d}-{:02d}", year, month, day);
+    return s;
+  }
+  string<cat1> to_string() const { return to_string<cat1>(); }
+};
+
+struct clock {
+  int4 hour{}, minute{}, second{};
+  clock() : clock(_::get_zoned_time().get_local_time()) {}
+  clock(numeric auto&& Hour, numeric auto&& Minute, numeric auto&& Second) noexcept //
+    : hour(int4(Hour)), minute(int4(Minute)), second(int4(Second)) {}
+  template<typename Clock, typename Duration> clock(const std::chrono::time_point<Clock, Duration>& tp) {
+    const std::chrono::hh_mm_ss hms(std::chrono::floor<std::chrono::seconds>(tp - std::chrono::floor<std::chrono::days>(tp)));
+    hour = int4(hms.hours().count()), minute = int4(hms.minutes().count()), second = int4(hms.seconds().count());
+  }
+  template<character Ct> string<Ct> to_string() const {
+    string<Ct> s(8, {});
+    if constexpr (sizeof(Ct) == 4) {
+      auto t = std::format("{:02d}:{:02d}:{:02d}", hour, minute, second);
+      std::ranges::copy(t, s.data());
+    } else if constexpr (sizeof(Ct) == 1) std::format_to(s.data(), "{:02d}:{:02d}:{:02d}", hour, minute, second);
+    else if constexpr (sizeof(Ct) == 2) std::format_to(s.data(), L"{:02d}:{:02d}:{:02d}", hour, minute, second);
+    return s;
+  }
+  string<cat1> to_string() const { return to_string<cat1>(); }
+};
+
+struct time {
+  yw::date date;
+  yw::clock clock;
+  time() : time(_::get_zoned_time().get_local_time()) {}
+  time(const yw::date& Date, const yw::clock& Clock) noexcept : date(Date), clock(Clock) {}
+  template<typename Clock, typename Duration> time(const std::chrono::time_point<Clock, Duration>& tp) : date(tp), clock(tp) {}
+  operator yw::date() const { return date; }
+  operator yw::clock() const { return clock; }
+  template<character Ct> string<Ct> to_string() const {
+    string<Ct> s(19, {});
+    if constexpr (sizeof(Ct) == 4) {
+      auto t = std::format("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}", //
+                           date.year, date.month, date.day, clock.hour, clock.minute, clock.second);
+      std::ranges::copy(t, s.data());
+    } else if constexpr (sizeof(Ct) == 1)                                   //
+      std::format_to(s.data(), "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}", //
+                     date.year, date.month, date.day, clock.hour, clock.minute, clock.second);
+    else if constexpr (sizeof(Ct) == 2)                                      //
+      std::format_to(s.data(), L"{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}", //
+                     date.year, date.month, date.day, clock.hour, clock.minute, clock.second);
+    return s;
+  }
+  string<cat1> to_string() const { return to_string<cat1>(); }
+};
+
+inline constexpr caster now{[] { return time{}; }};
+
+class file {
+public:
+  yw::path path{};
+  file() = default;
+  file(const yw::path& Path) : path(Path) {}
+  file(yw::path&& Path) : path(mv(Path)) {}
+  file& operator=(const yw::path& Path) { return path = Path, *this; }
+  file& operator=(yw::path&& Path) { return path = mv(Path), *this; }
+  bool exists() const { return std::filesystem::exists(path); }
+  bool is_file() const { return std::filesystem::is_regular_file(path); }
+  bool is_directory() const { return std::filesystem::is_directory(path); }
+  nat size() const { return std::filesystem::file_size(path); }
+  bool read(void* Data, nat Size) const {
+    if (std::ifstream ifs(path, std::ios::binary); !ifs) return false;
+    else return ifs.read(static_cast<char*>(Data), Size), nat(ifs.gcount()) == Size;
+  }
+  bool read(contiguous_range auto&& Range) const { return read(yw::data(Range), yw::size(Range)); }
+  template<character Ct> string<Ct> read() const {
+    const nat Size = size();
+    string<Ct> s(Size / sizeof(Ct), {});
+    if (std::ifstream ifs(path, std::ios::binary); ifs) ifs.read(s.data(), Size);
+    return s;
+  }
+  string<cat1> read() const { return read<cat1>(); }
+  bool write(const void* Data, nat Size) const {
+    if (std::ofstream ofs(path, std::ios::binary); !ofs) return false;
+    else return ofs.write(static_cast<const char*>(Data), Size), true;
+  }
+  bool write(contiguous_range auto&& Range) const { return write(yw::data(Range), yw::size(Range)); }
+};
+
+class logger {
+protected:
+  string<cat1> text{};
+public:
+  struct level_t {
+    string_view<cat1> name;
+    int value;
+    friend bool operator==(const level_t& l, const level_t& r) noexcept { return l.value == r.value; }
+    friend auto operator<=>(const level_t& l, const level_t& r) noexcept { return l.value <=> r.value; }
+  };
+  static constexpr level_t all{"all", 0};
+  static constexpr level_t debug{"debug", 10};
+  static constexpr level_t info{"info", 20};
+  static constexpr level_t warning{"warn", 30};
+  static constexpr level_t error{"error", 40};
+  static constexpr level_t critical{"critical", 50};
+  path path{};
+  level_t level = info;
+  bool console = true;
+  logger(const yw::path& File) noexcept : path(File) {}
+  ~logger() noexcept {
+    try {
+      if (std::basic_ofstream<cat1> ofs(path, std::ios::app); ofs) ofs << text, text.clear();
+      else std::cerr << "failed to open log file: " << path << std::endl;
+    } catch (...) { std::cerr << "failed to write log file: " << path << std::endl; }
+  }
+  void operator()(const level_t& Level, stringable auto&& Text) noexcept {
+    if (Level < level) return;
+    try {
+      string<cat1> s;
+      if constexpr (same_as<iter_value<decltype(Text)>, cat1>) {
+        s = std::format("{} [{}] {}\n", now(), Level.name, string_view<cat1>(Text));
+      } else s = std::format("{} [{}] {}\n", now(), Level.name, cvt<cat1>(Text));
+      if (console) std::cout << s;
+      text += s;
+    } catch (...) { std::cerr << "failed to write log" << std::endl; }
+  }
+  void operator()(const level_t& Level, stringable auto&& Text, const source& Source) noexcept {
+    if (Level < level) return;
+    if (level > debug) return operator()(Level, fwd<decltype(Text)>(Text));
+    try {
+      string<cat1> s = std::format("{} [{}] {}: {}\n", now(), Level.name, Source, cvt<cat1>(Text));
+      if (console) std::cout << s;
+      text += s;
+    } catch (...) { std::cerr << "failed to write log" << std::endl; }
+  }
+  template<typename... Ts> void format( //
+    const level_t& Level, const std::format_string<Ts...> Format, Ts&&... Args) noexcept {
+    if (Level < level) return;
+    try {
+      string<cat1> s;
+      if constexpr (sizeof...(Ts) == 0) s = std::format("{} [{}] {}\n", now(), Level.name, Format);
+      else s = std::format("{} [{}] {}\n", now(), Level.name, std::format(Format, fwd<Ts>(Args)...));
+      if (console) std::cout << s;
+      text += s;
+    } catch (...) { std::cerr << "failed to write log" << std::endl; }
+  }
+  template<typename... Ts> void format( //
+    const level_t& Level, const std::wformat_string<Ts...> Format, Ts&&... Args) noexcept {
+    if (Level < level) return;
+    try {
+      string<cat2> s;
+      if constexpr (sizeof...(Ts) == 0) s = std::format(L"{} [{}] {}\n", now(), Level.name, Format);
+      else s = std::format(L"{} [{}] {}\n", now(), cvt<cat2>(Level.name), std::format(Format, fwd<Ts>(Args)...));
+      if (console) std::wcout << s;
+      text += cvt<cat1>(s);
+    } catch (...) { std::wcerr << "failed to write log" << std::endl; }
+  }
+  void flush() noexcept {
+    try {
+      if (std::basic_ofstream<cat1> ofs(path, std::ios::app); ofs) ofs << text, text.clear();
+      else std::cerr << "failed to open log file: " << path << std::endl;
+    } catch (...) { std::cerr << "failed to write log file: " << path << std::endl; }
+  }
+};
+
 } // namespace yw
+
+namespace std {
+
+template<typename Ct> struct formatter<yw::source, Ct> : formatter<basic_string<Ct>, Ct> {
+  auto format(const yw::source& s, auto& Ctx) const { return formatter<basic_string<Ct>, Ct>::format(s.to_string(), Ctx); }
+};
+
+template<typename Ct> struct formatter<yw::date, Ct> : formatter<basic_string<Ct>, Ct> {
+  auto format(const yw::date& d, auto& Ctx) const { return formatter<basic_string<Ct>, Ct>::format(d.to_string(), Ctx); }
+};
+
+template<typename Ct> struct formatter<yw::clock, Ct> : formatter<basic_string<Ct>, Ct> {
+  auto format(const yw::clock& c, auto& Ctx) const { return formatter<basic_string<Ct>, Ct>::format(c.to_string(), Ctx); }
+};
+
+template<typename Ct> struct formatter<yw::time, Ct> : formatter<basic_string<Ct>, Ct> {
+  auto format(const yw::time& t, auto& Ctx) const { return formatter<basic_string<Ct>, Ct>::format(t.to_string(), Ctx); }
+};
+
+template<typename Ct> struct formatter<yw::file, Ct> : formatter<basic_string<Ct>, Ct> {
+  auto format(const yw::file& f, auto& Ctx) const { return formatter<basic_string<Ct>, Ct>::format(f.path.string<Ct>(), Ctx); }
+};
+
+} // namespace std

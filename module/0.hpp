@@ -335,6 +335,7 @@ template<typename T> concept is_member_object_pointer = is_member_pointer<T> && 
 template<typename T> concept is_enum = std::is_enum_v<T>;
 template<typename T> concept is_scoped_enum = is_enum<T> && !convertible_to<T, bool>;
 template<is_enum T> using underlying_type = std::underlying_type_t<T>;
+inline constexpr auto to_underlying = [](is_enum auto e) noexcept { return static_cast<underlying_type<decltype(e)>>(e); };
 
 template<typename T> concept integral = std::integral<T>;
 template<typename T> concept signed_integral = std::signed_integral<T>;
@@ -368,6 +369,7 @@ template<typename T> concept trivially_copyable = std::is_trivially_copyable_v<T
 template<character Ct> using string = std::basic_string<Ct>;
 template<character Ct> using string_view = std::basic_string_view<Ct>;
 template<character Ct, typename... Args> using format_string = std::basic_format_string<Ct, Args...>;
+using path = std::filesystem::path;
 
 template<typename... Fs> struct overload : public Fs... {
   using Fs::operator()...;
@@ -546,11 +548,549 @@ template<template<typename, auto...> typename Tm, typename T, auto... Vs, typena
 template<template<auto, typename...> typename Tm, auto V, typename... Ts, auto W, typename... Us> struct t_variation_of<Tm<V, Ts...>, Tm<W, Us...>> : constant<true> {};
 template<typename T, typename U> concept variation_of = t_variation_of<T, U>::value;
 
-template<trivially_copyable T> constexpr auto bitcast = []<trivially_copyable U>(const U& Val) noexcept requires (sizeof(T) == sizeof(U)) { return __builtin_bit_cast(T, Val); };
-inline constexpr auto natcast = []<trivially_copyable T>(const T& Val) ywlib_wrap_auto(bitcast<nat_type<sizeof(T)>>(Val));
-inline constexpr auto popcount = [](const integral auto& Value) ywlib_wrap_auto(std::popcount(natcast(Value)));
-inline constexpr auto countlz = [](const integral auto& Value) ywlib_wrap_auto(std::countl_zero(natcast(Value)));
-inline constexpr auto countrz = [](const integral auto& Value) ywlib_wrap_auto(std::countr_zero(natcast(Value)));
-inline constexpr auto bitfloor = [](const integral auto& Value) ywlib_wrap_auto(std::bit_floor(natcast(Value)));
-inline constexpr auto bitceil = [](const integral auto& Value) ywlib_wrap_auto(std::bit_ceil(natcast(Value)));
+template<trivially_copyable T> constexpr auto bitcast = []<trivially_copyable U>(const U& v) noexcept requires (sizeof(T) == sizeof(U)) { return __builtin_bit_cast(T, v); };
+inline constexpr auto natcast = []<trivially_copyable T>(const T& v) ywlib_wrap_auto(bitcast<nat_type<sizeof(T)>>(v));
+inline constexpr auto popcount = [](const integral auto& i) ywlib_wrap_auto(std::popcount(natcast(i)));
+inline constexpr auto countlz = [](const integral auto& i) ywlib_wrap_auto(std::countl_zero(natcast(i)));
+inline constexpr auto countrz = [](const integral auto& i) ywlib_wrap_auto(std::countr_zero(natcast(i)));
+inline constexpr auto bitfloor = [](const integral auto& i) ywlib_wrap_auto(std::bit_floor(natcast(i)));
+inline constexpr auto bitceil = [](const integral auto& i) ywlib_wrap_auto(std::bit_ceil(natcast(i)));
+
+/// can be implicitly converted through functions
+template<typename... Fs> struct caster : public Fs... {
+private:
+  template<typename T> static constexpr nat i = inspects<same_as<T, invoke_result<Fs>>...>;
+  template<typename T> static constexpr nat j = //
+    i<T> < sizeof...(Fs) ? i<T> : inspects<convertible_to<T, invoke_result<Fs>>...>;
+  template<typename... As> static constexpr nat k = inspects<invocable<Fs, As...>...>;
+public:
+  using Fs::operator()...;
+  template<typename T> requires (j<T> < sizeof...(Fs)) constexpr operator T() const //
+    noexcept(noexcept(select_type<j<T>, Fs...>::operator()())) {
+    return select_type<j<T>, Fs...>::operator()();
+  }
+  template<typename... As> requires (k<As...> < sizeof...(Fs)) //
+  constexpr decltype(auto) operator()(As&&... Args) const      //
+    noexcept(noexcept(select_type<k<As...>, Fs...>::operator()(fwd<As>(Args)...))) {
+    return select_type<k<As...>, Fs...>::operator()(fwd<As>(Args)...);
+  }
+};
+
+/// checks if the current context is constant evaluated
+/// \note `convertible_to<bool>`
+inline constexpr caster is_cev{[]() noexcept { return std::is_constant_evaluated(); }};
+
+/// strategy for `yw::get`
+namespace get_strategy {
+
+/// strategies
+enum class strategy {
+  invalid = 0,    // cannot get
+  tuple = 0x1,    // tuple-like
+  itself = 0x2,   // not tuple-like
+  array = 0x4,    // array is tuple-like
+  member = 0x8,   // has `get` as member function
+  nothrow = 0x10, // noexcept
+};
+using enum strategy;
+constexpr strategy operator&(strategy a, strategy b) noexcept { return static_cast<strategy>(static_cast<int>(a) & static_cast<int>(b)); }
+constexpr strategy operator|(strategy a, strategy b) noexcept { return static_cast<strategy>(static_cast<int>(a) | static_cast<int>(b)); }
+constexpr strategy operator^(strategy a, strategy b) noexcept { return static_cast<strategy>(static_cast<int>(a) ^ static_cast<int>(b)); }
+constexpr strategy operator~(strategy a) noexcept { return static_cast<strategy>(~static_cast<int>(a)); }
+
+template<nat I> void get() = delete;
+
+/// obtains get strategy for the given type and index
+template<typename T, nat I> inline constexpr strategy check = []() -> strategy {
+  using t = remove_ref<T>;
+  if constexpr (is_bounded_array<t>) return I < std::extent_v<t> ? array | nothrow : invalid;
+  else if constexpr (is_unbounded_array<t>) return invalid;
+  else if constexpr (is_class<t> || is_union<t>) {
+    if constexpr (requires { declval<T>().template get<I>(); }) return noexcept(declval<T>().template get<I>()) ? member | tuple | nothrow : member | tuple;
+    else if constexpr (requires { get<I>(declval<T>()); }) return noexcept(get<I>(declval<T>())) ? tuple | nothrow : tuple;
+    else return I == 0 ? itself | nothrow : invalid;
+  } else return I == 0 ? itself | nothrow : invalid;
+}();
+
+/// internal function for `yw::get`
+template<nat I, typename T> requires (check<T, I> != strategy::invalid) //
+decltype(auto) call(T&& Ref) noexcept(bool(check<T, I> & strategy::nothrow)) {
+  constexpr auto s = check<T, I>;
+  if constexpr (bool(s & strategy::itself)) return fwd<T>(Ref);
+  else if constexpr (bool(s & strategy::array)) return fwd<T>(Ref)[I];
+  else if constexpr (bool(s & strategy::member)) return fwd<T>(Ref).template get<I>();
+  else return get<I>(fwd<T>(Ref));
+}
+} // namespace get_strategy
+
+/// checks if the type is tuple-like
+template<typename T> concept tuple = bool(get_strategy::check<T, 0> & (get_strategy::tuple | get_strategy::array));
+
+/// checks if `get<I>(T)` is valid
+template<typename T, nat I> concept gettable = get_strategy::check<T, I> != get_strategy::invalid;
+
+/// checks if `get<I>(T)` is valid and noexcept
+template<typename T, nat I> concept nt_gettable = gettable<T, I> && bool(get_strategy::check<T, I> & get_strategy::nothrow);
+
+/// returns the `I`-th element of the tuple-like object
+template<nat I> inline constexpr auto get = []<typename T>(T&& Ref) ywlib_wrap_ref(get_strategy::call<I>(fwd<T>(Ref)));
+
+/// `I`-th element type of the tuple-like object
+template<typename T, nat I> requires gettable<T, I> using element_t = decltype(get<I>(declval<T>()));
+
+template<typename T> struct t_extent : constant<0_n> {};
+template<typename T> requires (bool(get_strategy::check<T, 0>& get_strategy::itself)) struct t_extent<T> : constant<1_n> {};
+template<typename T> requires (bool(get_strategy::check<T, 0>& get_strategy::array)) struct t_extent<T> : std::extent<remove_ref<T>> {};
+template<typename T> requires (bool(get_strategy::check<T, 0>& get_strategy::tuple)) struct t_extent<T> : std::tuple_size<remove_ref<T>> {};
+
+/// number of elements in the tuple-like object
+template<typename T> inline constexpr nat extent = t_extent<T>::value;
+
+/// checks if the types have the same extent
+template<typename T, typename... Ts> concept same_extent = ((extent<T> == extent<Ts>) && ...);
+
+template<auto... Vs> struct sequence;
+template<typename... Ts> struct typepack;
+template<typename... Ts> struct list;
+template<typename T, nat N> class array;
+
+template<typename S, typename T> struct t_to_sequence;
+template<template<auto...> typename Tm, typename T, auto... Vs> struct t_to_sequence<Tm<Vs...>, T> : t_type<sequence<T(Vs)...>> {};
+template<template<auto...> typename Tm, auto... Vs> struct t_to_sequence<Tm<Vs...>, none> : t_type<sequence<Vs...>> {};
+template<template<typename, auto...> typename Tm, typename T, typename U, auto... Vs> struct t_to_sequence<Tm<U, Vs...>, T> : t_type<sequence<T(Vs)...>> {};
+template<template<typename, auto...> typename Tm, typename U, auto... Vs> struct t_to_sequence<Tm<U, Vs...>, none> : t_type<sequence<Vs...>> {};
+
+/// converts a sequence-like type to `yw::sequence`
+template<typename S, typename T = none> using to_sequence = typename t_to_sequence<S, T>::type;
+
+/// checks if the type is a sequence-like type whose values are convertible to `T`
+template<typename S, typename T = none> concept sequence_of = variation_of<to_sequence<S, T>, sequence<>>;
+
+template<typename S, typename T> struct t_indices_for : t_indices_for<to_sequence<S>, T> {};
+template<nat... Vs, typename T> struct t_indices_for<sequence<Vs...>, T> : constant<(lt(Vs, extent<T>) && ...)> {};
+
+/// checks if the sequence-like type can be used as indices for the tuple-like type
+template<typename S, typename T> concept indices_for = t_indices_for<S, T>::value;
+
+template<nat Begin, nat End, auto Proj, nat... Vs> struct t_make_sequence : t_make_sequence<Begin + 1, End, Proj, Vs..., Proj(Begin)> {};
+template<nat End, auto Proj, nat... Vs> struct t_make_sequence<End, End, Proj, Vs...> : t_type<sequence<Vs...>> {};
+
+/// makes a sequence; `sequence<Proj(Begin), ..., Proj(End - 1)>`
+template<nat Begin, nat End, invocable<nat> auto Proj = pass{}> requires (Begin <= End) using make_sequence = typename t_make_sequence<Begin, End, Proj>::type;
+
+/// makes a sequence for the tuple-like type
+template<typename Tp> using make_indices_for = make_sequence<0, extent<Tp>>;
+
+template<typename Sq, nat... Is> struct t_extracting_indices : t_extracting_indices<to_sequence<Sq, bool>> {};
+template<bool... Bs> struct t_extracting_indices<sequence<Bs...>> : t_extracting_indices<sequence<Bs...>, 0, sizeof...(Bs)> {};
+template<bool... Bs, nat I, nat N, nat... Is> struct t_extracting_indices<sequence<Bs...>, I, N, Is...> //
+  : select_type<select_value<I, Bs...>, t_extracting_indices<sequence<Bs...>, I + 1, N, Is..., I>, t_extracting_indices<sequence<Bs...>, I + 1, N, Is...>> {};
+template<bool... Bs, nat N, nat... Is> struct t_extracting_indices<sequence<Bs...>, N, N, Is...> : t_type<sequence<Is...>> {};
+
+/// makes a sequence for extracting elements by indices that are `true` in the sequence
+template<sequence_of<bool> Sq> using extracting_indices = typename t_extracting_indices<Sq>::type;
+
+template<typename S1, typename S2> struct t_append_sequence : t_append_sequence<to_sequence<S1>, to_sequence<S2>> {};
+template<auto... Vs, auto... Ws> struct t_append_sequence<sequence<Vs...>, sequence<Ws...>> : t_type<sequence<Vs..., Ws...>> {};
+
+/// makes a sequence by appending two sequences
+template<typename S1, typename S2> using append_sequence = typename t_append_sequence<S1, S2>::type;
+
+template<typename S, typename Is> struct t_extract_sequence : t_extract_sequence<to_sequence<S>, to_sequence<Is, nat>> {};
+template<auto... Vs, nat... Is> struct t_extract_sequence<sequence<Vs...>, sequence<Is...>> : t_type<sequence<select_value<Is, Vs...>...>> {};
+
+/// makes a sequence by extracting values from the sequence
+template<typename S, typename Is> using extract_sequence = typename t_extract_sequence<S, Is>::type;
+
+/// sequence
+template<auto... Vs> struct sequence {
+  static constexpr nat count = sizeof...(Vs);
+  template<nat I> requires (I < sizeof...(Vs)) static constexpr auto at = select_value<I, Vs...>;
+  template<nat I> requires (I < sizeof...(Vs)) using type_at = select_type<I, decltype(Vs)...>;
+  template<sequence_of Sq> using append = append_sequence<sequence, Sq>;
+  template<indices_for<sequence> Ix> using extract = extract_sequence<sequence, Ix>;
+  template<nat N> requires (N <= sizeof...(Vs)) using fore = extract<make_sequence<0, N>>;
+  template<nat N> requires (N <= sizeof...(Vs)) using back = extract<make_sequence<sizeof...(Vs) - N, sizeof...(Vs)>>;
+  template<nat I> requires (I < sizeof...(Vs)) using remove = typename fore<I>::template append<back<sizeof...(Vs) - I - 1>>;
+  template<nat I, sequence_of Sq> requires (I <= sizeof...(Vs)) using insert = typename fore<I>::template append<Sq>::template append<back<sizeof...(Vs) - I>>;
+  template<template<auto...> typename Tm> using expand = Tm<Vs...>;
+  template<nat I> requires (I < sizeof...(Vs)) constexpr const auto&& get() const noexcept { return mv(at<I>); }
+};
+
+template<typename T, typename Is = make_indices_for<T>> struct t_to_typepack : t_to_typepack<T, to_sequence<Is, nat>> {};
+template<typename T, nat... Is> struct t_to_typepack<T, sequence<Is...>> : t_type<typepack<element_t<T, Is>...>> {};
+
+/// converts a tuple-like type to `yw::typepack`
+template<typename T> using to_typepack = typename t_to_typepack<T>::type;
+
+template<typename T> struct t_common_element : t_common_element<to_typepack<T>> {};
+template<typename... Ts> struct t_common_element<typepack<Ts...>> : t_type<common_type<Ts...>> {};
+
+/// common type of the elements in the tuple-like type
+template<typename T> using common_element = typename t_common_element<T>::type;
+
+template<typename T, typename U> struct t_tuple_for : t_tuple_for<to_typepack<T>, U> {};
+template<typename... Ts, typename U> struct t_tuple_for<typepack<Ts...>, U> : constant<(convertible_to<Ts, U> && ...)> {};
+
+/// checks if all elements in the tuple-like type are convertible to `U`
+template<typename T, typename U> concept tuple_for = to_typepack<T>::template expand<t_tuple_for>::value;
+
+template<typename T, typename U> struct append_typepack : append_typepack<to_typepack<T>, to_typepack<U>> {};
+template<typename... Ts, typename... Us> struct append_typepack<typepack<Ts...>, typepack<Us...>> : t_type<typepack<Ts..., Us...>> {};
+
+/// makes a typepack by appending two typepacks
+template<typename T, typename U> using append_typepack_t = typename append_typepack<T, U>::type;
+
+template<typename T, typename Is> struct extract_typepack : extract_typepack<to_typepack<T>, to_sequence<Is, nat>> {};
+template<typename... Ts, nat... Is> struct extract_typepack<typepack<Ts...>, sequence<Is...>> : t_type<typepack<select_type<Is, Ts...>...>> {};
+
+/// makes a typepack by extracting elements from the tuple-like type
+template<typename T, typename Is> using extract_typepack_t = typename extract_typepack<T, Is>::type;
+
+/// typepack
+template<typename... Ts> struct typepack {
+  static constexpr nat count = sizeof...(Ts);
+  using common = common_type<Ts...>;
+  template<nat I> requires (I < sizeof...(Ts)) using at = select_type<I, Ts...>;
+  template<tuple Tp> using append = append_typepack<typepack, Tp>;
+  template<indices_for<typepack> Ix> using extract = extract_typepack<typepack, Ix>;
+  template<nat N> requires (N <= sizeof...(Ts)) using fore = extract<make_sequence<0, N>>;
+  template<nat N> requires (N <= sizeof...(Ts)) using back = extract<make_sequence<sizeof...(Ts) - N, sizeof...(Ts)>>;
+  template<nat I> requires (I < sizeof...(Ts)) using remove = typename fore<I>::template append<back<sizeof...(Ts) - I - 1>>;
+  template<nat I, typename T> requires (I <= sizeof...(Ts)) using insert = typename fore<I>::template append<T>::template append<back<sizeof...(Ts) - I>>;
+  template<template<typename...> typename Tm> using expand = Tm<Ts...>;
+  template<nat I> requires (I < sizeof...(Ts)) constexpr const at<I> get() const noexcept;
+};
+
+/// tuple-view
+template<typename T, typename Pj, typename Sq> class tuple_view {
+  using sequence = to_sequence<Sq, nat>;
+  static_assert(sequence::count > 0);
+  static_assert(invocable<Pj&, element_t<T, sequence::template at<0>>>);
+  T&& ref;
+  Pj proj{};
+public:
+  tuple_view(T&& Ref) noexcept : ref(fwd<T>(Ref)) {}
+  tuple_view(T&& Ref, Pj p) noexcept : ref(fwd<T>(Ref)), proj(mv(p)) {}
+  tuple_view(T&& Ref, Sq) noexcept : ref(fwd<T>(Ref)) {}
+  tuple_view(T&& Ref, Pj p, Sq) noexcept : ref(fwd<T>(Ref)), proj(mv(p)) {}
+  template<nat I> using type_at = invoke_result<Pj&, element_t<T, sequence::template at<I>>>;
+  template<nat I> requires (I < sequence::count) constexpr decltype(auto) get() const { return invoke(proj, yw::get<sequence::template at<I>>(ref)); }
+};
+
+template<typename T> tuple_view(T&&) -> tuple_view<T&&, pass, make_indices_for<T>>;
+template<typename T, typename Pj> tuple_view(T&&, Pj) -> tuple_view<T&&, Pj, make_indices_for<T>>;
+template<typename T, typename Sq> tuple_view(T&&, Sq) -> tuple_view<T&&, pass, Sq>;
+template<typename T, typename Pj, typename Sq> tuple_view(T&&, Pj, Sq) -> tuple_view<T&&, Pj, Sq>;
+
 } // namespace yw
+
+namespace std {
+
+template<auto... Vs> struct tuple_size<yw::sequence<Vs...>> : integral_constant<nat, sizeof...(Vs)> {};
+template<nat I, auto... Vs> struct tuple_element<I, yw::sequence<Vs...>> : type_identity<decltype(yw::sequence<Vs...>::template at<I>)> {};
+
+template<typename... Ts> struct tuple_size<yw::typepack<Ts...>> : integral_constant<nat, sizeof...(Ts)> {};
+template<nat I, typename... Ts> struct tuple_element<I, yw::typepack<Ts...>> : type_identity<typename yw::typepack<Ts...>::template at<I>> {};
+
+template<typename T, typename Pj, typename Sq> struct tuple_size<yw::tuple_view<T, Pj, Sq>> : integral_constant<size_t, yw::tuple_view<T, Pj, Sq>::sequence::count> {};
+template<size_t I, typename T, typename Pj, typename Sq> struct tuple_element<I, yw::tuple_view<T, Pj, Sq>> : type_identity<typename yw::tuple_view<T, Pj, Sq>::template type_at<I>> {};
+
+template<typename... Ts> struct tuple_size<yw::list<Ts...>> : integral_constant<nat, sizeof...(Ts)> {};
+template<nat I, typename... Ts> struct tuple_element<I, yw::list<Ts...>> : type_identity<yw::select_type<I, Ts...>> {};
+
+template<typename T, nat N> requires (N != yw::npos) struct tuple_size<yw::array<T, N>> : integral_constant<size_t, N> {};
+template<size_t I, typename T, nat N> requires (N != yw::npos) struct tuple_element<I, yw::array<T, N>> : type_identity<T> {};
+
+}
+
+namespace yw::_ {
+
+template<nat I, nat... Is, nat... Js, nat... Ks, typename F, typename... Ts> //
+constexpr decltype(auto) _apply_i(sequence<Is...>, sequence<Js...>, sequence<Ks...>, F&& f, Ts&&... ts) {
+  return _apply<I>(f, select<Is>(fwd<Ts>(ts)...)..., get<Js>(fwd<select_type<I, Ts...>>(select<I>(fwd<Ts>(ts)...)))..., select<Ks>(fwd<Ts>(ts)...)...);
+}
+template<nat I, typename F, typename... Ts> constexpr decltype(auto) _apply(F&& f, Ts&&... ts) {
+  if constexpr (sizeof...(Ts) == 0) return invoke(f);
+  if constexpr (I == sizeof...(Ts)) return invoke(f, fwd<Ts>(ts)...);
+  else if constexpr (!tuple<select_type<I, Ts...>>) return _apply<I + 1>(f, fwd<Ts>(ts)...);
+  else return _apply_i<I>(make_sequence<0, I>{}, make_indices_for<select_type<I, Ts...>>{}, make_sequence<I + 1, sizeof...(Ts)>{}, f, fwd<Ts>(ts)...);
+}
+
+template<nat I, typename F, typename... Ts> constexpr void _vapply_i(F&& f, Ts&&... ts) ywlib_wrap_void(invoke(fwd<F>(f), get<I>(fwd<Ts>(ts))...));
+template<nat... Is, typename F, typename... Ts> constexpr void _vapply_is(sequence<Is...>, F&& f, Ts&&... ts) //
+  ywlib_wrap_void(((_vapply_i<Is>(fwd<F>(f), fwd<Ts>(ts)...)), ...));
+template<typename F, typename T, typename... Ts> requires same_extent<T, Ts...> constexpr void _vapply(F&& f, T&& t, Ts&&... ts) //
+  ywlib_wrap_void(_vapply_is(make_indices_for<T>{}, fwd<F>(f), fwd<T>(t), fwd<Ts>(ts)...));
+template<typename F, typename T, typename... Ts> requires (!same_extent<T, Ts...> && tuple<T> && (tuple<Ts> && ...)) void _vapply(F&& f, T&& t, Ts&&... ts) = delete;
+template<typename F, typename... Ts> requires (!(tuple<Ts> || ...)) void _vapply(F&& f, Ts&&... ts) = delete;
+template<nat I, nat N, nat... Is, nat... Js, typename F, typename... Ts> constexpr void _vapply_b(sequence<Is...>, sequence<Js...>, F&& f, Ts&&... ts) //
+  ywlib_wrap_void(_vapply(fwd<F>(f), select<Is>(fwd<Ts>(ts)...)..., tuple_view(select<I>(fwd<Ts>(ts)...), make_sequence<0, N>{}), select<Js>(fwd<Ts>(ts)...)...));
+template<nat I, nat J, typename F, typename... Ts> constexpr void _vapply_a(F&& f, Ts&&... ts) //
+  ywlib_wrap_void(_vapply_b<I, extent<select_type<J, Ts...>>>(make_sequence<0, I>{}, make_sequence<I + 1, sizeof...(Ts)>{}, fwd<F>(f), fwd<Ts>(ts)...));
+template<typename F, typename... Ts> requires (!(tuple<Ts> && ...) && (tuple<Ts> || ...)) constexpr void _vapply(F&& f, Ts&&... ts) //
+  ywlib_wrap_void(_vapply_a<inspects<!tuple<Ts>...>, inspects<tuple<Ts>...>>(fwd<F>(f), fwd<Ts>(ts)...));
+
+template<nat I, typename L, typename R> constexpr void _vassign_i(L&& lhs, R&& rhs) ywlib_wrap_void(assign(get<I>(fwd<L>(lhs)), get<I>(fwd<R>(rhs))));
+template<nat... Is, typename L, typename R> constexpr void _vassign(sequence<Is...>, L&& lhs, R&& rhs) //
+  ywlib_wrap_void(((_vassign_i<Is>(fwd<L>(lhs), fwd<R>(rhs))), ...));
+
+template<typename T, typename U, typename V> struct list_from_typepack;
+template<typename U, typename V> struct list_from_typepack<typepack<>, U, V> : t_type<list<>> {};
+template<typename... Ts, typename U, template<typename...> typename Tm, typename... Vs> //
+struct list_from_typepack<typepack<Ts...>, U, Tm<Vs...>> : t_type<list<copy_cvref<U, Tm<Ts>>...>> {};
+template<typename... Ts, typename U, template<typename, auto...> typename Tm, typename V, auto... Vs> //
+struct list_from_typepack<typepack<Ts...>, U, Tm<V, Vs...>> : t_type<list<copy_cvref<U, Tm<Ts, Vs...>>...>> {};
+template<typename... Ts, typename U, typename V> struct list_from_typepack<typepack<Ts...>, U, V> : t_type<list<copy_cvref<U, Ts>...>> {};
+
+template<typename T> struct _iter_t {
+  using v = std::iter_value_t<T>;
+  using d = std::iter_difference_t<T>;
+  using r = std::iter_reference_t<T>;
+  using rr = std::iter_rvalue_reference_t<T>;
+};
+template<std::ranges::range Rg> struct _iter_t<Rg> : _iter_t<std::ranges::iterator_t<Rg>> {};
+
+}
+
+export namespace yw {
+
+inline constexpr auto apply = []<typename F, typename... Ts>(F f, Ts&&... ts) ywlib_wrap_ref(_::_apply<0>(fwd<F>(f), fwd<Ts>(ts)...));
+template<typename F, typename... Ts> concept applyable = requires(F f, Ts&&... ts) { apply(f, fwd<Ts>(ts)...); };
+template<typename F, typename... Ts> using apply_result = decltype(apply(declval<F&>(), declval<Ts>()...));
+
+template<typename T> inline constexpr auto build = []<typename Tp>(Tp&& Tuple) ywlib_wrap_auto(apply(construct<T>, fwd<Tp>(Tuple)));
+template<typename T, typename Tp> concept buildable = requires { build<T>(declval<Tp>()); };
+
+inline constexpr auto vapply = []<typename F, typename... Ts>(F&& f, Ts&&... ts) ywlib_wrap_void(_::_vapply(fwd<F>(f), fwd<Ts>(ts)...));
+template<typename T, typename... Ts> concept vapplyable = requires { vapply(declval<T>(), declval<Ts>()...); };
+
+inline constexpr auto vassign = []<typename Lt, same_extent<Lt> Rt>(Lt&& Lhs, Rt&& Rhs) { _::_vassign(make_indices_for<Lt>{}, fwd<Lt>(Lhs), fwd<Rt>(Rhs)); };
+template<typename Lt, typename Rt> concept vassignable = vapplyable<decltype(vassign), Lt, Rt>;
+
+template<typename... Ts> using list_base = typepack<Ts...>::template fore<sizeof...(Ts) - 1>::template expand<list>;
+
+template<typename... Ts> struct list : list_base<Ts...> {
+  static constexpr nat count = sizeof...(Ts);
+  using last_type = select_type<sizeof...(Ts) - 1, Ts...>;
+  select_type<sizeof...(Ts) - 1, Ts...> last;
+  template<nat I> requires (I < sizeof...(Ts)) constexpr auto get() & noexcept -> select_type<I, Ts...>& {
+    if constexpr (I == sizeof...(Ts) - 1) return last;
+    else return list_base<Ts...>::template get<I>();
+  }
+  template<nat I> requires (I < sizeof...(Ts)) constexpr auto get() const& noexcept -> add_const<select_type<I, Ts...>&> {
+    if constexpr (I == sizeof...(Ts) - 1) return last;
+    else return list_base<Ts...>::template get<I>();
+  }
+  template<nat I> requires (I < sizeof...(Ts)) constexpr auto get() && noexcept -> select_type<I, Ts...>&& {
+    if constexpr (I == sizeof...(Ts) - 1) return mv(last);
+    else return static_cast<list_base<Ts...>&&>(*this).template get<I>();
+  }
+  template<nat I> requires (I < sizeof...(Ts)) constexpr auto get() const&& noexcept -> add_const<select_type<I, Ts...>&&> {
+    if constexpr (I == sizeof...(Ts) - 1) return mv(last);
+    else return static_cast<list_base<Ts...>&&>(*this).template get<I>();
+  }
+  template<typename A> constexpr list& operator=(A&& Arg) requires vassignable<list&, A> { return vassign(*this, fwd<A>(Arg)), *this; }
+  template<typename A> constexpr const list& operator=(A&& Arg) const requires vassignable<const list&, A> { return vassign(*this, fwd<A>(Arg)), *this; }
+};
+
+template<typename T1, typename T2, typename T3> struct list<T1, T2, T3> : list<T1, T2> {
+  static constexpr nat count = 3;
+  using third_type = T3;
+  third_type third;
+  template<nat I> requires (I < 3) constexpr auto get() & noexcept -> select_type<I, T1, T2, T3>& {
+    if constexpr (I == 2) return third;
+    else return list<T1, T2>::template get<I>();
+  }
+  template<nat I> requires (I < 3) constexpr auto get() const& noexcept -> add_const<select_type<I, T1, T2, T3>&> {
+    if constexpr (I == 2) return third;
+    else return list<T1, T2>::template get<I>();
+  }
+  template<nat I> requires (I < 3) constexpr auto get() && noexcept -> select_type<I, T1, T2, T3>&& {
+    if constexpr (I == 2) return mv(third);
+    else return static_cast<list<T1, T2>&&>(*this).template get<I>();
+  }
+  template<nat I> requires (I < 3) constexpr auto get() const&& noexcept -> add_const<select_type<I, T1, T2, T3>&&> {
+    if constexpr (I == 2) return mv(third);
+    else return static_cast<list<T1, T2>&&>(*this).template get<I>();
+  }
+  template<typename A> constexpr list& operator=(A&& Arg) requires vassignable<list&, A> { return vassign(*this, fwd<A>(Arg)), *this; }
+  template<typename A> constexpr const list& operator=(A&& Arg) const requires vassignable<const list&, A> { return vassign(*this, fwd<A>(Arg)), *this; }
+};
+
+template<typename T1, typename T2> struct list<T1, T2> : list<T1> {
+  static constexpr nat count = 2;
+  using second_type = T2;
+  second_type second;
+  template<nat I> requires (I < 2) constexpr auto get() & noexcept -> select_type<I, T1, T2>& {
+    if constexpr (I == 1) return second;
+    else return list<T1>::template get<I>();
+  }
+  template<nat I> requires (I < 2) constexpr auto get() const& noexcept -> add_const<select_type<I, T1, T2>&> {
+    if constexpr (I == 1) return second;
+    else return list<T1>::template get<I>();
+  }
+  template<nat I> requires (I < 2) constexpr auto get() && noexcept -> select_type<I, T1, T2>&& {
+    if constexpr (I == 1) return mv(second);
+    else return static_cast<list<T1>&&>(*this).template get<I>();
+  }
+  template<nat I> requires (I < 2) constexpr auto get() const&& noexcept -> add_const<select_type<I, T1, T2>&&> {
+    if constexpr (I == 1) return mv(second);
+    else return static_cast<list<T1>&&>(*this).template get<I>();
+  }
+  template<typename A> constexpr list& operator=(A&& Arg) requires vassignable<list&, A> { return vassign(*this, fwd<A>(Arg)), *this; }
+  template<typename A> constexpr const list& operator=(A&& Arg) const requires vassignable<const list&, A> { return vassign(*this, fwd<A>(Arg)), *this; }
+};
+
+template<typename T> struct list<T> {
+  static constexpr nat count = 1;
+  using first_type = T;
+  first_type first;
+  template<nat I> requires (I < 1) constexpr auto get() & noexcept -> select_type<I, T>& {
+    if constexpr (I == 0) return first;
+    else return first;
+  }
+  template<nat I> requires (I < 1) constexpr auto get() const& noexcept -> add_const<select_type<I, T>&> {
+    if constexpr (I == 0) return first;
+    else return first;
+  }
+  template<nat I> requires (I < 1) constexpr auto get() && noexcept -> select_type<I, T>&& {
+    if constexpr (I == 0) return mv(first);
+    else return mv(first);
+  }
+  template<nat I> requires (I < 1) constexpr auto get() const&& noexcept -> add_const<select_type<I, T>&&> {
+    if constexpr (I == 0) return mv(first);
+    else return mv(first);
+  }
+  template<typename A> constexpr list& operator=(A&& Arg) requires vassignable<list&, A> { return vassign(*this, fwd<A>(Arg)), *this; }
+  template<typename A> constexpr const list& operator=(A&& Arg) const requires vassignable<const list&, A> { return vassign(*this, fwd<A>(Arg)), *this; }
+};
+
+template<> struct list<> {
+  static constexpr nat count = 0;
+  template<typename... Ts> static constexpr auto asref(Ts&&... Args) noexcept { return list<Ts&&...>{fwd<Ts>(Args)...}; }
+  template<specialization_of<typepack> Tp, typename Qualifier = none> using from_typepack = _::list_from_typepack<Tp, Qualifier, remove_cvref<Qualifier>>::type;
+};
+
+template<typename... Ts> list(Ts...) -> list<Ts...>;
+
+template<typename It> concept iterator = std::input_or_output_iterator<remove_ref<It>>;
+template<typename Se, typename It> concept sentinel_for = std::sentinel_for<remove_ref<Se>, remove_ref<It>>;
+template<typename Se, typename It> concept sized_sentinel_for = std::sized_sentinel_for<remove_ref<Se>, remove_ref<It>>;
+template<typename Rg> concept range = std::ranges::range<Rg>;
+template<typename Rg> concept borrowed_range = std::ranges::borrowed_range<Rg>;
+template<typename Rg> concept sized_range = std::ranges::sized_range<Rg>;
+template<range Rg> using iterator_t = std::ranges::iterator_t<Rg>;
+template<range Rg> using borrowed_iterator_t = std::ranges::borrowed_iterator_t<Rg>;
+template<range Rg> using sentinel_t = std::ranges::sentinel_t<Rg>;
+
+template<typename T> requires iterator<T> || range<T> using iter_value = typename _::_iter_t<T>::v;
+template<typename T> requires iterator<T> || range<T> using iter_difference = typename _::_iter_t<T>::d;
+template<typename T> requires iterator<T> || range<T> using iter_reference = typename _::_iter_t<T>::r;
+template<typename T> requires iterator<T> || range<T> using iter_rvref = typename _::_iter_t<T>::rr;
+template<typename T> requires iterator<T> || range<T> using iter_common = common_type<iter_reference<T>, iter_value<T>>;
+
+template<typename It, typename T> concept output_iterator = std::output_iterator<remove_ref<It>, T>;
+template<typename It> concept input_iterator = std::input_iterator<remove_ref<It>>;
+template<typename It> concept forward_iterator = std::forward_iterator<remove_ref<It>>;
+template<typename It> concept bidirectional_iterator = std::bidirectional_iterator<remove_ref<It>>;
+template<typename It> concept random_access_iterator = std::random_access_iterator<remove_ref<It>>;
+template<typename It> concept contiguous_iterator = std::contiguous_iterator<remove_ref<It>>;
+template<typename It, typename U> concept iterator_for = iterator<remove_ref<It>> && convertible_to<iter_reference<It>, U>;
+template<typename Rg, typename T> concept output_range = std::ranges::output_range<Rg, T>;
+template<typename Rg> concept input_range = std::ranges::input_range<Rg>;
+template<typename Rg> concept forward_range = std::ranges::forward_range<Rg>;
+template<typename Rg> concept bidirectional_range = std::ranges::bidirectional_range<Rg>;
+template<typename Rg> concept random_access_range = std::ranges::random_access_range<Rg>;
+template<typename Rg> concept contiguous_range = std::ranges::contiguous_range<Rg>;
+template<typename Rg, typename U> concept range_for = iterator_for<iterator_t<Rg>, U>;
+template<typename It, typename In> concept iter_copyable = iterator<It> && iterator<In> && std::indirectly_copyable<In, It>;
+template<typename It, typename In> concept iter_movable = iterator<It> && iterator<In> && std::indirectly_movable<In, It>;
+template<typename Fn, typename It> concept iter_unary_invocable = iterator<It> && std::indirectly_unary_invocable<Fn, It>;
+template<typename Fn, typename It> concept iter_unary_predicate = iterator<It> && std::indirect_unary_predicate<Fn, It>;
+
+inline constexpr auto begin = []<range Rg>(Rg&& r) ywlib_wrap_auto(std::ranges::begin(fwd<Rg>(r)));
+inline constexpr auto end = []<range Rg>(Rg&& r) ywlib_wrap_auto(std::ranges::end(fwd<Rg>(r)));
+inline constexpr auto rbegin = []<range Rg>(Rg&& r) ywlib_wrap_auto(std::ranges::rbegin(fwd<Rg>(r)));
+inline constexpr auto rend = []<range Rg>(Rg&& r) ywlib_wrap_auto(std::ranges::rend(fwd<Rg>(r)));
+inline constexpr auto size = []<range Rg>(Rg&& r) ywlib_wrap_auto(std::ranges::size(fwd<Rg>(r)));
+inline constexpr auto empty = []<range Rg>(Rg&& r) ywlib_wrap_auto(std::ranges::empty(fwd<Rg>(r)));
+inline constexpr auto data = []<range Rg>(Rg&& r) ywlib_wrap_auto(std::ranges::data(fwd<Rg>(r)));
+inline constexpr auto iter_move = []<iterator It>(It&& i) ywlib_wrap_ref(std::ranges::iter_move(fwd<It>(i)));
+inline constexpr auto iter_swap = []<iterator It, iterator Jt>(It&& i, Jt&& j) //
+  ywlib_wrap_void(std::ranges::iter_swap(fwd<It>(i), fwd<Jt>(j)));
+
+template<typename T, typename Ct = iter_value<T>> concept stringable = nt_convertible_to<T&, string_view<Ct>>;
+
+template<typename T, nat N = npos> class array {
+public:
+  T _[N]{};
+  static constexpr nat count = N;
+  using value_type = T;
+  template<typename U> requires assignable<T&, const U&> //
+  constexpr array& operator=(const U (&Other)[N]) {
+    return std::ranges::copy(Other, _), *this;
+  }
+  constexpr operator add_lvref<T[N]>() noexcept { return _; }
+  constexpr operator add_lvref<const T[N]>() const noexcept { return _; }
+  constexpr T& operator[](nat I) { return _[I]; }
+  constexpr const T& operator[](nat I) const { return _[I]; }
+  constexpr nat size() const noexcept { return N; }
+  constexpr bool empty() const noexcept { return false; }
+  constexpr T* data() noexcept { return _; }
+  constexpr const T* data() const noexcept { return _; }
+  constexpr T* begin() noexcept { return _; }
+  constexpr const T* begin() const noexcept { return _; }
+  constexpr T* end() noexcept { return _ + N; }
+  constexpr const T* end() const noexcept { return _ + N; }
+  constexpr T& front() noexcept { return *_; }
+  constexpr const T& front() const noexcept { return *_; }
+  constexpr T& back() noexcept { return _[N - 1]; }
+  constexpr const T& back() const noexcept { return _[N - 1]; }
+  template<nat I> requires (I < N) constexpr T& get() & noexcept { return _[I]; }
+  template<nat I> requires (I < N) constexpr T&& get() && noexcept { return mv(_[I]); }
+  template<nat I> requires (I < N) constexpr const T& get() const& noexcept { return _[I]; }
+  template<nat I> requires (I < N) constexpr const T&& get() const&& noexcept { return mv(_[I]); }
+  static constexpr array fill(const T& v) {
+    array a;
+    std::ranges::fill(a._, v);
+    return a;
+  }
+};
+
+template<character Ct, nat N> constexpr string<Ct> to_string(const array<Ct, N>& a) { return string<Ct>(a.begin(), a.end()); }
+
+template<typename T> class array<T, npos> : public std::vector<T> {
+public:
+  constexpr array() noexcept = default;
+  constexpr array(std::vector<T>&& v) : std::vector<T>(mv(v)) {}
+  constexpr explicit array(nat n) : std::vector<T>(n) {}
+  constexpr array(nat n, const T& v) : std::vector<T>(n, v) {}
+  template<iterator_for<T> It> constexpr array(It i, It s) : std::vector<T>(i, s) {}
+  template<iterator_for<T> It, sentinel_for<It> Se> requires (!same_as<It, Se>) //
+  constexpr array(It i, Se s) : std::vector<T>(std::common_iterator<It, Se>(i), std::common_iterator<It, Se>(s)) {}
+  template<range_for<T> Rg> constexpr array(Rg&& r) : std::vector<T>(yw::begin(r), yw::end(r)) {}
+};
+static_assert(sizeof(array<int>) == sizeof(std::vector<int>));
+
+template<typename T> class array<T, 0> {
+public:
+  static constexpr nat count = 0;
+  using value_type = T;
+  constexpr nat size() const noexcept { return 0; }
+  constexpr bool empty() const noexcept { return true; }
+  constexpr T* data() noexcept { return nullptr; }
+  constexpr const T* data() const noexcept { return nullptr; }
+  constexpr T* begin() noexcept { return nullptr; }
+  constexpr const T* begin() const noexcept { return nullptr; }
+  constexpr T* end() noexcept { return nullptr; }
+  constexpr const T* end() const noexcept { return nullptr; }
+  template<nat I> constexpr void get() const = delete;
+};
+
+template<typename T, convertible_to<T>... Ts> array(T, Ts...) -> array<T, 1 + sizeof...(Ts)>;
+template<typename T> array(nat, const T&) -> array<T, npos>;
+template<iterator It, sentinel_for<It> Se> array(It, Se) -> array<iter_value<It>, npos>;
+template<range Rg> array(Rg&&) -> array<iter_value<Rg>, npos>;
+
+}

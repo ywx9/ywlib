@@ -5,2075 +5,469 @@
 #define nat size_t
 #endif
 
-namespace yw {
-
-template<typename... Fs> struct caster : public Fs... {
-private:
-  template<typename T> static constexpr nat i = inspects<same_as<T, invoke_result<Fs>>...>;
-  template<typename T> static constexpr nat j = //
-    i<T> < sizeof...(Fs) ? i<T> : inspects<convertible_to<T, invoke_result<Fs>>...>;
-  template<typename... As> static constexpr nat k = inspects<invocable<Fs, As...>...>;
-public:
-  using Fs::operator()...;
-  template<typename T> requires (j<T> < sizeof...(Fs)) constexpr operator T() const //
-    noexcept(noexcept(select_type<j<T>, Fs...>::operator()())) {
-    return select_type<j<T>, Fs...>::operator()();
-  }
-  template<typename... As> requires (k<As...> < sizeof...(Fs)) //
-  constexpr decltype(auto) operator()(As&&... Args) const      //
-    noexcept(noexcept(select_type<k<As...>, Fs...>::operator()(fwd<As>(Args)...))) {
-    return select_type<k<As...>, Fs...>::operator()(fwd<As>(Args)...);
-  }
-};
-
-inline constexpr caster is_cev{[]() noexcept { return std::is_constant_evaluated(); }};
-
-enum class get_strategy {
-  ungettable = 0,
-  itself = 0x1,
-  array = 0x2,
-  tuple = 0x4,
-  member = 0x8,
-  nothrow = 0x10,
-};
-constexpr get_strategy operator&(get_strategy a, get_strategy b) noexcept { return static_cast<get_strategy>(static_cast<int>(a) & static_cast<int>(b)); }
-constexpr get_strategy operator|(get_strategy a, get_strategy b) noexcept { return static_cast<get_strategy>(static_cast<int>(a) | static_cast<int>(b)); }
-constexpr get_strategy operator^(get_strategy a, get_strategy b) noexcept { return static_cast<get_strategy>(static_cast<int>(a) ^ static_cast<int>(b)); }
-constexpr get_strategy operator~(get_strategy a) noexcept { return static_cast<get_strategy>(~static_cast<int>(a)); }
-
-namespace _::_get {
-template<nat I> void get() = delete;
-template<nat I, typename T> inline constexpr get_strategy strategy = []() -> get_strategy {
-  using t = remove_ref<T>;
-  using enum get_strategy;
-  if constexpr (is_bounded_array<t>) {
-    if constexpr (I < std::extent_v<t>) return array | nothrow;
-    else return ungettable;
-  } else if constexpr (is_unbounded_array<t>) return ungettable;
-  else if constexpr (is_class<t> || is_union<t>) {
-    if constexpr (requires { get<I>(declval<T>()); }) return noexcept(get<I>(declval<T>())) ? tuple | nothrow : tuple;
-    else if constexpr (requires { declval<T>().template get<I>(); }) return noexcept(declval<T>().template get<I>()) ? tuple | member | nothrow : tuple | member;
-    else return I == 0 ? itself | nothrow : ungettable;
-  } else return I == 0 ? itself | nothrow : ungettable;
-}();
-template<nat I, typename T> requires (strategy<I, T> != get_strategy::ungettable) //
-decltype(auto) call(T&& Ref) noexcept(bool(strategy<I, T> & get_strategy::nothrow)) {
-  constexpr auto s = strategy<I, T>;
-  if constexpr (bool(s & get_strategy::itself)) return fwd<T>(Ref);
-  else if constexpr (bool(s & get_strategy::array)) return fwd<T>(Ref)[I];
-  else if constexpr (bool(s & get_strategy::member)) return fwd<T>(Ref).template get<I>();
-  else return get<I>(fwd<T>(Ref));
-}
-}
-
-template<typename T> concept tuple = bool(_::_get::strategy<0, T> & get_strategy::tuple);
-template<typename T, nat I> concept gettable = _::_get::strategy<I, T> != get_strategy::ungettable;
-template<typename T, nat I> concept nt_gettable = gettable<T, I> && bool(_::_get::strategy<I, T> & get_strategy::nothrow);
-template<nat I> inline constexpr auto get = []<typename T>(T&& Ref) ywlib_wrap_ref(_::_get::call<I>(fwd<T>(Ref)));
-template<typename T, nat I> requires gettable<T, I> using element_t = decltype(get<I>(declval<T>()));
-
-template<typename T> struct t_extent : constant<0_n> {};
-template<typename T> requires (bool(_::_get::strategy<0, T>& get_strategy::itself)) struct t_extent<T> : constant<1_n> {};
-template<typename T> requires (bool(_::_get::strategy<0, T>& get_strategy::array)) struct t_extent<T> : std::extent<remove_ref<T>> {};
-template<typename T> requires (bool(_::_get::strategy<0, T>& get_strategy::tuple)) struct t_extent<T> : std::tuple_size<remove_ref<T>> {};
-template<typename T> inline constexpr nat extent = t_extent<T>::value;
-template<typename T, typename... Ts> concept same_extent = ((extent<T> == extent<Ts>) && ...);
-
-template<auto... Vs> struct sequence;
-template<typename... Ts> struct typepack;
-template<typename... Ts> struct list;
-template<typename T, nat N> class array;
-
-template<typename S, typename T> struct t_to_sequence;
-template<template<auto...> typename Tm, typename T, auto... Vs> struct t_to_sequence<Tm<Vs...>, T> : t_type<sequence<T(Vs)...>> {};
-template<template<auto...> typename Tm, auto... Vs> struct t_to_sequence<Tm<Vs...>, none> : t_type<sequence<Vs...>> {};
-template<template<typename, auto...> typename Tm, typename T, typename U, auto... Vs> struct t_to_sequence<Tm<U, Vs...>, T> : t_type<sequence<T(Vs)...>> {};
-template<template<typename, auto...> typename Tm, typename U, auto... Vs> struct t_to_sequence<Tm<U, Vs...>, none> : t_type<sequence<Vs...>> {};
-template<typename S, typename T = none> using to_sequence = typename t_to_sequence<S, T>::type;
-template<typename S, typename T = none> concept sequence_of = variation_of<to_sequence<S, T>, sequence<>>;
-
-template<typename S, typename T> struct t_indices_for : t_indices_for<to_sequence<S>, T> {};
-template<nat... Vs, typename T> struct t_indices_for<sequence<Vs...>, T> : constant<(lt(Vs, extent<T>) && ...)> {};
-template<typename S, typename T> concept indices_for = t_indices_for<S, T>::value;
-
-template<nat Begin, nat End, auto Proj, nat... Vs> struct t_make_sequence : t_make_sequence<Begin + 1, End, Proj, Vs..., Proj(Begin)> {};
-template<nat End, auto Proj, nat... Vs> struct t_make_sequence<End, End, Proj, Vs...> : t_type<sequence<Vs...>> {};
-template<nat Begin, nat End, invocable<nat> auto Proj = pass{}> requires (Begin <= End) using make_sequence = typename t_make_sequence<Begin, End, Proj>::type;
-template<typename Tp> using make_indices_for = make_sequence<0, extent<Tp>>;
-
-template<typename Sq, nat... Is> struct t_extracting_indices : t_extracting_indices<to_sequence<Sq, bool>> {};
-template<bool... Bs> struct t_extracting_indices<sequence<Bs...>> : t_extracting_indices<sequence<Bs...>, 0, sizeof...(Bs)> {};
-template<bool... Bs, nat I, nat N, nat... Is> struct t_extracting_indices<sequence<Bs...>, I, N, Is...> //
-  : select_type<select_value<I, Bs...>, t_extracting_indices<sequence<Bs...>, I + 1, N, Is..., I>, t_extracting_indices<sequence<Bs...>, I + 1, N, Is...>> {};
-template<bool... Bs, nat N, nat... Is> struct t_extracting_indices<sequence<Bs...>, N, N, Is...> : t_type<sequence<Is...>> {};
-template<sequence_of<bool> Sq> using extracting_indices = typename t_extracting_indices<Sq>::type;
-
-template<typename S1, typename S2> struct t_append_sequence : t_append_sequence<to_sequence<S1>, to_sequence<S2>> {};
-template<auto... Vs, auto... Ws> struct t_append_sequence<sequence<Vs...>, sequence<Ws...>> : t_type<sequence<Vs..., Ws...>> {};
-template<typename S1, typename S2> using append_sequence = typename t_append_sequence<S1, S2>::type;
-
-template<typename S, typename Is> struct t_extract_sequence : t_extract_sequence<to_sequence<S>, to_sequence<Is, nat>> {};
-template<auto... Vs, nat... Is> struct t_extract_sequence<sequence<Vs...>, sequence<Is...>> : t_type<sequence<select_value<Is, Vs...>...>> {};
-template<typename S, typename Is> using extract_sequence = typename t_extract_sequence<S, Is>::type;
-
-template<auto... Vs> struct sequence {
-  static constexpr nat count = sizeof...(Vs);
-  template<nat I> requires (I < sizeof...(Vs)) static constexpr auto at = select_value<I, Vs...>;
-  template<nat I> requires (I < sizeof...(Vs)) using type_at = select_type<I, decltype(Vs)...>;
-  template<sequence_of Sq> using append = append_sequence<sequence, Sq>;
-  template<indices_for<sequence> Ix> using extract = extract_sequence<sequence, Ix>;
-  template<nat N> requires (N <= sizeof...(Vs)) using fore = extract<make_sequence<0, N>>;
-  template<nat N> requires (N <= sizeof...(Vs)) using back = extract<make_sequence<sizeof...(Vs) - N, sizeof...(Vs)>>;
-  template<nat I> requires (I < sizeof...(Vs)) using remove = typename fore<I>::template append<back<sizeof...(Vs) - I - 1>>;
-  template<nat I, sequence_of Sq> requires (I <= sizeof...(Vs)) using insert = typename fore<I>::template append<Sq>::template append<back<sizeof...(Vs) - I>>;
-  template<template<auto...> typename Tm> using expand = Tm<Vs...>;
-  template<nat I> requires (I < sizeof...(Vs)) constexpr const auto&& get() const noexcept { return mv(at<I>); }
-};
-
-template<typename T, typename Is = make_indices_for<T>> struct t_to_typepack : t_to_typepack<T, to_sequence<Is, nat>> {};
-template<typename T, nat... Is> struct t_to_typepack<T, sequence<Is...>> : t_type<typepack<element_t<T, Is>...>> {};
-template<typename T> using to_typepack = typename t_to_typepack<T>::type;
-
-template<typename T> struct t_common_element : t_common_element<to_typepack<T>> {};
-template<typename... Ts> struct t_common_element<typepack<Ts...>> : t_type<common_type<Ts...>> {};
-template<typename T> using common_element = typename t_common_element<T>::type;
-
-template<typename T, typename U> struct t_tuple_for : t_tuple_for<to_typepack<T>, U> {};
-template<typename... Ts, typename U> struct t_tuple_for<typepack<Ts...>, U> : constant<(convertible_to<Ts, U> && ...)> {};
-template<typename T, typename U> concept tuple_for = to_typepack<T>::template expand<t_tuple_for>::value;
-
-template<typename T, typename U> struct append_typepack : append_typepack<to_typepack<T>, to_typepack<U>> {};
-template<typename... Ts, typename... Us> struct append_typepack<typepack<Ts...>, typepack<Us...>> : t_type<typepack<Ts..., Us...>> {};
-template<typename T, typename U> using append_typepack_t = typename append_typepack<T, U>::type;
-
-template<typename T, typename Is> struct extract_typepack : extract_typepack<to_typepack<T>, to_sequence<Is, nat>> {};
-template<typename... Ts, nat... Is> struct extract_typepack<typepack<Ts...>, sequence<Is...>> : t_type<typepack<select_type<Is, Ts...>...>> {};
-template<typename T, typename Is> using extract_typepack_t = typename extract_typepack<T, Is>::type;
-
-template<typename... Ts> struct typepack {
-  static constexpr nat count = sizeof...(Ts);
-  using common = common_type<Ts...>;
-  template<nat I> requires (I < sizeof...(Ts)) using at = select_type<I, Ts...>;
-  template<tuple Tp> using append = append_typepack<typepack, Tp>;
-  template<indices_for<typepack> Ix> using extract = extract_typepack<typepack, Ix>;
-  template<nat N> requires (N <= sizeof...(Ts)) using fore = extract<make_sequence<0, N>>;
-  template<nat N> requires (N <= sizeof...(Ts)) using back = extract<make_sequence<sizeof...(Ts) - N, sizeof...(Ts)>>;
-  template<nat I> requires (I < sizeof...(Ts)) using remove = typename fore<I>::template append<back<sizeof...(Ts) - I - 1>>;
-  template<nat I, typename T> requires (I <= sizeof...(Ts)) using insert = typename fore<I>::template append<T>::template append<back<sizeof...(Ts) - I>>;
-  template<template<typename...> typename Tm> using expand = Tm<Ts...>;
-  template<nat I> requires (I < sizeof...(Ts)) constexpr const at<I> get() const noexcept;
-};
-
-template<typename T, typename Pj, typename Sq> class tuple_view {
-  using sequence = to_sequence<Sq, nat>;
-  static_assert(sequence::count > 0);
-  static_assert(invocable<Pj&, element_t<T, sequence::template at<0>>>);
-  T&& ref;
-  Pj proj{};
-public:
-  tuple_view(T&& Ref) noexcept : ref(fwd<T>(Ref)) {}
-  tuple_view(T&& Ref, Pj p) noexcept : ref(fwd<T>(Ref)), proj(mv(p)) {}
-  tuple_view(T&& Ref, Sq) noexcept : ref(fwd<T>(Ref)) {}
-  tuple_view(T&& Ref, Pj p, Sq) noexcept : ref(fwd<T>(Ref)), proj(mv(p)) {}
-  template<nat I> using type_at = invoke_result<Pj&, element_t<T, sequence::template at<I>>>;
-  template<nat I> requires (I < sequence::count) constexpr decltype(auto) get() const { return invoke(proj, yw::get<sequence::template at<I>>(ref)); }
-};
-
-template<typename T> tuple_view(T&&) -> tuple_view<T&&, pass, make_indices_for<T>>;
-template<typename T, typename Pj> tuple_view(T&&, Pj) -> tuple_view<T&&, Pj, make_indices_for<T>>;
-template<typename T, typename Sq> tuple_view(T&&, Sq) -> tuple_view<T&&, pass, Sq>;
-template<typename T, typename Pj, typename Sq> tuple_view(T&&, Pj, Sq) -> tuple_view<T&&, Pj, Sq>;
-}
-
-namespace std {
-
-template<auto... Vs> struct tuple_size<yw::sequence<Vs...>> : integral_constant<nat, sizeof...(Vs)> {};
-template<nat I, auto... Vs> struct tuple_element<I, yw::sequence<Vs...>> : type_identity<decltype(yw::sequence<Vs...>::template at<I>)> {};
-
-template<typename... Ts> struct tuple_size<yw::typepack<Ts...>> : integral_constant<nat, sizeof...(Ts)> {};
-template<nat I, typename... Ts> struct tuple_element<I, yw::typepack<Ts...>> : type_identity<typename yw::typepack<Ts...>::template at<I>> {};
-
-template<typename T, typename Pj, typename Sq> struct tuple_size<yw::tuple_view<T, Pj, Sq>> : integral_constant<size_t, yw::tuple_view<T, Pj, Sq>::sequence::count> {};
-template<size_t I, typename T, typename Pj, typename Sq> struct tuple_element<I, yw::tuple_view<T, Pj, Sq>> : type_identity<typename yw::tuple_view<T, Pj, Sq>::template type_at<I>> {};
-
-template<typename... Ts> struct tuple_size<yw::list<Ts...>> : integral_constant<nat, sizeof...(Ts)> {};
-template<nat I, typename... Ts> struct tuple_element<I, yw::list<Ts...>> : type_identity<yw::select_type<I, Ts...>> {};
-
-template<typename T, nat N> requires (N != yw::npos) struct tuple_size<yw::array<T, N>> : integral_constant<size_t, N> {};
-template<size_t I, typename T, nat N> requires (N != yw::npos) struct tuple_element<I, yw::array<T, N>> : type_identity<T> {};
-}
-
-namespace yw {
-
-namespace _ {
-
-template<nat I, nat... Is, nat... Js, nat... Ks, typename F, typename... Ts> //
-constexpr decltype(auto) _apply_i(sequence<Is...>, sequence<Js...>, sequence<Ks...>, F&& f, Ts&&... ts) {
-  return _apply<I>(f, select<Is>(fwd<Ts>(ts)...)..., get<Js>(fwd<select_type<I, Ts...>>(select<I>(fwd<Ts>(ts)...)))..., select<Ks>(fwd<Ts>(ts)...)...);
-}
-template<nat I, typename F, typename... Ts> constexpr decltype(auto) _apply(F&& f, Ts&&... ts) {
-  if constexpr (sizeof...(Ts) == 0) return invoke(f);
-  if constexpr (I == sizeof...(Ts)) return invoke(f, fwd<Ts>(ts)...);
-  else if constexpr (!tuple<select_type<I, Ts...>>) return _apply<I + 1>(f, fwd<Ts>(ts)...);
-  else return _apply_i<I>(make_sequence<0, I>{}, make_indices_for<select_type<I, Ts...>>{}, make_sequence<I + 1, sizeof...(Ts)>{}, f, fwd<Ts>(ts)...);
-}
-
-template<nat I, typename F, typename... Ts> constexpr void _vapply_i(F&& f, Ts&&... ts) ywlib_wrap_void(invoke(fwd<F>(f), get<I>(fwd<Ts>(ts))...));
-template<nat... Is, typename F, typename... Ts> constexpr void _vapply_is(sequence<Is...>, F&& f, Ts&&... ts) //
-  ywlib_wrap_void(((_vapply_i<Is>(fwd<F>(f), fwd<Ts>(ts)...)), ...));
-template<typename F, typename T, typename... Ts> requires same_extent<T, Ts...> constexpr void _vapply(F&& f, T&& t, Ts&&... ts) //
-  ywlib_wrap_void(_vapply_is(make_indices_for<T>{}, fwd<F>(f), fwd<T>(t), fwd<Ts>(ts)...));
-template<typename F, typename T, typename... Ts> requires (!same_extent<T, Ts...> && tuple<T> && (tuple<Ts> && ...)) void _vapply(F&& f, T&& t, Ts&&... ts) = delete;
-template<typename F, typename... Ts> requires (!(tuple<Ts> || ...)) void _vapply(F&& f, Ts&&... ts) = delete;
-template<nat I, nat N, nat... Is, nat... Js, typename F, typename... Ts> constexpr void _vapply_b(sequence<Is...>, sequence<Js...>, F&& f, Ts&&... ts) //
-  ywlib_wrap_void(_vapply(fwd<F>(f), select<Is>(fwd<Ts>(ts)...)..., tuple_view(select<I>(fwd<Ts>(ts)...), make_sequence<0, N>{}), select<Js>(fwd<Ts>(ts)...)...));
-template<nat I, nat J, typename F, typename... Ts> constexpr void _vapply_a(F&& f, Ts&&... ts) //
-  ywlib_wrap_void(_vapply_b<I, extent<select_type<J, Ts...>>>(make_sequence<0, I>{}, make_sequence<I + 1, sizeof...(Ts)>{}, fwd<F>(f), fwd<Ts>(ts)...));
-template<typename F, typename... Ts> requires (!(tuple<Ts> && ...) && (tuple<Ts> || ...)) constexpr void _vapply(F&& f, Ts&&... ts) //
-  ywlib_wrap_void(_vapply_a<inspects<!tuple<Ts>...>, inspects<tuple<Ts>...>>(fwd<F>(f), fwd<Ts>(ts)...));
-
-template<nat I, typename L, typename R> constexpr void _vassign_i(L&& lhs, R&& rhs) ywlib_wrap_void(assign(get<I>(fwd<L>(lhs)), get<I>(fwd<R>(rhs))));
-template<nat... Is, typename L, typename R> constexpr void _vassign(sequence<Is...>, L&& lhs, R&& rhs) //
-  ywlib_wrap_void(((_vassign_i<Is>(fwd<L>(lhs), fwd<R>(rhs))), ...));
-
-template<typename T, typename U, typename V> struct list_from_typepack;
-template<typename U, typename V> struct list_from_typepack<typepack<>, U, V> : t_type<list<>> {};
-template<typename... Ts, typename U, template<typename...> typename Tm, typename... Vs> //
-struct list_from_typepack<typepack<Ts...>, U, Tm<Vs...>> : t_type<list<copy_cvref<U, Tm<Ts>>...>> {};
-template<typename... Ts, typename U, template<typename, auto...> typename Tm, typename V, auto... Vs> //
-struct list_from_typepack<typepack<Ts...>, U, Tm<V, Vs...>> : t_type<list<copy_cvref<U, Tm<Ts, Vs...>>...>> {};
-template<typename... Ts, typename U, typename V> struct list_from_typepack<typepack<Ts...>, U, V> : t_type<list<copy_cvref<U, Ts>...>> {};
-
-inline constexpr cat1 vtos_codes[36]{
-  '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', //
-  'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',                     //
-};
-} // namespace _
-
-inline constexpr auto apply = []<typename F, typename... Ts>(F f, Ts&&... ts) ywlib_wrap_ref(_::_apply<0>(fwd<F>(f), fwd<Ts>(ts)...));
-template<typename F, typename... Ts> concept applyable = requires(F f, Ts&&... ts) { apply(f, fwd<Ts>(ts)...); };
-template<typename F, typename... Ts> using apply_result = decltype(apply(declval<F&>(), declval<Ts>()...));
-
-template<typename T> inline constexpr auto build = []<typename Tp>(Tp&& Tuple) ywlib_wrap_auto(apply(construct<T>, fwd<Tp>(Tuple)));
-template<typename T, typename Tp> concept buildable = requires { build<T>(declval<Tp>()); };
-
-inline constexpr auto vapply = []<typename F, typename... Ts>(F&& f, Ts&&... ts) ywlib_wrap_void(_::_vapply(fwd<F>(f), fwd<Ts>(ts)...));
-template<typename T, typename... Ts> concept vapplyable = requires { vapply(declval<T>(), declval<Ts>()...); };
-
-inline constexpr auto vassign = []<typename Lt, same_extent<Lt> Rt>(Lt&& Lhs, Rt&& Rhs) { _::_vassign(make_indices_for<Lt>{}, fwd<Lt>(Lhs), fwd<Rt>(Rhs)); };
-template<typename Lt, typename Rt> concept vassignable = vapplyable<decltype(vassign), Lt, Rt>;
-
-template<typename... Ts> using list_base = typepack<Ts...>::template fore<sizeof...(Ts) - 1>::template expand<list>;
-
-template<typename... Ts> struct list : list_base<Ts...> {
-  static constexpr nat count = sizeof...(Ts);
-  using last_type = select_type<sizeof...(Ts) - 1, Ts...>;
-  select_type<sizeof...(Ts) - 1, Ts...> last;
-  template<nat I> requires (I < sizeof...(Ts)) constexpr auto get() & noexcept -> select_type<I, Ts...>& {
-    if constexpr (I == sizeof...(Ts) - 1) return last;
-    else return list_base<Ts...>::template get<I>();
-  }
-  template<nat I> requires (I < sizeof...(Ts)) constexpr auto get() const& noexcept -> add_const<select_type<I, Ts...>&> {
-    if constexpr (I == sizeof...(Ts) - 1) return last;
-    else return list_base<Ts...>::template get<I>();
-  }
-  template<nat I> requires (I < sizeof...(Ts)) constexpr auto get() && noexcept -> select_type<I, Ts...>&& {
-    if constexpr (I == sizeof...(Ts) - 1) return mv(last);
-    else return static_cast<list_base<Ts...>&&>(*this).template get<I>();
-  }
-  template<nat I> requires (I < sizeof...(Ts)) constexpr auto get() const&& noexcept -> add_const<select_type<I, Ts...>&&> {
-    if constexpr (I == sizeof...(Ts) - 1) return mv(last);
-    else return static_cast<list_base<Ts...>&&>(*this).template get<I>();
-  }
-  template<typename A> constexpr list& operator=(A&& Arg) requires vassignable<list&, A> { return vassign(*this, fwd<A>(Arg)), *this; }
-  template<typename A> constexpr const list& operator=(A&& Arg) const requires vassignable<const list&, A> { return vassign(*this, fwd<A>(Arg)), *this; }
-};
-
-template<typename T1, typename T2, typename T3> struct list<T1, T2, T3> : list<T1, T2> {
-  static constexpr nat count = 3;
-  using third_type = T3;
-  third_type third;
-  template<nat I> requires (I < 3) constexpr auto get() & noexcept -> select_type<I, T1, T2, T3>& {
-    if constexpr (I == 2) return third;
-    else return list<T1, T2>::template get<I>();
-  }
-  template<nat I> requires (I < 3) constexpr auto get() const& noexcept -> add_const<select_type<I, T1, T2, T3>&> {
-    if constexpr (I == 2) return third;
-    else return list<T1, T2>::template get<I>();
-  }
-  template<nat I> requires (I < 3) constexpr auto get() && noexcept -> select_type<I, T1, T2, T3>&& {
-    if constexpr (I == 2) return mv(third);
-    else return static_cast<list<T1, T2>&&>(*this).template get<I>();
-  }
-  template<nat I> requires (I < 3) constexpr auto get() const&& noexcept -> add_const<select_type<I, T1, T2, T3>&&> {
-    if constexpr (I == 2) return mv(third);
-    else return static_cast<list<T1, T2>&&>(*this).template get<I>();
-  }
-  template<typename A> constexpr list& operator=(A&& Arg) requires vassignable<list&, A> { return vassign(*this, fwd<A>(Arg)), *this; }
-  template<typename A> constexpr const list& operator=(A&& Arg) const requires vassignable<const list&, A> { return vassign(*this, fwd<A>(Arg)), *this; }
-};
-
-template<typename T1, typename T2> struct list<T1, T2> : list<T1> {
-  static constexpr nat count = 2;
-  using second_type = T2;
-  second_type second;
-  template<nat I> requires (I < 2) constexpr auto get() & noexcept -> select_type<I, T1, T2>& {
-    if constexpr (I == 1) return second;
-    else return list<T1>::template get<I>();
-  }
-  template<nat I> requires (I < 2) constexpr auto get() const& noexcept -> add_const<select_type<I, T1, T2>&> {
-    if constexpr (I == 1) return second;
-    else return list<T1>::template get<I>();
-  }
-  template<nat I> requires (I < 2) constexpr auto get() && noexcept -> select_type<I, T1, T2>&& {
-    if constexpr (I == 1) return mv(second);
-    else return static_cast<list<T1>&&>(*this).template get<I>();
-  }
-  template<nat I> requires (I < 2) constexpr auto get() const&& noexcept -> add_const<select_type<I, T1, T2>&&> {
-    if constexpr (I == 1) return mv(second);
-    else return static_cast<list<T1>&&>(*this).template get<I>();
-  }
-  template<typename A> constexpr list& operator=(A&& Arg) requires vassignable<list&, A> { return vassign(*this, fwd<A>(Arg)), *this; }
-  template<typename A> constexpr const list& operator=(A&& Arg) const requires vassignable<const list&, A> { return vassign(*this, fwd<A>(Arg)), *this; }
-};
-
-template<typename T> struct list<T> {
-  static constexpr nat count = 1;
-  using first_type = T;
-  first_type first;
-  template<nat I> requires (I < 1) constexpr auto get() & noexcept -> select_type<I, T>& {
-    if constexpr (I == 0) return first;
-    else return first;
-  }
-  template<nat I> requires (I < 1) constexpr auto get() const& noexcept -> add_const<select_type<I, T>&> {
-    if constexpr (I == 0) return first;
-    else return first;
-  }
-  template<nat I> requires (I < 1) constexpr auto get() && noexcept -> select_type<I, T>&& {
-    if constexpr (I == 0) return mv(first);
-    else return mv(first);
-  }
-  template<nat I> requires (I < 1) constexpr auto get() const&& noexcept -> add_const<select_type<I, T>&&> {
-    if constexpr (I == 0) return mv(first);
-    else return mv(first);
-  }
-  template<typename A> constexpr list& operator=(A&& Arg) requires vassignable<list&, A> { return vassign(*this, fwd<A>(Arg)), *this; }
-  template<typename A> constexpr const list& operator=(A&& Arg) const requires vassignable<const list&, A> { return vassign(*this, fwd<A>(Arg)), *this; }
-};
-
-template<> struct list<> {
-  static constexpr nat count = 0;
-  template<typename... Ts> static constexpr auto asref(Ts&&... Args) noexcept { return list<Ts&&...>{fwd<Ts>(Args)...}; }
-  template<specialization_of<typepack> Tp, typename Qualifier = none> using from_typepack = _::list_from_typepack<Tp, Qualifier, remove_cvref<Qualifier>>::type;
-};
-
-template<typename... Ts> list(Ts...) -> list<Ts...>;
-}
-
-namespace yw::_ {
-
-template<typename T> struct _iter_t {
-  using v = std::iter_value_t<T>;
-  using d = std::iter_difference_t<T>;
-  using r = std::iter_reference_t<T>;
-  using rr = std::iter_rvalue_reference_t<T>;
-};
-template<std::ranges::range Rg> struct _iter_t<Rg> : _iter_t<std::ranges::iterator_t<Rg>> {};
-
-auto get_zoned_time() { return std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()); }
-}
-
-export namespace yw {
-
-template<typename It> concept iterator = std::input_or_output_iterator<remove_ref<It>>;
-template<typename Se, typename It> concept sentinel_for = std::sentinel_for<remove_ref<Se>, remove_ref<It>>;
-template<typename Se, typename It> concept sized_sentinel_for = std::sized_sentinel_for<remove_ref<Se>, remove_ref<It>>;
-template<typename Rg> concept range = std::ranges::range<Rg>;
-template<typename Rg> concept borrowed_range = std::ranges::borrowed_range<Rg>;
-template<typename Rg> concept sized_range = std::ranges::sized_range<Rg>;
-template<range Rg> using iterator_t = std::ranges::iterator_t<Rg>;
-template<range Rg> using borrowed_iterator_t = std::ranges::borrowed_iterator_t<Rg>;
-template<range Rg> using sentinel_t = std::ranges::sentinel_t<Rg>;
-
-template<typename T> requires iterator<T> || range<T> using iter_value = typename _::_iter_t<T>::v;
-template<typename T> requires iterator<T> || range<T> using iter_difference = typename _::_iter_t<T>::d;
-template<typename T> requires iterator<T> || range<T> using iter_reference = typename _::_iter_t<T>::r;
-template<typename T> requires iterator<T> || range<T> using iter_rvref = typename _::_iter_t<T>::rr;
-template<typename T> requires iterator<T> || range<T> using iter_common = common_type<iter_reference<T>, iter_value<T>>;
-
-template<typename It, typename T> concept output_iterator = std::output_iterator<remove_ref<It>, T>;
-template<typename It> concept input_iterator = std::input_iterator<remove_ref<It>>;
-template<typename It> concept forward_iterator = std::forward_iterator<remove_ref<It>>;
-template<typename It> concept bidirectional_iterator = std::bidirectional_iterator<remove_ref<It>>;
-template<typename It> concept random_access_iterator = std::random_access_iterator<remove_ref<It>>;
-template<typename It> concept contiguous_iterator = std::contiguous_iterator<remove_ref<It>>;
-template<typename It, typename U> concept iterator_for = iterator<remove_ref<It>> && convertible_to<iter_reference<It>, U>;
-template<typename Rg, typename T> concept output_range = std::ranges::output_range<Rg, T>;
-template<typename Rg> concept input_range = std::ranges::input_range<Rg>;
-template<typename Rg> concept forward_range = std::ranges::forward_range<Rg>;
-template<typename Rg> concept bidirectional_range = std::ranges::bidirectional_range<Rg>;
-template<typename Rg> concept random_access_range = std::ranges::random_access_range<Rg>;
-template<typename Rg> concept contiguous_range = std::ranges::contiguous_range<Rg>;
-template<typename Rg, typename U> concept range_for = iterator_for<iterator_t<Rg>, U>;
-template<typename It, typename In> concept iter_copyable = iterator<It> && iterator<In> && std::indirectly_copyable<In, It>;
-template<typename It, typename In> concept iter_movable = iterator<It> && iterator<In> && std::indirectly_movable<In, It>;
-template<typename Fn, typename It> concept iter_unary_invocable = iterator<It> && std::indirectly_unary_invocable<Fn, It>;
-template<typename Fn, typename It> concept iter_unary_predicate = iterator<It> && std::indirect_unary_predicate<Fn, It>;
-
-inline constexpr auto begin = []<range Rg>(Rg&& r) ywlib_wrap_auto(std::ranges::begin(fwd<Rg>(r)));
-inline constexpr auto end = []<range Rg>(Rg&& r) ywlib_wrap_auto(std::ranges::end(fwd<Rg>(r)));
-inline constexpr auto rbegin = []<range Rg>(Rg&& r) ywlib_wrap_auto(std::ranges::rbegin(fwd<Rg>(r)));
-inline constexpr auto rend = []<range Rg>(Rg&& r) ywlib_wrap_auto(std::ranges::rend(fwd<Rg>(r)));
-inline constexpr auto size = []<range Rg>(Rg&& r) ywlib_wrap_auto(std::ranges::size(fwd<Rg>(r)));
-inline constexpr auto empty = []<range Rg>(Rg&& r) ywlib_wrap_auto(std::ranges::empty(fwd<Rg>(r)));
-inline constexpr auto data = []<range Rg>(Rg&& r) ywlib_wrap_auto(std::ranges::data(fwd<Rg>(r)));
-inline constexpr auto iter_move = []<iterator It>(It&& i) ywlib_wrap_ref(std::ranges::iter_move(fwd<It>(i)));
-inline constexpr auto iter_swap = []<iterator It, iterator Jt>(It&& i, Jt&& j) //
-  ywlib_wrap_void(std::ranges::iter_swap(fwd<It>(i), fwd<Jt>(j)));
-
-template<typename T, typename Ct = iter_value<T>> concept stringable = nt_convertible_to<T&, string_view<Ct>>;
-
-template<typename T, nat N = npos> class array {
-public:
-  T _[N]{};
-  static constexpr nat count = N;
-  using value_type = T;
-  template<typename U> requires assignable<T&, const U&> //
-  constexpr array& operator=(const U (&Other)[N]) {
-    return std::ranges::copy(Other, _), *this;
-  }
-  constexpr operator add_lvref<T[N]>() noexcept { return _; }
-  constexpr operator add_lvref<const T[N]>() const noexcept { return _; }
-  constexpr T& operator[](nat I) { return _[I]; }
-  constexpr const T& operator[](nat I) const { return _[I]; }
-  constexpr nat size() const noexcept { return N; }
-  constexpr bool empty() const noexcept { return false; }
-  constexpr T* data() noexcept { return _; }
-  constexpr const T* data() const noexcept { return _; }
-  constexpr T* begin() noexcept { return _; }
-  constexpr const T* begin() const noexcept { return _; }
-  constexpr T* end() noexcept { return _ + N; }
-  constexpr const T* end() const noexcept { return _ + N; }
-  constexpr T& front() noexcept { return *_; }
-  constexpr const T& front() const noexcept { return *_; }
-  constexpr T& back() noexcept { return _[N - 1]; }
-  constexpr const T& back() const noexcept { return _[N - 1]; }
-  template<nat I> requires (I < N) constexpr T& get() & noexcept { return _[I]; }
-  template<nat I> requires (I < N) constexpr T&& get() && noexcept { return mv(_[I]); }
-  template<nat I> requires (I < N) constexpr const T& get() const& noexcept { return _[I]; }
-  template<nat I> requires (I < N) constexpr const T&& get() const&& noexcept { return mv(_[I]); }
-  static constexpr array fill(const T& v) {
-    array a;
-    std::ranges::fill(a._, v);
-    return a;
-  }
-};
-
-template<character Ct, nat N> constexpr string<Ct> to_string(const array<Ct, N>& a) { return string<Ct>(a.begin(), a.end()); }
-
-template<typename T> class array<T, npos> : public std::vector<T> {
-public:
-  constexpr array() noexcept = default;
-  constexpr array(std::vector<T>&& v) : std::vector<T>(mv(v)) {}
-  constexpr explicit array(nat n) : std::vector<T>(n) {}
-  constexpr array(nat n, const T& v) : std::vector<T>(n, v) {}
-  template<iterator_for<T> It> constexpr array(It i, It s) : std::vector<T>(i, s) {}
-  template<iterator_for<T> It, sentinel_for<It> Se> requires (!same_as<It, Se>) //
-  constexpr array(It i, Se s) : std::vector<T>(std::common_iterator<It, Se>(i), std::common_iterator<It, Se>(s)) {}
-  template<range_for<T> Rg> constexpr array(Rg&& r) : std::vector<T>(yw::begin(r), yw::end(r)) {}
-};
-static_assert(sizeof(array<int>) == sizeof(std::vector<int>));
-
-template<typename T> class array<T, 0> {
-public:
-  static constexpr nat count = 0;
-  using value_type = T;
-  constexpr nat size() const noexcept { return 0; }
-  constexpr bool empty() const noexcept { return true; }
-  constexpr T* data() noexcept { return nullptr; }
-  constexpr const T* data() const noexcept { return nullptr; }
-  constexpr T* begin() noexcept { return nullptr; }
-  constexpr const T* begin() const noexcept { return nullptr; }
-  constexpr T* end() noexcept { return nullptr; }
-  constexpr const T* end() const noexcept { return nullptr; }
-  template<nat I> constexpr void get() const = delete;
-};
-
-template<typename T, convertible_to<T>... Ts> array(T, Ts...) -> array<T, 1 + sizeof...(Ts)>;
-template<typename T> array(nat, const T&) -> array<T, npos>;
-template<iterator It, sentinel_for<It> Se> array(It, Se) -> array<iter_value<It>, npos>;
-template<range Rg> array(Rg&&) -> array<iter_value<Rg>, npos>;
-
-inline constexpr auto strlen = []<stringable St>(St&& Str) -> nat {
-  if constexpr (is_array<remove_ref<St>>) return extent<St> - 1;
-  else if constexpr (is_pointer<remove_ref<St>>) return std::char_traits<iter_value<St>>::length(Str);
-  else if constexpr (specialization_of<remove_cvref<St>, std::basic_string>) return Str.size();
-  else if constexpr (specialization_of<remove_cvref<St>, std::basic_string_view>) return Str.size();
-  else return string_view<iter_value<St>>(Str).size();
-};
-
-inline constexpr auto is_digit = []<character Ct>(const Ct c) noexcept { return (natcast(c) ^ 0x30) < 10; };
-
-inline constexpr auto to_nat = []<character Ct>(string_view<Ct> s) noexcept -> nat8 {
-  nat8 v{};
-  while (1) {
-    if (s.empty()) return v;
-    else if (is_digit(s.front())) {
-      v = s.front() - '0';
-      break;
-    } else s.remove_prefix(1);
-  }
-  s.remove_prefix(1);
-  while (1) {
-    if (s.empty()) return v;
-    else if (is_digit(s.front())) v = v * 10 + s.front() - '0', s.remove_prefix(1);
-    else return v;
-  }
-};
-
-inline constexpr auto to_int = []<character Ct>(string_view<Ct> s) noexcept -> int8 {
-  int8 v{};
-  bool neg = false;
-  while (1) {
-    if (s.empty()) return {};
-    else if (is_digit(s.front())) {
-      neg = true, v = s.front() - '0';
-      break;
-    } else if (s.front() == Ct('-')) {
-      neg = true;
-      break;
-    } else s.remove_prefix(1);
-  }
-  s.remove_prefix(1);
-  while (1) {
-    if (s.empty()) return neg ? -v : v;
-    else if (is_digit(s.front())) v = v * 10 + s.front() - '0', s.remove_prefix(1);
-    else return neg ? -v : v;
-  }
-};
-
-inline constexpr auto to_fat = []<character Ct>(string_view<Ct> s) noexcept -> fat8 {
-  fat8 v{};
-  bool neg = false, dot = false;
-  while (1) {
-    if (s.empty()) return {};
-    else if (is_digit(s.front())) {
-      v = s.front() - '0';
-      break;
-    } else if (s.front() == Ct('-')) {
-      neg = true;
-      break;
-    } else if (s.front() == Ct('.')) {
-      dot = true;
-      break;
-    } else s.remove_prefix(1);
-  }
-  s.remove_prefix(1);
-  while (!dot) {
-    if (s.empty()) return neg ? -v : v;
-    else if (is_digit(s.front())) v = v * 10 + s.front() - '0', s.remove_prefix(1);
-    else if (s.front() == Ct('.')) {
-      dot = true;
-      break;
-    } else return neg ? -v : v;
-  }
-  s.remove_prefix(1);
-  fat8 p = 0.1;
-  while (1) {
-    if (s.empty()) return neg ? -v : v;
-    else if (is_digit(s.front())) {
-      v += (s.front() - '0') * p, p *= 0.1, s.remove_prefix(1);
-    } else return neg ? -v : v;
-  }
-};
-
-template<character Ct> inline constexpr auto to_hex = []<scalar T>(const T v) noexcept -> string<Ct> {
-  if constexpr (is_pointer<T>) {
-    string<Ct> r(16, '0');
-    if (!is_cev)
-      for (nat i = 16, n = natcast(v); 0 < i; n >>= 4) r[--i] = _::vtos_codes[n & 0xf];
-    return r;
-  } else {
-    string<Ct> r(sizeof(T) * 2, '0');
-    for (nat j = r.size(), n = natcast(v); 0 < j; n >>= 4) r[--j] = _::vtos_codes[n & 0xf];
-    return r;
-  }
-};
-
-template<typename Ct> constexpr string<Ct> to_string(is_none auto) noexcept { //
-  return to_string(array{Ct('n'), Ct('o'), Ct('n'), Ct('e')});
-}
-
-template<typename Ct> constexpr string<Ct> to_string(is_nullptr auto) noexcept { return string<Ct>(16, '0'); }
-
-template<typename Ct> constexpr string<Ct> to_string(is_pointer auto v) noexcept {
-  if (is_cev) return string<Ct>(16, '0');
-  else return to_hex<Ct>(reinterpret_cast<nat>(v));
-}
-
-template<typename Ct> constexpr string<Ct> to_string(integral auto v) noexcept {
-  if constexpr (is_bool<decltype(v)>) {
-    if (v) return to_string(array{Ct('t'), Ct('r'), Ct('u'), Ct('e')});
-    else return to_string(array{Ct('f'), Ct('a'), Ct('l'), Ct('s'), Ct('e')});
-  } else if constexpr (unsigned_integral<decltype(v)>) {
-    if (v == 0) return string<Ct>(1, Ct('0'));
-    Ct temp[20];
-    nat it = 20;
-    for (; v != 0; v /= 10) temp[--it] = Ct(v % 10 + '0');
-    return string<Ct>(temp + it, 20 - it);
-  } else {
-    if (v == 0) return string<Ct>(1, Ct('0'));
-    const bool neg = v < 0 ? v = -v, true : false;
-    Ct temp[20];
-    nat it = 20;
-    for (; v != 0; v /= 10) temp[--it] = Ct(v % 10 + '0');
-    if (neg) temp[--it] = Ct('-');
-    return string<Ct>(temp + it, 20 - it);
-  }
-}
-
-template<typename Ct> constexpr string<Ct> to_string(fat8 v) noexcept {
-  const nat bitn = bitcast<nat8>(v);
-  if ((bitn & 0x7fffffffffffffff) == 0) {
-    if (bitn == 0) return to_string(array{Ct('0')});
-    else return to_string(array{Ct('-'), Ct('0')});
-  } else if ((bitn & 0x7ff0000000000000) == 0x7ff0000000000000) {
-    if (bitn == 0x7ff0000000000000) return to_string(array{Ct('i'), Ct('n'), Ct('f')});
-    else if (bitn == 0xfff0000000000000) return to_string(array{Ct('-'), Ct('i'), Ct('n'), Ct('f')});
-    else return to_string(array{Ct('n'), Ct('a'), Ct('n')});
-  } else {
-    if (v > 1e+16) return to_string(array{Ct('>'), Ct('1'), Ct('e'), Ct('+'), Ct('1'), Ct('6')});
-    else if (v < -1e+16) return to_string(array{Ct('<'), Ct('-'), Ct('1'), Ct('e'), Ct('+'), Ct('1'), Ct('6')});
-    const auto ii = static_cast<int8>(v);
-    auto s0 = to_string<Ct>(ii);
-    if (ii < 0) v = static_cast<fat8>(ii) - v;
-    else v -= static_cast<fat8>(ii);
-    nat m = 20 - (s0.size() + 1);
-    for (auto n(m); n > 0; --n) v *= 10;
-    auto s1 = string<Ct>(m, '0');
-    auto jj = std::abs(static_cast<int8>(v));
-    for (; m > 0; jj /= 10) s1[--m] = Ct('0' + jj % 10);
-    if (auto sr = std::ranges::search(s1, array<Ct, 5>::fill(Ct('9'))); !sr.empty()) {
-      if (auto it = sr.begin(); it == s1.begin()) return ii < 0 ? to_string<Ct>(ii - 1) : to_string<Ct>(ii + 1);
-      else s1.resize(it - s1.begin()), ++*--it;
-    }
-    if (auto sr = std::ranges::search(s1, array<Ct, 5>::fill(Ct('0'))); !sr.empty()) s1.resize(sr.begin() - s1.begin());
-    if (s1.empty()) return s0;
-    else return s0.push_back(Ct('.')), s0.append(s1), mv(s0);
-  }
-}
-
-template<character Out> constexpr string<Out> cvt(stringable auto&& s) noexcept {
-  using In = iter_value<decltype(s)>;
-  string_view<In> v(s);
-  if constexpr (sizeof(In) == sizeof(Out)) return string<Out>(bitcast<string_view<Out>>(v));
-  else if constexpr (included_in<In, cat1, uct1>) {
-    if constexpr (same_as<Out, uct4>) {
-      string<uct4> r(v.size(), {});
-      auto p = r.data();
-      for (auto i = v.data(), last = i + v.size(); i < last;) {
-        uct1 c = *i++;
-        if (c < 0x80) *p++ = c;
-        else if (c < 0xc0) *p++ = 0xfffe;
-        else if (c < 0xe0) *p++ = (c & 0x1f) << 6 | (*i++ & 0x3f);
-        else if (c < 0xf0) *p++ = (c & 0x0f) << 12 | (*i++ & 0x3f) << 6 | (*i++ & 0x3f);
-        else if (c < 0xf8) *p++ = (c & 0x07) << 18 | (*i++ & 0x3f) << 12 | (*i++ & 0x3f) << 6 | (*i++ & 0x3f);
-        else *p++ = 0xfffe;
-      }
-      r.resize(p - r.data());
-      return r;
-    } else if constexpr (included_in<Out, cat2, uct2>) return cvt<Out>(cvt<uct4>(s));
-  } else if constexpr (included_in<In, cat2, uct2>) {
-    if constexpr (same_as<Out, uct4>) { // utf-16 to utf-32
-      string<uct4> r(v.size(), {});
-      auto p = r.data();
-      for (auto i = v.data(), last = i + v.size(); i < last;) {
-        if (*i < 0xd800 || *i >= 0xe000) *p++ = *i++;
-        else *p++ = (*i++ - 0xd800) << 10 | (*i++ - 0xdc00) | 0x10000;
-      }
-      r.resize(p - r.data());
-      return r;
-    } else if constexpr (included_in<Out, cat1, uct1>) return cvt<Out>(cvt<uct4>(s));
-  } else if constexpr (same_as<In, uct4>) {
-    if constexpr (included_in<Out, cat1, uct1>) {
-      string<Out> r(v.size() * 4, {});
-      auto p = r.data();
-      for (auto i = v.data(), last = i + v.size(); i < last;) {
-        uct4 c = *i++;
-        if (c < 0x80) *p++ = Out(c);
-        else if (c < 0x800) *p++ = Out(0xc0 | (c >> 6)), *p++ = Out(0x80 | (c & 0x3f));
-        else if (c < 0x10000) {
-          *p++ = Out(0xe0 | (c >> 12));         //
-          *p++ = Out(0x80 | ((c >> 6) & 0x3f)); //
-          *p++ = Out(0x80 | (c & 0x3f));
-        } else {
-          *p++ = Out(0xf0 | (c >> 18));          //
-          *p++ = Out(0x80 | ((c >> 12) & 0x3f)); //
-          *p++ = Out(0x80 | ((c >> 6) & 0x3f));  //
-          *p++ = Out(0x80 | (c & 0x3f));
-        }
-      }
-      r.resize(p - r.data());
-      return r;
-    } else if constexpr (included_in<Out, cat2, uct2>) {
-      string<Out> r(v.size() * 2, {});
-      auto p = r.data();
-      for (auto i = v.data(), last = i + v.size(); i < last;) {
-        auto c = *i++;
-        if (c < 0x10000) *p++ = Out(c);
-        else *p++ = Out(0xd800 | ((c - 0x10000) >> 10)), *p++ = Out(0xdc00_u2 | ((c - 0x10000) & 0x3ff));
-      }
-      r.resize(p - r.data());
-      return r;
-    }
-  }
-}
-
-struct source {
-  explicit source(const cat1*) = delete;
-  const cat1* const file;
-  const cat1* const func;
-  const nat4 line, column;
-  consteval source(const cat1* File = __builtin_FILE(), const cat1* Func = __builtin_FUNCTION(), //
-                   nat4 Line = __builtin_LINE(), nat4 Column = __builtin_COLUMN()) noexcept
-    : file(File), func(Func), line(Line), column(Column) {}
-  template<character Ct> string<Ct> to_string() const {
-    string_view<Ct> f(file);
-    string<Ct> s0{}, s1 = yw::to_string<Ct>(line), s2 = yw::to_string<Ct>(column);
-    s0.reserve(f.size() + s1.size() + s2.size() + 3);
-    s0.append(f), s0.push_back(Ct('(')), s0.append(s1), s0.push_back(Ct(',')), s0.append(s2), s0.push_back(Ct(')'));
-    return s0;
-  }
-  string<cat1> to_string() const { return to_string<cat1>(); }
-};
-
-struct date {
-  int4 year{}, month{}, day{};
-  date() : date(_::get_zoned_time().get_local_time()) {}
-  date(numeric auto&& Year, numeric auto&& Month, numeric auto&& Day) noexcept //
-    : year(int4(Year)), month(int4(Month)), day(int4(Day)) {}
-  template<typename Clock, typename Duration> date(const std::chrono::time_point<Clock, Duration>& tp) {
-    const auto ymd = std::chrono::year_month_day(std::chrono::floor<std::chrono::days>(tp));
-    year = int4(ymd.year()), month = int4(nat4(ymd.month())), day = int4(nat4(ymd.day()));
-  }
-  template<character Ct> string<Ct> to_string() const {
-    string<Ct> s(10, {});
-    if constexpr (sizeof(Ct) == 4) {
-      auto t = std::format("{:04d}-{:02d}-{:02d}", year, month, day);
-      std::ranges::copy(t, s.data());
-    } else if constexpr (sizeof(Ct) == 1) std::format_to(s.data(), "{:04d}-{:02d}-{:02d}", year, month, day);
-    else if constexpr (sizeof(Ct) == 2) std::format_to(s.data(), L"{:04d}-{:02d}-{:02d}", year, month, day);
-    return s;
-  }
-  string<cat1> to_string() const { return to_string<cat1>(); }
-};
-
-struct clock {
-  int4 hour{}, minute{}, second{};
-  clock() : clock(_::get_zoned_time().get_local_time()) {}
-  clock(numeric auto&& Hour, numeric auto&& Minute, numeric auto&& Second) noexcept //
-    : hour(int4(Hour)), minute(int4(Minute)), second(int4(Second)) {}
-  template<typename Clock, typename Duration> clock(const std::chrono::time_point<Clock, Duration>& tp) {
-    const std::chrono::hh_mm_ss hms(std::chrono::floor<std::chrono::seconds>(tp - std::chrono::floor<std::chrono::days>(tp)));
-    hour = int4(hms.hours().count()), minute = int4(hms.minutes().count()), second = int4(hms.seconds().count());
-  }
-  template<character Ct> string<Ct> to_string() const {
-    string<Ct> s(8, {});
-    if constexpr (sizeof(Ct) == 4) {
-      auto t = std::format("{:02d}:{:02d}:{:02d}", hour, minute, second);
-      std::ranges::copy(t, s.data());
-    } else if constexpr (sizeof(Ct) == 1) std::format_to(s.data(), "{:02d}:{:02d}:{:02d}", hour, minute, second);
-    else if constexpr (sizeof(Ct) == 2) std::format_to(s.data(), L"{:02d}:{:02d}:{:02d}", hour, minute, second);
-    return s;
-  }
-  string<cat1> to_string() const { return to_string<cat1>(); }
-};
-
-struct time {
-  yw::date date;
-  yw::clock clock;
-  time() : time(_::get_zoned_time().get_local_time()) {}
-  time(const yw::date& Date, const yw::clock& Clock) noexcept : date(Date), clock(Clock) {}
-  template<typename Clock, typename Duration> time(const std::chrono::time_point<Clock, Duration>& tp) : date(tp), clock(tp) {}
-  operator yw::date() const { return date; }
-  operator yw::clock() const { return clock; }
-  template<character Ct> string<Ct> to_string() const {
-    string<Ct> s(19, {});
-    if constexpr (sizeof(Ct) == 4) {
-      auto t = std::format("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}", //
-                           date.year, date.month, date.day, clock.hour, clock.minute, clock.second);
-      std::ranges::copy(t, s.data());
-    } else if constexpr (sizeof(Ct) == 1)                                   //
-      std::format_to(s.data(), "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}", //
-                     date.year, date.month, date.day, clock.hour, clock.minute, clock.second);
-    else if constexpr (sizeof(Ct) == 2)                                      //
-      std::format_to(s.data(), L"{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}", //
-                     date.year, date.month, date.day, clock.hour, clock.minute, clock.second);
-    return s;
-  }
-  string<cat1> to_string() const { return to_string<cat1>(); }
-};
-
-inline constexpr caster now{[] { return time{}; }};
-
-using path = std::filesystem::path;
-
-class file {
-public:
-  yw::path path{};
-  file() = default;
-  file(const yw::path& Path) : path(Path) {}
-  file(yw::path&& Path) : path(mv(Path)) {}
-  file& operator=(const yw::path& Path) { return path = Path, *this; }
-  file& operator=(yw::path&& Path) { return path = mv(Path), *this; }
-  bool exists() const { return std::filesystem::exists(path); }
-  bool is_file() const { return std::filesystem::is_regular_file(path); }
-  bool is_directory() const { return std::filesystem::is_directory(path); }
-  nat size() const { return std::filesystem::file_size(path); }
-  bool read(void* Data, nat Size) const {
-    if (std::ifstream ifs(path, std::ios::binary); !ifs) return false;
-    else return ifs.read(static_cast<char*>(Data), Size), nat(ifs.gcount()) == Size;
-  }
-  bool read(contiguous_range auto&& Range) const { return read(yw::data(Range), yw::size(Range)); }
-  template<character Ct> string<Ct> read() const {
-    const nat Size = size();
-    string<Ct> s(Size / sizeof(Ct), {});
-    if (std::ifstream ifs(path, std::ios::binary); ifs) ifs.read(s.data(), Size);
-    return s;
-  }
-  string<cat1> read() const { return read<cat1>(); }
-  bool write(const void* Data, nat Size) const {
-    if (std::ofstream ofs(path, std::ios::binary); !ofs) return false;
-    else return ofs.write(static_cast<const char*>(Data), Size), true;
-  }
-  bool write(contiguous_range auto&& Range) const { return write(yw::data(Range), yw::size(Range)); }
-};
-
-class logger {
-protected:
-  string<cat1> text{};
-public:
-  struct level_t {
-    string_view<cat1> name;
-    int value;
-    friend bool operator==(const level_t& l, const level_t& r) noexcept { return l.value == r.value; }
-    friend auto operator<=>(const level_t& l, const level_t& r) noexcept { return l.value <=> r.value; }
-  };
-  static constexpr level_t all{"all", 0};
-  static constexpr level_t debug{"debug", 10};
-  static constexpr level_t info{"info", 20};
-  static constexpr level_t warning{"warn", 30};
-  static constexpr level_t error{"error", 40};
-  static constexpr level_t critical{"critical", 50};
-  path path{};
-  level_t level = info;
-  bool console = true;
-  logger(const yw::path& File) noexcept : path(File) {}
-  ~logger() noexcept {
-    try {
-      if (std::basic_ofstream<cat1> ofs(path, std::ios::app); ofs) ofs << text, text.clear();
-      else std::cerr << "failed to open log file: " << path << std::endl;
-    } catch (...) { std::cerr << "failed to write log file: " << path << std::endl; }
-  }
-  void operator()(const level_t& Level, stringable auto&& Text) noexcept {
-    if (Level < level) return;
-    try {
-      string<cat1> s;
-      if constexpr (same_as<iter_value<decltype(Text)>, cat1>) {
-        s = std::format("{} [{}] {}\n", now(), Level.name, string_view<cat1>(Text));
-      } else s = std::format("{} [{}] {}\n", now(), Level.name, cvt<cat1>(Text));
-      if (console) std::cout << s;
-      text += s;
-    } catch (...) { std::cerr << "failed to write log" << std::endl; }
-  }
-  void operator()(const level_t& Level, stringable auto&& Text, const source& Source) noexcept {
-    if (Level < level) return;
-    if (level > debug) return operator()(Level, fwd<decltype(Text)>(Text));
-    try {
-      string<cat1> s = std::format("{} [{}] {}: {}\n", now(), Level.name, Source, cvt<cat1>(Text));
-      if (console) std::cout << s;
-      text += s;
-    } catch (...) { std::cerr << "failed to write log" << std::endl; }
-  }
-  template<typename... Ts> void format( //
-    const level_t& Level, const std::format_string<Ts...> Format, Ts&&... Args) noexcept {
-    if (Level < level) return;
-    try {
-      string<cat1> s;
-      if constexpr (sizeof...(Ts) == 0) s = std::format("{} [{}] {}\n", now(), Level.name, Format);
-      else s = std::format("{} [{}] {}\n", now(), Level.name, std::format(Format, fwd<Ts>(Args)...));
-      if (console) std::cout << s;
-      text += s;
-    } catch (...) { std::cerr << "failed to write log" << std::endl; }
-  }
-  template<typename... Ts> void format( //
-    const level_t& Level, const std::wformat_string<Ts...> Format, Ts&&... Args) noexcept {
-    if (Level < level) return;
-    try {
-      string<cat2> s;
-      if constexpr (sizeof...(Ts) == 0) s = std::format(L"{} [{}] {}\n", now(), Level.name, Format);
-      else s = std::format(L"{} [{}] {}\n", now(), cvt<cat2>(Level.name), std::format(Format, fwd<Ts>(Args)...));
-      if (console) std::wcout << s;
-      text += cvt<cat1>(s);
-    } catch (...) { std::wcerr << "failed to write log" << std::endl; }
-  }
-  void flush() noexcept {
-    try {
-      if (std::basic_ofstream<cat1> ofs(path, std::ios::app); ofs) ofs << text, text.clear();
-      else std::cerr << "failed to open log file: " << path << std::endl;
-    } catch (...) { std::cerr << "failed to write log file: " << path << std::endl; }
-  }
-};
-}
-
-namespace std {
-
-template<typename Ct> struct formatter<yw::source, Ct> : formatter<basic_string<Ct>, Ct> {
-  auto format(const yw::source& s, auto& Ctx) const { return formatter<basic_string<Ct>, Ct>::format(s.to_string(), Ctx); }
-};
-
-template<typename Ct> struct formatter<yw::date, Ct> : formatter<basic_string<Ct>, Ct> {
-  auto format(const yw::date& d, auto& Ctx) const { return formatter<basic_string<Ct>, Ct>::format(d.to_string(), Ctx); }
-};
-
-template<typename Ct> struct formatter<yw::clock, Ct> : formatter<basic_string<Ct>, Ct> {
-  auto format(const yw::clock& c, auto& Ctx) const { return formatter<basic_string<Ct>, Ct>::format(c.to_string(), Ctx); }
-};
-
-template<typename Ct> struct formatter<yw::time, Ct> : formatter<basic_string<Ct>, Ct> {
-  auto format(const yw::time& t, auto& Ctx) const { return formatter<basic_string<Ct>, Ct>::format(t.to_string(), Ctx); }
-};
-
-template<typename Ct> struct formatter<yw::file, Ct> : formatter<basic_string<Ct>, Ct> {
-  auto format(const yw::file& f, auto& Ctx) const { return formatter<basic_string<Ct>, Ct>::format(f.path.string<Ct>(), Ctx); }
-};
-}
-
-export namespace yw {
-
-using xvector = __m128;
-using xmatrix = array<xvector, 4>;
-
-namespace _ {
-template<value X, value Y, value Z, value W> struct _xv_constant {
-  inline static const xvector f = _mm_set_ps(fat4(W), fat4(Z), fat4(Y), fat4(X));
-  inline static const __m256d d = _mm256_set_pd(fat8(W), fat8(Z), fat8(Y), fat8(X));
-  inline static const __m128i i = _mm_set_epi32(int4(static_cast<int8>(W) & 0xffffffff), int4(static_cast<int8>(Z) & 0xffffffff), //
-                                                int4(static_cast<int8>(Y) & 0xffffffff), int4(static_cast<int8>(X) & 0xffffffff));
-  operator add_const<xvector&>() const noexcept { return f; }
-  operator add_const<__m128i&>() const noexcept { return i; }
-  operator add_const<__m256d&>() const noexcept { return d; }
-};
-}
-
-template<value X, value Y = X, value Z = Y, value W = Z> //
-inline constexpr _::_xv_constant<X, Y, Z, W> xv_constant{};
-
-inline constexpr auto xv_zero = xv_constant<0>;
-inline constexpr auto xv_negzero = xv_constant<-0.0>;
-inline constexpr auto xv_one = xv_constant<1>;
-inline constexpr auto xv_negone = xv_constant<-1>;
-inline constexpr auto xv_x = xv_constant<1, 0, 0, 0>;
-inline constexpr auto xv_y = xv_constant<0, 1, 0, 0>;
-inline constexpr auto xv_z = xv_constant<0, 0, 1, 0>;
-inline constexpr auto xv_w = xv_constant<0, 0, 0, 1>;
-inline constexpr auto xv_negx = xv_constant<-1, 0, 0, 0>;
-inline constexpr auto xv_negy = xv_constant<0, -1, 0, 0>;
-inline constexpr auto xv_negz = xv_constant<0, 0, -1, 0>;
-inline constexpr auto xv_negw = xv_constant<0, 0, 0, -1>;
-
-inline xvector xvload(const fat4* p) noexcept { return _mm_load_ps(p); }
-inline xvector xvfill(const fat4 v) noexcept { return _mm_set1_ps(v); }
-inline xvector xvset(const fat4 x, const fat4 y, const fat4 z, const fat4 w) noexcept { return _mm_set_ps(w, z, y, x); }
-inline void xvstore(const xvector& a, fat4* p) noexcept { _mm_store_ps(p, a); }
-
-template<nat To> requires (To < 4) xvector xvinsert(const xvector& v, const fat4 x) noexcept { //
-  return _mm_castsi128_ps(_mm_insert_epi32<To>(_mm_castps_si128(v), bitcast<int4>(x)));
-}
-
-template<nat To, nat From, nat Zero = 0> requires (To < 4 && From < 4 && Zero < 16) //
-xvector xvinsert(const xvector& a, const xvector& b) noexcept {
-  return _mm_insert_ps(a, b, Zero | To << 4 | From << 6);
-}
-
-template<nat I> requires (I < 4) //
-fat4 xvextract(const xvector& v) noexcept {
-  if constexpr (I == 0) return _mm_cvtss_f32(v);
-  else return bitcast<fat4>(_mm_extract_ps(v, I));
-}
-
-template<nat I> requires (I < 4) int4 xvextract(const __m128i& m) noexcept { return _mm_extract_epi32(m, I); }
-
-template<nat Mask> requires (Mask < 16) //
-xvector xvblend(const xvector& a, const xvector& b) noexcept {
-  return _mm_blend_ps(a, b, Mask);
-}
-
-template<bool X, bool Y, bool Z, bool W> //
-xvector xvblend(const xvector& a, const xvector& b) noexcept {
-  return _mm_blend_ps(a, b, X | Y << 1 | Z << 2 | W << 3);
-}
-}
-
-namespace yw::_ {
-
-template<int X, int Y, int Z, int W> xvector _xvpermute(const xvector& a) noexcept {
-  constexpr auto f = [](auto i, auto j) { return i < 0 || i == j || 4 <= i; };
-  constexpr auto x = f(X, 0) ? 0 : X, y = f(Y, 1) ? 1 : Y, z = f(Z, 2) ? 2 : Z, w = f(W, 3) ? 3 : W;
-  if constexpr (f(X, 0) && f(Y, 1) && f(Z, 2) && f(W, 3)) return a;
-  else if constexpr (f(X, 0) && f(Y, 0) && f(Z, 0) && f(W, 0)) return _mm_broadcastss_ps(a);
-  else if constexpr (f(x, 0) && f(y, 0) && f(z, 2) && f(w, 2)) return _mm_moveldup_ps(a);
-  else if constexpr (f(x, 1) && f(y, 1) && f(z, 3) && f(w, 3)) return _mm_movehdup_ps(a);
-  else return _mm_permute_ps(a, x | y << 2 | z << 4 | w << 6);
-}
-
-template<int X, int Y, int Z, int W> xvector _xvpermute(const xvector& a, const xvector& b) noexcept {
-  constexpr bool bx = X < 0, by = Y < 0, bz = Z < 0, bw = W < 0;
-  if constexpr (X < 4 && Y < 4 && Z < 4 && W < 4) {
-    return _xvpermute<X, Y, Z, W>(a);
-  } else if constexpr ((bx || X >= 4) && (by || Y >= 4) && (bz || Z >= 4) && (bw || W >= 4)) {
-    return _xvpermute<X - 4, Y - 4, Z - 4, W - 4>(b);
-  } else if constexpr ((bx || !(X & 3 ^ 0)) && (by || !(Y & 3 ^ 1)) && (bz || !(Z & 3 ^ 2)) && (bw || !(W & 3 ^ 3))) {
-    return xvblend<ge(X, 4), ge(Y, 4), ge(Z, 4), ge(W, 4)>(a, b);
-  } else if constexpr (X < 4 && Y < 4 && (bz || Z >= 4) && (bw || W >= 4)) {
-    constexpr auto x = bx ? 0 : X, y = by ? 1 : Y, z = bz ? 2 : Z - 4, w = bw ? 3 : W - 4;
-    return _mm_shuffle_ps(a, b, x | y << 2 | z << 4 | w << 6);
-  } else if constexpr ((bx || X >= 4) && (by || Y >= 4) && Z < 4 && W < 4) {
-    constexpr auto x = bx ? 0 : X - 4, y = by ? 1 : Y - 4, z = f(Z) ? 2 : Z, w = f(W) ? 3 : W;
-    return _mm_shuffle_ps(b, a, x | y << 2 | z << 4 | w << 6);
-  } else if constexpr ((bx || X == 0) + (by || Y == 1) + (f(Z) || Z == 2) + (f(W) || W == 3) == 3) {
-    constexpr auto x = bx ? 0 : X, y = by ? 1 : Y, z = f(Z) ? 2 : Z, w = f(W) ? 3 : W;
-    constexpr nat i = inspects<ge(x, 4), ge(y, 4), ge(z, 4), ge(w, 4)>;
-    return xvinsert<i, int(select_value<i, x, y, z, w> - 4)>(a, b);
-  } else if constexpr ((bx || X == 4) + (by || Y == 5) + (f(Z) || Z == 6) + (f(W) || W == 7) == 3) {
-    constexpr auto x = bx ? 4 : X, y = by ? 5 : Y, z = f(Z) ? 6 : Z, w = f(W) ? 7 : W;
-    constexpr nat i = inspects<lt(x, 4), lt(y, 4), lt(z, 4), lt(w, 4)>;
-    return xvinsert<i, select_value<i, x, y, z, w>>(b, a);
-  } else if constexpr ((X < 4 || X == 4) && (Y < 4 || Y == 5) && (Z < 4 || Z == 6) && (W < 4 || W == 7)) {
-    return xvblend<ge(X, 4), ge(Y, 4), ge(Z, 4), ge(W, 4)>(_xvpermute<X, Y, Z, W>(a), b);
-  } else if constexpr ((bx || X >= 4 || X == 0) && (by || Y >= 4 || Y == 1) && (bz || Z >= 4 || Z == 2) && (bw || W >= 4 || W == 3)) {
-    return xvblend<ge(X, 4), ge(Y, 4), ge(Z, 4), ge(W, 4)>(a, _xvpermute<X - 4, Y - 4, Z - 4, W - 4>(b));
-  } else if constexpr ((0 <= X && X < 4) + (0 <= Y && Y < 4) + (0 <= Z && Z < 4) + (0 <= W && W < 4) == 1) {
-    constexpr nat i = inspects<(0 <= X && X < 4), (0 <= Y && Y < 4), (0 <= Z && Z < 4), (0 <= W && W < 4)>;
-    return xvinsert<i, select_value<i, X, Y, Z, W>>(_xvpermute<X - 4, Y - 4, Z - 4, W - 4>(b), a);
-  } else if constexpr ((4 <= X) + (4 <= Y) + (4 <= Z) + (4 <= W) == 1) {
-    constexpr nat i = inspects<(4 <= X), (4 <= Y), (4 <= Z), (4 <= W)>;
-    return xvinsert<i, select_value<i, X, Y, Z, W> - 4>(_xvpermute<X, Y, Z, W>(a), b);
-  } else return xvblend<ge(X, 4), ge(Y, 4), ge(Z, 4), ge(W, 4)>(_xvpermute<X, Y, Z, W>(a), _xvpermute<X - 4, Y - 4, Z - 4, W - 4>(b));
-}
-
-}
-
-export namespace yw {
-
-template<int X, int Y, int Z, int W> requires (X < 4 && Y < 4 && Z < 4 && W < 4) //
-xvector xvpermute(const xvector& v) noexcept {
-  return _::_xvpermute<X, Y, Z, W>(v);
-}
-
-template<int X, int Y, int Z, int W> requires (X < 8 && Y < 8 && Z < 8 && W < 8) //
-xvector xvpermute(const xvector& a, const xvector& b) noexcept {
-  return _::_xvpermute<X, Y, Z, W>(a, b);
-}
-
-inline xvector xvabs(const xvector& v) noexcept { return _mm_andnot_ps(xv_negzero, v); }
-inline xvector xvneg(const xvector& a) noexcept { return _mm_xor_ps(a, xv_negzero); }
-
-inline xvector xvadd(const xvector& a, const xvector& b) noexcept { return _mm_add_ps(a, b); }
-inline xvector xvsub(const xvector& a, const xvector& b) noexcept { return _mm_sub_ps(a, b); }
-inline xvector xvmul(const xvector& a, const xvector& b) noexcept { return _mm_mul_ps(a, b); }
-inline xvector xvdiv(const xvector& a, const xvector& b) noexcept { return _mm_div_ps(a, b); }
-
-inline xvector xvand(const xvector& a, const xvector& b) noexcept { return _mm_and_ps(a, b); }
-inline xvector xvor(const xvector& a, const xvector& b) noexcept { return _mm_or_ps(a, b); }
-inline xvector xvxor(const xvector& a, const xvector& b) noexcept { return _mm_xor_ps(a, b); }
-
-inline xvector operator+(const xvector& a) noexcept { return a; }
-inline xvector operator-(const xvector& a) noexcept { return xvneg(a); }
-inline xvector operator+(const xvector& a, const xvector& b) noexcept { return xvadd(a, b); }
-inline xvector operator-(const xvector& a, const xvector& b) noexcept { return xvsub(a, b); }
-inline xvector operator*(const xvector& a, const xvector& b) noexcept { return xvmul(a, b); }
-inline xvector operator/(const xvector& a, const xvector& b) noexcept { return xvdiv(a, b); }
-
-inline bool operator==(const xvector& a, const xvector& b) noexcept { //
-  return _mm_test_all_ones(_mm_castps_si128(_mm_cmpeq_ps(a, b)));
-}
-inline auto operator<=>(const xvector& a, const xvector& b) noexcept {      //
-  return _mm_movemask_ps(_::_xvpermute<3, 2, 1, 0>(_mm_cmpgt_ps(a, b))) <=> //
-         _mm_movemask_ps(_::_xvpermute<3, 2, 1, 0>(_mm_cmplt_ps(a, b)));
-}
-
-inline xvector xvceil(const xvector& a) noexcept { return _mm_ceil_ps(a); }
-inline xvector xvfloor(const xvector& a) noexcept { return _mm_floor_ps(a); }
-inline xvector xvround(const xvector& a) noexcept { return _mm_round_ps(a, 8); }
-inline xvector xvtrunc(const xvector& a) noexcept { return _mm_trunc_ps(a); }
-
-inline xvector xvmax(const xvector& a, const xvector& b) noexcept { return _mm_max_ps(a, b); }
-inline xvector xvmin(const xvector& a, const xvector& b) noexcept { return _mm_min_ps(a, b); }
-
-inline xvector xvfma(const xvector& a, const xvector& b, const xvector& c) noexcept { return _mm_fmadd_ps(a, b, c); }
-inline xvector xvfms(const xvector& a, const xvector& b, const xvector& c) noexcept { return _mm_fmsub_ps(a, b, c); }
-inline xvector xvfnma(const xvector& a, const xvector& b, const xvector& c) noexcept { return _mm_fnmadd_ps(a, b, c); }
-inline xvector xvfnms(const xvector& a, const xvector& b, const xvector& c) noexcept { return _mm_fnmsub_ps(a, b, c); }
-
-inline xvector xvsin(const xvector& a) noexcept { return _mm_sin_ps(a); }
-inline xvector xvcos(const xvector& a) noexcept { return _mm_cos_ps(a); }
-inline xvector xvtan(const xvector& a) noexcept { return _mm_tan_ps(a); }
-inline xvector xvasin(const xvector& a) noexcept { return _mm_asin_ps(a); }
-inline xvector xvacos(const xvector& a) noexcept { return _mm_acos_ps(a); }
-inline xvector xvatan(const xvector& a) noexcept { return _mm_atan_ps(a); }
-inline xvector xvatan(const xvector& y, const xvector& x) noexcept { return _mm_atan2_ps(y, x); }
-inline xvector xvsincos(const xvector& a, xvector& Cos) noexcept { return _mm_sincos_ps(&Cos, a); }
-
-inline xvector xvsinh(const xvector& a) noexcept { return _mm_sinh_ps(a); }
-inline xvector xvcosh(const xvector& a) noexcept { return _mm_cosh_ps(a); }
-inline xvector xvtanh(const xvector& a) noexcept { return _mm_tanh_ps(a); }
-inline xvector xvasinh(const xvector& a) noexcept { return _mm_asinh_ps(a); }
-inline xvector xvacosh(const xvector& a) noexcept { return _mm_acosh_ps(a); }
-inline xvector xvatanh(const xvector& a) noexcept { return _mm_atanh_ps(a); }
-
-inline xvector xvpow(const xvector& Base, const xvector& Exp) noexcept { return _mm_pow_ps(Base, Exp); }
-inline xvector xvexp(const xvector& a) noexcept { return _mm_exp_ps(a); }
-inline xvector xvexp2(const xvector& a) noexcept { return _mm_exp2_ps(a); }
-inline xvector xvexp10(const xvector& a) noexcept { return _mm_exp10_ps(a); }
-inline xvector xvexpm1(const xvector& a) noexcept { return _mm_expm1_ps(a); }
-inline xvector xvsqrt(const xvector& a) noexcept { return _mm_sqrt_ps(a); }
-inline xvector xvcbrt(const xvector& a) noexcept { return _mm_cbrt_ps(a); }
-inline xvector xvsqrt_r(const xvector& a) noexcept { return _mm_invsqrt_ps(a); }
-inline xvector xvcbrt_r(const xvector& a) noexcept { return _mm_invcbrt_ps(a); }
-inline xvector xvhypot(const xvector& a, const xvector& b) noexcept { return _mm_hypot_ps(a, b); }
-
-inline xvector xvln(const xvector& a) noexcept { return _mm_log_ps(a); }
-inline xvector xvlog(const xvector& a, const xvector& Base) noexcept { return xvln(a) / xvln(Base); }
-inline xvector xvlog2(const xvector& a) noexcept { return _mm_log2_ps(a); }
-inline xvector xvlog10(const xvector& a) noexcept { return _mm_log10_ps(a); }
-inline xvector xvlog1p(const xvector& a) noexcept { return _mm_log1p_ps(a); }
-inline xvector xvlogb(const xvector& a) noexcept { return _mm_logb_ps(a); }
-
-inline xvector xverf(const xvector& a) noexcept { return _mm_erf_ps(a); }
-inline xvector xverfc(const xvector& a) noexcept { return _mm_erfc_ps(a); }
-inline xvector xverf_r(const xvector& a) noexcept { return _mm_erfinv_ps(a); }
-inline xvector xverfc_r(const xvector& a) noexcept { return _mm_erfcinv_ps(a); }
-
-inline xvector xvcross(const xvector& a, const xvector& b) noexcept { //
-  return xvfms(xvpermute<1, 2, 0, 3>(a), xvpermute<2, 0, 1, 3>(b),    //
-               xvpermute<2, 0, 1, 3>(a) * xvpermute<1, 2, 0, 3>(b));
-}
-
-/// \brief dot product of two vectors
-/// \tparam N dimension of the vectors
-/// \tparam Zero zero mask of the result
-/// \example `xvdot<2>(a, b)` returns `{c, c, c, c}` where `c = a.x * b.x + a.y * b.y`
-/// \example `xvdot<3, 0b1010>(a, b)` returns `{c, 0, c, 0}` where `c = a.x * b.x + a.y * b.y + a.z * b.z`
-template<nat N, nat Zero = 0> requires (1 <= N && N <= 4 && Zero < 16) //
-xvector xvdot(const xvector& a, const xvector& b) noexcept {
-  if constexpr (Zero == 15) return xv_zero;
-  else return _mm_dp_ps(a, b, (Zero ^ 15) | ((1 << N) - 1) << 4);
-}
-
-template<nat N, tuple_for<xvector> Matrix, nat M = extent<Matrix>>                  //
-requires (1 <= N && N <= 4 && !convertible_to<Matrix, xvector> && 1 <= M && M <= 4) //
-xvector xvdot(Matrix&& m, const xvector& v) {
-  auto r = xvdot<N, 0b1110>(get<0>(m), v);
-  if constexpr (2 <= M) r = xvor(r, xvdot<N, 0b1101>(get<1>(m), v));
-  if constexpr (3 <= M) r = xvor(r, xvdot<N, 0b1011>(get<2>(m), v));
-  if constexpr (4 == M) r = xvor(r, xvdot<N, 0b0111>(get<3>(m), v));
-  return r;
-}
-
-template<nat N, tuple_for<xvector> Matrix, nat M = extent<Matrix>>                  //
-requires (1 <= N && N <= 4 && !convertible_to<Matrix, xvector> && 1 <= M && M <= 4) //
-xvector xvdot(const xvector& v, Matrix&& m) {
-  auto r = xvmul(xvpermute<0, 0, 0, 0>(v), get<0>(m));
-  if constexpr (2 <= M) r = xvfma(xvpermute<1, 1, 1, 1>(v), get<1>(m), r);
-  if constexpr (3 <= M) r = xvfma(xvpermute<2, 2, 2, 2>(v), get<2>(m), r);
-  if constexpr (4 == M) r = xvfma(xvpermute<3, 3, 3, 3>(v), get<3>(m), r);
-  return xvblend<(1 << N) - 1>(xv_zero, r);
-}
-
-template<nat N, tuple_for<xvector> Mt1, tuple_for<xvector> Mt2, nat L = extent<Mt1>, nat M = extent<Mt2>>         //
-requires (1 <= N && N <= 4 && !convertible_to<Mt1, xvector> && !convertible_to<Mt2, xvector> && 1 <= M && M <= 4) //
-void xvdot(const Mt1& m1, const Mt2& m2, Mt1& out) requires vassignable<Mt1&, const array<xvector, L>&> {
-  [&]<nat... Is>(sequence<Is...>) { ((get<Is>(out) = xvdot<N>(get<Is>(m1), m2)), ...); }(make_sequence<0, L>{});
-}
-
-/// \brief converts a hex rgb color to a vector
-/// \param Color hex rgb color: `0xAARRGGBB`
-/// \return vector with components: `R / 255, G / 255, B / 255, A / 255`
-inline xvector xvhex2rgb(const nat4 Color) noexcept { //
-  auto a = _mm_cvtepi32_ps(_mm_cvtepu8_epi32(_mm_castps_si128(_mm_broadcast_ss((const fat4*)&Color))));
-  return xvpermute<2, 1, 0, 3>(a * xv_constant<1 / 255.0>);
-}
-
-/// \brief converts a vector to a hex rgb color
-/// \param v vector: `{R, G, B, A}`
-/// \return hex rgb color: `0xAARRGGBB`
-inline nat4 xvrgb2hex(const xvector& v) noexcept { //
-  // multiply by 255 (value rage: 0-255)
-  auto a = xvmul(v, xv_constant<255>);
-  // fat4 to int4 (0x000000FF 0x000000FF 0x000000FF 0x000000FF)
-  auto b = _mm_cvtps_epi32(a);
-  // collect low 8 bits of each component
-  auto c = _mm_shuffle_epi8(b, xv_constant<0x0c000408, 0>);
-  return bitcast<nat4>(_mm_cvtsi128_si32(c));
-}
-
-template<typename T> struct vector {
-  static constexpr nat count = 4;
-  using value_type = T;
-  T x{}, y{}, z{}, w{};
-  constexpr vector() noexcept = default;
-  explicit constexpr vector(const T& v) noexcept : x(v), y(v), z(v), w(v) {}
-  constexpr vector(const T& X, const T& Y) noexcept : x(X), y(Y) {}
-  constexpr vector(const T& X, const T& Y, const T& Z) noexcept : x(X), y(Y), z(Z) {}
-  constexpr vector(const T& X, const T& Y, const T& Z, const T& W) noexcept : x(X), y(Y), z(Z), w(W) {}
-  template<nat I> requires (I < count) constexpr T& get() & noexcept { return select<I>(x, y, z, w); }
-  template<nat I> requires (I < count) constexpr const T& get() const& noexcept { return select<I>(x, y, z, w); }
-  template<nat I> requires (I < count) constexpr T&& get() && noexcept { return mv(select<I>(x, y, z, w)); }
-  template<nat I> requires (I < count) constexpr const T&& get() const&& noexcept { return mv(select<I>(x, y, z, w)); }
-  constexpr nat size() const noexcept { return count; }
-  T* data() noexcept { return &x; }
-  const T* data() const noexcept { return &x; }
-  T* begin() noexcept { return &x; }
-  const T* begin() const noexcept { return &x; }
-  T* end() noexcept { return &w + 1; }
-  const T* end() const noexcept { return &w + 1; }
-  constexpr T& operator[](nat i) {
-    if (is_cev) {
-      if (4 <= i) throw "index out of range";
-      return i == 0 ? x : i == 1 ? y : i == 2 ? z : w;
-    } else return data()[i];
-  }
-  constexpr const T& operator[](nat i) const {
-    if (is_cev) {
-      if (4 <= i) throw "index out of range";
-      return i == 0 ? x : i == 1 ? y : i == 2 ? z : w;
-    } else return data()[i];
-  }
-};
-
-template<> struct vector<fat4> {
-  static constexpr nat count = 4;
-  using value_type = fat4;
-  fat4 x{}, y{}, z{}, w{};
-  constexpr vector() noexcept = default;
-  explicit constexpr vector(const fat4 Fill) noexcept : x(Fill), y(Fill), z(Fill), w(Fill) {}
-  explicit constexpr vector(numeric auto&& Fill) noexcept : vector(fat4(Fill)) {}
-  constexpr vector(numeric auto&& X, numeric auto&& Y) noexcept : x(fat4(X)), y(fat4(Y)) {}
-  constexpr vector(numeric auto&& X, numeric auto&& Y, numeric auto&& Z) noexcept : x(fat4(X)), y(fat4(Y)), z(fat4(Z)) {}
-  constexpr vector(numeric auto&& X, numeric auto&& Y, numeric auto&& Z, numeric auto&& W) noexcept : x(fat4(X)), y(fat4(Y)), z(fat4(Z)), w(fat4(W)) {}
-  vector(const xvector& Xv) noexcept { xvstore(Xv, &x); }
-  operator xvector() const noexcept { return xvload(&x); }
-  template<nat I> requires (I < count) constexpr fat4& get() & noexcept { return select<I>(x, y, z, w); }
-  template<nat I> requires (I < count) constexpr const fat4& get() const& noexcept { return select<I>(x, y, z, w); }
-  template<nat I> requires (I < count) constexpr fat4&& get() && noexcept { return mv(select<I>(x, y, z, w)); }
-  template<nat I> requires (I < count) constexpr const fat4&& get() const&& noexcept { return mv(select<I>(x, y, z, w)); }
-  constexpr nat size() const noexcept { return count; }
-  fat4* data() noexcept { return &x; }
-  const fat4* data() const noexcept { return &x; }
-  fat4* begin() noexcept { return &x; }
-  const fat4* begin() const noexcept { return &x; }
-  fat4* end() noexcept { return &w + 1; }
-  const fat4* end() const noexcept { return &w + 1; }
-  constexpr fat4& operator[](nat i) {
-    if (is_cev) {
-      if (4 <= i) throw "index out of range";
-      return i == 0 ? x : i == 1 ? y : i == 2 ? z : w;
-    } else return data()[i];
-  }
-  constexpr const fat4& operator[](nat i) const {
-    if (is_cev) {
-      if (4 <= i) throw "index out of range";
-      return i == 0 ? x : i == 1 ? y : i == 2 ? z : w;
-    } else return data()[i];
-  }
-  friend constexpr bool operator==(const vector& a, const vector& b) noexcept {
-    if (is_cev) return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w;
-    else return xvector(a) == xvector(b);
-  }
-  friend constexpr auto operator<=>(const vector& a, const vector& b) noexcept {
-    if (is_cev) {
-      if (auto c = a.x <=> b.x; c != 0) return c;
-      else if (c = a.y <=> b.y; c != 0) return c;
-      else if (c = a.z <=> b.z; c != 0) return c;
-      else return a.w <=> b.w;
-    } else return std::partial_ordering(xvector(a) <=> xvector(b));
-  }
-  friend constexpr vector operator+(const vector& a) noexcept { return a; }
-  friend constexpr vector operator-(const vector& a) noexcept {
-    if (is_cev) return {-a.x, -a.y, -a.z, -a.w};
-    else return xvneg(a);
-  }
-  friend constexpr vector operator+(const vector& a, const vector& b) noexcept {
-    if (is_cev) return {a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w};
-    else return xvadd(a, b);
-  }
-  friend constexpr vector operator-(const vector& a, const vector& b) noexcept {
-    if (is_cev) return {a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w};
-    else return xvsub(a, b);
-  }
-  friend constexpr vector operator*(const vector& a, const vector& b) noexcept {
-    if (is_cev) return {a.x * b.x, a.y * b.y, a.z * b.z, a.w * b.w};
-    else return xvmul(a, b);
-  }
-  friend constexpr vector operator/(const vector& a, const vector& b) noexcept {
-    if (is_cev) return {a.x / b.x, a.y / b.y, a.z / b.z, a.w / b.w};
-    else return xvdiv(a, b);
-  }
-  friend constexpr vector operator*(const vector& a, const fat4 b) noexcept {
-    if (is_cev) return {a.x * b, a.y * b, a.z * b, a.w * b};
-    else return xvmul(a, xvfill(b));
-  }
-  friend constexpr vector operator/(const vector& a, const fat4 b) noexcept {
-    if (is_cev) return {a.x / b, a.y / b, a.z / b, a.w / b};
-    else return xvmul(a, xvfill(1.0f / b));
-  }
-  friend constexpr vector operator*(numeric auto&& a, const vector& b) noexcept { return b * fat4(a); }
-  friend constexpr vector operator*(const vector& a, numeric auto&& b) noexcept { return a * fat4(b); }
-  friend constexpr vector operator/(const vector& a, numeric auto&& b) noexcept { return a / fat4(b); }
-  constexpr vector abs() const noexcept {
-    if (is_cev) return {std::fabs(x), std::fabs(y), std::fabs(z), std::fabs(w)};
-    else return xvabs(*this);
-  }
-  fat4 length() const noexcept {
-    if (is_cev) return std::sqrt(x * x + y * y + z * z + w * w);
-    else return [](const xvector& v) { return xvextract<0>(xvsqrt(xvdot<4>(v, v))); }(*this);
-  }
-  fat4 length3() const noexcept {
-    if (is_cev) return std::sqrt(x * x + y * y + z * z);
-    else return [](const xvector& v) { return xvextract<0>(xvsqrt(xvdot<3>(v, v))); }(*this);
-  }
-  vector normalize() const noexcept {
-    if (is_cev) return *this / length();
-    else return [](const xvector& v) { return v * xvsqrt_r(xvdot<4>(v, v)); }(*this);
-  }
-  vector normalize3() const noexcept {
-    if (is_cev) return *this / length3();
-    else return [](const xvector& v) { return v * xvsqrt_r(xvdot<3>(v, v)); }(*this);
-  }
-};
-
-template<typename... Ts> vector(Ts...) -> vector<fat4>;
-
-////////////////////////////////////////////////////////////////////////////////
-/// \brief RGBA color
-struct color {
-
-  /// \brief red component [0..1]
-  fat4 r{};
-
-  /// \brief green component [0..1]
-  fat4 g{};
-
-  /// \brief blue component [0..1]
-  fat4 b{};
-
-  /// \brief alpha component [0..1]; `0` is transparent
-  fat4 a = 1.f;
-
-  /// \brief default constructor
-  constexpr color() noexcept = default;
-
-  /// \brief constructs an untransparent color
-  constexpr color(numeric auto&& R, numeric auto&& G, numeric auto&& B) noexcept : r(fat4(R)), g(fat4(G)), b(fat4(B)) {}
-
-  /// \brief constructs a color with alpha
-  constexpr color(numeric auto&& R, numeric auto&& G, numeric auto&& B, numeric auto&& A) noexcept //
-    : r(fat4(R)), g(fat4(G)), b(fat4(B)), a(fat4(A)) {}
-
-  /// \brief constructs an untransparent color from `0xRRGGBB`
-  explicit constexpr color(nat4 xRRGGBB) noexcept { from_code(*this, xRRGGBB), a = 1.f; }
-
-  /// \brief constructs a color from `0xRRGGBB` and alpha
-  constexpr color(nat4 xRRGGBB, numeric auto&& Alpha) noexcept { from_code(*this, xRRGGBB), a = fat4(Alpha); }
-
-  /// \brief converts the color to `0xAARRGGBB`
-  explicit constexpr operator nat4() const noexcept {
-    if (is_cev) return (nat4)(r * 255.f) << 16 | (nat4)(g * 255.f) << 8 | (nat4)(b * 255.f) | (nat4)(a * 255.f) << 24;
-    else return xvrgb2hex(*this);
-  }
-
-  /// \brief constructs a color from `xvector`
-  explicit color(const xvector& Xv) noexcept { _mm_storeu_ps(&r, Xv); }
-
-  /// \brief converts the color to `xvector`
-  operator xvector() const noexcept { return xvload(&r); }
-
-  /// \brief checks if two colors are equal
-  friend constexpr bool operator==(const color& A, const color& B) noexcept {
-    if (!is_cev) return xvector(A) == xvector(B);
-    else return A.r == B.r && A.g == B.g && A.b == B.b && A.a == B.a;
-  }
-
-  /// \brief `get` function
-  template<nat I> requires (I < 4) constexpr fat4& get() noexcept { return select<I>(r, g, b, a); }
-
-  /// \brief `get` function
-  template<nat I> requires (I < 4) constexpr fat4 get() const noexcept { return select<I>(r, g, b, a); }
-
-  static const color black, dimgray, gray, darkgray, silver, lightgray, gainsboro, whitesmoke, white, snow, ghostwhite,            //
-    floralwhite, linen, antiquewhite, papayawhip, blanchedalmond, bisque, moccasin, navajowhite, peachpuff, mistyrose,             //
-    lavenderblush, seashell, oldlace, ivory, honeydew, mintcream, azure, aliceblue, lavender, lightsteelblue, lightslategray,      //
-    slategray, steelblue, royalblue, midnightblue, navy, darkblue, mediumblue, blue, dodgerblue, cornflowerblue, deepskyblue,      //
-    lightskyblue, skyblue, lightblue, powderblue, paleturquoise, lightcyan, cyan, aqua, turquoise, mediumturquoise, darkturquoise, //
-    lightseagreen, cadetblue, darkcyan, teal, darkslategray, darkgreen, green, forestgreen, seagreen, mediumseagreen,              //
-    mediumaquamarine, darkseagreen, aquamarine, palegreen, lightgreen, springgreen, mediumspringgreen, lawngreen, chartreuse,      //
-    greenyellow, lime, limegreen, yellowgreen, darkolivegreen, olivedrab, olive, darkkhaki, palegoldenrod, cornsilk, beige,        //
-    lightyellow, lightgoldenrodyellow, lemonchiffon, wheat, burlywood, tan, khaki, yellow, gold, orange, sandybrown, darkorange,   //
-    goldenrod, peru, darkgoldenrod, chocolate, sienna, saddlebrown, maroon, darkred, brown, firebrick, indianred, rosybrown,       //
-    darksalmon, lightcoral, salmon, lightsalmon, coral, tomato, orangered, red, crimson, mediumvioletred, deeppink, hotpink,       //
-    palevioletred, pink, lightpink, thistle, magenta, fuchsia, violet, plum, orchid, mediumorchid, darkorchid, darkviolet,         //
-    darkmagenta, purple, indigo, darkslateblue, blueviolet, mediumpurple, slateblue, mediumslateblue, transparent, undefined, yw;
-
-private:
-  static constexpr void from_code(color& c, nat4 a) noexcept {
-    if (!is_cev) xvstore(xvhex2rgb(a), &c.r);
-    else c = {((0xff0000 & a) >> 16) / 255.f, ((0xff00 & a) >> 8) / 255.f, (0xff & a) / 255.f, ((0xff000000 & a) >> 24) / 255.f};
-  }
-};
-
-inline constexpr color color::black{0x000000};
-inline constexpr color color::dimgray{0x696969};
-inline constexpr color color::gray{0x808080};
-inline constexpr color color::darkgray{0xa9a9a9};
-inline constexpr color color::silver{0xc0c0c0};
-inline constexpr color color::lightgray{0xd3d3d3};
-inline constexpr color color::gainsboro{0xdcdcdc};
-inline constexpr color color::whitesmoke{0xf5f5f5};
-inline constexpr color color::white{0xffffff};
-inline constexpr color color::snow{0xfffafa};
-inline constexpr color color::ghostwhite{0xf8f8ff};
-inline constexpr color color::floralwhite{0xfffaf0};
-inline constexpr color color::linen{0xfaf0e6};
-inline constexpr color color::antiquewhite{0xfaebd7};
-inline constexpr color color::papayawhip{0xffefd5};
-inline constexpr color color::blanchedalmond{0xffebcd};
-inline constexpr color color::bisque{0xffe4c4};
-inline constexpr color color::moccasin{0xffe4b5};
-inline constexpr color color::navajowhite{0xffdead};
-inline constexpr color color::peachpuff{0xffdab9};
-inline constexpr color color::mistyrose{0xffe4e1};
-inline constexpr color color::lavenderblush{0xfff0f5};
-inline constexpr color color::seashell{0xfff5ee};
-inline constexpr color color::oldlace{0xfdf5e6};
-inline constexpr color color::ivory{0xfffff0};
-inline constexpr color color::honeydew{0xf0fff0};
-inline constexpr color color::mintcream{0xf5fffa};
-inline constexpr color color::azure{0xf0ffff};
-inline constexpr color color::aliceblue{0xf0f8ff};
-inline constexpr color color::lavender{0xe6e6fa};
-inline constexpr color color::lightsteelblue{0xb0c4de};
-inline constexpr color color::lightslategray{0x778899};
-inline constexpr color color::slategray{0x708090};
-inline constexpr color color::steelblue{0x4682b4};
-inline constexpr color color::royalblue{0x4169e1};
-inline constexpr color color::midnightblue{0x191970};
-inline constexpr color color::navy{0x000080};
-inline constexpr color color::darkblue{0x00008b};
-inline constexpr color color::mediumblue{0x0000cd};
-inline constexpr color color::blue{0x0000ff};
-inline constexpr color color::dodgerblue{0x1e90ff};
-inline constexpr color color::cornflowerblue{0x6495ed};
-inline constexpr color color::deepskyblue{0x00bfff};
-inline constexpr color color::lightskyblue{0x87cefa};
-inline constexpr color color::skyblue{0x87ceeb};
-inline constexpr color color::lightblue{0xadd8e6};
-inline constexpr color color::powderblue{0xb0e0e6};
-inline constexpr color color::paleturquoise{0xafeeee};
-inline constexpr color color::lightcyan{0xe0ffff};
-inline constexpr color color::cyan{0x00ffff};
-inline constexpr color color::aqua{0x00ffff};
-inline constexpr color color::turquoise{0x40e0d0};
-inline constexpr color color::mediumturquoise{0x48d1cc};
-inline constexpr color color::darkturquoise{0x00ced1};
-inline constexpr color color::lightseagreen{0x20b2aa};
-inline constexpr color color::cadetblue{0x5f9ea0};
-inline constexpr color color::darkcyan{0x008b8b};
-inline constexpr color color::teal{0x008080};
-inline constexpr color color::darkslategray{0x2f4f4f};
-inline constexpr color color::darkgreen{0x006400};
-inline constexpr color color::green{0x008000};
-inline constexpr color color::forestgreen{0x228b22};
-inline constexpr color color::seagreen{0x2e8b57};
-inline constexpr color color::mediumseagreen{0x3cb371};
-inline constexpr color color::mediumaquamarine{0x66cdaa};
-inline constexpr color color::darkseagreen{0x8fbc8f};
-inline constexpr color color::aquamarine{0x7fffd4};
-inline constexpr color color::palegreen{0x98fb98};
-inline constexpr color color::lightgreen{0x90ee90};
-inline constexpr color color::springgreen{0x00ff7f};
-inline constexpr color color::mediumspringgreen{0x00fa9a};
-inline constexpr color color::lawngreen{0x7cfc00};
-inline constexpr color color::chartreuse{0x7fff00};
-inline constexpr color color::greenyellow{0xadff2f};
-inline constexpr color color::lime{0x00ff00};
-inline constexpr color color::limegreen{0x32cd32};
-inline constexpr color color::yellowgreen{0x9acd32};
-inline constexpr color color::darkolivegreen{0x556b2f};
-inline constexpr color color::olivedrab{0x6b8e23};
-inline constexpr color color::olive{0x808000};
-inline constexpr color color::darkkhaki{0xbdb76b};
-inline constexpr color color::palegoldenrod{0xeee8aa};
-inline constexpr color color::cornsilk{0xfff8dc};
-inline constexpr color color::beige{0xf5f5dc};
-inline constexpr color color::lightyellow{0xffffe0};
-inline constexpr color color::lightgoldenrodyellow{0xfafad2};
-inline constexpr color color::lemonchiffon{0xfffacd};
-inline constexpr color color::wheat{0xf5deb3};
-inline constexpr color color::burlywood{0xdeb887};
-inline constexpr color color::tan{0xd2b48c};
-inline constexpr color color::khaki{0xf0e68c};
-inline constexpr color color::yellow{0xffff00};
-inline constexpr color color::gold{0xffd700};
-inline constexpr color color::orange{0xffa500};
-inline constexpr color color::sandybrown{0xf4a460};
-inline constexpr color color::darkorange{0xff8c00};
-inline constexpr color color::goldenrod{0xdaa520};
-inline constexpr color color::peru{0xcd853f};
-inline constexpr color color::darkgoldenrod{0xb8860b};
-inline constexpr color color::chocolate{0xd2691e};
-inline constexpr color color::sienna{0xa0522d};
-inline constexpr color color::saddlebrown{0x8b4513};
-inline constexpr color color::maroon{0x800000};
-inline constexpr color color::darkred{0x8b0000};
-inline constexpr color color::brown{0xa52a2a};
-inline constexpr color color::firebrick{0xb22222};
-inline constexpr color color::indianred{0xcd5c5c};
-inline constexpr color color::rosybrown{0xbc8f8f};
-inline constexpr color color::darksalmon{0xe9967a};
-inline constexpr color color::lightcoral{0xf08080};
-inline constexpr color color::salmon{0xfa8072};
-inline constexpr color color::lightsalmon{0xffa07a};
-inline constexpr color color::coral{0xff7f50};
-inline constexpr color color::tomato{0xff6347};
-inline constexpr color color::orangered{0xff4500};
-inline constexpr color color::red{0xff0000};
-inline constexpr color color::crimson{0xdc143c};
-inline constexpr color color::mediumvioletred{0xc71585};
-inline constexpr color color::deeppink{0xff1493};
-inline constexpr color color::hotpink{0xff69b4};
-inline constexpr color color::palevioletred{0xdb7093};
-inline constexpr color color::pink{0xffc0cb};
-inline constexpr color color::lightpink{0xffb6c1};
-inline constexpr color color::thistle{0xd8bfd8};
-inline constexpr color color::magenta{0xff00ff};
-inline constexpr color color::fuchsia{0xff00ff};
-inline constexpr color color::violet{0xee82ee};
-inline constexpr color color::plum{0xdda0dd};
-inline constexpr color color::orchid{0xda70d6};
-inline constexpr color color::mediumorchid{0xba55d3};
-inline constexpr color color::darkorchid{0x9932cc};
-inline constexpr color color::darkviolet{0x9400d3};
-inline constexpr color color::darkmagenta{0x8b008b};
-inline constexpr color color::purple{0x800080};
-inline constexpr color color::indigo{0x4b0082};
-inline constexpr color color::darkslateblue{0x483d8b};
-inline constexpr color color::blueviolet{0x8a2be2};
-inline constexpr color color::mediumpurple{0x9370db};
-inline constexpr color color::slateblue{0x6a5acd};
-inline constexpr color color::mediumslateblue{0x7b68ee};
-inline constexpr color color::transparent = color(0x0, 0.0f);
-inline constexpr color color::undefined = color(0x0, -1.f);
-inline constexpr color color::yw{0x081020};
-
-template<typename T> struct vector2 {
-  T x{}, y{};
-  constexpr vector2() noexcept = default;
-  explicit constexpr vector2(const T& Val) noexcept : x(Val), y(Val) {}
-  constexpr vector2(const T& X, const T& Y) noexcept : x(X), y(Y) {}
-  template<convertible_to<T> U, convertible_to<T> V> constexpr vector2(U&& X, V&& Y) noexcept : x(fwd<U>(X)), y(fwd<V>(Y)) {}
-  template<nat I> requires (I < 2) constexpr T& get() & noexcept { return select<I>(x, y); }
-  template<nat I> requires (I < 2) constexpr T&& get() && noexcept { return mv(select<I>(x, y)); }
-  template<nat I> requires (I < 2) constexpr const T& get() const& noexcept { return select<I>(x, y); }
-  template<nat I> requires (I < 2) constexpr T get() const&& noexcept { return mv(select<I>(x, y)); }
-};
-
-template<typename T1, typename T2> vector2(T1, T2) -> vector2<fat4>;
-}
-
-namespace std {
-
-template<typename T> struct tuple_size<yw::vector<T>> : integral_constant<nat, 4> {};
-template<nat I, typename T> struct tuple_element<I, yw::vector<T>> : type_identity<T> {};
-
-template<> struct tuple_size<yw::color> : integral_constant<nat, 4> {};
-template<nat I> struct tuple_element<I, yw::color> : type_identity<float> {};
-
-template<typename Ct> struct formatter<yw::color, Ct> : formatter<basic_string<Ct>, Ct> {
-  static constexpr Ct fmt[] = {'R', 'G', 'B', 'A', '(', '{', '}', ',', ' ', '{', '}', ',', ' ', '{', '}', ',', ' ', '{', '}', ')', '\0'};
-  auto format(const yw::color& c, auto& Ctx) const { return formatter<basic_string<Ct>, Ct>::format(std::format(fmt, c.r, c.g, c.b, c.a), Ctx); }
-};
-
-template<typename T> struct tuple_size<yw::vector2<T>> : integral_constant<nat, 2> {};
-template<nat I, typename T> struct tuple_element<I, yw::vector2<T>> : type_identity<T> {};
-
-}
-
-namespace yw {
-
-/// displays a message box with an OK button; always returns `true`
-inline bool ok(const format_string<cat1> Text, const format_string<cat1> Caption = "OK?") { //
-  return win::ok(nullptr, Text.get().data(), Caption.get().data());
-}
-
-/// displays a message box with an OK button; always returns `true`
-inline bool ok(const format_string<cat2> Text, const format_string<cat2> Caption = L"OK?") { //
-  return win::ok(nullptr, Text.get().data(), Caption.get().data());
-}
-
-/// displays a message box with an OK button; always returns `true`
-inline bool ok(stringable auto&& Text, stringable auto&& Caption)    //
-  requires (!(convertible_to<decltype(Text), format_string<cat1>> && //
-              convertible_to<decltype(Caption), format_string<cat1>>) &&
-            !(convertible_to<decltype(Text), format_string<cat2>> && //
-              convertible_to<decltype(Caption), format_string<cat2>>)) {
-  if constexpr (same_as<cat1, iter_value<decltype(Text)>, iter_value<decltype(Caption)>>) {
-    string<cat1> s1(string_view<cat1>(Text)), s2(string_view<cat1>(Caption));
-    return win::ok(nullptr, s1.data(), s2.data());
-  } else {
-    string<cat2> s1(cvt<cat2>(Text)), s2(cvt<cat2>(Caption));
-    return win::ok(nullptr, s1.data(), s2.data());
-  }
-}
-
-/// displays a message box with an OK button; always returns `true`
-inline bool ok(stringable auto&& Text)                              //
-  requires (!convertible_to<decltype(Text), format_string<cat1>> && //
-            !convertible_to<decltype(Text), format_string<cat2>>) {
-  if constexpr (same_as<cat1, iter_value<decltype(Text)>>) {
-    string<cat1> s(string_view<cat1>(Text));
-    return win::ok(nullptr, s.data(), "OK?");
-  } else {
-    string<cat2> s(cvt<cat2>(Text));
-    return win::ok(nullptr, s.data(), L"OK?");
-  }
-}
-
-/// displays a message box with Yes and No buttons; returns `true` for Yes and `false` for No
-inline bool yes(const format_string<cat1> Text, const format_string<cat1> Caption = "Yes?") { //
-  return win::yes(nullptr, Text.get().data(), Caption.get().data());
-}
-
-/// displays a message box with Yes and No buttons; returns `true` for Yes and `false` for No
-inline bool yes(const format_string<cat2> Text, const format_string<cat2> Caption = L"Yes?") { //
-  return win::yes(nullptr, Text.get().data(), Caption.get().data());
-}
-
-/// displays a message box with Yes and No buttons; returns `true` for Yes and `false` for No
-inline bool yes(stringable auto&& Text, stringable auto&& Caption)   //
-  requires (!(convertible_to<decltype(Text), format_string<cat1>> && //
-              convertible_to<decltype(Caption), format_string<cat1>>) &&
-            !(convertible_to<decltype(Text), format_string<cat2>> && //
-              convertible_to<decltype(Caption), format_string<cat2>>)) {
-  if constexpr (same_as<cat1, iter_value<decltype(Text)>, iter_value<decltype(Caption)>>) {
-    string<cat1> s1(string_view<cat1>(Text)), s2(string_view<cat1>(Caption));
-    return win::yes(nullptr, s1.data(), s2.data());
-  } else {
-    string<cat2> s1(cvt<cat2>(Text)), s2(cvt<cat2>(Caption));
-    return win::yes(nullptr, s1.data(), s2.data());
-  }
-}
-
-/// displays a message box with Yes and No buttons; returns `true` for Yes and `false` for No
-inline bool yes(stringable auto&& Text)                             //
-  requires (!convertible_to<decltype(Text), format_string<cat1>> && //
-            !convertible_to<decltype(Text), format_string<cat2>>) {
-  if constexpr (same_as<cat1, iter_value<decltype(Text)>>) {
-    string<cat1> s(string_view<cat1>(Text));
-    return win::yes(nullptr, s.data(), "Yes?");
-  } else {
-    string<cat2> s(cvt<cat2>(Text));
-    return win::yes(nullptr, s.data(), L"Yes?");
-  }
-}
-
-/// stopwatch class to measure time
-class stopwatch {
-  inline static fat8 freq = win::query_performance_frequency();
-  int8 last{};
-public:
-  /// constructs a stopwatch and starts it
-  stopwatch() noexcept { win::query_performance_counter(last); }
-
-  /// returns elapsed time in seconds
-  fat8 operator()() const noexcept {
-    int8 temp;
-    win::query_performance_counter(temp);
-    return (temp - last) / freq;
-  }
-
-  operator fat8() const noexcept { return operator()(); }
-  explicit operator fat4() const noexcept { return static_cast<fat4>(operator()()); }
-
-  /// resets the stopwatch
-  void reset() noexcept { win::query_performance_counter(last); }
-
-  /// returns elapsed time in seconds and resets the stopwatch
-  fat8 split() noexcept {
-    int8 temp = last;
-    win::query_performance_counter(last);
-    return (last - temp) / freq;
-  }
-};
-
-namespace main {
-
-/// instance handle
-inline const win::hinstance hinstance = win::get_module_handle((const wchar_t*)nullptr);
-
-/// command line arguments
-inline const array<string<cat1>> args = [] {
-  auto a = win::get_command_line();
-  array<string<cat1>> r(a.size());
-  for (nat i = 0; i < a.size(); ++i) r[i] = cvt<cat1>(a[i]);
-  return r;
-}();
-
-/// logger for main system
-inline logger log{path(args[0]).replace_extension(".log")};
-
-/// windows username
-inline const string<cat1> username = cvt<cat1>(win::get_username());
-}
-
-/// window icon
-class wicon {
-  wicon(const wicon&) = delete;
-  wicon& operator=(const wicon&) = delete;
-protected:
-  win::hicon _hicon{};
-  wicon(win::hicon Icon) noexcept : _hicon(Icon) {}
-public:
-  class predefined;
-  wicon(const predefined& PredefinedIcon) = delete;
-  wicon() noexcept = default;
-  wicon(wicon&& i) noexcept : _hicon(exchange(i._hicon, nullptr)) {}
-  operator win::hicon() const noexcept { return _hicon; }
-  explicit operator bool() const noexcept { return _hicon != nullptr; }
-  [[nodiscard]] wicon(const path& File, const source& _ = {}) {
-    try {
-      _hicon = win::create_icon_from_file(File.c_str());
-      if (!_hicon) throw std::runtime_error("failed to create icon from file");
-    } catch (const std::exception& e) {
-      main::log(logger::error, e.what());
-      main::log(logger::error, "failed to create icon", _);
-    }
-  }
-  wicon& operator=(wicon&& Icon) {
-    try {
-      if (_hicon && !win::destroy_icon(_hicon)) main::log(logger::error, "failed to destroy icon");
-      return _hicon = exchange(Icon._hicon, nullptr), *this;
-    } catch (const std::exception& e) {
-      main::log(logger::error, e.what());
-      main::log(logger::error, "failed to move icon");
-    }
-  }
-  ~wicon() noexcept {
-    try {
-      if (_hicon && !win::destroy_icon(_hicon)) main::log(logger::error, "failed to destroy icon");
-    } catch (const std::exception& e) {
-      main::log(logger::error, e.what());
-      main::log(logger::error, "failed to destroy icon");
-    } catch (...) { main::log(logger::error, "failed to destroy icon"); }
-  }
-};
-static_assert(sizeof(wicon) == sizeof(HICON));
-
-/// predefined window icons
-class wicon::predefined : public wicon {
-  template<int I> predefined(constant<I>) noexcept : wicon(win::load_icon(0, (const wchar_t*)I)) {}
-  predefined(predefined&&) = delete;
-  predefined(const predefined&) = delete;
-  predefined& operator=(predefined&&) = delete;
-  predefined& operator=(const predefined&) = delete;
-public:
-  static const wicon::predefined app, error, question, warning, info, shield;
-  ~predefined() noexcept { _hicon = nullptr; }
-};
-static_assert(sizeof(wicon::predefined) == sizeof(HICON));
-
-inline const wicon::predefined wicon::predefined::app{constant<32512>{}};
-inline const wicon::predefined wicon::predefined::error{constant<32513>{}};
-inline const wicon::predefined wicon::predefined::question{constant<32514>{}};
-inline const wicon::predefined wicon::predefined::warning{constant<32515>{}};
-inline const wicon::predefined wicon::predefined::info{constant<32516>{}};
-inline const wicon::predefined wicon::predefined::shield{constant<32518>{}};
-
-/// window cursor
-class wcursor {
-  wcursor(const wcursor&) = delete;
-  wcursor& operator=(const wcursor&) = delete;
-protected:
-  win::hcursor _hcursor{};
-  wcursor(win::hcursor Cursor) noexcept : _hcursor(Cursor) {}
-public:
-  class predefined;
-  wcursor(const predefined& PredefinedCursor) = delete;
-  wcursor() noexcept = default;
-  wcursor(wcursor&& c) noexcept : _hcursor(exchange(c._hcursor, nullptr)) {}
-  operator win::hcursor() const noexcept { return _hcursor; }
-  explicit operator bool() const noexcept { return _hcursor != nullptr; }
-  [[nodiscard]] wcursor(const path& File, const source& _ = {}) {
-    try {
-      _hcursor = win::create_cursor_from_file(File.c_str());
-      if (!_hcursor) throw std::runtime_error("failed to create cursor from file");
-    } catch (const std::exception& e) {
-      main::log(logger::error, e.what());
-      main::log(logger::error, "failed to create cursor", _);
-    }
-  }
-  wcursor& operator=(wcursor&& Cursor) {
-    try {
-      if (_hcursor && !win::destroy_cursor(_hcursor)) main::log(logger::error, "failed to destroy cursor");
-      return _hcursor = exchange(Cursor._hcursor, nullptr), *this;
-    } catch (const std::exception& e) {
-      main::log(logger::error, e.what());
-      main::log(logger::error, "failed to move cursor");
-    }
-  }
-  ~wcursor() noexcept {
-    try {
-      if (_hcursor && !win::destroy_cursor(_hcursor)) main::log(logger::error, "failed to destroy cursor");
-    } catch (const std::exception& e) {
-      main::log(logger::error, e.what());
-      main::log(logger::error, "failed to destroy cursor");
-    } catch (...) { main::log(logger::error, "failed to destroy cursor"); }
-  }
-};
-static_assert(sizeof(wcursor) == sizeof(HCURSOR));
-
-/// predefined window cursors
-class wcursor::predefined : public wcursor {
-  template<int I> predefined(constant<I>) noexcept : wcursor(win::load_cursor(0, (const wchar_t* I))) {}
-  predefined(predefined&&) = delete;
-  predefined(const predefined&) = delete;
-  predefined& operator=(predefined&&) = delete;
-  predefined& operator=(const predefined&) = delete;
-public:
-  static const wcursor::predefined arrow, ibeam, wait, cross, uparrow, sizeall, sizens, sizewe, no, hand, help;
-  ~predefined() noexcept { _hcursor = nullptr; }
-};
-static_assert(sizeof(wcursor::predefined) == sizeof(HCURSOR));
-
-inline const wcursor::predefined wcursor::predefined::arrow{constant<32512>{}};
-inline const wcursor::predefined wcursor::predefined::ibeam{constant<32513>{}};
-inline const wcursor::predefined wcursor::predefined::wait{constant<32514>{}};
-inline const wcursor::predefined wcursor::predefined::cross{constant<32515>{}};
-inline const wcursor::predefined wcursor::predefined::uparrow{constant<32516>{}};
-inline const wcursor::predefined wcursor::predefined::sizeall{constant<32646>{}};
-inline const wcursor::predefined wcursor::predefined::sizens{constant<32645>{}};
-inline const wcursor::predefined wcursor::predefined::sizewe{constant<32644>{}};
-inline const wcursor::predefined wcursor::predefined::no{constant<32648>{}};
-inline const wcursor::predefined wcursor::predefined::hand{constant<32649>{}};
-inline const wcursor::predefined wcursor::predefined::help{constant<32651>{}};
-
-/// window messages
-using wmessage = win::message;
-using enum wmessage;
-
-/// window
-class window;
-
-/// window procedure
-template<invocable_r<bool, window&, wmessage, nat8, int8> Fn> //
-struct wprocedure : public Fn {
-  inline static Fn fn{};
-  static int8 CALLBACK wndproc(win::hwnd hwnd, nat4 msg, nat8 wp, int8 lp) noexcept {
-    list<win::hwnd, vector2<int>, win::msg> Dummy{hwnd, {}, {hwnd, wmessage(msg), wp, lp}};
-    if (fn(reinterpret_cast<window&>(Dummy), wmessage(msg), wp, lp)) return 0;
-    else return win::default_procedure(hwnd, msg, wp, lp);
-  }
-  operator win::wndproc() const noexcept { return wndproc; }
-};
-
-/// window class
-class wclass {
-  wclass(const wclass&) = delete;
-  wclass& operator=(const wclass&) = delete;
-protected:
-  string_view<cat1> _name{};
-  win::hbrush _hbrush{};
-  wclass(format_string<cat1> Name) noexcept : _name(Name.get()) {}
-public:
-  /// window class for controls
-  class control;
-
-  /// window class styles
-  using style = win::class_style;
-
-  /// window class name
-  const string_view<cat1>& name = _name;
-
-  wclass() noexcept = default;
-  wclass(const control&) = delete;
-  wclass(wclass&&) noexcept : _name(exchange(_name, {})), _hbrush(exchange(_hbrush, nullptr)) {}
-  explicit operator bool() const noexcept { return !_name.empty(); }
-
-  /// creates and registers window class
-  template<typename Fn> [[nodiscard]] wclass(                                        //
-    const format_string<cat1> Name, const wprocedure<Fn>& Proc, wclass::style Style, //
-    const color& Color = color::white, const wicon& Icon = wicon::predefined::app,   //
-    const wcursor& Cursor = wcursor::predefined::arrow, const source& _ = {})
-    : _name(Name.get()), _hbrush(win::create_solid_brush(&Color.r)) {
-    try {
-      bool b = win::register_class(Style, Proc, main::hinstance, Icon, Cursor, _hbrush, name.data());
-      if (!b) throw std::runtime_error("failed to register window class");
-    } catch (const std::exception& e) {
-      main::log(logger::error, e.what());
-      main::log(logger::error, "failed to creates and registers window class", _);
-      if (_hbrush && !win::destroy_brush(exchange(_hbrush, nullptr))) //
-        main::log(logger::error, "failed to delete brush", _);
-      _name = {};
-    }
-  }
-
-  /// moves window class
-  wclass& operator=(wclass&& wc) noexcept {
-    if (_hbrush && !win::destroy_brush(_hbrush)) //
-      main::log(logger::error, "failed to destroy brush");
-    if (!name.empty() && !win::unregister_class(name.data(), main::hinstance)) //
-      main::log(logger::error, "failed to unregister window class");
-    _name = exchange(wc._name, {});
-    _hbrush = exchange(wc._hbrush, nullptr);
-    return *this;
-  }
-
-  /// destroys window class
-  ~wclass() noexcept {
-    if (_hbrush && !win::destroy_brush(_hbrush)) //
-      main::log(logger::error, "failed to destroy brush");
-    if (!name.empty() && !win::unregister_class(name.data(), main::hinstance)) //
-      main::log(logger::error, "failed to unregister window class");
-  }
-};
-using enum wclass::style;
-
-/// window class for controls
-class wclass::control : public wclass {
-  control(const control&) = delete;
-  control& operator=(const control&) = delete;
-  control(control&&) = delete;
-  control& operator=(control&&) = delete;
-  control(format_string<cat1> Name) noexcept : wclass(Name) {}
-public:
-  ~control() noexcept = default;
-  static const wclass::control animation, button, combobox, datetime, edit, header, //
-    hotkey, ipaddress, listbox, listview, calendar, pager, progress, rebar,         //
-    scrollbar, static_, statusbar, tab, toolbar, tooltip, trackbar, treeview, updown;
-};
-inline const wclass::control wclass::control::animation{win::control::animation};
-inline const wclass::control wclass::control::button{win::control::button};
-inline const wclass::control wclass::control::combobox{win::control::combobox};
-inline const wclass::control wclass::control::datetime{win::control::datetime};
-inline const wclass::control wclass::control::edit{win::control::edit};
-inline const wclass::control wclass::control::header{win::control::header};
-inline const wclass::control wclass::control::hotkey{win::control::hotkey};
-inline const wclass::control wclass::control::ipaddress{win::control::ipaddress};
-inline const wclass::control wclass::control::listbox{win::control::listbox};
-inline const wclass::control wclass::control::listview{win::control::listview};
-inline const wclass::control wclass::control::calendar{win::control::calendar};
-inline const wclass::control wclass::control::pager{win::control::pager};
-inline const wclass::control wclass::control::progress{win::control::progress};
-inline const wclass::control wclass::control::rebar{win::control::rebar};
-inline const wclass::control wclass::control::scrollbar{win::control::scrollbar};
-inline const wclass::control wclass::control::static_{win::control::static_};
-inline const wclass::control wclass::control::statusbar{win::control::statusbar};
-inline const wclass::control wclass::control::tab{win::control::tab};
-inline const wclass::control wclass::control::toolbar{win::control::toolbar};
-inline const wclass::control wclass::control::tooltip{win::control::tooltip};
-inline const wclass::control wclass::control::trackbar{win::control::trackbar};
-inline const wclass::control wclass::control::treeview{win::control::treeview};
-inline const wclass::control wclass::control::updown{win::control::updown};
-
-/// virtual key codes
-using virtual_key = win::virtual_key;
-using enum virtual_key;
-
-/// window
-class window {
-protected:
-  win::hwnd _hwnd{};
-  vector2<int4> _pad{};
-  window(win::hwnd Hwnd) noexcept : _hwnd(Hwnd) {}
-public:
-  /// window styles
-  using style = win::window_style;
-
-  /// window message structure
-  struct message_t {
-    win::hwnd hwnd{};
-    wmessage message{};
-    nat8 wparam{};
-    int8 lparam{};
-    nat4 time{};
-    vector2<int> point{};
-    void translate() const noexcept { win::translate_message((const win::msg&)*this); }
-    void dispatch() const noexcept { win::dispatch_message((const win::msg&)*this); }
-  };
-  static_assert(sizeof(message_t) == sizeof(win::msg));
-
-  /// window message
-  message_t message{};
-
-  window() noexcept = default;
-  window(window&& w) noexcept : _hwnd(exchange(w._hwnd, nullptr)), _pad(w._pad), message(w.message) {}
-  operator win::hwnd() const noexcept { return _hwnd; }
-  explicit operator bool() const noexcept { return _hwnd != nullptr; }
-
-  /// creates a window
-  [[nodiscard]] window(                                                                            //
-    const wclass& Class, stringable auto&& Title, style Style, numeric auto&& X, numeric auto&& Y, //
-    numeric auto&& Width, numeric auto&& Height, const source& _ = {}) {
-    try {
-      if (!Class) throw std::runtime_error("invalid window class");
-      const auto title = cvt<cat1>(Title);
-      const bool visible = bool(Style & style::visible);
-      const int size = 500;
-      _hwnd = win::create_window(Style, Class.name.data(), title.data(), int(X), int(Y), //
-                                 int(Width), int(Height), nullptr, nullptr, main::hinstance, nullptr);
-      if (!_hwnd) throw std::runtime_error("failed to call `CreateWindowEx`");
-      [&](vector<int4> r) { win::get_client_rect(_hwnd, &r.x), _pad.x = (size - r.z) / 2, _pad.y = size - r.w - _pad.x; }({});
-      win::set_window_pos(_hwnd, int(X), int(Y), int(Width) + _pad.x * 2, int(Height) + _pad.x + _pad.y);
-      if (visible) win::show_window(_hwnd), win::focus_window(_hwnd);
-    } catch (const std::exception& e) {
-      main::log(logger::error, e.what());
-      main::log(logger::error, "failed to create window", _);
-    }
-  }
-
-  /// moves window
-  window& operator=(window&& w) {
-    try {
-      if (_hwnd && !win::destroy_window(_hwnd)) throw std::runtime_error("failed to destroy window");
-      _hwnd = exchange(w._hwnd, nullptr), _pad = w._pad, message = w.message;
-    } catch (const std::exception& e) {
-      main::log(logger::error, e.what());
-      main::log(logger::error, "failed to move window");
-    }
-    return *this;
-  }
-
-  /// destroys window
-  ~window() noexcept {
-    try {
-      if (_hwnd && !win::destroy_window(_hwnd)) main::log(logger::error, "failed to destroy window");
-    } catch (const std::exception& e) {
-      main::log(logger::error, e.what());
-      main::log(logger::error, "failed to destroy window");
-    } catch (...) { main::log(logger::error, "failed to destroy window"); }
-  }
-
-  /// returns text of the window
-  [[nodiscard]] string<cat1> text() const { return win::get_window_text<cat1>(_hwnd); }
-
-  /// returns text of the window
-  template<character Ct> [[nodiscard]] string<Ct> text() const { return win::get_window_text<Ct>(_hwnd); }
-
-  /// sets text of the window
-  void text(stringable auto&& Text) {
-    auto s = cvt<cat2>(Text);
-    return win::set_window_text(_hwnd, s.data());
-  }
-};
-
-} // namespace yw
+// namespace yw {
+
+// /// displays a message box with an OK button; always returns `true`
+// inline bool ok(const format_string<cat1> Text, const format_string<cat1> Caption = "OK?") { //
+//   return win::ok(nullptr, Text.get().data(), Caption.get().data());
+// }
+
+// /// displays a message box with an OK button; always returns `true`
+// inline bool ok(const format_string<cat2> Text, const format_string<cat2> Caption = L"OK?") { //
+//   return win::ok(nullptr, Text.get().data(), Caption.get().data());
+// }
+
+// /// displays a message box with an OK button; always returns `true`
+// inline bool ok(stringable auto&& Text, stringable auto&& Caption)    //
+//   requires (!(convertible_to<decltype(Text), format_string<cat1>> && //
+//               convertible_to<decltype(Caption), format_string<cat1>>) &&
+//             !(convertible_to<decltype(Text), format_string<cat2>> && //
+//               convertible_to<decltype(Caption), format_string<cat2>>)) {
+//   if constexpr (same_as<cat1, iter_value<decltype(Text)>, iter_value<decltype(Caption)>>) {
+//     string<cat1> s1(string_view<cat1>(Text)), s2(string_view<cat1>(Caption));
+//     return win::ok(nullptr, s1.data(), s2.data());
+//   } else {
+//     string<cat2> s1(cvt<cat2>(Text)), s2(cvt<cat2>(Caption));
+//     return win::ok(nullptr, s1.data(), s2.data());
+//   }
+// }
+
+// /// displays a message box with an OK button; always returns `true`
+// inline bool ok(stringable auto&& Text)                              //
+//   requires (!convertible_to<decltype(Text), format_string<cat1>> && //
+//             !convertible_to<decltype(Text), format_string<cat2>>) {
+//   if constexpr (same_as<cat1, iter_value<decltype(Text)>>) {
+//     string<cat1> s(string_view<cat1>(Text));
+//     return win::ok(nullptr, s.data(), "OK?");
+//   } else {
+//     string<cat2> s(cvt<cat2>(Text));
+//     return win::ok(nullptr, s.data(), L"OK?");
+//   }
+// }
+
+// /// displays a message box with Yes and No buttons; returns `true` for Yes and `false` for No
+// inline bool yes(const format_string<cat1> Text, const format_string<cat1> Caption = "Yes?") { //
+//   return win::yes(nullptr, Text.get().data(), Caption.get().data());
+// }
+
+// /// displays a message box with Yes and No buttons; returns `true` for Yes and `false` for No
+// inline bool yes(const format_string<cat2> Text, const format_string<cat2> Caption = L"Yes?") { //
+//   return win::yes(nullptr, Text.get().data(), Caption.get().data());
+// }
+
+// /// displays a message box with Yes and No buttons; returns `true` for Yes and `false` for No
+// inline bool yes(stringable auto&& Text, stringable auto&& Caption)   //
+//   requires (!(convertible_to<decltype(Text), format_string<cat1>> && //
+//               convertible_to<decltype(Caption), format_string<cat1>>) &&
+//             !(convertible_to<decltype(Text), format_string<cat2>> && //
+//               convertible_to<decltype(Caption), format_string<cat2>>)) {
+//   if constexpr (same_as<cat1, iter_value<decltype(Text)>, iter_value<decltype(Caption)>>) {
+//     string<cat1> s1(string_view<cat1>(Text)), s2(string_view<cat1>(Caption));
+//     return win::yes(nullptr, s1.data(), s2.data());
+//   } else {
+//     string<cat2> s1(cvt<cat2>(Text)), s2(cvt<cat2>(Caption));
+//     return win::yes(nullptr, s1.data(), s2.data());
+//   }
+// }
+
+// /// displays a message box with Yes and No buttons; returns `true` for Yes and `false` for No
+// inline bool yes(stringable auto&& Text)                             //
+//   requires (!convertible_to<decltype(Text), format_string<cat1>> && //
+//             !convertible_to<decltype(Text), format_string<cat2>>) {
+//   if constexpr (same_as<cat1, iter_value<decltype(Text)>>) {
+//     string<cat1> s(string_view<cat1>(Text));
+//     return win::yes(nullptr, s.data(), "Yes?");
+//   } else {
+//     string<cat2> s(cvt<cat2>(Text));
+//     return win::yes(nullptr, s.data(), L"Yes?");
+//   }
+// }
+
+// /// stopwatch class to measure time
+// class stopwatch {
+//   inline static fat8 freq = win::query_performance_frequency();
+//   int8 last{};
+// public:
+//   /// constructs a stopwatch and starts it
+//   stopwatch() noexcept { win::query_performance_counter(last); }
+
+//   /// returns elapsed time in seconds
+//   fat8 operator()() const noexcept {
+//     int8 temp;
+//     win::query_performance_counter(temp);
+//     return (temp - last) / freq;
+//   }
+
+//   operator fat8() const noexcept { return operator()(); }
+//   explicit operator fat4() const noexcept { return static_cast<fat4>(operator()()); }
+
+//   /// resets the stopwatch
+//   void reset() noexcept { win::query_performance_counter(last); }
+
+//   /// returns elapsed time in seconds and resets the stopwatch
+//   fat8 split() noexcept {
+//     int8 temp = last;
+//     win::query_performance_counter(last);
+//     return (last - temp) / freq;
+//   }
+// };
+
+// namespace main {
+
+// /// instance handle
+// inline const win::hinstance hinstance = win::get_module_handle((const wchar_t*)nullptr);
+
+// /// command line arguments
+// inline const array<string<cat1>> args = [] {
+//   auto a = win::get_command_line();
+//   array<string<cat1>> r(a.size());
+//   for (nat i = 0; i < a.size(); ++i) r[i] = cvt<cat1>(a[i]);
+//   return r;
+// }();
+
+// /// logger for main system
+// inline logger log{path(args[0]).replace_extension(".log")};
+
+// /// windows username
+// inline const string<cat1> username = cvt<cat1>(win::get_username());
+// }
+
+// /// window icon
+// class wicon {
+//   wicon(const wicon&) = delete;
+//   wicon& operator=(const wicon&) = delete;
+// protected:
+//   win::hicon _hicon{};
+//   wicon(win::hicon Icon) noexcept : _hicon(Icon) {}
+// public:
+//   class predefined;
+//   wicon(const predefined& PredefinedIcon) = delete;
+//   wicon() noexcept = default;
+//   wicon(wicon&& i) noexcept : _hicon(exchange(i._hicon, nullptr)) {}
+//   operator win::hicon() const noexcept { return _hicon; }
+//   explicit operator bool() const noexcept { return _hicon != nullptr; }
+//   [[nodiscard]] wicon(const path& File, const source& _ = {}) {
+//     try {
+//       _hicon = win::create_icon_from_file(File.c_str());
+//       if (!_hicon) throw std::runtime_error("failed to create icon from file");
+//     } catch (const std::exception& e) {
+//       main::log(logger::error, e.what());
+//       main::log(logger::error, "failed to create icon", _);
+//     }
+//   }
+//   wicon& operator=(wicon&& Icon) {
+//     try {
+//       if (_hicon && !win::destroy_icon(_hicon)) main::log(logger::error, "failed to destroy icon");
+//       return _hicon = exchange(Icon._hicon, nullptr), *this;
+//     } catch (const std::exception& e) {
+//       main::log(logger::error, e.what());
+//       main::log(logger::error, "failed to move icon");
+//     }
+//   }
+//   ~wicon() noexcept {
+//     try {
+//       if (_hicon && !win::destroy_icon(_hicon)) main::log(logger::error, "failed to destroy icon");
+//     } catch (const std::exception& e) {
+//       main::log(logger::error, e.what());
+//       main::log(logger::error, "failed to destroy icon");
+//     } catch (...) { main::log(logger::error, "failed to destroy icon"); }
+//   }
+// };
+// static_assert(sizeof(wicon) == sizeof(HICON));
+
+// /// predefined window icons
+// class wicon::predefined : public wicon {
+//   template<int I> predefined(constant<I>) noexcept : wicon(win::load_icon(0, (const wchar_t*)I)) {}
+//   predefined(predefined&&) = delete;
+//   predefined(const predefined&) = delete;
+//   predefined& operator=(predefined&&) = delete;
+//   predefined& operator=(const predefined&) = delete;
+// public:
+//   static const wicon::predefined app, error, question, warning, info, shield;
+//   ~predefined() noexcept { _hicon = nullptr; }
+// };
+// static_assert(sizeof(wicon::predefined) == sizeof(HICON));
+
+// inline const wicon::predefined wicon::predefined::app{constant<32512>{}};
+// inline const wicon::predefined wicon::predefined::error{constant<32513>{}};
+// inline const wicon::predefined wicon::predefined::question{constant<32514>{}};
+// inline const wicon::predefined wicon::predefined::warning{constant<32515>{}};
+// inline const wicon::predefined wicon::predefined::info{constant<32516>{}};
+// inline const wicon::predefined wicon::predefined::shield{constant<32518>{}};
+
+// /// window cursor
+// class wcursor {
+//   wcursor(const wcursor&) = delete;
+//   wcursor& operator=(const wcursor&) = delete;
+// protected:
+//   win::hcursor _hcursor{};
+//   wcursor(win::hcursor Cursor) noexcept : _hcursor(Cursor) {}
+// public:
+//   class predefined;
+//   wcursor(const predefined& PredefinedCursor) = delete;
+//   wcursor() noexcept = default;
+//   wcursor(wcursor&& c) noexcept : _hcursor(exchange(c._hcursor, nullptr)) {}
+//   operator win::hcursor() const noexcept { return _hcursor; }
+//   explicit operator bool() const noexcept { return _hcursor != nullptr; }
+//   [[nodiscard]] wcursor(const path& File, const source& _ = {}) {
+//     try {
+//       _hcursor = win::create_cursor_from_file(File.c_str());
+//       if (!_hcursor) throw std::runtime_error("failed to create cursor from file");
+//     } catch (const std::exception& e) {
+//       main::log(logger::error, e.what());
+//       main::log(logger::error, "failed to create cursor", _);
+//     }
+//   }
+//   wcursor& operator=(wcursor&& Cursor) {
+//     try {
+//       if (_hcursor && !win::destroy_cursor(_hcursor)) main::log(logger::error, "failed to destroy cursor");
+//       return _hcursor = exchange(Cursor._hcursor, nullptr), *this;
+//     } catch (const std::exception& e) {
+//       main::log(logger::error, e.what());
+//       main::log(logger::error, "failed to move cursor");
+//     }
+//   }
+//   ~wcursor() noexcept {
+//     try {
+//       if (_hcursor && !win::destroy_cursor(_hcursor)) main::log(logger::error, "failed to destroy cursor");
+//     } catch (const std::exception& e) {
+//       main::log(logger::error, e.what());
+//       main::log(logger::error, "failed to destroy cursor");
+//     } catch (...) { main::log(logger::error, "failed to destroy cursor"); }
+//   }
+// };
+// static_assert(sizeof(wcursor) == sizeof(HCURSOR));
+
+// /// predefined window cursors
+// class wcursor::predefined : public wcursor {
+//   template<int I> predefined(constant<I>) noexcept : wcursor(win::load_cursor(0, (const wchar_t* I))) {}
+//   predefined(predefined&&) = delete;
+//   predefined(const predefined&) = delete;
+//   predefined& operator=(predefined&&) = delete;
+//   predefined& operator=(const predefined&) = delete;
+// public:
+//   static const wcursor::predefined arrow, ibeam, wait, cross, uparrow, sizeall, sizens, sizewe, no, hand, help;
+//   ~predefined() noexcept { _hcursor = nullptr; }
+// };
+// static_assert(sizeof(wcursor::predefined) == sizeof(HCURSOR));
+
+// inline const wcursor::predefined wcursor::predefined::arrow{constant<32512>{}};
+// inline const wcursor::predefined wcursor::predefined::ibeam{constant<32513>{}};
+// inline const wcursor::predefined wcursor::predefined::wait{constant<32514>{}};
+// inline const wcursor::predefined wcursor::predefined::cross{constant<32515>{}};
+// inline const wcursor::predefined wcursor::predefined::uparrow{constant<32516>{}};
+// inline const wcursor::predefined wcursor::predefined::sizeall{constant<32646>{}};
+// inline const wcursor::predefined wcursor::predefined::sizens{constant<32645>{}};
+// inline const wcursor::predefined wcursor::predefined::sizewe{constant<32644>{}};
+// inline const wcursor::predefined wcursor::predefined::no{constant<32648>{}};
+// inline const wcursor::predefined wcursor::predefined::hand{constant<32649>{}};
+// inline const wcursor::predefined wcursor::predefined::help{constant<32651>{}};
+
+// /// window messages
+// using wmessage = win::message;
+// using enum wmessage;
+
+// /// window
+// class window;
+
+// /// window procedure
+// template<invocable_r<bool, window&, wmessage, nat8, int8> Fn> //
+// struct wprocedure : public Fn {
+//   inline static Fn fn{};
+//   static int8 CALLBACK wndproc(win::hwnd hwnd, nat4 msg, nat8 wp, int8 lp) noexcept {
+//     list<win::hwnd, vector2<int>, win::msg> Dummy{hwnd, {}, {hwnd, wmessage(msg), wp, lp}};
+//     if (fn(reinterpret_cast<window&>(Dummy), wmessage(msg), wp, lp)) return 0;
+//     else return win::default_procedure(hwnd, msg, wp, lp);
+//   }
+//   operator win::wndproc() const noexcept { return wndproc; }
+// };
+
+// /// window class
+// class wclass {
+//   wclass(const wclass&) = delete;
+//   wclass& operator=(const wclass&) = delete;
+// protected:
+//   string_view<cat1> _name{};
+//   win::hbrush _hbrush{};
+//   wclass(format_string<cat1> Name) noexcept : _name(Name.get()) {}
+// public:
+//   /// window class for controls
+//   class control;
+
+//   /// window class styles
+//   using style = win::class_style;
+
+//   /// window class name
+//   const string_view<cat1>& name = _name;
+
+//   wclass() noexcept = default;
+//   wclass(const control&) = delete;
+//   wclass(wclass&&) noexcept : _name(exchange(_name, {})), _hbrush(exchange(_hbrush, nullptr)) {}
+//   explicit operator bool() const noexcept { return !_name.empty(); }
+
+//   /// creates and registers window class
+//   template<typename Fn> [[nodiscard]] wclass(                                        //
+//     const format_string<cat1> Name, const wprocedure<Fn>& Proc, wclass::style Style, //
+//     const color& Color = color::white, const wicon& Icon = wicon::predefined::app,   //
+//     const wcursor& Cursor = wcursor::predefined::arrow, const source& _ = {})
+//     : _name(Name.get()), _hbrush(win::create_solid_brush(&Color.r)) {
+//     try {
+//       bool b = win::register_class(Style, Proc, main::hinstance, Icon, Cursor, _hbrush, name.data());
+//       if (!b) throw std::runtime_error("failed to register window class");
+//     } catch (const std::exception& e) {
+//       main::log(logger::error, e.what());
+//       main::log(logger::error, "failed to creates and registers window class", _);
+//       if (_hbrush && !win::destroy_brush(exchange(_hbrush, nullptr))) //
+//         main::log(logger::error, "failed to delete brush", _);
+//       _name = {};
+//     }
+//   }
+
+//   /// moves window class
+//   wclass& operator=(wclass&& wc) noexcept {
+//     if (_hbrush && !win::destroy_brush(_hbrush)) //
+//       main::log(logger::error, "failed to destroy brush");
+//     if (!name.empty() && !win::unregister_class(name.data(), main::hinstance)) //
+//       main::log(logger::error, "failed to unregister window class");
+//     _name = exchange(wc._name, {});
+//     _hbrush = exchange(wc._hbrush, nullptr);
+//     return *this;
+//   }
+
+//   /// destroys window class
+//   ~wclass() noexcept {
+//     if (_hbrush && !win::destroy_brush(_hbrush)) //
+//       main::log(logger::error, "failed to destroy brush");
+//     if (!name.empty() && !win::unregister_class(name.data(), main::hinstance)) //
+//       main::log(logger::error, "failed to unregister window class");
+//   }
+// };
+// using enum wclass::style;
+
+// /// window class for controls
+// class wclass::control : public wclass {
+//   control(const control&) = delete;
+//   control& operator=(const control&) = delete;
+//   control(control&&) = delete;
+//   control& operator=(control&&) = delete;
+//   control(format_string<cat1> Name) noexcept : wclass(Name) {}
+// public:
+//   ~control() noexcept = default;
+//   static const wclass::control animation, button, combobox, datetime, edit, header, //
+//     hotkey, ipaddress, listbox, listview, calendar, pager, progress, rebar,         //
+//     scrollbar, static_, statusbar, tab, toolbar, tooltip, trackbar, treeview, updown;
+// };
+// inline const wclass::control wclass::control::animation{win::control::animation};
+// inline const wclass::control wclass::control::button{win::control::button};
+// inline const wclass::control wclass::control::combobox{win::control::combobox};
+// inline const wclass::control wclass::control::datetime{win::control::datetime};
+// inline const wclass::control wclass::control::edit{win::control::edit};
+// inline const wclass::control wclass::control::header{win::control::header};
+// inline const wclass::control wclass::control::hotkey{win::control::hotkey};
+// inline const wclass::control wclass::control::ipaddress{win::control::ipaddress};
+// inline const wclass::control wclass::control::listbox{win::control::listbox};
+// inline const wclass::control wclass::control::listview{win::control::listview};
+// inline const wclass::control wclass::control::calendar{win::control::calendar};
+// inline const wclass::control wclass::control::pager{win::control::pager};
+// inline const wclass::control wclass::control::progress{win::control::progress};
+// inline const wclass::control wclass::control::rebar{win::control::rebar};
+// inline const wclass::control wclass::control::scrollbar{win::control::scrollbar};
+// inline const wclass::control wclass::control::static_{win::control::static_};
+// inline const wclass::control wclass::control::statusbar{win::control::statusbar};
+// inline const wclass::control wclass::control::tab{win::control::tab};
+// inline const wclass::control wclass::control::toolbar{win::control::toolbar};
+// inline const wclass::control wclass::control::tooltip{win::control::tooltip};
+// inline const wclass::control wclass::control::trackbar{win::control::trackbar};
+// inline const wclass::control wclass::control::treeview{win::control::treeview};
+// inline const wclass::control wclass::control::updown{win::control::updown};
+
+// /// virtual key codes
+// using virtual_key = win::virtual_key;
+// using enum virtual_key;
+
+// /// window
+// class window {
+// protected:
+//   win::hwnd _hwnd{};
+//   vector2<int4> _pad{};
+//   window(win::hwnd Hwnd) noexcept : _hwnd(Hwnd) {}
+// public:
+//   /// window styles
+//   using style = win::window_style;
+
+//   /// window message structure
+//   struct message_t {
+//     win::hwnd hwnd{};
+//     wmessage message{};
+//     nat8 wparam{};
+//     int8 lparam{};
+//     nat4 time{};
+//     vector2<int> point{};
+//     void translate() const noexcept { win::translate_message((const win::msg&)*this); }
+//     void dispatch() const noexcept { win::dispatch_message((const win::msg&)*this); }
+//   };
+//   static_assert(sizeof(message_t) == sizeof(win::msg));
+
+//   /// window message
+//   message_t message{};
+
+//   window() noexcept = default;
+//   window(window&& w) noexcept : _hwnd(exchange(w._hwnd, nullptr)), _pad(w._pad), message(w.message) {}
+//   operator win::hwnd() const noexcept { return _hwnd; }
+//   explicit operator bool() const noexcept { return _hwnd != nullptr; }
+
+//   /// creates a window
+//   [[nodiscard]] window(                                                                            //
+//     const wclass& Class, stringable auto&& Title, style Style, numeric auto&& X, numeric auto&& Y, //
+//     numeric auto&& Width, numeric auto&& Height, const source& _ = {}) {
+//     try {
+//       if (!Class) throw std::runtime_error("invalid window class");
+//       const auto title = cvt<cat1>(Title);
+//       const bool visible = bool(Style & style::visible);
+//       const int size = 500;
+//       _hwnd = win::create_window(Style, Class.name.data(), title.data(), int(X), int(Y), //
+//                                  int(Width), int(Height), nullptr, nullptr, main::hinstance, nullptr);
+//       if (!_hwnd) throw std::runtime_error("failed to call `CreateWindowEx`");
+//       [&](vector<int4> r) { win::get_client_rect(_hwnd, &r.x), _pad.x = (size - r.z) / 2, _pad.y = size - r.w - _pad.x; }({});
+//       win::set_window_pos(_hwnd, int(X), int(Y), int(Width) + _pad.x * 2, int(Height) + _pad.x + _pad.y);
+//       if (visible) win::show_window(_hwnd), win::focus_window(_hwnd);
+//     } catch (const std::exception& e) {
+//       main::log(logger::error, e.what());
+//       main::log(logger::error, "failed to create window", _);
+//     }
+//   }
+
+//   /// moves window
+//   window& operator=(window&& w) {
+//     try {
+//       if (_hwnd && !win::destroy_window(_hwnd)) throw std::runtime_error("failed to destroy window");
+//       _hwnd = exchange(w._hwnd, nullptr), _pad = w._pad, message = w.message;
+//     } catch (const std::exception& e) {
+//       main::log(logger::error, e.what());
+//       main::log(logger::error, "failed to move window");
+//     }
+//     return *this;
+//   }
+
+//   /// destroys window
+//   ~window() noexcept {
+//     try {
+//       if (_hwnd && !win::destroy_window(_hwnd)) main::log(logger::error, "failed to destroy window");
+//     } catch (const std::exception& e) {
+//       main::log(logger::error, e.what());
+//       main::log(logger::error, "failed to destroy window");
+//     } catch (...) { main::log(logger::error, "failed to destroy window"); }
+//   }
+
+//   /// returns text of the window
+//   [[nodiscard]] string<cat1> text() const { return win::get_window_text<cat1>(_hwnd); }
+
+//   /// returns text of the window
+//   template<character Ct> [[nodiscard]] string<Ct> text() const { return win::get_window_text<Ct>(_hwnd); }
+
+//   /// sets text of the window
+//   void text(stringable auto&& Text) {
+//     auto s = cvt<cat2>(Text);
+//     return win::set_window_text(_hwnd, s.data());
+//   }
+// };
