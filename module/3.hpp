@@ -25,10 +25,23 @@ inline string<cat1> format_windows_error(same_as<long> auto hr) {
 
 /// null-terminated string
 template<character Ct> class null_terminated {
-  const char* _p{};
-  nat _n{};
+  const Ct* _p{};
+  bool _alloc{};
+  null_terminated(const null_terminated&) = delete;
+  null_terminated& operator=(const null_terminated&) = delete;
 public:
-  template<stringable<Ct> Str> null_terminated(Str&& s) {}
+  ~null_terminated() noexcept {
+    if (_alloc) delete[] _p;
+  }
+  template<stringable<Ct> Str> null_terminated(Str&& s) {
+    if constexpr (is_bounded_array<remove_ref<Str>>) _p = s;
+    else if constexpr (same_as<remove_cvref<Str>, string<Ct>> && is_lvref<Str>) _p = s.data();
+    else {
+      auto sv = string_view<Ct>(fwd<Str>(s));
+      _p = new Ct[sv.size() + 1];
+      *std::memcpy(const_cast<Ct*>(_p), sv.data(), sv.size() * sizeof(Ct)) = Ct{};
+    }
+  }
 };
 
 /// displays a message box with an OK button; always returns `true`
