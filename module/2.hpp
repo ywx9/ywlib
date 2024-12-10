@@ -825,25 +825,25 @@ constexpr string<cat2> from_sjis(const string_view<cat1> s) {
 }
 
 /// converts a UTF-8 encoded string to UTF-32 encoded string
-constexpr string<uct4> to_utf32(const string_view<cat1> s) {
-  string<uct4> r(s.size(), {});
+constexpr string<cut4> to_utf32(const string_view<cat1> s) {
+  string<cut4> r(s.size(), {});
   auto out = r.begin();
   for (auto in = s.begin(); in != s.end();) {
-    uct4 c(*in++);
+    cut4 c(*in++);
     if (c < 0x80) *out++ = c;
     else if (c < 0xc0) *out++ = 0xfffd;
     else if (c < 0xe0) {
       if (in == s.end()) *out++ = 0xfffd;
-      else *out++ = (c & 0x1f) << 6 | (uct4(*in++) & 0x3f);
+      else *out++ = (c & 0x1f) << 6 | (cut4(*in++) & 0x3f);
     } else if (c < 0xf0) {
       if (in == s.end()) *out++ = 0xfffd;
-      else if (uct4 d(*in++); in == s.end()) *out++ = 0xfffd;
-      else *out++ = (c & 0x0f) << 12 | (d & 0x3f) << 6 | (uct4(*in++) & 0x3f);
+      else if (cut4 d(*in++); in == s.end()) *out++ = 0xfffd;
+      else *out++ = (c & 0x0f) << 12 | (d & 0x3f) << 6 | (cut4(*in++) & 0x3f);
     } else if (c < 0xf8) {
       if (in == s.end()) *out++ = 0xfffd;
-      else if (uct4 d(*in++); in == s.end()) *out++ = 0xfffd;
-      else if (uct4 e(*in++); in == s.end()) *out++ = 0xfffd;
-      else *out++ = (c & 0x07) << 18 | (d & 0x3f) << 12 | (e & 0x3f) << 6 | (uct4(*in++) & 0x3f);
+      else if (cut4 d(*in++); in == s.end()) *out++ = 0xfffd;
+      else if (cut4 e(*in++); in == s.end()) *out++ = 0xfffd;
+      else *out++ = (c & 0x07) << 18 | (d & 0x3f) << 12 | (e & 0x3f) << 6 | (cut4(*in++) & 0x3f);
     } else *out++ = 0xfffd;
   }
   r.resize(out - r.begin());
@@ -851,20 +851,20 @@ constexpr string<uct4> to_utf32(const string_view<cat1> s) {
 }
 
 /// converts a UTF-8 encoded string to UTF-32 encoded string
-constexpr string<uct4> to_utf32(const string_view<uct1> s) {
-  static_assert(sizeof(string_view<cat1>) == sizeof(string_view<uct1>));
+constexpr string<cut4> to_utf32(const string_view<cut1> s) {
+  static_assert(sizeof(string_view<cat1>) == sizeof(string_view<cut1>));
   return to_utf32(bitcast<string_view<cat1>>(s));
 }
 
 /// converts a UTF-16 encoded string to UTF-32 encoded string
-constexpr string<uct4> to_utf32(const string_view<cat2> s) {
-  string<uct4> r(s.size(), {});
+constexpr string<cut4> to_utf32(const string_view<cat2> s) {
+  string<cut4> r(s.size(), {});
   auto out = r.begin();
   for (auto in = s.begin(); in != s.end();) {
-    uct4 c(*in++);
+    cut4 c(*in++);
     if (c < 0xd800 || c >= 0xe000) *out++ = c;
     else if (in == s.end()) *out++ = 0xfffd;
-    else if (uct4 d(*in++); d < 0xdc00 || d >= 0xe000) *out++ = 0xfffd;
+    else if (cut4 d(*in++); d < 0xdc00 || d >= 0xe000) *out++ = 0xfffd;
     else *out++ = (c & 0x03ff) << 10 | (d & 0x03ff) | 0x10000;
   }
   r.resize(out - r.begin());
@@ -872,18 +872,18 @@ constexpr string<uct4> to_utf32(const string_view<cat2> s) {
 }
 
 /// converts a UTF-16 encoded string to UTF-32 encoded string
-constexpr string<uct4> to_utf32(const string_view<uct2> s) {
-  static_assert(sizeof(string_view<cat2>) == sizeof(string_view<uct2>));
-  return to_utf32(bitcast<string_view<uct2>>(s));
+constexpr string<cut4> to_utf32(const string_view<cut2> s) {
+  static_assert(sizeof(string_view<cat2>) == sizeof(string_view<cut2>));
+  return to_utf32(bitcast<string_view<cut2>>(s));
 }
 
 /// converts a UTF-32 encoded string to UTF-8 encoded string
-/// \note `to_utf8<Ct>(s) -> string<Ct>` where `included_in<Ct, cat1, uct1>`
-template<included_in<cat1, uct1> Ct> constexpr string<Ct> to_utf8(const string_view<uct4> s) {
+/// \note `to_utf8<Ct>(s) -> string<Ct>` where `included_in<Ct, cat1, cut1>`
+template<included_in<cat1, cut1> Ct> constexpr string<Ct> to_utf8(const string_view<cut4> s) {
   string<Ct> r(s.size() * 4, {});
   auto out = r.begin();
   for (auto in = s.begin(); in != s.end();) {
-    uct4 c(*in++);
+    cut4 c(*in++);
     if (c < 0x80) *out++ = Ct(c);
     else if (c < 0x800) {
       *out++ = Ct(0xc0 | c >> 6);
@@ -904,18 +904,18 @@ template<included_in<cat1, uct1> Ct> constexpr string<Ct> to_utf8(const string_v
 }
 
 /// converts a UTF-32 encoded string to UTF-8 encoded string
-constexpr string<cat1> to_utf8(const string_view<uct4> s) { return to_utf8<cat1>(s); }
+constexpr string<cat1> to_utf8(const string_view<cut4> s) { return to_utf8<cat1>(s); }
 
 /// converts a UTF-32 encoded string to UTF-8 encoded string
-constexpr string<uct1> to_utf8_u(const string_view<uct4> s) { return to_utf8<uct1>(s); }
+constexpr string<cut1> to_utf8_u(const string_view<cut4> s) { return to_utf8<cut1>(s); }
 
 /// converts a UTF-32 encoded string to UTF-16 encoded string
-/// \note `to_utf16<Ct>(s) -> string<Ct>` where `included_in<Ct, cat2, uct2>`
-template<included_in<cat2, uct2> Ct> constexpr string<Ct> to_utf16(const string_view<uct4> s) {
+/// \note `to_utf16<Ct>(s) -> string<Ct>` where `included_in<Ct, cat2, cut2>`
+template<included_in<cat2, cut2> Ct> constexpr string<Ct> to_utf16(const string_view<cut4> s) {
   string<Ct> r(s.size() * 2, {});
   auto out = r.begin();
   for (auto in = s.begin(); in != s.end();) {
-    uct4 c(*in++);
+    cut4 c(*in++);
     if (c >= 0x10000) {
       c -= 0x10000;
       *out++ = Ct(0xd800 | c >> 10);
@@ -927,10 +927,10 @@ template<included_in<cat2, uct2> Ct> constexpr string<Ct> to_utf16(const string_
 }
 
 /// converts a UTF-32 encoded string to UTF-16 encoded string
-constexpr string<cat2> to_utf16(const string_view<uct4> s) { return to_utf16<cat2>(s); }
+constexpr string<cat2> to_utf16(const string_view<cut4> s) { return to_utf16<cat2>(s); }
 
 /// converts a UTF-32 encoded string to UTF-16 encoded string
-constexpr string<uct2> to_utf16_u(const string_view<uct4> s) { return to_utf16<uct2>(s); }
+constexpr string<cut2> to_utf16_u(const string_view<cut4> s) { return to_utf16<cut2>(s); }
 
 /// converts a string to a string of another encoding
 template<character Out> constexpr auto cvt = []<stringable Str>(Str&& s) {
@@ -938,14 +938,14 @@ template<character Out> constexpr auto cvt = []<stringable Str>(Str&& s) {
   if constexpr (same_as<Out, Ct>) return fwd<Str>(s);
   else if constexpr (sizeof(Ct) == sizeof(Out)) {
     return string<Out>(bitcast<string_view<Out>>(string_view<Ct>(fwd<Str>(s))));
-  } else if constexpr (same_as<Out, uct4>) {
+  } else if constexpr (same_as<Out, cut4>) {
     return to_utf32(string_view<Ct>(fwd<Str>(s)));
   } else {
     auto temp = to_utf32(string_view<Ct>(fwd<Str>(s)));
     if constexpr (same_as<Out, cat1>) return to_utf8(temp);
     else if constexpr (same_as<Out, cat2>) return to_utf16(temp);
-    else if constexpr (same_as<Out, uct1>) return to_utf8_u(temp);
-    else if constexpr (same_as<Out, uct2>) return to_utf16_u(temp);
+    else if constexpr (same_as<Out, cut1>) return to_utf8_u(temp);
+    else if constexpr (same_as<Out, cut2>) return to_utf16_u(temp);
   }
 };
 

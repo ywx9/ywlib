@@ -1,7 +1,5 @@
 #pragma once
 
-#include "0.hpp"
-
 #include <immintrin.h>
 
 export namespace intrin {
@@ -18,7 +16,7 @@ inline __m128i mm_aesenclast_si128(const __m128i& a, const __m128i& b) noexcept 
 inline __m128i mm_aesdec_si128(const __m128i& a, const __m128i& b) noexcept { return _mm_aesdec_si128(a, b); }
 inline __m128i mm_aesdeclast_si128(const __m128i& a, const __m128i& b) noexcept { return _mm_aesdeclast_si128(a, b); }
 inline __m128i mm_aesimc_si128(const __m128i& a) noexcept { return _mm_aesimc_si128(a); }
-template<int i> __m128i mm_aeskeygenassist_si128(const __m128i& a) noexcept { return _mm_aeskeygenassist_si128(a, i); }
+template<int i> __m128i mm_aeskeygenassist_si128(const __m128i& a) noexcept { return _mm_aeskeygenassist_si128(a, i, ); }
 inline __m256d mm256_acos_pd(const __m256d& a) noexcept { return _mm256_acos_pd(a); }
 inline __m256 mm256_acos_ps(const __m256& a) noexcept { return _mm256_acos_ps(a); }
 inline __m256d mm256_acosh_pd(const __m256d& a) noexcept { return _mm256_acosh_pd(a); }
@@ -134,7 +132,7 @@ inline __m256d mm256_addsub_pd(const __m256d& a, const __m256d& b) noexcept { re
 inline __m256 mm256_addsub_ps(const __m256& a, const __m256& b) noexcept { return _mm256_addsub_ps(a, b); }
 inline __m256d mm256_div_pd(const __m256d& a, const __m256d& b) noexcept { return _mm256_div_pd(a, b); }
 inline __m256 mm256_div_ps(const __m256& a, const __m256& b) noexcept { return _mm256_div_ps(a, b); }
-template<int i> __m256 mm256_dp_ps(const __m256& a, const __m256& b) noexcept { return _mm256_dp_ps(a, b, i); }
+template<int i> __m256 mm256_dp_ps(const __m256& a, const __m256& b) noexcept { return _mm256_dp_ps(a, b, i, ); }
 inline __m256d mm256_hadd_pd(const __m256d& a, const __m256d& b) noexcept { return _mm256_hadd_pd(a, b); }
 inline __m256 mm256_hadd_ps(const __m256& a, const __m256& b) noexcept { return _mm256_hadd_ps(a, b); }
 inline __m256d mm256_hsub_pd(const __m256d& a, const __m256d& b) noexcept { return _mm256_hsub_pd(a, b); }
@@ -166,35 +164,35 @@ inline int mm256_testnzc_ps(const __m256& a, const __m256& b) noexcept { return 
 inline int mm_testz_ps(const __m128& a, const __m128& b) noexcept { return _mm_testz_ps(a, b); }
 inline int mm_testc_ps(const __m128& a, const __m128& b) noexcept { return _mm_testc_ps(a, b); }
 inline int mm_testnzc_ps(const __m128& a, const __m128& b) noexcept { return _mm_testnzc_ps(a, b); }
-template<int i> __m256d mm256_blend_pd(const __m256d& a, const __m256d& b) noexcept { return _mm256_blend_pd(a, b, i); }
-template<int i> __m256 mm256_blend_ps(const __m256& a, const __m256& b) noexcept { return _mm256_blend_ps(a, b, i); }
+template<int i> __m256d mm256_blend_pd(const __m256d& a, const __m256d& b) noexcept { return _mm256_blend_pd(a, b, i, ); }
+template<int i> __m256 mm256_blend_ps(const __m256& a, const __m256& b) noexcept { return _mm256_blend_ps(a, b, i, ); }
 inline __m256d mm256_blendv_pd(const __m256d& a, const __m256d& b, const __m256d& c) noexcept { return _mm256_blendv_pd(a, b, c); }
 inline __m256 mm256_blendv_ps(const __m256& a, const __m256& b, const __m256& c) noexcept { return _mm256_blendv_ps(a, b, c); }
-template<int i> __m256d mm256_shuffle_pd(const __m256d& a, const __m256d& b) noexcept { return _mm256_shuffle_pd(a, b, i); }
-template<int i> __m256 mm256_shuffle_ps(const __m256& a, const __m256& b) noexcept { return _mm256_shuffle_ps(a, b, i); }
-template<int i> __m128 mm256_extractf128_ps(const __m256& a) noexcept { return _mm256_extractf128_ps(a, i); }
-template<int i> __m128d mm256_extractf128_pd(const __m256d& a) noexcept { return _mm256_extractf128_pd(a, i); }
-template<int i> __m128i mm256_extractf128_si256(const __m256i& a) noexcept { return _mm256_extractf128_si256(a, i); }
-template<int i> __int32 mm256_extract_epi32(const __m256i& a) noexcept { return _mm256_extract_epi32(a, i); }
-template<int i> __int64 mm256_extract_epi64(const __m256i& a) noexcept { return _mm256_extract_epi64(a, i); }
+template<int i> __m256d mm256_shuffle_pd(const __m256d& a, const __m256d& b) noexcept { return _mm256_shuffle_pd(a, b, i, ); }
+template<int i> __m256 mm256_shuffle_ps(const __m256& a, const __m256& b) noexcept { return _mm256_shuffle_ps(a, b, i, ); }
+template<int i> __m128 mm256_extractf128_ps(const __m256& a) noexcept { return _mm256_extractf128_ps(a, i, ); }
+template<int i> __m128d mm256_extractf128_pd(const __m256d& a) noexcept { return _mm256_extractf128_pd(a, i, ); }
+template<int i> __m128i mm256_extractf128_si256(const __m256i& a) noexcept { return _mm256_extractf128_si256(a, i, ); }
+template<int i> __int32 mm256_extract_epi32(const __m256i& a) noexcept { return _mm256_extract_epi32(a, i, ); }
+template<int i> __int64 mm256_extract_epi64(const __m256i& a) noexcept { return _mm256_extract_epi64(a, i, ); }
 inline __m256 mm256_permutevar_ps(const __m256& a, const __m256i& b) noexcept { return _mm256_permutevar_ps(a, b); }
 inline __m128 mm_permutevar_ps(const __m128& a, const __m128i& b) noexcept { return _mm_permutevar_ps(a, b); }
-template<int i> __m256 mm256_permute_ps(const __m256& a) noexcept { return _mm256_permute_ps(a, i); }
-template<int i> __m128 mm_permute_ps(const __m128& a) noexcept { return _mm_permute_ps(a, i); }
+template<int i> __m256 mm256_permute_ps(const __m256& a) noexcept { return _mm256_permute_ps(a, i, ); }
+template<int i> __m128 mm_permute_ps(const __m128& a) noexcept { return _mm_permute_ps(a, i, ); }
 inline __m256d mm256_permutevar_pd(const __m256d& a, const __m256i& b) noexcept { return _mm256_permutevar_pd(a, b); }
 inline __m128d mm_permutevar_pd(const __m128d& a, const __m128i& b) noexcept { return _mm_permutevar_pd(a, b); }
-template<int i> __m256d mm256_permute_pd(const __m256d& a) noexcept { return _mm256_permute_pd(a, i); }
-template<int i> __m128d mm_permute_pd(const __m128d& a) noexcept { return _mm_permute_pd(a, i); }
-template<int i> __m256 mm256_permute2f128_ps(const __m256& a, const __m256& b) noexcept { return _mm256_permute2f128_ps(a, b, i); }
-template<int i> __m256d mm256_permute2f128_pd(const __m256d& a, const __m256d& b) noexcept { return _mm256_permute2f128_pd(a, b, i); }
-template<int i> __m256i mm256_permute2f128_si256(const __m256i& a, const __m256i& b) noexcept { return _mm256_permute2f128_si256(a, b, i); }
-template<int i> __m256 mm256_insertf128_ps(const __m256& a, const __m128& b) noexcept { return _mm256_insertf128_ps(a, b, i); }
-template<int i> __m256d mm256_insertf128_pd(const __m256d& a, const __m128d& b) noexcept { return _mm256_insertf128_pd(a, b, i); }
-template<int i> __m256i mm256_insertf128_si256(const __m256i& a, const __m128i& b) noexcept { return _mm256_insertf128_si256(a, b, i); }
-template<int i> __m256i mm256_insert_epi8(const __m256i& a, __int8 b) noexcept { return _mm256_insert_epi8(a, b, i); }
-template<int i> __m256i mm256_insert_epi16(const __m256i& a, __int16 b) noexcept { return _mm256_insert_epi16(a, b, i); }
-template<int i> __m256i mm256_insert_epi32(const __m256i& a, __int32 b) noexcept { return _mm256_insert_epi32(a, b, i); }
-template<int i> __m256i mm256_insert_epi64(const __m256i& a, __int64 b) noexcept { return _mm256_insert_epi64(a, b, i); }
+template<int i> __m256d mm256_permute_pd(const __m256d& a) noexcept { return _mm256_permute_pd(a, i, ); }
+template<int i> __m128d mm_permute_pd(const __m128d& a) noexcept { return _mm_permute_pd(a, i, ); }
+template<int i> __m256 mm256_permute2f128_ps(const __m256& a, const __m256& b) noexcept { return _mm256_permute2f128_ps(a, b, i, ); }
+template<int i> __m256d mm256_permute2f128_pd(const __m256d& a, const __m256d& b) noexcept { return _mm256_permute2f128_pd(a, b, i, ); }
+template<int i> __m256i mm256_permute2f128_si256(const __m256i& a, const __m256i& b) noexcept { return _mm256_permute2f128_si256(a, b, i, ); }
+template<int i> __m256 mm256_insertf128_ps(const __m256& a, const __m128& b) noexcept { return _mm256_insertf128_ps(a, b, i, ); }
+template<int i> __m256d mm256_insertf128_pd(const __m256d& a, const __m128d& b) noexcept { return _mm256_insertf128_pd(a, b, i, ); }
+template<int i> __m256i mm256_insertf128_si256(const __m256i& a, const __m128i& b) noexcept { return _mm256_insertf128_si256(a, b, i, ); }
+template<int i> __m256i mm256_insert_epi8(const __m256i& a, __int8 b) noexcept { return _mm256_insert_epi8(a, b, i, ); }
+template<int i> __m256i mm256_insert_epi16(const __m256i& a, __int16 b) noexcept { return _mm256_insert_epi16(a, b, i, ); }
+template<int i> __m256i mm256_insert_epi32(const __m256i& a, __int32 b) noexcept { return _mm256_insert_epi32(a, b, i, ); }
+template<int i> __m256i mm256_insert_epi64(const __m256i& a, __int64 b) noexcept { return _mm256_insert_epi64(a, b, i, ); }
 inline __m256d mm256_unpackhi_pd(const __m256d& a, const __m256d& b) noexcept { return _mm256_unpackhi_pd(a, b); }
 inline __m256 mm256_unpackhi_ps(const __m256& a, const __m256& b) noexcept { return _mm256_unpackhi_ps(a, b); }
 inline __m256d mm256_unpacklo_pd(const __m256d& a, const __m256d& b) noexcept { return _mm256_unpacklo_pd(a, b); }
@@ -203,18 +201,18 @@ inline __m256d mm256_max_pd(const __m256d& a, const __m256d& b) noexcept { retur
 inline __m256 mm256_max_ps(const __m256& a, const __m256& b) noexcept { return _mm256_max_ps(a, b); }
 inline __m256d mm256_min_pd(const __m256d& a, const __m256d& b) noexcept { return _mm256_min_pd(a, b); }
 inline __m256 mm256_min_ps(const __m256& a, const __m256& b) noexcept { return _mm256_min_ps(a, b); }
-template<int i> __m256d mm256_round_pd(const __m256d& a) noexcept { return _mm256_round_pd(a, i); }
-template<int i> __m256 mm256_round_ps(const __m256& a) noexcept { return _mm256_round_ps(a, i); }
+template<int i> __m256d mm256_round_pd(const __m256d& a) noexcept { return _mm256_round_pd(a, i, ); }
+template<int i> __m256 mm256_round_ps(const __m256& a) noexcept { return _mm256_round_ps(a, i, ); }
 inline __m256 mm256_floor_ps(const __m256& a) noexcept { return _mm256_floor_ps(a); }
 inline __m256 mm256_ceil_ps(const __m256& a) noexcept { return _mm256_ceil_ps(a); }
 inline __m256d mm256_floor_pd(const __m256d& a) noexcept { return _mm256_floor_pd(a); }
 inline __m256d mm256_ceil_pd(const __m256d& a) noexcept { return _mm256_ceil_pd(a); }
-template<int i> __m128d mm_cmp_pd(const __m128d& a, const __m128d& b) noexcept { return _mm_cmp_pd(a, b, i); }
-template<int i> __m256d mm256_cmp_pd(const __m256d& a, const __m256d& b) noexcept { return _mm256_cmp_pd(a, b, i); }
-template<int i> __m128 mm_cmp_ps(const __m128& a, const __m128& b) noexcept { return _mm_cmp_ps(a, b, i); }
-template<int i> __m256 mm256_cmp_ps(const __m256& a, const __m256& b) noexcept { return _mm256_cmp_ps(a, b, i); }
-template<int i> __m128d mm_cmp_sd(const __m128d& a, const __m128d& b) noexcept { return _mm_cmp_sd(a, b, i); }
-template<int i> __m128 mm_cmp_ss(const __m128& a, const __m128& b) noexcept { return _mm_cmp_ss(a, b, i); }
+template<int i> __m128d mm_cmp_pd(const __m128d& a, const __m128d& b) noexcept { return _mm_cmp_pd(a, b, i, ); }
+template<int i> __m256d mm256_cmp_pd(const __m256d& a, const __m256d& b) noexcept { return _mm256_cmp_pd(a, b, i, ); }
+template<int i> __m128 mm_cmp_ps(const __m128& a, const __m128& b) noexcept { return _mm_cmp_ps(a, b, i, ); }
+template<int i> __m256 mm256_cmp_ps(const __m256& a, const __m256& b) noexcept { return _mm256_cmp_ps(a, b, i, ); }
+template<int i> __m128d mm_cmp_sd(const __m128d& a, const __m128d& b) noexcept { return _mm_cmp_sd(a, b, i, ); }
+template<int i> __m128 mm_cmp_ss(const __m128& a, const __m128& b) noexcept { return _mm_cmp_ss(a, b, i, ); }
 inline __m256d mm256_cvtepi32_pd(const __m128i& a) noexcept { return _mm256_cvtepi32_pd(a); }
 inline __m256 mm256_cvtepi32_ps(const __m256i& a) noexcept { return _mm256_cvtepi32_ps(a); }
 inline __m128 mm256_cvtpd_ps(const __m256d& a) noexcept { return _mm256_cvtpd_ps(a); }
@@ -294,7 +292,7 @@ inline __m256i mm256_set_epi16(short e15, short e14, short e13, short e12, short
   return _mm256_set_epi16(e15, e14, e13, e12, e11, e10, e9, e8, e7, e6, e5, e4, e3, e2, e1, e0);
 }
 template<int i> __m256i mm256_set_epi32(int e7, int e6, int e5, int e4, int e3, int e2, int e1, int e0) noexcept { //
-  return _mm256_set_epi32(e7, e6, e5, e4, e3, e2, e1, e0, i);
+  return _mm256_set_epi32(e7, e6, e5, e4, e3, e2, e1, e0, i, );
 }
 inline __m256i mm256_set_epi64(__int64 e3, __int64 e2, __int64 e1, __int64 e0) noexcept { return _mm256_set_epi64x(e3, e2, e1, e0); }
 inline __m256i mm256_set_epi64x(__int64 e3, __int64 e2, __int64 e1, __int64 e0) noexcept { return _mm256_set_epi64x(e3, e2, e1, e0); }
@@ -313,14 +311,14 @@ inline __m256i mm256_setr_epi16(short e0, short e1, short e2, short e3, short e4
                                 short e8, short e9, short e10, short e11, short e12, short e13, short e14, short e15) noexcept {
   return _mm256_setr_epi16(e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15);
 }
-template<int i> __m256i mm256_setr_epi32(int e0, int e1, int e2, int e3) noexcept { return _mm256_setr_epi32(e0, e1, e2, e3, i); }
+template<int i> __m256i mm256_setr_epi32(int e0, int e1, int e2, int e3) noexcept { return _mm256_setr_epi32(e0, e1, e2, e3, i, ); }
 inline __m256i mm256_setr_epi64x(__int64 e0, __int64 e1, __int64 e2, __int64 e3) noexcept { return _mm256_setr_epi64x(e0, e1, e2, e3); }
 
 inline __m256d mm256_set1_pd(double a) noexcept { return _mm256_set1_pd(a); }
 inline __m256 mm256_set1_ps(float a) noexcept { return _mm256_set1_ps(a); }
 inline __m256i mm256_set1_epi8(char a) noexcept { return _mm256_set1_epi8(a); }
 inline __m256i mm256_set1_epi16(short a) noexcept { return _mm256_set1_epi16(a); }
-template<int i> __m256i mm256_set1_epi32() noexcept { return _mm256_set1_epi32(i); }
+template<int i> __m256i mm256_set1_epi32() noexcept { return _mm256_set1_epi32(i, ); }
 inline __m256i mm256_set1_epi64x(long long a) noexcept { return _mm256_set1_epi64x(a); }
 inline __m256 mm256_set_m128(const __m128& a, const __m128& b) noexcept { return _mm256_set_m128(a, b); }
 inline __m256d mm256_set_m128d(const __m128d& a, const __m128d& b) noexcept { return _mm256_set_m128d(a, b); }
@@ -343,11 +341,11 @@ inline __m256i mm256_castsi128_si256(const __m128i& a) noexcept { return _mm256_
 inline __m256 mm256_zextps128_ps256(const __m128& a) noexcept { return _mm256_zextps128_ps256(a); }
 inline __m256d mm256_zextpd128_pd256(const __m128d& a) noexcept { return _mm256_zextpd128_pd256(a); }
 inline __m256i mm256_zextsi128_si256(const __m128i& a) noexcept { return _mm256_zextsi128_si256(a); }
-template<int i> int mm256_extract_epi8(const __m256i& a) noexcept { return _mm256_extract_epi8(a, i); }
-template<int i> int mm256_extract_epi16(const __m256i& a) noexcept { return _mm256_extract_epi16(a, i); }
-template<int i> __m256i mm256_blend_epi16(const __m256i& a, const __m256i& b) noexcept { return _mm256_blend_epi16(a, b, i); }
-template<int i> __m128i mm_blend_epi32(const __m128i& a, const __m128i& b) noexcept { return _mm_blend_epi32(a, b, i); }
-template<int i> __m256i mm256_blend_epi32(const __m256i& a, const __m256i& b) noexcept { return _mm256_blend_epi32(a, b, i); }
+template<int i> int mm256_extract_epi8(const __m256i& a) noexcept { return _mm256_extract_epi8(a, i, ); }
+template<int i> int mm256_extract_epi16(const __m256i& a) noexcept { return _mm256_extract_epi16(a, i, ); }
+template<int i> __m256i mm256_blend_epi16(const __m256i& a, const __m256i& b) noexcept { return _mm256_blend_epi16(a, b, i, ); }
+template<int i> __m128i mm_blend_epi32(const __m128i& a, const __m128i& b) noexcept { return _mm_blend_epi32(a, b, i, ); }
+template<int i> __m256i mm256_blend_epi32(const __m256i& a, const __m256i& b) noexcept { return _mm256_blend_epi32(a, b, i, ); }
 inline __m256i mm256_blendv_epi8(const __m256i& a, const __m256i& b, const __m256i& c) noexcept { return _mm256_blendv_epi8(a, b, c); }
 inline __m128i mm_broadcastb_epi8(const __m128i& a) noexcept { return _mm_broadcastb_epi8(a); }
 inline __m256i mm256_broadcastb_epi8(const __m128i& a) noexcept { return _mm256_broadcastb_epi8(a); }
@@ -363,17 +361,17 @@ inline __m128 mm_broadcastss_ps(const __m128& a) noexcept { return _mm_broadcast
 inline __m256 mm256_broadcastss_ps(const __m128& a) noexcept { return _mm256_broadcastss_ps(a); }
 inline __m128i mm_broadcastw_epi16(const __m128i& a) noexcept { return _mm_broadcastw_epi16(a); }
 inline __m256i mm256_broadcastw_epi16(const __m128i& a) noexcept { return _mm256_broadcastw_epi16(a); }
-template<int i> __m128i mm256_extracti128_si256(const __m256i& a) noexcept { return _mm256_extracti128_si256(a, i); }
-template<int i> __m256i mm256_inserti128_si256(const __m256i& a, const __m128i& b) noexcept { return _mm256_inserti128_si256(a, b, i); }
-template<int i> __m256i mm256_permute2x128_si256(const __m256i& a, const __m256i& b) noexcept { return _mm256_permute2x128_si256(a, b, i); }
-template<int i> __m256i mm256_permute4x64_epi64(const __m256i& a) noexcept { return _mm256_permute4x64_epi64(a, i); }
-template<int i> __m256d mm256_permute4x64_pd(const __m256d& a) noexcept { return _mm256_permute4x64_pd(a, i); }
+template<int i> __m128i mm256_extracti128_si256(const __m256i& a) noexcept { return _mm256_extracti128_si256(a, i, ); }
+template<int i> __m256i mm256_inserti128_si256(const __m256i& a, const __m128i& b) noexcept { return _mm256_inserti128_si256(a, b, i, ); }
+template<int i> __m256i mm256_permute2x128_si256(const __m256i& a, const __m256i& b) noexcept { return _mm256_permute2x128_si256(a, b, i, ); }
+template<int i> __m256i mm256_permute4x64_epi64(const __m256i& a) noexcept { return _mm256_permute4x64_epi64(a, i, ); }
+template<int i> __m256d mm256_permute4x64_pd(const __m256d& a) noexcept { return _mm256_permute4x64_pd(a, i, ); }
 inline __m256i mm256_permutevar8x32_epi32(const __m256i& a, const __m256i& b) noexcept { return _mm256_permutevar8x32_epi32(a, b); }
 inline __m256 mm256_permutevar8x32_ps(const __m256& a, const __m256i& b) noexcept { return _mm256_permutevar8x32_ps(a, b); }
-template<int i> __m256i mm256_shuffle_epi32(const __m256i& a) noexcept { return _mm256_shuffle_epi32(a, i); }
+template<int i> __m256i mm256_shuffle_epi32(const __m256i& a) noexcept { return _mm256_shuffle_epi32(a, i, ); }
 inline __m256i mm256_shuffle_epi8(const __m256i& a, const __m256i& b) noexcept { return _mm256_shuffle_epi8(a, b); }
-template<int i> __m256i mm256_shufflehi_epi16(const __m256i& a) noexcept { return _mm256_shufflehi_epi16(a, i); }
-template<int i> __m256i mm256_shufflelo_epi16(const __m256i& a) noexcept { return _mm256_shufflelo_epi16(a, i); }
+template<int i> __m256i mm256_shufflehi_epi16(const __m256i& a) noexcept { return _mm256_shufflehi_epi16(a, i, ); }
+template<int i> __m256i mm256_shufflelo_epi16(const __m256i& a) noexcept { return _mm256_shufflelo_epi16(a, i, ); }
 inline __m256i mm256_unpackhi_epi8(const __m256i& a, const __m256i& b) noexcept { return _mm256_unpackhi_epi8(a, b); }
 inline __m256i mm256_unpackhi_epi16(const __m256i& a, const __m256i& b) noexcept { return _mm256_unpackhi_epi16(a, b); }
 inline __m256i mm256_unpackhi_epi32(const __m256i& a, const __m256i& b) noexcept { return _mm256_unpackhi_epi32(a, b); }
@@ -432,9 +430,9 @@ inline __m256i mm256_subs_epi8(const __m256i& a, const __m256i& b) noexcept { re
 inline __m256i mm256_subs_epi16(const __m256i& a, const __m256i& b) noexcept { return _mm256_subs_epi16(a, b); }
 inline __m256i mm256_subs_epu8(const __m256i& a, const __m256i& b) noexcept { return _mm256_subs_epu8(a, b); }
 inline __m256i mm256_subs_epu16(const __m256i& a, const __m256i& b) noexcept { return _mm256_subs_epu16(a, b); }
-template<int i> __m256i mm256_alignr_epi8(const __m256i& a, const __m256i& b) noexcept { return _mm256_alignr_epi8(a, b, i); }
+template<int i> __m256i mm256_alignr_epi8(const __m256i& a, const __m256i& b) noexcept { return _mm256_alignr_epi8(a, b, i, ); }
 inline int mm256_movemask_epi8(const __m256i& a) noexcept { return _mm256_movemask_epi8(a); }
-template<int i> __m256i mm256_mpsadbw_epu8(const __m256i& a, const __m256i& b) noexcept { return _mm256_mpsadbw_epu8(a, b, i); }
+template<int i> __m256i mm256_mpsadbw_epu8(const __m256i& a, const __m256i& b) noexcept { return _mm256_mpsadbw_epu8(a, b, i, ); }
 inline __m256i mm256_packs_epi16(const __m256i& a, const __m256i& b) noexcept { return _mm256_packs_epi16(a, b); }
 inline __m256i mm256_packs_epi32(const __m256i& a, const __m256i& b) noexcept { return _mm256_packs_epi32(a, b); }
 inline __m256i mm256_packus_epi16(const __m256i& a, const __m256i& b) noexcept { return _mm256_packus_epi16(a, b); }
@@ -465,38 +463,38 @@ inline __m256i mm256_cvtepu32_epi64(const __m128i& a) noexcept { return _mm256_c
 inline __m256i mm256_cvtepu8_epi16(const __m128i& a) noexcept { return _mm256_cvtepu8_epi16(a); }
 inline __m256i mm256_cvtepu8_epi32(const __m128i& a) noexcept { return _mm256_cvtepu8_epi32(a); }
 inline __m256i mm256_cvtepu8_epi64(const __m128i& a) noexcept { return _mm256_cvtepu8_epi64(a); }
-template<int i> __m128d mm_i32gather_pd(double const* a, const __m128i& b) noexcept { return _mm_i32gather_pd(a, b, i); }
-template<int i> __m256d mm256_i32gather_pd(double const* a, const __m128i& b) noexcept { return _mm256_i32gather_pd(a, b, i); }
-template<int i> __m128 mm_i32gather_ps(float const* a, const __m128i& b) noexcept { return _mm_i32gather_ps(a, b, i); }
-template<int i> __m256 mm256_i32gather_ps(float const* a, const __m256i& b) noexcept { return _mm256_i32gather_ps(a, b, i); }
-template<int i> __m128i mm_i32gather_epi32(int const* a, const __m128i& b) noexcept { return _mm_i32gather_epi32(a, b, i); }
-template<int i> __m256i mm256_i32gather_epi32(int const* a, const __m256i& b) noexcept { return _mm256_i32gather_epi32(a, b, i); }
-template<int i> __m128i mm_i32gather_epi64(__int64 const* a, const __m128i& b) noexcept { return _mm_i32gather_epi64(a, b, i); }
-template<int i> __m256i mm256_i32gather_epi64(__int64 const* a, const __m128i& b) noexcept { return _mm256_i32gather_epi64(a, b, i); }
-template<int i> __m128d mm_i64gather_pd(double const* a, const __m128i& b) noexcept { return _mm_i64gather_pd(a, b, i); }
-template<int i> __m256d mm256_i64gather_pd(double const* a, const __m256i& b) noexcept { return _mm256_i64gather_pd(a, b, i); }
-template<int i> __m128 mm_i64gather_ps(float const* a, const __m128i& b) noexcept { return _mm_i64gather_ps(a, b, i); }
-template<int i> __m128 mm256_i64gather_ps(float const* a, const __m256i& b) noexcept { return _mm256_i64gather_ps(a, b, i); }
-template<int i> __m128i mm_i64gather_epi32(int const* a, const __m128i& b) noexcept { return _mm_i64gather_epi32(a, b, i); }
-template<int i> __m128i mm256_i64gather_epi32(int const* a, const __m256i& b) noexcept { return _mm256_i64gather_epi32(a, b, i); }
-template<int i> __m128i mm_i64gather_epi64(__int64 const* a, const __m128i& b) noexcept { return _mm_i64gather_epi64(a, b, i); }
-template<int i> __m256i mm256_i64gather_epi64(__int64 const* a, const __m256i& b) noexcept { return _mm256_i64gather_epi64(a, b, i); }
-template<int i> __m128d mm_mask_i32gather_pd(const __m128d& a, double const* b, const __m128i& c, const __m128d& d) noexcept { return _mm_mask_i32gather_pd(a, b, c, d, i); }
-template<int i> __m256d mm256_mask_i32gather_pd(const __m256d& a, double const* b, const __m128i& c, const __m256d& d) noexcept { return _mm256_mask_i32gather_pd(a, b, c, d, i); }
-template<int i> __m128 mm_mask_i32gather_ps(const __m128& a, float const* b, const __m128i& c, const __m128& d) noexcept { return _mm_mask_i32gather_ps(a, b, c, d, i); }
-template<int i> __m256 mm256_mask_i32gather_ps(const __m256& a, float const* b, const __m256i& c, const __m256& d) noexcept { return _mm256_mask_i32gather_ps(a, b, c, d, i); }
-template<int i> __m128i mm_mask_i32gather_epi32(const __m128i& a, int const* b, const __m128i& c, const __m128i& d) noexcept { return _mm_mask_i32gather_epi32(a, b, c, d, i); }
-template<int i> __m256i mm256_mask_i32gather_epi32(const __m256i& a, int const* b, const __m256i& c, const __m256i& d) noexcept { return _mm256_mask_i32gather_epi32(a, b, c, d, i); }
-template<int i> __m128i mm_mask_i32gather_epi64(const __m128i& a, __int64 const* b, const __m128i& c, const __m128i& d) noexcept { return _mm_mask_i32gather_epi64(a, b, c, d, i); }
-template<int i> __m256i mm256_mask_i32gather_epi64(const __m256i& a, __int64 const* b, const __m128i& c, const __m256i& d) noexcept { return _mm256_mask_i32gather_epi64(a, b, c, d, i); }
-template<int i> __m128d mm_mask_i64gather_pd(const __m128d& a, double const* b, const __m128i& c, const __m128d& d) noexcept { return _mm_mask_i64gather_pd(a, b, c, d, i); }
-template<int i> __m256d mm256_mask_i64gather_pd(const __m256d& a, double const* b, const __m256i& c, const __m256d& d) noexcept { return _mm256_mask_i64gather_pd(a, b, c, d, i); }
-template<int i> __m128 mm_mask_i64gather_ps(const __m128& a, float const* b, const __m128i& c, const __m128& d) noexcept { return _mm_mask_i64gather_ps(a, b, c, d, i); }
-template<int i> __m128 mm256_mask_i64gather_ps(const __m128& a, float const* b, const __m256i& c, const __m128& d) noexcept { return _mm256_mask_i64gather_ps(a, b, c, d, i); }
-template<int i> __m128i mm_mask_i64gather_epi32(const __m128i& a, int const* b, const __m128i& c, const __m128i& d) noexcept { return _mm_mask_i64gather_epi32(a, b, c, d, i); }
-template<int i> __m128i mm256_mask_i64gather_epi32(const __m128i& a, int const* b, const __m256i& c, const __m128i& d) noexcept { return _mm256_mask_i64gather_epi32(a, b, c, d, i); }
-template<int i> __m128i mm_mask_i64gather_epi64(const __m128i& a, __int64 const* b, const __m128i& c, const __m128i& d) noexcept { return _mm_mask_i64gather_epi64(a, b, c, d, i); }
-template<int i> __m256i mm256_mask_i64gather_epi64(const __m256i& a, __int64 const* b, const __m256i& c, const __m256i& d) noexcept { return _mm256_mask_i64gather_epi64(a, b, c, d, i); }
+template<int i> __m128d mm_i32gather_pd(double const* a, const __m128i& b) noexcept { return _mm_i32gather_pd(a, b, i, ); }
+template<int i> __m256d mm256_i32gather_pd(double const* a, const __m128i& b) noexcept { return _mm256_i32gather_pd(a, b, i, ); }
+template<int i> __m128 mm_i32gather_ps(float const* a, const __m128i& b) noexcept { return _mm_i32gather_ps(a, b, i, ); }
+template<int i> __m256 mm256_i32gather_ps(float const* a, const __m256i& b) noexcept { return _mm256_i32gather_ps(a, b, i, ); }
+template<int i> __m128i mm_i32gather_epi32(int const* a, const __m128i& b) noexcept { return _mm_i32gather_epi32(a, b, i, ); }
+template<int i> __m256i mm256_i32gather_epi32(int const* a, const __m256i& b) noexcept { return _mm256_i32gather_epi32(a, b, i, ); }
+template<int i> __m128i mm_i32gather_epi64(__int64 const* a, const __m128i& b) noexcept { return _mm_i32gather_epi64(a, b, i, ); }
+template<int i> __m256i mm256_i32gather_epi64(__int64 const* a, const __m128i& b) noexcept { return _mm256_i32gather_epi64(a, b, i, ); }
+template<int i> __m128d mm_i64gather_pd(double const* a, const __m128i& b) noexcept { return _mm_i64gather_pd(a, b, i, ); }
+template<int i> __m256d mm256_i64gather_pd(double const* a, const __m256i& b) noexcept { return _mm256_i64gather_pd(a, b, i, ); }
+template<int i> __m128 mm_i64gather_ps(float const* a, const __m128i& b) noexcept { return _mm_i64gather_ps(a, b, i, ); }
+template<int i> __m128 mm256_i64gather_ps(float const* a, const __m256i& b) noexcept { return _mm256_i64gather_ps(a, b, i, ); }
+template<int i> __m128i mm_i64gather_epi32(int const* a, const __m128i& b) noexcept { return _mm_i64gather_epi32(a, b, i, ); }
+template<int i> __m128i mm256_i64gather_epi32(int const* a, const __m256i& b) noexcept { return _mm256_i64gather_epi32(a, b, i, ); }
+template<int i> __m128i mm_i64gather_epi64(__int64 const* a, const __m128i& b) noexcept { return _mm_i64gather_epi64(a, b, i, ); }
+template<int i> __m256i mm256_i64gather_epi64(__int64 const* a, const __m256i& b) noexcept { return _mm256_i64gather_epi64(a, b, i, ); }
+template<int i> __m128d mm_mask_i32gather_pd(const __m128d& a, double const* b, const __m128i& c, const __m128d& d) noexcept { return _mm_mask_i32gather_pd(a, b, c, d, i, ); }
+template<int i> __m256d mm256_mask_i32gather_pd(const __m256d& a, double const* b, const __m128i& c, const __m256d& d) noexcept { return _mm256_mask_i32gather_pd(a, b, c, d, i, ); }
+template<int i> __m128 mm_mask_i32gather_ps(const __m128& a, float const* b, const __m128i& c, const __m128& d) noexcept { return _mm_mask_i32gather_ps(a, b, c, d, i, ); }
+template<int i> __m256 mm256_mask_i32gather_ps(const __m256& a, float const* b, const __m256i& c, const __m256& d) noexcept { return _mm256_mask_i32gather_ps(a, b, c, d, i, ); }
+template<int i> __m128i mm_mask_i32gather_epi32(const __m128i& a, int const* b, const __m128i& c, const __m128i& d) noexcept { return _mm_mask_i32gather_epi32(a, b, c, d, i, ); }
+template<int i> __m256i mm256_mask_i32gather_epi32(const __m256i& a, int const* b, const __m256i& c, const __m256i& d) noexcept { return _mm256_mask_i32gather_epi32(a, b, c, d, i, ); }
+template<int i> __m128i mm_mask_i32gather_epi64(const __m128i& a, __int64 const* b, const __m128i& c, const __m128i& d) noexcept { return _mm_mask_i32gather_epi64(a, b, c, d, i, ); }
+template<int i> __m256i mm256_mask_i32gather_epi64(const __m256i& a, __int64 const* b, const __m128i& c, const __m256i& d) noexcept { return _mm256_mask_i32gather_epi64(a, b, c, d, i, ); }
+template<int i> __m128d mm_mask_i64gather_pd(const __m128d& a, double const* b, const __m128i& c, const __m128d& d) noexcept { return _mm_mask_i64gather_pd(a, b, c, d, i, ); }
+template<int i> __m256d mm256_mask_i64gather_pd(const __m256d& a, double const* b, const __m256i& c, const __m256d& d) noexcept { return _mm256_mask_i64gather_pd(a, b, c, d, i, ); }
+template<int i> __m128 mm_mask_i64gather_ps(const __m128& a, float const* b, const __m128i& c, const __m128& d) noexcept { return _mm_mask_i64gather_ps(a, b, c, d, i, ); }
+template<int i> __m128 mm256_mask_i64gather_ps(const __m128& a, float const* b, const __m256i& c, const __m128& d) noexcept { return _mm256_mask_i64gather_ps(a, b, c, d, i, ); }
+template<int i> __m128i mm_mask_i64gather_epi32(const __m128i& a, int const* b, const __m128i& c, const __m128i& d) noexcept { return _mm_mask_i64gather_epi32(a, b, c, d, i, ); }
+template<int i> __m128i mm256_mask_i64gather_epi32(const __m128i& a, int const* b, const __m256i& c, const __m128i& d) noexcept { return _mm256_mask_i64gather_epi32(a, b, c, d, i, ); }
+template<int i> __m128i mm_mask_i64gather_epi64(const __m128i& a, __int64 const* b, const __m128i& c, const __m128i& d) noexcept { return _mm_mask_i64gather_epi64(a, b, c, d, i, ); }
+template<int i> __m256i mm256_mask_i64gather_epi64(const __m256i& a, __int64 const* b, const __m256i& c, const __m256i& d) noexcept { return _mm256_mask_i64gather_epi64(a, b, c, d, i, ); }
 inline __m128i mm_maskload_epi32(int const* a, const __m128i& b) noexcept { return _mm_maskload_epi32(a, b); }
 inline __m256i mm256_maskload_epi32(int const* a, const __m256i& b) noexcept { return _mm256_maskload_epi32(a, b); }
 inline __m128i mm_maskload_epi64(__int64 const* a, const __m128i& b) noexcept { return _mm_maskload_epi64(a, b); }
@@ -506,32 +504,32 @@ inline void mm_maskstore_epi32(int* a, const __m128i& b, const __m128i& c) noexc
 inline void mm256_maskstore_epi32(int* a, const __m256i& b, const __m256i& c) noexcept { _mm256_maskstore_epi32(a, b, c); }
 inline void mm_maskstore_epi64(__int64* a, const __m128i& b, const __m128i& c) noexcept { _mm_maskstore_epi64(a, b, c); }
 inline void mm256_maskstore_epi64(__int64* a, const __m256i& b, const __m256i& c) noexcept { _mm256_maskstore_epi64(a, b, c); }
-template<int i> __m256i mm256_slli_si256(const __m256i& a) noexcept { return _mm256_slli_si256(a, i); }
-template<int i> __m256i mm256_bslli_epi128(const __m256i& a) noexcept { return _mm256_bslli_epi128(a, i); }
+template<int i> __m256i mm256_slli_si256(const __m256i& a) noexcept { return _mm256_slli_si256(a, i, ); }
+template<int i> __m256i mm256_bslli_epi128(const __m256i& a) noexcept { return _mm256_bslli_epi128(a, i, ); }
 inline __m256i mm256_sll_epi16(const __m256i& a, const __m128i& b) noexcept { return _mm256_sll_epi16(a, b); }
-template<int i> __m256i mm256_slli_epi16(const __m256i& a) noexcept { return _mm256_slli_epi16(a, i); }
+template<int i> __m256i mm256_slli_epi16(const __m256i& a) noexcept { return _mm256_slli_epi16(a, i, ); }
 inline __m256i mm256_sll_epi32(const __m256i& a, const __m128i& b) noexcept { return _mm256_sll_epi32(a, b); }
-template<int i> __m256i mm256_slli_epi32(const __m256i& a) noexcept { return _mm256_slli_epi32(a, i); }
+template<int i> __m256i mm256_slli_epi32(const __m256i& a) noexcept { return _mm256_slli_epi32(a, i, ); }
 inline __m256i mm256_sll_epi64(const __m256i& a, const __m128i& b) noexcept { return _mm256_sll_epi64(a, b); }
-template<int i> __m256i mm256_slli_epi64(const __m256i& a) noexcept { return _mm256_slli_epi64(a, i); }
+template<int i> __m256i mm256_slli_epi64(const __m256i& a) noexcept { return _mm256_slli_epi64(a, i, ); }
 inline __m128i mm_sllv_epi32(const __m128i& a, const __m128i& b) noexcept { return _mm_sllv_epi32(a, b); }
 inline __m256i mm256_sllv_epi32(const __m256i& a, const __m256i& b) noexcept { return _mm256_sllv_epi32(a, b); }
 inline __m128i mm_sllv_epi64(const __m128i& a, const __m128i& b) noexcept { return _mm_sllv_epi64(a, b); }
 inline __m256i mm256_sllv_epi64(const __m256i& a, const __m256i& b) noexcept { return _mm256_sllv_epi64(a, b); }
 inline __m256i mm256_sra_epi16(const __m256i& a, const __m128i& b) noexcept { return _mm256_sra_epi16(a, b); }
-template<int i> __m256i mm256_srai_epi16(const __m256i& a) noexcept { return _mm256_srai_epi16(a, i); }
+template<int i> __m256i mm256_srai_epi16(const __m256i& a) noexcept { return _mm256_srai_epi16(a, i, ); }
 inline __m256i mm256_sra_epi32(const __m256i& a, const __m128i& b) noexcept { return _mm256_sra_epi32(a, b); }
-template<int i> __m256i mm256_srai_epi32(const __m256i& a) noexcept { return _mm256_srai_epi32(a, i); }
+template<int i> __m256i mm256_srai_epi32(const __m256i& a) noexcept { return _mm256_srai_epi32(a, i, ); }
 inline __m128i mm_srav_epi32(const __m128i& a, const __m128i& b) noexcept { return _mm_srav_epi32(a, b); }
 inline __m256i mm256_srav_epi32(const __m256i& a, const __m256i& b) noexcept { return _mm256_srav_epi32(a, b); }
-template<int i> __m256i mm256_srli_si256(const __m256i& a) noexcept { return _mm256_srli_si256(a, i); }
-template<int i> __m256i mm256_bsrli_epi128(const __m256i& a) noexcept { return _mm256_bsrli_epi128(a, i); }
+template<int i> __m256i mm256_srli_si256(const __m256i& a) noexcept { return _mm256_srli_si256(a, i, ); }
+template<int i> __m256i mm256_bsrli_epi128(const __m256i& a) noexcept { return _mm256_bsrli_epi128(a, i, ); }
 inline __m256i mm256_srl_epi16(const __m256i& a, const __m128i& b) noexcept { return _mm256_srl_epi16(a, b); }
-template<int i> __m256i mm256_srli_epi16(const __m256i& a) noexcept { return _mm256_srli_epi16(a, i); }
+template<int i> __m256i mm256_srli_epi16(const __m256i& a) noexcept { return _mm256_srli_epi16(a, i, ); }
 inline __m256i mm256_srl_epi32(const __m256i& a, const __m128i& b) noexcept { return _mm256_srl_epi32(a, b); }
-template<int i> __m256i mm256_srli_epi32(const __m256i& a) noexcept { return _mm256_srli_epi32(a, i); }
+template<int i> __m256i mm256_srli_epi32(const __m256i& a) noexcept { return _mm256_srli_epi32(a, i, ); }
 inline __m256i mm256_srl_epi64(const __m256i& a, const __m128i& b) noexcept { return _mm256_srl_epi64(a, b); }
-template<int i> __m256i mm256_srli_epi64(const __m256i& a) noexcept { return _mm256_srli_epi64(a, i); }
+template<int i> __m256i mm256_srli_epi64(const __m256i& a) noexcept { return _mm256_srli_epi64(a, i, ); }
 inline __m128i mm_srlv_epi32(const __m128i& a, const __m128i& b) noexcept { return _mm_srlv_epi32(a, b); }
 inline __m256i mm256_srlv_epi32(const __m256i& a, const __m256i& b) noexcept { return _mm256_srlv_epi32(a, b); }
 inline __m128i mm_srlv_epi64(const __m128i& a, const __m128i& b) noexcept { return _mm_srlv_epi64(a, b); }
@@ -610,9 +608,9 @@ inline unsigned int mm_crc32_u16(unsigned int a, unsigned short b) noexcept { re
 inline unsigned int mm_crc32_u32(unsigned int a, unsigned int b) noexcept { return _mm_crc32_u32(a, b); }
 inline unsigned __int64 mm_crc32_u64(unsigned __int64 a, unsigned __int64 b) noexcept { return _mm_crc32_u64(a, b); }
 inline __m256 mm256_cvtph_ps(const __m128i& a) noexcept { return _mm256_cvtph_ps(a); }
-template<int i> __m128i mm256_cvtps_ph(const __m256& a) noexcept { return _mm256_cvtps_ph(a, i); }
+template<int i> __m128i mm256_cvtps_ph(const __m256& a) noexcept { return _mm256_cvtps_ph(a, i, ); }
 inline __m128 mm_cvtph_ps(const __m128i& a) noexcept { return _mm_cvtph_ps(a); }
-template<int i> __m128i mm_cvtps_ph(const __m128& a) noexcept { return _mm_cvtps_ph(a, i); }
+template<int i> __m128i mm_cvtps_ph(const __m128& a) noexcept { return _mm_cvtps_ph(a, i, ); }
 inline __m128d mm_fmadd_pd(const __m128d& a, const __m128d& b, const __m128d& c) noexcept { return _mm_fmadd_pd(a, b, c); }
 inline __m256d mm256_fmadd_pd(const __m256d& a, const __m256d& b, const __m256d& c) noexcept { return _mm256_fmadd_pd(a, b, c); }
 inline __m128 mm_fmadd_ps(const __m128& a, const __m128& b, const __m128& c) noexcept { return _mm_fmadd_ps(a, b, c); }
@@ -648,30 +646,30 @@ inline __m128 mm_fnmsub_ss(const __m128& a, const __m128& b, const __m128& c) no
 inline __m512i mm512_maskz_gf2p8mul_epi8(const __mmask64& a, const __m512i& b, const __m512i& c) noexcept { return _mm512_maskz_gf2p8mul_epi8(a, b, c); }
 inline __m512i mm512_mask_gf2p8mul_epi8(const __m512i& a, const __mmask64& b, const __m512i& c, const __m512i& d) noexcept { return _mm512_mask_gf2p8mul_epi8(a, b, c, d); }
 inline __m512i mm512_gf2p8mul_epi8(const __m512i& a, const __m512i& b) noexcept { return _mm512_gf2p8mul_epi8(a, b); }
-template<int i> __m512i mm512_maskz_gf2p8affine_epi64_epi8(const __mmask64& a, const __m512i& b, const __m512i& c) noexcept { return _mm512_maskz_gf2p8affine_epi64_epi8(a, b, c, i); }
-template<int i> __m512i mm512_mask_gf2p8affine_epi64_epi8(const __m512i& a, const __mmask64& b, const __m512i& c, const __m512i& d) noexcept { return _mm512_mask_gf2p8affine_epi64_epi8(a, b, c, d, i); }
-template<int i> __m512i mm512_gf2p8affine_epi64_epi8(const __m512i& a, const __m512i& b) noexcept { return _mm512_gf2p8affine_epi64_epi8(a, b, i); }
-template<int i> __m512i mm512_maskz_gf2p8affineinv_epi64_epi8(const __mmask64& a, const __m512i& b, const __m512i& c) noexcept { return _mm512_maskz_gf2p8affineinv_epi64_epi8(a, b, c, i); }
-template<int i> __m512i mm512_mask_gf2p8affineinv_epi64_epi8(const __m512i& a, const __mmask64& b, const __m512i& c, const __m512i& d) noexcept { return _mm512_mask_gf2p8affineinv_epi64_epi8(a, b, c, d, i); }
-template<int i> __m512i mm512_gf2p8affineinv_epi64_epi8(const __m512i& a, const __m512i& b) noexcept { return _mm512_gf2p8affineinv_epi64_epi8(a, b, i); }
+template<int i> __m512i mm512_maskz_gf2p8affine_epi64_epi8(const __mmask64& a, const __m512i& b, const __m512i& c) noexcept { return _mm512_maskz_gf2p8affine_epi64_epi8(a, b, c, i, ); }
+template<int i> __m512i mm512_mask_gf2p8affine_epi64_epi8(const __m512i& a, const __mmask64& b, const __m512i& c, const __m512i& d) noexcept { return _mm512_mask_gf2p8affine_epi64_epi8(a, b, c, d, i, ); }
+template<int i> __m512i mm512_gf2p8affine_epi64_epi8(const __m512i& a, const __m512i& b) noexcept { return _mm512_gf2p8affine_epi64_epi8(a, b, i, ); }
+template<int i> __m512i mm512_maskz_gf2p8affineinv_epi64_epi8(const __mmask64& a, const __m512i& b, const __m512i& c) noexcept { return _mm512_maskz_gf2p8affineinv_epi64_epi8(a, b, c, i, ); }
+template<int i> __m512i mm512_mask_gf2p8affineinv_epi64_epi8(const __m512i& a, const __mmask64& b, const __m512i& c, const __m512i& d) noexcept { return _mm512_mask_gf2p8affineinv_epi64_epi8(a, b, c, d, i, ); }
+template<int i> __m512i mm512_gf2p8affineinv_epi64_epi8(const __m512i& a, const __m512i& b) noexcept { return _mm512_gf2p8affineinv_epi64_epi8(a, b, i, ); }
 inline __m256i mm256_maskz_gf2p8mul_epi8(const __mmask32& a, const __m256i& b, const __m256i& c) noexcept { return _mm256_maskz_gf2p8mul_epi8(a, b, c); }
 inline __m256i mm256_mask_gf2p8mul_epi8(const __m256i& a, const __mmask32& b, const __m256i& c, const __m256i& d) noexcept { return _mm256_mask_gf2p8mul_epi8(a, b, c, d); }
 inline __m256i mm256_gf2p8mul_epi8(const __m256i& a, const __m256i& b) noexcept { return _mm256_gf2p8mul_epi8(a, b); }
 inline __m128i mm_maskz_gf2p8mul_epi8(const __mmask16& a, const __m128i& b, const __m128i& c) noexcept { return _mm_maskz_gf2p8mul_epi8(a, b, c); }
 inline __m128i mm_mask_gf2p8mul_epi8(const __m128i& a, const __mmask16& b, const __m128i& c, const __m128i& d) noexcept { return _mm_mask_gf2p8mul_epi8(a, b, c, d); }
 inline __m128i mm_gf2p8mul_epi8(const __m128i& a, const __m128i& b) noexcept { return _mm_gf2p8mul_epi8(a, b); }
-template<int i> __m256i mm256_maskz_gf2p8affine_epi64_epi8(const __mmask32& a, const __m256i& b, const __m256i& c) noexcept { return _mm256_maskz_gf2p8affine_epi64_epi8(a, b, c, i); }
-template<int i> __m256i mm256_mask_gf2p8affine_epi64_epi8(const __m256i& a, const __mmask32& b, const __m256i& c, const __m256i& d) noexcept { return _mm256_mask_gf2p8affine_epi64_epi8(a, b, c, d, i); }
-template<int i> __m256i mm256_gf2p8affine_epi64_epi8(const __m256i& a, const __m256i& b) noexcept { return _mm256_gf2p8affine_epi64_epi8(a, b, i); }
-template<int i> __m128i mm_maskz_gf2p8affine_epi64_epi8(const __mmask16& a, const __m128i& b, const __m128i& c) noexcept { return _mm_maskz_gf2p8affine_epi64_epi8(a, b, c, i); }
-template<int i> __m128i mm_mask_gf2p8affine_epi64_epi8(const __m128i& a, const __mmask16& b, const __m128i& c, const __m128i& d) noexcept { return _mm_mask_gf2p8affine_epi64_epi8(a, b, c, d, i); }
-template<int i> __m128i mm_gf2p8affine_epi64_epi8(const __m128i& a, const __m128i& b) noexcept { return _mm_gf2p8affine_epi64_epi8(a, b, i); }
-template<int i> __m256i mm256_maskz_gf2p8affineinv_epi64_epi8(const __mmask32& a, const __m256i& b, const __m256i& c) noexcept { return _mm256_maskz_gf2p8affineinv_epi64_epi8(a, b, c, i); }
-template<int i> __m256i mm256_mask_gf2p8affineinv_epi64_epi8(const __m256i& a, const __mmask32& b, const __m256i& c, const __m256i& d) noexcept { return _mm256_mask_gf2p8affineinv_epi64_epi8(a, b, c, d, i); }
-template<int i> __m256i mm256_gf2p8affineinv_epi64_epi8(const __m256i& a, const __m256i& b) noexcept { return _mm256_gf2p8affineinv_epi64_epi8(a, b, i); }
-template<int i> __m128i mm_maskz_gf2p8affineinv_epi64_epi8(const __mmask16& a, const __m128i& b, const __m128i& c) noexcept { return _mm_maskz_gf2p8affineinv_epi64_epi8(a, b, c, i); }
-template<int i> __m128i mm_mask_gf2p8affineinv_epi64_epi8(const __m128i& a, const __mmask16& b, const __m128i& c, const __m128i& d) noexcept { return _mm_mask_gf2p8affineinv_epi64_epi8(a, b, c, d, i); }
-template<int i> __m128i mm_gf2p8affineinv_epi64_epi8(const __m128i& a, const __m128i& b) noexcept { return _mm_gf2p8affineinv_epi64_epi8(a, b, i); }
+template<int i> __m256i mm256_maskz_gf2p8affine_epi64_epi8(const __mmask32& a, const __m256i& b, const __m256i& c) noexcept { return _mm256_maskz_gf2p8affine_epi64_epi8(a, b, c, i, ); }
+template<int i> __m256i mm256_mask_gf2p8affine_epi64_epi8(const __m256i& a, const __mmask32& b, const __m256i& c, const __m256i& d) noexcept { return _mm256_mask_gf2p8affine_epi64_epi8(a, b, c, d, i, ); }
+template<int i> __m256i mm256_gf2p8affine_epi64_epi8(const __m256i& a, const __m256i& b) noexcept { return _mm256_gf2p8affine_epi64_epi8(a, b, i, ); }
+template<int i> __m128i mm_maskz_gf2p8affine_epi64_epi8(const __mmask16& a, const __m128i& b, const __m128i& c) noexcept { return _mm_maskz_gf2p8affine_epi64_epi8(a, b, c, i, ); }
+template<int i> __m128i mm_mask_gf2p8affine_epi64_epi8(const __m128i& a, const __mmask16& b, const __m128i& c, const __m128i& d) noexcept { return _mm_mask_gf2p8affine_epi64_epi8(a, b, c, d, i, ); }
+template<int i> __m128i mm_gf2p8affine_epi64_epi8(const __m128i& a, const __m128i& b) noexcept { return _mm_gf2p8affine_epi64_epi8(a, b, i, ); }
+template<int i> __m256i mm256_maskz_gf2p8affineinv_epi64_epi8(const __mmask32& a, const __m256i& b, const __m256i& c) noexcept { return _mm256_maskz_gf2p8affineinv_epi64_epi8(a, b, c, i, ); }
+template<int i> __m256i mm256_mask_gf2p8affineinv_epi64_epi8(const __m256i& a, const __mmask32& b, const __m256i& c, const __m256i& d) noexcept { return _mm256_mask_gf2p8affineinv_epi64_epi8(a, b, c, d, i, ); }
+template<int i> __m256i mm256_gf2p8affineinv_epi64_epi8(const __m256i& a, const __m256i& b) noexcept { return _mm256_gf2p8affineinv_epi64_epi8(a, b, i, ); }
+template<int i> __m128i mm_maskz_gf2p8affineinv_epi64_epi8(const __mmask16& a, const __m128i& b, const __m128i& c) noexcept { return _mm_maskz_gf2p8affineinv_epi64_epi8(a, b, c, i, ); }
+template<int i> __m128i mm_mask_gf2p8affineinv_epi64_epi8(const __m128i& a, const __mmask16& b, const __m128i& c, const __m128i& d) noexcept { return _mm_mask_gf2p8affineinv_epi64_epi8(a, b, c, d, i, ); }
+template<int i> __m128i mm_gf2p8affineinv_epi64_epi8(const __m128i& a, const __m128i& b) noexcept { return _mm_gf2p8affineinv_epi64_epi8(a, b, i, ); }
 inline unsigned char mm_aesdec128kl_u8(__m128i* a, const __m128i& b, const void* c) noexcept { return _mm_aesdec128kl_u8(a, b, c); }
 inline unsigned char mm_aesdec256kl_u8(__m128i* a, const __m128i& b, const void* c) noexcept { return _mm_aesdec256kl_u8(a, b, c); }
 inline unsigned char mm_aesenc128kl_u8(__m128i* a, const __m128i& b, const void* c) noexcept { return _mm_aesenc128kl_u8(a, b, c); }
@@ -683,7 +681,7 @@ inline unsigned char mm_aesdecwide128kl_u8(__m128i* a, const __m128i* b, const v
 inline unsigned char mm_aesdecwide256kl_u8(__m128i* a, const __m128i* b, const void* c) noexcept { return _mm_aesdecwide256kl_u8(a, b, c); }
 inline unsigned char mm_aesencwide128kl_u8(__m128i* a, const __m128i* b, const void* c) noexcept { return _mm_aesencwide128kl_u8(a, b, c); }
 inline unsigned char mm_aesencwide256kl_u8(__m128i* a, const __m128i* b, const void* c) noexcept { return _mm_aesencwide256kl_u8(a, b, c); }
-// template<int i> __m64 mm_cvtsi32_si64() noexcept { return _mm_cvtsi32_si64(i); }
+// template<int i> __m64 mm_cvtsi32_si64() noexcept { return _mm_cvtsi32_si64(i, ); }
 // inline int mm_cvtsi64_si32(const __m64& a) noexcept { return _mm_cvtsi64_si32(a); }
 // inline __int64 mm_cvtm64_si64(const __m64& a) noexcept { return _mm_cvtm64_si64(a); }
 // inline __m64 mm_cvtsi64_m64(__int64 a) noexcept { return _mm_cvtsi64_m64(a); }
@@ -715,21 +713,21 @@ inline unsigned char mm_aesencwide256kl_u8(__m128i* a, const __m128i* b, const v
 // inline __m64 mm_mulhi_pi16(const __m64& a, const __m64& b) noexcept { return _mm_mulhi_pi16(a, b); }
 // inline __m64 mm_mullo_pi16(const __m64& a, const __m64& b) noexcept { return _mm_mullo_pi16(a, b); }
 // inline __m64 mm_sll_pi16(const __m64& a, const __m64& b) noexcept { return _mm_sll_pi16(a, b); }
-// template<int i> __m64 mm_slli_pi16(const __m64& a) noexcept { return _mm_slli_pi16(a, i); }
+// template<int i> __m64 mm_slli_pi16(const __m64& a) noexcept { return _mm_slli_pi16(a, i, ); }
 // inline __m64 mm_sll_pi32(const __m64& a, const __m64& b) noexcept { return _mm_sll_pi32(a, b); }
-// template<int i> __m64 mm_slli_pi32(const __m64& a) noexcept { return _mm_slli_pi32(a, i); }
+// template<int i> __m64 mm_slli_pi32(const __m64& a) noexcept { return _mm_slli_pi32(a, i, ); }
 // inline __m64 mm_sll_si64(const __m64& a, const __m64& b) noexcept { return _mm_sll_si64(a, b); }
-// template<int i> __m64 mm_slli_si64(const __m64& a) noexcept { return _mm_slli_si64(a, i); }
+// template<int i> __m64 mm_slli_si64(const __m64& a) noexcept { return _mm_slli_si64(a, i, ); }
 // inline __m64 mm_sra_pi16(const __m64& a, const __m64& b) noexcept { return _mm_sra_pi16(a, b); }
-// template<int i> __m64 mm_srai_pi16(const __m64& a) noexcept { return _mm_srai_pi16(a, i); }
+// template<int i> __m64 mm_srai_pi16(const __m64& a) noexcept { return _mm_srai_pi16(a, i, ); }
 // inline __m64 mm_sra_pi32(const __m64& a, const __m64& b) noexcept { return _mm_sra_pi32(a, b); }
-// template<int i> __m64 mm_srai_pi32(const __m64& a) noexcept { return _mm_srai_pi32(a, i); }
+// template<int i> __m64 mm_srai_pi32(const __m64& a) noexcept { return _mm_srai_pi32(a, i, ); }
 // inline __m64 mm_srl_pi16(const __m64& a, const __m64& b) noexcept { return _mm_srl_pi16(a, b); }
-// template<int i> __m64 mm_srli_pi16(const __m64& a) noexcept { return _mm_srli_pi16(a, i); }
+// template<int i> __m64 mm_srli_pi16(const __m64& a) noexcept { return _mm_srli_pi16(a, i, ); }
 // inline __m64 mm_srl_pi32(const __m64& a, const __m64& b) noexcept { return _mm_srl_pi32(a, b); }
-// template<int i> __m64 mm_srli_pi32(const __m64& a) noexcept { return _mm_srli_pi32(a, i); }
+// template<int i> __m64 mm_srli_pi32(const __m64& a) noexcept { return _mm_srli_pi32(a, i, ); }
 // inline __m64 mm_srl_si64(const __m64& a, const __m64& b) noexcept { return _mm_srl_si64(a, b); }
-// template<int i> __m64 mm_srli_si64(const __m64& a) noexcept { return _mm_srli_si64(a, i); }
+// template<int i> __m64 mm_srli_si64(const __m64& a) noexcept { return _mm_srli_si64(a, i, ); }
 // inline __m64 mm_and_si64(const __m64& a, const __m64& b) noexcept { return _mm_and_si64(a, b); }
 // inline __m64 mm_andnot_si64(const __m64& a, const __m64& b) noexcept { return _mm_andnot_si64(a, b); }
 // inline __m64 mm_or_si64(const __m64& a, const __m64& b) noexcept { return _mm_or_si64(a, b); }
@@ -741,24 +739,25 @@ inline unsigned char mm_aesencwide256kl_u8(__m128i* a, const __m128i* b, const v
 // inline __m64 mm_cmpgt_pi16(const __m64& a, const __m64& b) noexcept { return _mm_cmpgt_pi16(a, b); }
 // inline __m64 mm_cmpgt_pi32(const __m64& a, const __m64& b) noexcept { return _mm_cmpgt_pi32(a, b); }
 // inline __m64 mm_setzero_si64() noexcept { return _mm_setzero_si64(); }
-// template<int i> __m64 mm_set_pi32(int a) noexcept { return _mm_set_pi32(a, i); }
+// template<int i> __m64 mm_set_pi32(int a) noexcept { return _mm_set_pi32(a, i, ); }
 // inline __m64 mm_set_pi16(short a, short b, short c, short d) noexcept { return _mm_set_pi16(a, b, c, d); }
 // inline __m64 mm_set_pi8(char a, char b, char c, char d, char e, char f, char g, char h) noexcept { return _mm_set_pi8(a, b, c, d, e, f, g, h); }
-// template<int i> __m64 mm_set1_pi32() noexcept { return _mm_set1_pi32(i); }
+// template<int i> __m64 mm_set1_pi32() noexcept { return _mm_set1_pi32(i, ); }
 // inline __m64 mm_set1_pi16(short a) noexcept { return _mm_set1_pi16(a); }
 // inline __m64 mm_set1_pi8(char a) noexcept { return _mm_set1_pi8(a); }
-// template<int i> __m64 mm_setr_pi32(int a) noexcept { return _mm_setr_pi32(a, i); }
+// template<int i> __m64 mm_setr_pi32(int a) noexcept { return _mm_setr_pi32(a, i, ); }
 // inline __m64 mm_setr_pi16(short a, short b, short c, short d) noexcept { return _mm_setr_pi16(a, b, c, d); }
 // inline __m64 mm_setr_pi8(char a, char b, char c, char d, char e, char f, char g, char h) noexcept { return _mm_setr_pi8(a, b, c, d, e, f, g, h); }
 inline void mm_monitor(void const* a, unsigned b, unsigned c) noexcept { _mm_monitor(a, b, c); }
 inline void mm_mwait(unsigned a, unsigned b) noexcept { _mm_mwait(a, b); }
-template<int i> __m128i mm_clmulepi64_si128(const __m128i& a, const __m128i& b) noexcept { return _mm_clmulepi64_si128(a, b, i); }
+template<int i> __m128i mm_clmulepi64_si128(const __m128i& a, const __m128i& b) noexcept { return _mm_clmulepi64_si128(a, b, i, ); }
 inline int mm_popcnt_u32(unsigned int a) noexcept { return _mm_popcnt_u32(a); }
 inline __int64 mm_popcnt_u64(unsigned __int64 a) noexcept { return _mm_popcnt_u64(a); }
+template<int i> void mm_prefetch(char const* a) noexcept { _mm_prefetch(a, i, ); }
 inline __m128i mm_sha1msg1_epu32(const __m128i& a, const __m128i& b) noexcept { return _mm_sha1msg1_epu32(a, b); }
 inline __m128i mm_sha1msg2_epu32(const __m128i& a, const __m128i& b) noexcept { return _mm_sha1msg2_epu32(a, b); }
 inline __m128i mm_sha1nexte_epu32(const __m128i& a, const __m128i& b) noexcept { return _mm_sha1nexte_epu32(a, b); }
-template<int i> __m128i mm_sha1rnds4_epu32(const __m128i& a, const __m128i& b) noexcept { return _mm_sha1rnds4_epu32(a, b, i); }
+template<int i> __m128i mm_sha1rnds4_epu32(const __m128i& a, const __m128i& b) noexcept { return _mm_sha1rnds4_epu32(a, b, i, ); }
 inline __m128i mm_sha256msg1_epu32(const __m128i& a, const __m128i& b) noexcept { return _mm_sha256msg1_epu32(a, b); }
 inline __m128i mm_sha256msg2_epu32(const __m128i& a, const __m128i& b) noexcept { return _mm_sha256msg2_epu32(a, b); }
 inline __m128i mm_sha256rnds2_epu32(const __m128i& a, const __m128i& b, const __m128i& c) noexcept { return _mm_sha256rnds2_epu32(a, b, c); }
@@ -767,7 +766,7 @@ inline __m128i mm_sha256rnds2_epu32(const __m128i& a, const __m128i& b, const __
 // inline __m256i mm256_sha512rnds2_epi64(const __m256i& a, const __m256i& b, const __m128i& c) noexcept { return _mm256_sha512rnds2_epi64(a, b, c); }
 // inline __m128i mm_sm3msg1_epi32(const __m128i& a, const __m128i& b, const __m128i& c) noexcept { return _mm_sm3msg1_epi32(a, b, c); }
 // inline __m128i mm_sm3msg2_epi32(const __m128i& a, const __m128i& b, const __m128i& c) noexcept { return _mm_sm3msg2_epi32(a, b, c); }
-// template<int i> __m128i mm_sm3rnds2_epi32(const __m128i& a, const __m128i& b, const __m128i& c) noexcept { return _mm_sm3rnds2_epi32(a, b, c, i); }
+// template<int i> __m128i mm_sm3rnds2_epi32(const __m128i& a, const __m128i& b, const __m128i& c) noexcept { return _mm_sm3rnds2_epi32(a, b, c, i, ); }
 // inline __m256i mm256_sm4key4_epi32(const __m256i& a, const __m256i& b) noexcept { return _mm256_sm4key4_epi32(a, b); }
 // inline __m256i mm256_sm4rnds4_epi32(const __m256i& a, const __m256i& b) noexcept { return _mm256_sm4rnds4_epi32(a, b); }
 // inline __m128i mm_sm4key4_epi32(const __m128i& a, const __m128i& b) noexcept { return _mm_sm4key4_epi32(a, b); }
@@ -881,15 +880,15 @@ inline __m128d mm_svml_round_pd(const __m128d& a) noexcept { return _mm_svml_rou
 inline __m128 mm_svml_round_ps(const __m128& a) noexcept { return _mm_svml_round_ps(a); }
 inline __m128d mm_trunc_pd(const __m128d& a) noexcept { return _mm_trunc_pd(a); }
 inline __m128 mm_trunc_ps(const __m128& a) noexcept { return _mm_trunc_ps(a); }
-// template<int i> int mm_extract_pi16(const __m64& a) noexcept { return _mm_extract_pi16(a, i); }
-// template<int i> __m64 mm_insert_pi16(const __m64& a, int b) noexcept { return _mm_insert_pi16(a, b, i); }
-// template<int i> __m64 mm_shuffle_pi16(const __m64& a) noexcept { return _mm_shuffle_pi16(a, i); }
-template<unsigned i> inline __m128 mm_shuffle_ps(const __m128& a, const __m128& b) noexcept { return _mm_shuffle_ps(a, b, i); }
+// template<int i> int mm_extract_pi16(const __m64& a) noexcept { return _mm_extract_pi16(a, i, ); }
+// template<int i> __m64 mm_insert_pi16(const __m64& a, int b) noexcept { return _mm_insert_pi16(a, b, i, ); }
+// template<int i> __m64 mm_shuffle_pi16(const __m64& a) noexcept { return _mm_shuffle_pi16(a, i, ); }
+inline __m128 mm_shuffle_ps(const __m128& a, const __m128& b, unsigned int c) noexcept { return _mm_shuffle_ps(a, b, c); }
 inline __m128 mm_unpackhi_ps(const __m128& a, const __m128& b) noexcept { return _mm_unpackhi_ps(a, b); }
 inline __m128 mm_unpacklo_ps(const __m128& a, const __m128& b) noexcept { return _mm_unpacklo_ps(a, b); }
 inline unsigned int mm_getcsr() noexcept { return _mm_getcsr(); }
 inline void mm_setcsr(unsigned int a) noexcept { _mm_setcsr(a); }
-template<int i> void mm_prefetch(char const* a) noexcept { _mm_prefetch(a, i); }
+template<int i> void mm_prefetch(char const* a) noexcept { _mm_prefetch(a, i, ); }
 inline void mm_sfence() noexcept { _mm_sfence(); }
 inline void* mm_malloc(size_t a, size_t b) noexcept { return _mm_malloc(a, b); }
 inline void mm_free(void* a) noexcept { _mm_free(a); }
@@ -914,8 +913,8 @@ inline __m128 mm_div_ss(const __m128& a, const __m128& b) noexcept { return _mm_
 inline __m128 mm_div_ps(const __m128& a, const __m128& b) noexcept { return _mm_div_ps(a, b); }
 // inline __m64 mm_avg_pu8(const __m64& a, const __m64& b) noexcept { return _mm_avg_pu8(a, b); }
 // inline __m64 mm_avg_pu16(const __m64& a, const __m64& b) noexcept { return _mm_avg_pu16(a, b); }
-template<int i> __m128 mm_cvtsi32_ss(const __m128& a) noexcept { return _mm_cvtsi32_ss(a, i); }
-template<int i> __m128 mm_cvt_si2ss(const __m128& a) noexcept { return _mm_cvt_si2ss(a, i); }
+template<int i> __m128 mm_cvtsi32_ss(const __m128& a) noexcept { return _mm_cvtsi32_ss(a, i, ); }
+template<int i> __m128 mm_cvt_si2ss(const __m128& a) noexcept { return _mm_cvt_si2ss(a, i, ); }
 inline __m128 mm_cvtsi64_ss(const __m128& a, __int64 b) noexcept { return _mm_cvtsi64_ss(a, b); }
 // inline __m128 mm_cvtpi32_ps(const __m128& a, const __m64& b) noexcept { return _mm_cvtpi32_ps(a, b); }
 // inline __m128 mm_cvt_pi2ps(const __m128& a, const __m64& b) noexcept { return _mm_cvt_pi2ps(a, b); }
@@ -1041,7 +1040,7 @@ inline void mm_store_si128(__m128i* a, const __m128i& b) noexcept { _mm_store_si
 inline void mm_storeu_si128(__m128i* a, const __m128i& b) noexcept { _mm_storeu_si128(a, b); }
 inline void mm_storel_epi64(__m128i* a, const __m128i& b) noexcept { _mm_storel_epi64(a, b); }
 inline void mm_stream_si128(void* a, const __m128i& b) noexcept { _mm_stream_si128((m128i*)a, b); }
-template<int i> void mm_stream_si32(void* a) noexcept { _mm_stream_si32(a, i); }
+template<int i> void mm_stream_si32(void* a) noexcept { _mm_stream_si32(a, i, ); }
 // inline void mm_stream_si64(void* a, __int64 b) noexcept { _mm_stream_si64(a, b); }
 inline void mm_stream_pd(void* a, const __m128d& b) noexcept { _mm_stream_pd((double*)a, b); }
 inline void mm_store_sd(double* a, const __m128d& b) noexcept { _mm_store_sd(a, b); }
@@ -1095,25 +1094,25 @@ inline __m128d mm_max_sd(const __m128d& a, const __m128d& b) noexcept { return _
 inline __m128d mm_max_pd(const __m128d& a, const __m128d& b) noexcept { return _mm_max_pd(a, b); }
 inline __m128d mm_min_sd(const __m128d& a, const __m128d& b) noexcept { return _mm_min_sd(a, b); }
 inline __m128d mm_min_pd(const __m128d& a, const __m128d& b) noexcept { return _mm_min_pd(a, b); }
-template<int i> __m128i mm_slli_si128(const __m128i& a) noexcept { return _mm_slli_si128(a, i); }
-template<int i> __m128i mm_bslli_si128(const __m128i& a) noexcept { return _mm_bslli_si128(a, i); }
-template<int i> __m128i mm_bsrli_si128(const __m128i& a) noexcept { return _mm_bsrli_si128(a, i); }
-template<int i> __m128i mm_slli_epi16(const __m128i& a) noexcept { return _mm_slli_epi16(a, i); }
+template<int i> __m128i mm_slli_si128(const __m128i& a) noexcept { return _mm_slli_si128(a, i, ); }
+template<int i> __m128i mm_bslli_si128(const __m128i& a) noexcept { return _mm_bslli_si128(a, i, ); }
+template<int i> __m128i mm_bsrli_si128(const __m128i& a) noexcept { return _mm_bsrli_si128(a, i, ); }
+template<int i> __m128i mm_slli_epi16(const __m128i& a) noexcept { return _mm_slli_epi16(a, i, ); }
 inline __m128i mm_sll_epi16(const __m128i& a, const __m128i& b) noexcept { return _mm_sll_epi16(a, b); }
-template<int i> __m128i mm_slli_epi32(const __m128i& a) noexcept { return _mm_slli_epi32(a, i); }
+template<int i> __m128i mm_slli_epi32(const __m128i& a) noexcept { return _mm_slli_epi32(a, i, ); }
 inline __m128i mm_sll_epi32(const __m128i& a, const __m128i& b) noexcept { return _mm_sll_epi32(a, b); }
-template<int i> __m128i mm_slli_epi64(const __m128i& a) noexcept { return _mm_slli_epi64(a, i); }
+template<int i> __m128i mm_slli_epi64(const __m128i& a) noexcept { return _mm_slli_epi64(a, i, ); }
 inline __m128i mm_sll_epi64(const __m128i& a, const __m128i& b) noexcept { return _mm_sll_epi64(a, b); }
-template<int i> __m128i mm_srai_epi16(const __m128i& a) noexcept { return _mm_srai_epi16(a, i); }
+template<int i> __m128i mm_srai_epi16(const __m128i& a) noexcept { return _mm_srai_epi16(a, i, ); }
 inline __m128i mm_sra_epi16(const __m128i& a, const __m128i& b) noexcept { return _mm_sra_epi16(a, b); }
-template<int i> __m128i mm_srai_epi32(const __m128i& a) noexcept { return _mm_srai_epi32(a, i); }
+template<int i> __m128i mm_srai_epi32(const __m128i& a) noexcept { return _mm_srai_epi32(a, i, ); }
 inline __m128i mm_sra_epi32(const __m128i& a, const __m128i& b) noexcept { return _mm_sra_epi32(a, b); }
-template<int i> __m128i mm_srli_si128(const __m128i& a) noexcept { return _mm_srli_si128(a, i); }
-template<int i> __m128i mm_srli_epi16(const __m128i& a) noexcept { return _mm_srli_epi16(a, i); }
+template<int i> __m128i mm_srli_si128(const __m128i& a) noexcept { return _mm_srli_si128(a, i, ); }
+template<int i> __m128i mm_srli_epi16(const __m128i& a) noexcept { return _mm_srli_epi16(a, i, ); }
 inline __m128i mm_srl_epi16(const __m128i& a, const __m128i& b) noexcept { return _mm_srl_epi16(a, b); }
-template<int i> __m128i mm_srli_epi32(const __m128i& a) noexcept { return _mm_srli_epi32(a, i); }
+template<int i> __m128i mm_srli_epi32(const __m128i& a) noexcept { return _mm_srli_epi32(a, i, ); }
 inline __m128i mm_srl_epi32(const __m128i& a, const __m128i& b) noexcept { return _mm_srl_epi32(a, b); }
-template<int i> __m128i mm_srli_epi64(const __m128i& a) noexcept { return _mm_srli_epi64(a, i); }
+template<int i> __m128i mm_srli_epi64(const __m128i& a) noexcept { return _mm_srli_epi64(a, i, ); }
 inline __m128i mm_srl_epi64(const __m128i& a, const __m128i& b) noexcept { return _mm_srl_epi64(a, b); }
 inline __m128i mm_and_si128(const __m128i& a, const __m128i& b) noexcept { return _mm_and_si128(a, b); }
 inline __m128i mm_andnot_si128(const __m128i& a, const __m128i& b) noexcept { return _mm_andnot_si128(a, b); }
@@ -1169,12 +1168,12 @@ inline int mm_ucomigt_sd(const __m128d& a, const __m128d& b) noexcept { return _
 inline int mm_ucomige_sd(const __m128d& a, const __m128d& b) noexcept { return _mm_ucomige_sd(a, b); }
 inline int mm_ucomineq_sd(const __m128d& a, const __m128d& b) noexcept { return _mm_ucomineq_sd(a, b); }
 inline __m128d mm_cvtepi32_pd(const __m128i& a) noexcept { return _mm_cvtepi32_pd(a); }
-template<int i> __m128d mm_cvtsi32_sd(const __m128d& a) noexcept { return _mm_cvtsi32_sd(a, i); }
+template<int i> __m128d mm_cvtsi32_sd(const __m128d& a) noexcept { return _mm_cvtsi32_sd(a, i, ); }
 inline __m128d mm_cvtsi64_sd(const __m128d& a, __int64 b) noexcept { return _mm_cvtsi64_sd(a, b); }
 inline __m128d mm_cvtsi64x_sd(const __m128d& a, __int64 b) noexcept { return _mm_cvtsi64_sd(a, b); }
 inline __m128 mm_cvtepi32_ps(const __m128i& a) noexcept { return _mm_cvtepi32_ps(a); }
 // inline __m128d mm_cvtpi32_pd(const __m64& a) noexcept { return _mm_cvtpi32_pd(a); }
-template<int i> __m128i mm_cvtsi32_si128() noexcept { return _mm_cvtsi32_si128(i); }
+template<int i> __m128i mm_cvtsi32_si128() noexcept { return _mm_cvtsi32_si128(i, ); }
 inline __m128i mm_cvtsi64_si128(__int64 a) noexcept { return _mm_cvtsi64_si128(a); }
 inline __m128i mm_cvtsi64x_si128(__int64 a) noexcept { return _mm_cvtsi64_si128(a); }
 inline int mm_cvtsi128_si32(const __m128i& a) noexcept { return _mm_cvtsi128_si32(a); }
@@ -1198,33 +1197,19 @@ inline __m128i mm_cvttps_epi32(const __m128& a) noexcept { return _mm_cvttps_epi
 // inline __m64 mm_cvtpd_pi32(const __m128d& a) noexcept { return _mm_cvtpd_pi32(a); }
 // inline __m64 mm_cvttpd_pi32(const __m128d& a) noexcept { return _mm_cvttpd_pi32(a); }
 // inline __m128i mm_set_epi64(const __m64& a, const __m64& b) noexcept { return _mm_set_epi64(a, b); }
-inline __m128i mm_set_epi64x(__int64 e1, __int64 e0) noexcept { return _mm_set_epi64x(e1, e0); }
-inline __m128i mm_set_epi64(__int64 e1, __int64 e0) noexcept { return _mm_set_epi64x(e1, e0); }
-inline __m128i mm_set_epi32(int e3, int e2, int e1, int e0) noexcept { return _mm_set_epi32(e3, e2, e1, e0); }
-inline __m128i mm_set_epi16(short e7, short e6, short e5, short e4, short e3, short e2, short e1, short e0) noexcept { //
-  return _mm_set_epi16(e7, e6, e5, e4, e3, e2, e1, e0);
-}
-inline __m128i mm_set_epi8(char e15, char e14, char e13, char e12, char e11, char e10, char e9, char e8,      //
-                           char e7, char e6, char e5, char e4, char e3, char e2, char e1, char e0) noexcept { //
-  return _mm_set_epi8(e15, e14, e13, e12, e11, e10, e9, e8, e7, e6, e5, e4, e3, e2, e1, e0);
-}
+inline __m128i mm_set_epi64x(__int64 a, __int64 b) noexcept { return _mm_set_epi64x(a, b); }
+template<int i> __m128i mm_set_epi32(int a, int b, int c) noexcept { return _mm_set_epi32(a, b, c, i, ); }
+inline __m128i mm_set_epi16(short a, short b, short c, short d, short e, short f, short g, short h) noexcept { return _mm_set_epi16(a, b, c, d, e, f, g, h); }
+inline __m128i mm_set_epi8(char a, char b, char c, char d, char e, char f, char g, char h, char i, char j, char k, char l, char m, char n, char o, char p) noexcept { return _mm_set_epi8(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p); }
 // inline __m128i mm_set1_epi64(const __m64& a) noexcept { return _mm_set1_epi64(a); }
 inline __m128i mm_set1_epi64x(__int64 a) noexcept { return _mm_set1_epi64x(a); }
-inline __m128i mm_set1_epi64(__int64 a) noexcept { return _mm_set1_epi64x(a); }
-inline __m128i mm_set1_epi32(int a) noexcept { return _mm_set1_epi32(a); }
+template<int i> __m128i mm_set1_epi32() noexcept { return _mm_set1_epi32(i, ); }
 inline __m128i mm_set1_epi16(short a) noexcept { return _mm_set1_epi16(a); }
 inline __m128i mm_set1_epi8(char a) noexcept { return _mm_set1_epi8(a); }
 // inline __m128i mm_setr_epi64(const __m64& a, const __m64& b) noexcept { return _mm_setr_epi64(a, b); }
-inline __m128i mm_setr_epi64x(__int64 e0, __int64 e1) noexcept { return _mm_setr_epi64x(e0, e1); }
-inline __m128i mm_setr_epi64(__int64 e0, __int64 e1) noexcept { return _mm_setr_epi64x(e0, e1); }
-inline __m128i mm_setr_epi32(int e0, int e1, int e2, int e3) noexcept { return _mm_setr_epi32(e0, e1, e2, e3); }
-inline __m128i mm_setr_epi16(short e0, short e1, short e2, short e3, short e4, short e5, short e6, short e7) noexcept { //
-  return _mm_setr_epi16(e0, e1, e2, e3, e4, e5, e6, e7);
-}
-inline __m128i mm_setr_epi8(char e0, char e1, char e2, char e3, char e4, char e5, char e6, char e7,                  //
-                            char e8, char e9, char e10, char e11, char e12, char e13, char e14, char e15) noexcept { //
-  return _mm_setr_epi8(e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15);
-}
+template<int i> __m128i mm_setr_epi32(int a, int b, int c) noexcept { return _mm_setr_epi32(a, b, c, i, ); }
+inline __m128i mm_setr_epi16(short a, short b, short c, short d, short e, short f, short g, short h) noexcept { return _mm_setr_epi16(a, b, c, d, e, f, g, h); }
+inline __m128i mm_setr_epi8(char a, char b, char c, char d, char e, char f, char g, char h, char i, char j, char k, char l, char m, char n, char o, char p) noexcept { return _mm_setr_epi8(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p); }
 inline __m128i mm_setzero_si128() noexcept { return _mm_setzero_si128(); }
 inline __m128d mm_set_sd(double a) noexcept { return _mm_set_sd(a); }
 inline __m128d mm_set1_pd(double a) noexcept { return _mm_set1_pd(a); }
@@ -1241,11 +1226,11 @@ inline int mm_movemask_pd(const __m128d& a) noexcept { return _mm_movemask_pd(a)
 // inline __m128i mm_movpi64_epi64(const __m64& a) noexcept { return _mm_movpi64_epi64(a); }
 inline __m128i mm_move_epi64(const __m128i& a) noexcept { return _mm_move_epi64(a); }
 inline __m128d mm_move_sd(const __m128d& a, const __m128d& b) noexcept { return _mm_move_sd(a, b); }
-template<int i> int mm_extract_epi16(const __m128i& a) noexcept { return _mm_extract_epi16(a, i); }
-template<int i> __m128i mm_insert_epi16(const __m128i& a, int b) noexcept { return _mm_insert_epi16(a, b, i); }
-template<int i> __m128i mm_shuffle_epi32(const __m128i& a) noexcept { return _mm_shuffle_epi32(a, i); }
-template<int i> __m128i mm_shufflehi_epi16(const __m128i& a) noexcept { return _mm_shufflehi_epi16(a, i); }
-template<int i> __m128i mm_shufflelo_epi16(const __m128i& a) noexcept { return _mm_shufflelo_epi16(a, i); }
+template<int i> int mm_extract_epi16(const __m128i& a) noexcept { return _mm_extract_epi16(a, i, ); }
+template<int i> __m128i mm_insert_epi16(const __m128i& a, int b) noexcept { return _mm_insert_epi16(a, b, i, ); }
+template<int i> __m128i mm_shuffle_epi32(const __m128i& a) noexcept { return _mm_shuffle_epi32(a, i, ); }
+template<int i> __m128i mm_shufflehi_epi16(const __m128i& a) noexcept { return _mm_shufflehi_epi16(a, i, ); }
+template<int i> __m128i mm_shufflelo_epi16(const __m128i& a) noexcept { return _mm_shufflelo_epi16(a, i, ); }
 inline __m128i mm_unpackhi_epi8(const __m128i& a, const __m128i& b) noexcept { return _mm_unpackhi_epi8(a, b); }
 inline __m128i mm_unpackhi_epi16(const __m128i& a, const __m128i& b) noexcept { return _mm_unpackhi_epi16(a, b); }
 inline __m128i mm_unpackhi_epi32(const __m128i& a, const __m128i& b) noexcept { return _mm_unpackhi_epi32(a, b); }
@@ -1256,7 +1241,7 @@ inline __m128i mm_unpacklo_epi32(const __m128i& a, const __m128i& b) noexcept { 
 inline __m128i mm_unpacklo_epi64(const __m128i& a, const __m128i& b) noexcept { return _mm_unpacklo_epi64(a, b); }
 inline __m128d mm_unpackhi_pd(const __m128d& a, const __m128d& b) noexcept { return _mm_unpackhi_pd(a, b); }
 inline __m128d mm_unpacklo_pd(const __m128d& a, const __m128d& b) noexcept { return _mm_unpacklo_pd(a, b); }
-template<int i> __m128d mm_shuffle_pd(const __m128d& a, const __m128d& b) noexcept { return _mm_shuffle_pd(a, b, i); }
+template<int i> __m128d mm_shuffle_pd(const __m128d& a, const __m128d& b) noexcept { return _mm_shuffle_pd(a, b, i, ); }
 inline __m128d mm_sqrt_sd(const __m128d& a, const __m128d& b) noexcept { return _mm_sqrt_sd(a, b); }
 inline __m128d mm_sqrt_pd(const __m128d& a) noexcept { return _mm_sqrt_pd(a); }
 inline __m128 mm_castpd_ps(const __m128d& a) noexcept { return _mm_castpd_ps(a); }
@@ -1276,25 +1261,25 @@ inline __m128d mm_loaddup_pd(double const* a) noexcept { return _mm_loaddup_pd(a
 inline __m128d mm_movedup_pd(const __m128d& a) noexcept { return _mm_movedup_pd(a); }
 inline __m128 mm_movehdup_ps(const __m128& a) noexcept { return _mm_movehdup_ps(a); }
 inline __m128 mm_moveldup_ps(const __m128& a) noexcept { return _mm_moveldup_ps(a); }
-template<int i> __m128d mm_blend_pd(const __m128d& a, const __m128d& b) noexcept { return _mm_blend_pd(a, b, i); }
-template<int i> __m128 mm_blend_ps(const __m128& a, const __m128& b) noexcept { return _mm_blend_ps(a, b, i); }
+template<int i> __m128d mm_blend_pd(const __m128d& a, const __m128d& b) noexcept { return _mm_blend_pd(a, b, i, ); }
+template<int i> __m128 mm_blend_ps(const __m128& a, const __m128& b) noexcept { return _mm_blend_ps(a, b, i, ); }
 inline __m128d mm_blendv_pd(const __m128d& a, const __m128d& b, const __m128d& c) noexcept { return _mm_blendv_pd(a, b, c); }
 inline __m128 mm_blendv_ps(const __m128& a, const __m128& b, const __m128& c) noexcept { return _mm_blendv_ps(a, b, c); }
 inline __m128i mm_blendv_epi8(const __m128i& a, const __m128i& b, const __m128i& c) noexcept { return _mm_blendv_epi8(a, b, c); }
-template<int i> __m128i mm_blend_epi16(const __m128i& a, const __m128i& b) noexcept { return _mm_blend_epi16(a, b, i); }
-template<int i> int mm_extract_ps(const __m128& a) noexcept { return _mm_extract_ps(a, i); }
-template<int i> int mm_extract_epi8(const __m128i& a) noexcept { return _mm_extract_epi8(a, i); }
-template<int i> int mm_extract_epi32(const __m128i& a) noexcept { return _mm_extract_epi32(a, i); }
-template<int i> __int64 mm_extract_epi64(const __m128i& a) noexcept { return _mm_extract_epi64(a, i); }
-template<int i> __m128 mm_insert_ps(const __m128& a, const __m128& b) noexcept { return _mm_insert_ps(a, b, i); }
-template<int i> __m128i mm_insert_epi8(const __m128i& a, int b) noexcept { return _mm_insert_epi8(a, b, i); }
-template<int i> __m128i mm_insert_epi32(const __m128i& a, int b) noexcept { return _mm_insert_epi32(a, b, i); }
-template<int i> __m128i mm_insert_epi64(const __m128i& a, __int64 b) noexcept { return _mm_insert_epi64(a, b, i); }
-template<int i> __m128d mm_dp_pd(const __m128d& a, const __m128d& b) noexcept { return _mm_dp_pd(a, b, i); }
-template<int i> __m128 mm_dp_ps(const __m128& a, const __m128& b) noexcept { return _mm_dp_ps(a, b, i); }
+template<int i> __m128i mm_blend_epi16(const __m128i& a, const __m128i& b) noexcept { return _mm_blend_epi16(a, b, i, ); }
+template<int i> int mm_extract_ps(const __m128& a) noexcept { return _mm_extract_ps(a, i, ); }
+template<int i> int mm_extract_epi8(const __m128i& a) noexcept { return _mm_extract_epi8(a, i, ); }
+template<int i> int mm_extract_epi32(const __m128i& a) noexcept { return _mm_extract_epi32(a, i, ); }
+template<int i> __int64 mm_extract_epi64(const __m128i& a) noexcept { return _mm_extract_epi64(a, i, ); }
+template<int i> __m128 mm_insert_ps(const __m128& a, const __m128& b) noexcept { return _mm_insert_ps(a, b, i, ); }
+template<int i> __m128i mm_insert_epi8(const __m128i& a, int b) noexcept { return _mm_insert_epi8(a, b, i, ); }
+template<int i> __m128i mm_insert_epi32(const __m128i& a, int b) noexcept { return _mm_insert_epi32(a, b, i, ); }
+template<int i> __m128i mm_insert_epi64(const __m128i& a, __int64 b) noexcept { return _mm_insert_epi64(a, b, i, ); }
+template<int i> __m128d mm_dp_pd(const __m128d& a, const __m128d& b) noexcept { return _mm_dp_pd(a, b, i, ); }
+template<int i> __m128 mm_dp_ps(const __m128& a, const __m128& b) noexcept { return _mm_dp_ps(a, b, i, ); }
 inline __m128i mm_mul_epi32(const __m128i& a, const __m128i& b) noexcept { return _mm_mul_epi32(a, b); }
 inline __m128i mm_mullo_epi32(const __m128i& a, const __m128i& b) noexcept { return _mm_mullo_epi32(a, b); }
-template<int i> __m128i mm_mpsadbw_epu8(const __m128i& a, const __m128i& b) noexcept { return _mm_mpsadbw_epu8(a, b, i); }
+template<int i> __m128i mm_mpsadbw_epu8(const __m128i& a, const __m128i& b) noexcept { return _mm_mpsadbw_epu8(a, b, i, ); }
 inline __m128i mm_max_epi8(const __m128i& a, const __m128i& b) noexcept { return _mm_max_epi8(a, b); }
 inline __m128i mm_max_epi32(const __m128i& a, const __m128i& b) noexcept { return _mm_max_epi32(a, b); }
 inline __m128i mm_max_epu32(const __m128i& a, const __m128i& b) noexcept { return _mm_max_epu32(a, b); }
@@ -1303,16 +1288,16 @@ inline __m128i mm_min_epi8(const __m128i& a, const __m128i& b) noexcept { return
 inline __m128i mm_min_epi32(const __m128i& a, const __m128i& b) noexcept { return _mm_min_epi32(a, b); }
 inline __m128i mm_min_epu32(const __m128i& a, const __m128i& b) noexcept { return _mm_min_epu32(a, b); }
 inline __m128i mm_min_epu16(const __m128i& a, const __m128i& b) noexcept { return _mm_min_epu16(a, b); }
-template<int i> __m128d mm_round_pd(const __m128d& a) noexcept { return _mm_round_pd(a, i); }
+template<int i> __m128d mm_round_pd(const __m128d& a) noexcept { return _mm_round_pd(a, i, ); }
 inline __m128d mm_floor_pd(const __m128d& a) noexcept { return _mm_floor_pd(a); }
 inline __m128d mm_ceil_pd(const __m128d& a) noexcept { return _mm_ceil_pd(a); }
-template<int i> __m128 mm_round_ps(const __m128& a) noexcept { return _mm_round_ps(a, i); }
+template<int i> __m128 mm_round_ps(const __m128& a) noexcept { return _mm_round_ps(a, i, ); }
 inline __m128 mm_floor_ps(const __m128& a) noexcept { return _mm_floor_ps(a); }
 inline __m128 mm_ceil_ps(const __m128& a) noexcept { return _mm_ceil_ps(a); }
-template<int i> __m128d mm_round_sd(const __m128d& a, const __m128d& b) noexcept { return _mm_round_sd(a, b, i); }
+template<int i> __m128d mm_round_sd(const __m128d& a, const __m128d& b) noexcept { return _mm_round_sd(a, b, i, ); }
 inline __m128d mm_floor_sd(const __m128d& a, const __m128d& b) noexcept { return _mm_floor_sd(a, b); }
 inline __m128d mm_ceil_sd(const __m128d& a, const __m128d& b) noexcept { return _mm_ceil_sd(a, b); }
-template<int i> __m128 mm_round_ss(const __m128& a, const __m128& b) noexcept { return _mm_round_ss(a, b, i); }
+template<int i> __m128 mm_round_ss(const __m128& a, const __m128& b) noexcept { return _mm_round_ss(a, b, i, ); }
 inline __m128 mm_floor_ss(const __m128& a, const __m128& b) noexcept { return _mm_floor_ss(a, b); }
 inline __m128 mm_ceil_ss(const __m128& a, const __m128& b) noexcept { return _mm_ceil_ss(a, b); }
 inline __m128i mm_packus_epi32(const __m128i& a, const __m128i& b) noexcept { return _mm_packus_epi32(a, b); }
@@ -1337,21 +1322,25 @@ inline int mm_test_mix_ones_zeros(const __m128i& a, const __m128i& b) noexcept {
 inline int mm_test_all_ones(const __m128i& a) noexcept { return _mm_test_all_ones(a); }
 inline __m128i mm_minpos_epu16(const __m128i& a) noexcept { return _mm_minpos_epu16(a); }
 inline __m128i mm_stream_load_si128(void* a) noexcept { return _mm_stream_load_si128((m128i*)a); }
-template<int i> __m128i mm_cmpistrm(const __m128i& a, const __m128i& b) noexcept { return _mm_cmpistrm(a, b, i); }
-template<int i> int mm_cmpistri(const __m128i& a, const __m128i& b) noexcept { return _mm_cmpistri(a, b, i); }
-template<int i> int mm_cmpistrz(const __m128i& a, const __m128i& b) noexcept { return _mm_cmpistrz(a, b, i); }
-template<int i> int mm_cmpistrc(const __m128i& a, const __m128i& b) noexcept { return _mm_cmpistrc(a, b, i); }
-template<int i> int mm_cmpistrs(const __m128i& a, const __m128i& b) noexcept { return _mm_cmpistrs(a, b, i); }
-template<int i> int mm_cmpistro(const __m128i& a, const __m128i& b) noexcept { return _mm_cmpistro(a, b, i); }
-template<int i> int mm_cmpistra(const __m128i& a, const __m128i& b) noexcept { return _mm_cmpistra(a, b, i); }
-template<int i> __m128i mm_cmpestrm(const __m128i& a, int b, const __m128i& c, int d) noexcept { return _mm_cmpestrm(a, b, c, d, i); }
-template<int i> int mm_cmpestri(const __m128i& a, int b, const __m128i& c, int d) noexcept { return _mm_cmpestri(a, b, c, d, i); }
-template<int i> int mm_cmpestrz(const __m128i& a, int b, const __m128i& c, int d) noexcept { return _mm_cmpestrz(a, b, c, d, i); }
-template<int i> int mm_cmpestrc(const __m128i& a, int b, const __m128i& c, int d) noexcept { return _mm_cmpestrc(a, b, c, d, i); }
-template<int i> int mm_cmpestrs(const __m128i& a, int b, const __m128i& c, int d) noexcept { return _mm_cmpestrs(a, b, c, d, i); }
-template<int i> int mm_cmpestro(const __m128i& a, int b, const __m128i& c, int d) noexcept { return _mm_cmpestro(a, b, c, d, i); }
-template<int i> int mm_cmpestra(const __m128i& a, int b, const __m128i& c, int d) noexcept { return _mm_cmpestra(a, b, c, d, i); }
+template<int i> __m128i mm_cmpistrm(const __m128i& a, const __m128i& b) noexcept { return _mm_cmpistrm(a, b, i, ); }
+template<int i> int mm_cmpistri(const __m128i& a, const __m128i& b) noexcept { return _mm_cmpistri(a, b, i, ); }
+template<int i> int mm_cmpistrz(const __m128i& a, const __m128i& b) noexcept { return _mm_cmpistrz(a, b, i, ); }
+template<int i> int mm_cmpistrc(const __m128i& a, const __m128i& b) noexcept { return _mm_cmpistrc(a, b, i, ); }
+template<int i> int mm_cmpistrs(const __m128i& a, const __m128i& b) noexcept { return _mm_cmpistrs(a, b, i, ); }
+template<int i> int mm_cmpistro(const __m128i& a, const __m128i& b) noexcept { return _mm_cmpistro(a, b, i, ); }
+template<int i> int mm_cmpistra(const __m128i& a, const __m128i& b) noexcept { return _mm_cmpistra(a, b, i, ); }
+template<int i> __m128i mm_cmpestrm(const __m128i& a, int b, const __m128i& c, int d) noexcept { return _mm_cmpestrm(a, b, c, d, i, ); }
+template<int i> int mm_cmpestri(const __m128i& a, int b, const __m128i& c, int d) noexcept { return _mm_cmpestri(a, b, c, d, i, ); }
+template<int i> int mm_cmpestrz(const __m128i& a, int b, const __m128i& c, int d) noexcept { return _mm_cmpestrz(a, b, c, d, i, ); }
+template<int i> int mm_cmpestrc(const __m128i& a, int b, const __m128i& c, int d) noexcept { return _mm_cmpestrc(a, b, c, d, i, ); }
+template<int i> int mm_cmpestrs(const __m128i& a, int b, const __m128i& c, int d) noexcept { return _mm_cmpestrs(a, b, c, d, i, ); }
+template<int i> int mm_cmpestro(const __m128i& a, int b, const __m128i& c, int d) noexcept { return _mm_cmpestro(a, b, c, d, i, ); }
+template<int i> int mm_cmpestra(const __m128i& a, int b, const __m128i& c, int d) noexcept { return _mm_cmpestra(a, b, c, d, i, ); }
 inline __m128i mm_cmpgt_epi64(const __m128i& a, const __m128i& b) noexcept { return _mm_cmpgt_epi64(a, b); }
+inline unsigned int mm_crc32_u8(unsigned int a, unsigned char b) noexcept { return _mm_crc32_u8(a, b); }
+inline unsigned int mm_crc32_u16(unsigned int a, unsigned short b) noexcept { return _mm_crc32_u16(a, b); }
+inline unsigned int mm_crc32_u32(unsigned int a, unsigned int b) noexcept { return _mm_crc32_u32(a, b); }
+inline unsigned __int64 mm_crc32_u64(unsigned __int64 a, unsigned __int64 b) noexcept { return _mm_crc32_u64(a, b); }
 // inline __m64 mm_abs_pi8(const __m64& a) noexcept { return _mm_abs_pi8(a); }
 inline __m128i mm_abs_epi8(const __m128i& a) noexcept { return _mm_abs_epi8(a); }
 // inline __m64 mm_abs_pi16(const __m64& a) noexcept { return _mm_abs_pi16(a); }
@@ -1360,8 +1349,8 @@ inline __m128i mm_abs_epi16(const __m128i& a) noexcept { return _mm_abs_epi16(a)
 inline __m128i mm_abs_epi32(const __m128i& a) noexcept { return _mm_abs_epi32(a); }
 inline __m128i mm_shuffle_epi8(const __m128i& a, const __m128i& b) noexcept { return _mm_shuffle_epi8(a, b); }
 // inline __m64 mm_shuffle_pi8(const __m64& a, const __m64& b) noexcept { return _mm_shuffle_pi8(a, b); }
-template<int i> __m128i mm_alignr_epi8(const __m128i& a, const __m128i& b) noexcept { return _mm_alignr_epi8(a, b, i); }
-// template<int i> __m64 mm_alignr_pi8(const __m64& a, const __m64& b) noexcept { return _mm_alignr_pi8(a, b, i); }
+template<int i> __m128i mm_alignr_epi8(const __m128i& a, const __m128i& b) noexcept { return _mm_alignr_epi8(a, b, i, ); }
+// template<int i> __m64 mm_alignr_pi8(const __m64& a, const __m64& b) noexcept { return _mm_alignr_pi8(a, b, i, ); }
 inline __m128i mm_hadd_epi16(const __m128i& a, const __m128i& b) noexcept { return _mm_hadd_epi16(a, b); }
 inline __m128i mm_hadds_epi16(const __m128i& a, const __m128i& b) noexcept { return _mm_hadds_epi16(a, b); }
 inline __m128i mm_hadd_epi32(const __m128i& a, const __m128i& b) noexcept { return _mm_hadd_epi32(a, b); }
@@ -1388,222 +1377,7 @@ inline __m256i mm256_aesenclast_epi128(const __m256i& a, const __m256i& b) noexc
 inline __m256i mm256_aesenc_epi128(const __m256i& a, const __m256i& b) noexcept { return _mm256_aesenc_epi128(a, b); }
 inline __m256i mm256_aesdeclast_epi128(const __m256i& a, const __m256i& b) noexcept { return _mm256_aesdeclast_epi128(a, b); }
 inline __m256i mm256_aesdec_epi128(const __m256i& a, const __m256i& b) noexcept { return _mm256_aesdec_epi128(a, b); }
-template<int i> __m256i mm256_clmulepi64_epi128(const __m256i& a, const __m256i& b) noexcept { return _mm256_clmulepi64_epi128(a, b, i); }
-template<int i> __m512i mm512_clmulepi64_epi128(const __m512i& a, const __m512i& b) noexcept { return _mm512_clmulepi64_epi128(a, b, i); }
+template<int i> __m256i mm256_clmulepi64_epi128(const __m256i& a, const __m256i& b) noexcept { return _mm256_clmulepi64_epi128(a, b, i, ); }
+template<int i> __m512i mm512_clmulepi64_epi128(const __m512i& a, const __m512i& b) noexcept { return _mm512_clmulepi64_epi128(a, b, i, ); }
 
 } // namespace intrin
-
-export namespace yw {
-
-using xvector = intrin::m128;
-using xwector = intrin::m256d;
-using xrect = intrin::m128i;
-using xmatrix = array<xvector, 4>;
-
-template<value x, value y = x, value z = y, value w = z> struct t_xv_constant {
-  inline static const xvector f = intrin::mm_set_ps(fat4(w), fat4(z), fat4(y), fat4(x));
-  inline static const xwector d = intrin::mm256_set_pd(fat8(w), fat8(z), fat8(y), fat8(x));
-  operator add_const<xvector&>() const { return f; }
-  operator add_const<xwector&>() const { return d; }
-};
-
-template<> struct t_xv_constant<0, 0, 0, 0> {
-  operator add_const<xvector&>() const { return intrin::mm_setzero_ps(); }
-  operator add_const<xwector&>() const { return intrin::mm256_setzero_pd(); }
-};
-
-template<> struct t_xv_constant<bitcast<value>(npos), bitcast<value>(npos), bitcast<value>(npos), bitcast<value>(npos)> {
-  inline static const xvector f = intrin::mm_set1_ps(bitcast<fat4>(0xffffffff));
-  inline static const xwector d = intrin::mm256_set1_pd(bitcast<fat8>(0xffffffffffffffff));
-};
-
-template<value x, value y = x, value z = y, value w = z> inline constexpr t_xv_constant<x, y, z, w> xv_constant{};
-
-inline constexpr auto xv_mask = xv_constant<bitcast<value>(npos)>;
-inline constexpr auto xv_zero = xv_constant<0>;
-inline constexpr auto xv_neg_zero = xv_constant<-0.>;
-inline constexpr auto xv_one = xv_constant<1>;
-inline constexpr auto xv_neg_one = xv_constant<-1>;
-inline constexpr auto xv_x = xv_constant<1, 0, 0, 0>;
-inline constexpr auto xv_y = xv_constant<0, 1, 0, 0>;
-inline constexpr auto xv_z = xv_constant<0, 0, 1, 0>;
-inline constexpr auto xv_w = xv_constant<0, 0, 0, 1>;
-inline constexpr auto xv_neg_x = xv_constant<-1, 0, 0, 0>;
-inline constexpr auto xv_neg_y = xv_constant<0, -1, 0, 0>;
-inline constexpr auto xv_neg_z = xv_constant<0, 0, -1, 0>;
-inline constexpr auto xv_neg_w = xv_constant<0, 0, 0, -1>;
-
-inline xvector xvload(const fat4* p) noexcept { return intrin::mm_loadu_ps(p); }
-inline xwector xvload(const fat8* p) noexcept { return intrin::mm256_loadu_pd(p); }
-inline xrect xvload(const int4* p) noexcept { return intrin::mm_loadu_si128((xrect*)p); }
-
-inline xvector xvfill(const fat4 v) noexcept { return intrin::mm_set1_ps(v); }
-inline xwector xvfill(const fat8 v) noexcept { return intrin::mm256_set1_pd(v); }
-inline xrect xvfill(const int4 v) noexcept { return intrin::mm_set1_epi32(v); }
-
-inline xvector xvset(const fat4 x, const fat4 y, const fat4 z, const fat4 w) noexcept { return intrin::mm_setr_ps(x, y, z, w); }
-inline xwector xvset(const fat8 x, const fat8 y, const fat8 z, const fat8 w) noexcept { return intrin::mm256_setr_pd(x, y, z, w); }
-inline xrect xvset(const int4 x, const int4 y, const int4 z, const int4 w) noexcept { return intrin::mm_setr_epi32(x, y, z, w); }
-
-inline void xvstore(const xvector& a, fat4* p) noexcept { intrin::mm_storeu_ps(p, a); }
-inline void xvstore(const xwector& a, fat8* p) noexcept { intrin::mm256_storeu_pd(p, a); }
-inline void xvstore(const xrect& a, int4* p) noexcept { intrin::mm_storeu_si128((xrect*)p, a); }
-
-inline xrect xvbitcast(const xvector& a) noexcept { return intrin::mm_castps_si128(a); }
-inline xvector xvbitcast(const xrect& a) noexcept { return intrin::mm_castsi128_ps(a); }
-
-template<nat To> requires (To < 4) xvector xvinsert(const xvector& a, const fat4 v) noexcept {
-  using namespace intrin;
-  return xvbitcast(mm_insert_epi32<To>(xvbitcast(a), bitcast<int4>(v)));
-}
-template<nat To> requires (To < 4) xwector xvinsert(const xwector& a, const fat8 v) noexcept {
-  using namespace intrin;
-  return mm256_castsi256_pd(mm256_insert_epi64<To>(mm256_castpd_si256(a), bitcast<int8>(v)));
-}
-template<nat To> requires (To < 4) xrect xvinsert(const xrect& a, const int4 v) noexcept { return intrin::mm_insert_epi32<To>(a, v); }
-
-template<nat To, nat From, nat Zero = 0> requires (To < 4 && From < 4 && Zero < 16) //
-xvector xvinsert(const xvector& Inserted, const xvector& Extracted) noexcept {
-  return intrin::mm_insert_ps<int(Zero | To << 4 | From << 6)>(Inserted, Extracted);
-}
-template<nat To, nat From, nat Zero = 0> xwector xvinsert(const xwector& Inserted, const xwector& Extracted) = delete;
-template<nat To, nat From, nat Zero = 0> requires (To < 4 && From < 4 && Zero < 16) //
-xrect xvinsert(const xrect& Inserted, const xrect& Extracted) noexcept {
-  return xvbitcast(xvinsert<To, From, Zero>(xvbitcast(Inserted), xvbitcast(Extracted)));
-}
-
-template<nat I> requires (I < 4) fat4 xvextract(const xvector& a) noexcept { return fat4(intrin::mm_extract_ps<I>(a)); }
-template<nat I> requires (I < 4) fat8 xvextract(const xwector& a) noexcept { return bitcast<fat8>(intrin::mm256_extract_epi64<I>(a)); }
-template<nat I> requires (I < 4) int4 xvextract(const xrect& a) noexcept { return intrin::mm_extract_epi32<I>(a); }
-
-template<nat Mask> requires (Mask < 16) xvector xvblend(const xvector& a, const xvector& b) noexcept { return intrin::mm_blend_ps(a, b, Mask); }
-template<nat Mask> requires (Mask < 16) xwector xvblend(const xwector& a, const xwector& b) noexcept { return intrin::mm256_blend_pd(a, b, Mask); }
-template<nat Mask> requires (Mask < 16) xrect xvblend(const xrect& a, const xrect& b) noexcept { return intrin::mm_blend_epi32(a, b, Mask); }
-
-template<bool x, bool y, bool z, bool w> xvector xvblend(const xvector& a, const xvector& b) noexcept { //
-  return intrin::mm_blend_ps<(x | (y << 1) | (z << 2) | (w << 3))>(a, b);
-}
-template<bool x, bool y, bool z, bool w> xwector xvblend(const xwector& a, const xwector& b) noexcept { //
-  return intrin::mm256_blend_pd<(x | (y << 1) | (z << 2) | (w << 3))>(a, b);
-}
-template<bool x, bool y, bool z, bool w> xrect xvblend(const xrect& a, const xrect& b) noexcept { //
-  return intrin::mm_blend_epi32<(x | (y << 1) | (z << 2) | (w << 3))>(a, b);
-}
-
-namespace _ {
-template<int X, int Y, int Z, int W> __m128 _xvpermute(const __m128& a) noexcept {
-  constexpr auto f = [](auto i, auto j) { return i < 0 || 4 <= i || i == j; };
-  if constexpr (f(X, 0) && f(Y, 1) && f(Z, 2) && f(W, 3)) return a;
-  else if constexpr (f(X, 0) && f(Y, 0) && f(Z, 0) && f(W, 0)) return _mm_broadcastss_ps(a);
-  else if constexpr (f(X, 0) && f(Y, 0) && f(Z, 2) && f(W, 2)) return _mm_moveldup_ps(a);
-  else if constexpr (f(X, 1) && f(Y, 1) && f(Z, 3) && f(W, 3)) return _mm_movehdup_ps(a);
-  else return _mm_permute_ps(a, (f(X, 0) ? 0 : X) | (f(Y, 1) ? 1 : Y) << 2 | (f(Z, 2) ? 2 : Z) << 4 | (f(W, 3) ? 3 : W) << 6);
-}
-template<int X, int Y, int Z, int W> __m128 _xvshuffle(const __m128& a, const __m128& b) noexcept {
-  constexpr auto x = X < 0 || 4 <= X ? 0 : X, y = Y < 0 || 4 <= Y ? 0 : Y, z = Z < 0 || 4 <= Z ? 0 : Z, w = W < 0 || 4 <= W ? 0 : W;
-  return _mm_shuffle_ps(a, b, x | y << 2 | z << 4 | w << 6);
-}
-}
-
-template<int X, int Y, int Z, int W> requires (X < 4 && Y < 4 && Z < 4 && W < 4) xvector xvpermute(const xvector& a) noexcept { //
-  return _::_xvpermute<X, Y, Z, W>(a);
-}
-template<int X, int Y, int Z, int W> requires (X < 4 && Y < 4 && Z < 4 && W < 4) xwector xvpermute(const xwector& a) noexcept { //
-  return intrin::mm256_permute4x64_pd(a, X | Y << 2 | Z << 4 | W << 6);
-}
-template<int X, int Y, int Z, int W> requires (X < 4 && Y < 4 && Z < 4 && W < 4) xrect xvpermute(const xrect& a) noexcept { //
-  return xvbitcast(_::_xvpermute<X, Y, Z, W>(xvbitcast(a)));
-}
-
-template<nat Mask> requires (Mask < 256) xvector xvpermute(const xvector& a) noexcept { //
-  return xvpermute<(Mask & 3), (Mask / 4 & 3), (Mask / 16 & 3), (Mask / 64 & 3)>(a);
-}
-template<nat Mask> requires (Mask < 256) xwector xvpermute(const xwector& a) noexcept { //
-  return intrin::mm256_permute4x64_pd(a, Mask);
-}
-template<nat Mask> requires (Mask < 256) xrect xvpermute(const xrect& a) noexcept { //
-  return xvpermute<(Mask & 3), (Mask / 4 & 3), (Mask / 16 & 3), (Mask / 64 & 3)>(a);
-}
-
-template<int X, int Y, int Z, int W> requires (X < 8 && Y < 8 && Z < 8 && W < 8) xvector xvpermute(const xvector& a, const xvector& b) noexcept { //
-  constexpr auto f = [](int a, auto... bs) { return a < 0 || (bs || ...); };
-  if constexpr (X < 4 && Y < 4 && Z < 4 && W < 4) return _::_xvpermute<X, Y, Z, W>(a);
-  else if constexpr (f(X, 3 < X) && f(Y, 3 < Y) && f(Z, 3 < Z) && f(W, 3 < W)) return _::_xvpermute<X - 4, Y - 4, Z - 4, W - 4>(b);
-  else if constexpr (f(X, !(X & 3 ^ 0)) && f(Y, !(Y & 3 ^ 1)) && f(Z, !(Z & 3 ^ 2)) && f(W, !(W & 3 ^ 3))) //
-    return xvblend<lt(X, 4), lt(Y, 4), lt(Z, 4), lt(W, 4)>(b, a);
-  else if constexpr (X < 4 && Y < 4 && f(Z, 3 < Z) && f(W, 3 < W)) return _::_xvshuffle<X, Y, Z - 4, W - 4>(a, b);
-  else if constexpr (f(X, 3 < X) && f(Y, 3 < Y) && Z < 4 && W < 4) return _::_xvshuffle<X - 4, Y - 4, Z, W>(b, a);
-  else if constexpr (f(X, X == 0) + f(Y, Y == 1) + f(Z, Z == 2) + f(W, W == 3) == 3) {
-    constexpr auto x = f(X) ? 0 : X, y = f(Y) ? 1 : Y, z = f(Z) ? 2 : Z, w = f(W) ? 3 : W;
-    constexpr auto i = inspects<ge(x, 4), ge(y, 4), ge(z, 4), ge(w, 4)>;
-    return xvinsert<i, select_value<i, x, y, z, w> - 4>(a, b);
-  } else if constexpr (f(X, X == 4) + f(Y, Y == 5) + f(Z, Z == 6) + f(W, W == 7) == 3) {
-    constexpr auto x = f(X) ? 4 : X, y = f(Y) ? 5 : Y, z = f(Z) ? 6 : Z, w = f(W) ? 7 : W;
-    constexpr auto i = inspects<lt(x, 4), lt(y, 4), lt(z, 4), lt(w, 4)>;
-    return xvinsert<i, select_value<i, x, y, z, w>>(b, a);
-  } else if constexpr (f(X, X < 4, X == 4) && f(Y, Y < 4, Y == 5) && f(Z, Z < 4, Z == 6) && f(W, W < 4, W == 7)) //
-    return xvblend<lt(X, 4), lt(Y, 4), lt(Z, 4), lt(W, 4)>(b, _::_xvpermute<X, Y, Z, W>(a));
-  else if constexpr (f(X, X >= 4, X == 0) && f(Y, Y >= 4, Y == 1) && f(Z, Z >= 4, Z == 2) && f(W, W >= 4, W == 3)) //
-    return xvblend<lt(X, 4), lt(Y, 4), lt(Z, 4), lt(W, 4)>(_::_xvpermute<X - 4, Y - 4, Z - 4, W - 4>(b), a);
-  else if constexpr (f(X, ge(X, 4)) + f(Y, ge(Y, 4)) + f(Z, ge(Z, 4)) + f(W, ge(W, 4)) == 3) {
-    constexpr auto x = f(X) ? 4 : X, y = f(Y) ? 5 : Y, z = f(Z) ? 6 : Z, w = f(W) ? 7 : W;
-    constexpr auto i = inspects<lt(x, 4), lt(y, 4), lt(z, 4), lt(w, 4)>;
-    return xvinsert<i, select_value<i, x, y, z, w>>(_::_xvpermute<x - 4, y - 4, z - 4, w - 4>(b), a);
-  } else if constexpr (f(X, lt(X, 4)) + f(Y, lt(Y, 4)) + f(Z, lt(Z, 4)) + f(W, lt(W, 4)) == 3) {
-    constexpr auto x = f(X) ? 0 : X, y = f(Y) ? 1 : Y, z = f(Z) ? 2 : Z, w = f(W) ? 3 : W;
-    constexpr auto i = inspects<ge(x, 4), ge(y, 4), ge(z, 4), ge(w, 4)>;
-    return xvinsert<i, select_value<i, x, y, z, w> - 4>(_::_xvpermute<x, y, z, w>(a), b);
-  } else return xvblend<lt(X, 4), lt(Y, 4), lt(Z, 4), lt(W, 4)>(_::_xvpermute<X - 4, Y - 4, Z - 4, W - 4>(b), _::_xvpermute<X, Y, Z, W>(a));
-}
-template<int X, int Y, int Z, int W> requires (X < 8 && Y < 8 && Z < 8 && W < 8) xwector xvpermute(const xwector& a, const xwector& b) noexcept { //
-  constexpr int xa = (X < 0 ? 0 : X), ya = (Y < 0 ? 1 : Y), za = (Z < 0 ? 2 : Z), wa = (W < 0 ? 3 : W);
-  constexpr int xb = (X < 0 ? 4 : X), yb = (Y < 0 ? 5 : Y), zb = (Z < 0 ? 6 : Z), wb = (W < 0 ? 7 : W);
-  if constexpr (xa < 4 && ya < 4 && za < 4 && wa < 4) return xvpermute<xa, ya, za, wa>(a);
-  else if constexpr (xb >= 4 && yb >= 4 && zb >= 4 && wb >= 4) return xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>(b);
-  else if constexpr (!(xa & 3 ^ 0) && !(ya & 3 ^ 1) && !(za & 3 ^ 2) && !(wa & 3 ^ 3)) return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(a, b);
-  else if constexpr ((xa == 0 || xa == 1) && (yb == 4 || yb == 5) && (za == 2 || za == 3) && (wb == 6 || wb == 7)) //
-    return intrin::mm256_shuffle_ps<((xa == 1) | (yb == 5) << 1 | (za == 3) << 2 | (wb == 7) << 3)>(a, b);
-  else if constexpr ((xb == 4 || xb == 5) && (ya == 0 || ya == 1) && (zb == 6 || zb == 7) && (wa == 2 || wa == 3)) //
-    return intrin::mm256_shuffle_pd<((xb == 5) | (ya == 1) << 1 | (zb == 7) << 2 | (wa == 3) << 3)>(a, b);
-  else if constexpr (xa == 0 && ya == 1 && zb == 4 && wb == 5) return intrin::mm256_permute2f128_pd<0x20>(a, b);
-  else if constexpr (xa == 0 && ya == 1 && zb == 6 && wb == 7) return intrin::mm256_permute2f128_pd<0x30>(a, b);
-  else if constexpr (xa == 2 && ya == 3 && zb == 4 && wb == 5) return intrin::mm256_permute2f128_pd<0x21>(a, b);
-  else if constexpr (xa == 2 && ya == 3 && zb == 6 && wb == 7) return intrin::mm256_permute2f128_pd<0x31>(a, b);
-  else if constexpr (xa == 4 && ya == 5 && zb == 0 && wb == 1) return intrin::mm256_permute2f128_pd<0x02>(a, b);
-  else if constexpr (xa == 4 && ya == 5 && zb == 2 && wb == 3) return intrin::mm256_permute2f128_pd<0x12>(a, b);
-  else if constexpr (xa == 6 && ya == 7 && zb == 0 && wb == 1) return intrin::mm256_permute2f128_pd<0x03>(a, b);
-  else if constexpr (xa == 6 && ya == 7 && zb == 2 && wb == 3) return intrin::mm256_permute2f128_pd<0x13>(a, b);
-  else return xvblend<lt(xa, 4), lt(ya, 4), lt(za, 4), lt(wa, 4)>(xvpermute<xb - 4, yb - 4, zb - 4, wb - 4>(b), xvpermute<xa, ya, za, wa>(a));
-}
-template<int X, int Y, int Z, int W> requires (X < 8 && Y < 8 && Z < 8 && W < 8) xrect xvpermute(const xrect& a, const xrect& b) noexcept { //
-  return xvbitcast(xvpermute<X, Y, Z, W>(xvbitcast(a), xvbitcast(b)));
-}
-
-inline xvector xvand(const xvector& a, const xvector& b) noexcept { return intrin::mm_and_ps(a, b); }
-inline xwector xvand(const xwector& a, const xwector& b) noexcept { return intrin::mm256_and_pd(a, b); }
-inline xrect xvand(const xrect& a, const xrect& b) noexcept { return intrin::mm_and_si128(a, b); }
-
-inline xvector xvor(const xvector& a, const xvector& b) noexcept { return intrin::mm_or_ps(a, b); }
-inline xwector xvor(const xwector& a, const xwector& b) noexcept { return intrin::mm256_or_pd(a, b); }
-inline xrect xvor(const xrect& a, const xrect& b) noexcept { return intrin::mm_or_si128(a, b); }
-
-inline xvector xvxor(const xvector& a, const xvector& b) noexcept { return intrin::mm_xor_ps(a, b); }
-inline xwector xvxor(const xwector& a, const xwector& b) noexcept { return intrin::mm256_xor_pd(a, b); }
-inline xrect xvxor(const xrect& a, const xrect& b) noexcept { return intrin::mm_xor_si128(a, b); }
-
-inline xvector xvandnot(const xvector& a, const xvector& b) noexcept { return intrin::mm_andnot_ps(a, b); }
-inline xwector xvandnot(const xwector& a, const xwector& b) noexcept { return intrin::mm256_andnot_pd(a, b); }
-inline xrect xvandnot(const xrect& a, const xrect& b) noexcept { return intrin::mm_andnot_si128(a, b); }
-
-inline xvector xvnot(const xvector& a) noexcept { return intrin::mm_andnot_ps(intrin::mm_setzero_ps(), a); }
-inline xwector xvnot(const xwector& a) noexcept { return intrin::mm256_andnot_pd(intrin::mm256_setzero_pd(), a); }
-inline xrect xvnot(const xrect& a) noexcept { return intrin::mm_andnot_si128(intrin::mm_setzero_si128(), a); }
-
-inline xvector xvabs(const xvector& a) noexcept { return intrin::mm_andnot_ps(xv_constant<-0.>, a); }
-inline xwector xvabs(const xwector& a) noexcept { return intrin::mm256_andnot_pd(xv_constant<-0.>, a); }
-inline xrect xvabs(const xrect& a) noexcept { return intrin::mm_abs_epi32(a); }
-
-inline xvector xvneg(const xvector& a) noexcept { return intrin::mm_xor_ps(a, xv_constant<-0.>); }
-inline xwector xvneg(const xwector& a) noexcept { return intrin::mm256_xor_pd(a, xv_constant<-0.>); }
-
-}

@@ -119,9 +119,9 @@ export namespace yw {
 
 using cat1 = char;
 using cat2 = wchar_t;
-using uct1 = char8_t;
-using uct2 = char16_t;
-using uct4 = char32_t;
+using cut1 = char8_t;
+using cut2 = char16_t;
+using cut4 = char32_t;
 using int1 = signed char;
 using int2 = signed short;
 using int4 = signed int;
@@ -142,9 +142,9 @@ inline constexpr auto unordered = std::partial_ordering::unordered;
 
 consteval cat1 operator""_c1(nat n) noexcept { return static_cast<cat1>(n); }
 consteval cat2 operator""_c2(nat n) noexcept { return static_cast<cat2>(n); }
-consteval uct1 operator""_u1(nat n) noexcept { return static_cast<uct1>(n); }
-consteval uct2 operator""_u2(nat n) noexcept { return static_cast<uct2>(n); }
-consteval uct4 operator""_u4(nat n) noexcept { return static_cast<uct4>(n); }
+consteval cut1 operator""_u1(nat n) noexcept { return static_cast<cut1>(n); }
+consteval cut2 operator""_u2(nat n) noexcept { return static_cast<cut2>(n); }
+consteval cut4 operator""_u4(nat n) noexcept { return static_cast<cut4>(n); }
 consteval int1 operator""_i1(nat n) noexcept { return static_cast<int1>(n); }
 consteval int2 operator""_i2(nat n) noexcept { return static_cast<int2>(n); }
 consteval int4 operator""_i4(nat n) noexcept { return static_cast<int4>(n); }
@@ -238,11 +238,11 @@ template<> struct t_cat_type<1> : t_type<cat1> {};
 template<> struct t_cat_type<2> : t_type<cat2> {};
 template<nat N> using cat_type = typename t_cat_type<N>::type;
 
-template<nat N> struct t_uct_type : t_type<none> {};
-template<> struct t_uct_type<1> : t_type<uct1> {};
-template<> struct t_uct_type<2> : t_type<uct2> {};
-template<> struct t_uct_type<4> : t_type<uct4> {};
-template<nat N> using uct_type = typename t_uct_type<N>::type;
+template<nat N> struct t_cut_type : t_type<none> {};
+template<> struct t_cut_type<1> : t_type<cut1> {};
+template<> struct t_cut_type<2> : t_type<cut2> {};
+template<> struct t_cut_type<4> : t_type<cut4> {};
+template<nat N> using cut_type = typename t_cut_type<N>::type;
 
 template<nat N> struct t_int_type : t_type<none> {};
 template<> struct t_int_type<1> : t_type<int1> {};
@@ -348,8 +348,8 @@ template<typename T> concept is_bool = same_as<remove_cv<T>, bool>;
 template<typename T> concept is_none = same_as<remove_cv<T>, none>;
 template<typename T> concept is_nullptr = same_as<remove_cv<T>, decltype(nullptr)>;
 template<typename T> concept is_cat = included_in<remove_cv<T>, cat1, cat2>;
-template<typename T> concept is_uct = included_in<remove_cv<T>, uct1, uct2, uct4>;
-template<typename T> concept character = is_cat<T> || is_uct<T>;
+template<typename T> concept is_cut = included_in<remove_cv<T>, cut1, cut2, cut4>;
+template<typename T> concept character = is_cat<T> || is_cut<T>;
 template<typename T> concept is_int = included_in<remove_cv<T>, int1, int2, int4, int8>;
 template<typename T> concept is_nat = included_in<remove_cv<T>, nat1, nat2, nat4, nat8>;
 template<typename T> concept is_fat = included_in<remove_cv<T>, fat4, fat8>;
@@ -455,8 +455,8 @@ namespace std {
 template<typename T> struct common_type<yw::none, T> : type_identity<yw::none> {};
 template<typename T> struct common_type<T, yw::none> : type_identity<yw::none> {};
 
-template<typename T> struct common_type<yw::value, T> : std::common_type<yw::fat8, T> {};
-template<typename T> struct common_type<T, yw::value> : std::common_type<T, yw::fat8> {};
+template<typename T> struct common_type<yw::value, T> : common_type<yw::fat8, T> {};
+template<typename T> struct common_type<T, yw::value> : common_type<T, yw::fat8> {};
 
 }
 
@@ -805,8 +805,9 @@ template<size_t I, typename T, nat N> requires (N != yw::npos) struct tuple_elem
 }
 
 namespace yw::_ {
+// clang-format off
 
-template<nat I, nat... Is, nat... Js, nat... Ks, typename F, typename... Ts> //
+template<nat I, nat... Is, nat... Js, nat... Ks, typename F, typename... Ts>
 constexpr decltype(auto) _apply_i(sequence<Is...>, sequence<Js...>, sequence<Ks...>, F&& f, Ts&&... ts) {
   return _apply<I>(f, select<Is>(fwd<Ts>(ts)...)..., get<Js>(fwd<select_type<I, Ts...>>(select<I>(fwd<Ts>(ts)...)))..., select<Ks>(fwd<Ts>(ts)...)...);
 }
@@ -851,6 +852,7 @@ template<typename T> struct _iter_t {
 };
 template<std::ranges::range Rg> struct _iter_t<Rg> : _iter_t<std::ranges::iterator_t<Rg>> {};
 
+// clang-format on
 }
 
 export namespace yw {
