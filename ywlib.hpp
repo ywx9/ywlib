@@ -1,213 +1,232 @@
 #pragma once
-#include "module/.hpp"
 
-#ifndef nat
+#include "ywstd.hpp"
+#if defined(YWLIB_IMPORT) && YWLIB_IMPORT
+#pragma message ("YWLIB_IMPORT")
+import ywlib;
+#else
+
 #define nat size_t
+
+#define ywlib_func_auto(...) noexcept(noexcept(__VA_ARGS__)) requires requires { __VA_ARGS__; } { return __VA_ARGS__; }
+#define ywlib_func_void(...) noexcept(noexcept(__VA_ARGS__)) requires requires { __VA_ARGS__; } { __VA_ARGS__; }
+#define ywlib_func_ref(...) noexcept(noexcept(__VA_ARGS__)) -> decltype(auto) requires requires { __VA_ARGS__; } { return __VA_ARGS__; }
+
+export namespace yw { // CORE
+
+using str = std::string;
+using str_view = std::string_view;
+inline constexpr nat npos = nat(-1);
+
+template<typename T> inline constexpr auto declval = []() noexcept -> T {};
+
+template<typename T, typename... Ts> concept same_as = (std::same_as<T, Ts> && ...);
+template<typename T, typename... Ts> concept included_in = (std::same_as<T, Ts> || ...);
+template<typename T, typename... Ts> concept different_font = !included_in<T, Ts...>;
+template<typename T, typename... Ts> concept derived_from = (std::derived_from<T, Ts> || ...);
+template<typename T, typename... Ts> concept castable_to = requires { (static_cast<Ts>(declval<T>()), ...); };
+template<typename T, typename... Ts> concept convertible_to = requires { (declval<T(&)(Ts)>()(declval<T>()), ...); };
+
+template<typename T, typename... Ts> concept nt_castable_to =
+  castable_to<T, Ts...> && noexcept(noexcept((static_cast<Ts>(declval<T>()), ...)));
+template<typename T, typename... Ts> concept nt_convertible_to =
+  convertible_to<T, Ts...> && noexcept(noexcept((declval<T(&)(Ts) noexcept>(declval<T>()), ...)));
+
+template<typename T> struct t_type { using type = T; };
+
+template<typename T> struct t_remove_ref : t_type<T> {};
+template<typename T> struct t_remove_ref<T&> : t_type<T> {};
+template<typename T> struct t_remove_ref<T&&> : t_type<T> {};
+template<typename T> using remove_ref = t_remove_ref<T>::type;
+template<typename T> using add_lvref = T&;
+template<typename T> using add_rvref = remove_ref<T>&&;
+
+inline constexpr auto mv = []<typename T>(T&& Ref) noexcept -> add_rvref<T> { return static_cast<add_rvref<T>>(Ref); };
+template<typename T> inline constexpr auto fwd = [](auto&& Ref) noexcept -> T&& { return static_cast<T&&>(Ref); };
+
+template<typename T, typename... As> concept constructible = requires { T{declval<As&&>()...}; };
+template<typename T, typename... As> concept nt_constructible = constructible<T, As...> && noexcept(T{declval<As&&>()...});
+template<typename T> inline constexpr auto construct = []<typename... As>(As&&... Args)
+  noexcept(nt_constructible<T, As...>) requires constructible<T, As...> { return T{fwd<As>(Args)...}; };
+
+template<typename T, typename A> concept assignable = requires { declval<T&&>() = declval<A&&>(); };
+template<typename T, typename A> concept nt_assignable = assignable<T, A> && noexcept(declval<T&&>() = declval<A&&>());
+inline constexpr auto assign = []<typename T, typename A>(T&& Ref, A&& Val)
+  noexcept(nt_assignable<T, A>) requires assignable<T, A> { fwd<T>(Ref) = fwd<T>(Val); };
+
+template<typename T, typename A> concept exchangeable = constructible<T, T> && assignable<T&, A>;
+template<typename T, typename A> concept nt_exchangeable = nt_constructible<T, T> && nt_assignable<T&, A>;
+inline constexpr auto exchange = []<typename T, typename A>(T& Ref, A&& Val)
+  noexcept(nt_exchangeable<T, A>) requires exchangeable<T, A> { T t = mv(Ref); Ref = fwd<A>(Val); return t; };
+}
+
+export namespace yw { // RANGE
+
+template<typename It> concept iterator = std::input_or_output_iterator<remove_ref<It>>;
+template<typename It> concept input_iterator = std::input_iterator<remove_ref<It>>;
+template<typename It> concept forward_iterator = std::forward_iterator<remove_ref<It>>;
+template<typename It> concept bidirectional_iterator = std::bidirectional_iterator<remove_ref<It>>;
+template<typename It> concept random_access_iterator = std::random_access_iterator<remove_ref<It>>;
+template<typename It> concept contiguous_iterator = std::contiguous_iterator<remove_ref<It>>;
+template<typename It, typename In> concept output_iterator = std::output_iterator<remove_ref<It>, In>;
+template<typename Se, typename It> concept sentinel_for = std::sentinel_for<remove_ref<Se>, remove_ref<It>>;
+template<typename Se, typename It> concept sized_sentinel_for = std::sized_sentinel_for<remove_ref<Se>, remove_ref<It>>;
+
+template<typename Rg> concept range = std::ranges::range<Rg>;
+template<typename Rg> concept input_range = std::ranges::input_range<Rg>;
+template<typename Rg> concept forward_range = std::ranges::forward_range<Rg>;
+template<typename Rg> concept bidirectional_range = std::ranges::bidirectional_range<Rg>;
+template<typename Rg> concept random_access_range = std::ranges::random_access_range<Rg>;
+template<typename Rg> concept contiguous_range = std::ranges::contiguous_range<Rg>;
+template<typename Rg> concept view = std::ranges::view<Rg>;
+template<typename Rg> concept common_range = std::ranges::common_range<Rg>;
+template<typename Rg, typename In> concept output_range = std::ranges::output_range<Rg, In>;
+
+template<range Rg> using iterator_t = std::ranges::iterator_t<Rg>;
+template<range Rg> using sentinel_t = std::ranges::sentinel_t<Rg>;
+
+template<typename T> struct t_iter_type {};
+template<range Rg> struct t_iter_type<Rg> : t_iter_type<iterator_t<Rg>> {};
+template<iterator It> struct t_iter_type<It> {
+  using value_t = std::iter_value_t<remove_ref<It>>;
+  using differece_t = std::iter_difference_t<remove_ref<It>>;
+  using reference_t = std::iter_reference_t<remove_ref<It>>;
+  using rvref_t = std::iter_rvalue_reference_t<remove_ref<It>>;
+};
+template<typename T> requires iterator<T> || range<T> using iter_value_t = t_iter_type<T>::value_t;
+template<typename T> requires iterator<T> || range<T> using iter_difference_t = t_iter_type<T>::differece_t;
+template<typename T> requires iterator<T> || range<T> using iter_reference_t = t_iter_type<T>::reference_t;
+template<typename T> requires iterator<T> || range<T> using iter_rvalue_reference_t = t_iter_type<T>::rvref_t;
+
+inline constexpr auto begin = [](auto&& r) ywlib_func_auto(std::ranges::begin(fwd<decltype(r)>(r)));
+inline constexpr auto end = [](auto&& r) ywlib_func_auto(std::ranges::end(fwd<decltype(r)>(r)));
+inline constexpr auto empty = [](auto&& r) ywlib_func_auto(std::ranges::empty(fwd<decltype(r)>(r)));
+inline constexpr auto size = [](auto&& r) ywlib_func_auto(std::ranges::size(fwd<decltype(r)>(r)));
+inline constexpr auto data = [](auto&& r) ywlib_func_auto(std::ranges::data(fwd<decltype(r)>(r)));
+inline constexpr auto iter_move = [](auto&& i) ywlib_func_ref(std::ranges::iter_move(fwd<decltype(i)>(i)));
+inline constexpr auto iter_swap = [](auto&& i, auto&& j) ywlib_func_void(std::ranges::iter_swap(fwd<decltype(i)>(i), fwd<decltype(j)>(j)));
+}
+
+export namespace yw { // ARRAY
+
+/// empty/static/dynamic array
+template<typename T, nat N = npos> requires (N >= -1) class array;
+
+/// empty array
+template<typename T> class array<T, 0> {
+public:
+  static constexpr nat count = 0;
+  using value_type = T;
+  constexpr bool empty() const noexcept { return true; }
+  constexpr nat size() const noexcept { return 0; }
+  constexpr T* data() noexcept { return nullptr; }
+  constexpr const T* data() const noexcept { return nullptr; }
+  constexpr T* begin() noexcept { return nullptr; }
+  constexpr const T* begin() const noexcept { return nullptr; }
+  constexpr T* end() noexcept { return nullptr; }
+  constexpr const T* end() const noexcept { return nullptr; }
+};
+
+/// static array
+template<typename T, nat N> requires (N > 0) class array<T, N> {
+public:
+  static constexpr nat count = N;
+  using value_type = T;
+  T _[N]{};
+  constexpr bool empty() const noexcept { return false; }
+  constexpr nat size() const noexcept { return N; }
+  constexpr T* data() noexcept { return _; }
+  constexpr const T* data() const noexcept { return _; }
+  constexpr T* begin() noexcept { return _; }
+  constexpr const T* begin() const noexcept { return _; }
+  constexpr T* end() noexcept { return _ + N; }
+  constexpr const T* end() const noexcept { return _ + N; }
+  constexpr T& operator[](nat I) { return _[I]; }
+  constexpr const T& operator[](nat I) const { return _[I]; }
+  template<nat I> requires (I < N) constexpr T& get() & noexcept { return _[I]; }
+  template<nat I> requires (I < N) constexpr const T& get() const & noexcept { return _[I]; }
+  template<nat I> requires (I < N) constexpr T&& get() && noexcept { return mv(_[I]); }
+  template<nat I> requires (I < N) constexpr const T&& get() const && noexcept { return mv(_[I]); }
+};
+
+/// dynamic array
+template<typename T> class array<T, npos> : public std::vector<T> {
+  // using base = ;
+public:
+  using value_type = T;
+  constexpr array() noexcept = default;
+  constexpr array(array&& a) noexcept : std::vector<T>(static_cast<std::vector<T>&&>(a)) {}
+  constexpr array(std::vector<T>&& v) : std::vector<T>(mv(v)) {}
+  explicit constexpr array(nat Size) : std::vector<T>(Size) {}
+  constexpr array(nat Size, const T& Value) : std::vector<T>(Size, Value) {}
+  template<iterator It> requires convertible_to<iter_reference_t<It>, T> constexpr array(It i, It s) : std::vector<T>(i, s) {}
+  template<iterator It, sentinel_for<It> Se> requires (!same_as<It, Se> && convertible_to<iter_reference_t<It>, T>)
+  constexpr array(It i, Se s) : std::vector<T>(std::common_iterator<It, Se>(i), std::common_iterator<It, Se>(s)) {}
+  template<input_range Rg> requires convertible_to<iter_reference_t<Rg>, T>
+  constexpr array(Rg&& r) : array(yw::begin(r), yw::end(r)) {}
+};
+
+template<typename T, convertible_to<T>... Ts> array(T, Ts...) -> array<T, 1 + sizeof...(Ts)>;
+template<typename T> array(nat, const T&) -> array<T, npos>;
+template<iterator It, sentinel_for<It> Se> array(It, Se) -> array<iter_value_t<It>, npos>;
+template<range Rg> array(Rg&&) -> array<iter_value_t<Rg>, npos>;
+}
+namespace std {
+template<typename T, nat N> requires (N != yw::npos) struct tuple_size<yw::array<T, N>> : integral_constant<size_t, N> {};
+template<nat I, typename T, nat N> requires (N != yw::npos) struct tuple_element<I, yw::array<T, N>> : type_identity<T> {};
+}
+
+export namespace yw { // STRING
+
+/// literal string
+template<nat N> struct literal {
+
+};
+}
+
+export namespace yw { // LOGGER
+
+/// logger
+class logger {
+protected:
+  str text{};
+public:
+  struct level_t {
+    str_view name;
+    int value;
+    friend constexpr bool operator==(const level_t& l, const level_t& r) noexcept { return l.value == r.value; }
+    friend constexpr auto operator<=>(const level_t& l, const level_t& r) noexcept { return l.value <=> r.value; }
+  };
+};
+}
+
+
+export namespace yw {
+
+
+namespace main {
+
+/// logger for windows/directx system
+inline logger log{};
+}
+
+class window {
+  win::hwnd hwnd{};
+  win::hbrush hbrush{};
+public:
+  ~window() noexcept {
+    try {
+      if (hbrush && !win::destroy_brush(hbrush)) throw std::runtime_error("failed to destroy brush");
+      if (hwnd && !win::destroy_window(hwnd)) throw std::runtime_error("failed to destroy window");
+    } catch (const std::exception& e) {
+      std::cerr << "window::~window() failed: " << e.what() << std::endl;
+    } catch (...) {
+      std::cerr << "window::~window() failed" << std::endl;
+    }
+  }
+};
+
+
+}
+
 #endif
-
-// namespace yw {
-
-// /// window
-// class window;
-
-// /// window procedure
-// template<invocable_r<bool, window&, wmessage, nat8, int8> Fn> //
-// struct wprocedure : public Fn {
-//   inline static Fn fn{};
-//   static int8 CALLBACK wndproc(win::hwnd hwnd, nat4 msg, nat8 wp, int8 lp) noexcept {
-//     list<win::hwnd, vector2<int>, win::msg> Dummy{hwnd, {}, {hwnd, wmessage(msg), wp, lp}};
-//     if (fn(reinterpret_cast<window&>(Dummy), wmessage(msg), wp, lp)) return 0;
-//     else return win::default_procedure(hwnd, msg, wp, lp);
-//   }
-//   operator win::wndproc() const noexcept { return wndproc; }
-// };
-
-// /// window class
-// class wclass {
-//   wclass(const wclass&) = delete;
-//   wclass& operator=(const wclass&) = delete;
-// protected:
-//   string_view<cat1> _name{};
-//   win::hbrush _hbrush{};
-//   wclass(format_string<cat1> Name) noexcept : _name(Name.get()) {}
-// public:
-//   /// window class for controls
-//   class control;
-
-//   /// window class styles
-//   using style = win::class_style;
-
-//   /// window class name
-//   const string_view<cat1>& name = _name;
-
-//   wclass() noexcept = default;
-//   wclass(const control&) = delete;
-//   wclass(wclass&&) noexcept : _name(exchange(_name, {})), _hbrush(exchange(_hbrush, nullptr)) {}
-//   explicit operator bool() const noexcept { return !_name.empty(); }
-
-//   /// creates and registers window class
-//   template<typename Fn> [[nodiscard]] wclass(                                        //
-//     const format_string<cat1> Name, const wprocedure<Fn>& Proc, wclass::style Style, //
-//     const color& Color = color::white, const wicon& Icon = wicon::predefined::app,   //
-//     const wcursor& Cursor = wcursor::predefined::arrow, const source& _ = {})
-//     : _name(Name.get()), _hbrush(win::create_solid_brush(&Color.r)) {
-//     try {
-//       bool b = win::register_class(Style, Proc, main::hinstance, Icon, Cursor, _hbrush, name.data());
-//       if (!b) throw std::runtime_error("failed to register window class");
-//     } catch (const std::exception& e) {
-//       main::log(logger::error, e.what());
-//       main::log(logger::error, "failed to creates and registers window class", _);
-//       if (_hbrush && !win::destroy_brush(exchange(_hbrush, nullptr))) //
-//         main::log(logger::error, "failed to delete brush", _);
-//       _name = {};
-//     }
-//   }
-
-//   /// moves window class
-//   wclass& operator=(wclass&& wc) noexcept {
-//     if (_hbrush && !win::destroy_brush(_hbrush)) //
-//       main::log(logger::error, "failed to destroy brush");
-//     if (!name.empty() && !win::unregister_class(name.data(), main::hinstance)) //
-//       main::log(logger::error, "failed to unregister window class");
-//     _name = exchange(wc._name, {});
-//     _hbrush = exchange(wc._hbrush, nullptr);
-//     return *this;
-//   }
-
-//   /// destroys window class
-//   ~wclass() noexcept {
-//     if (_hbrush && !win::destroy_brush(_hbrush)) //
-//       main::log(logger::error, "failed to destroy brush");
-//     if (!name.empty() && !win::unregister_class(name.data(), main::hinstance)) //
-//       main::log(logger::error, "failed to unregister window class");
-//   }
-// };
-// using enum wclass::style;
-
-// /// window class for controls
-// class wclass::control : public wclass {
-//   control(const control&) = delete;
-//   control& operator=(const control&) = delete;
-//   control(control&&) = delete;
-//   control& operator=(control&&) = delete;
-//   control(format_string<cat1> Name) noexcept : wclass(Name) {}
-// public:
-//   ~control() noexcept = default;
-//   static const wclass::control animation, button, combobox, datetime, edit, header, //
-//     hotkey, ipaddress, listbox, listview, calendar, pager, progress, rebar,         //
-//     scrollbar, static_, statusbar, tab, toolbar, tooltip, trackbar, treeview, updown;
-// };
-// inline const wclass::control wclass::control::animation{win::control::animation};
-// inline const wclass::control wclass::control::button{win::control::button};
-// inline const wclass::control wclass::control::combobox{win::control::combobox};
-// inline const wclass::control wclass::control::datetime{win::control::datetime};
-// inline const wclass::control wclass::control::edit{win::control::edit};
-// inline const wclass::control wclass::control::header{win::control::header};
-// inline const wclass::control wclass::control::hotkey{win::control::hotkey};
-// inline const wclass::control wclass::control::ipaddress{win::control::ipaddress};
-// inline const wclass::control wclass::control::listbox{win::control::listbox};
-// inline const wclass::control wclass::control::listview{win::control::listview};
-// inline const wclass::control wclass::control::calendar{win::control::calendar};
-// inline const wclass::control wclass::control::pager{win::control::pager};
-// inline const wclass::control wclass::control::progress{win::control::progress};
-// inline const wclass::control wclass::control::rebar{win::control::rebar};
-// inline const wclass::control wclass::control::scrollbar{win::control::scrollbar};
-// inline const wclass::control wclass::control::static_{win::control::static_};
-// inline const wclass::control wclass::control::statusbar{win::control::statusbar};
-// inline const wclass::control wclass::control::tab{win::control::tab};
-// inline const wclass::control wclass::control::toolbar{win::control::toolbar};
-// inline const wclass::control wclass::control::tooltip{win::control::tooltip};
-// inline const wclass::control wclass::control::trackbar{win::control::trackbar};
-// inline const wclass::control wclass::control::treeview{win::control::treeview};
-// inline const wclass::control wclass::control::updown{win::control::updown};
-
-// /// virtual key codes
-// using virtual_key = win::virtual_key;
-// using enum virtual_key;
-
-// /// window
-// class window {
-// protected:
-//   win::hwnd _hwnd{};
-//   vector2<int4> _pad{};
-//   window(win::hwnd Hwnd) noexcept : _hwnd(Hwnd) {}
-// public:
-//   /// window styles
-//   using style = win::window_style;
-
-//   /// window message structure
-//   struct message_t {
-//     win::hwnd hwnd{};
-//     wmessage message{};
-//     nat8 wparam{};
-//     int8 lparam{};
-//     nat4 time{};
-//     vector2<int> point{};
-//     void translate() const noexcept { win::translate_message((const win::msg&)*this); }
-//     void dispatch() const noexcept { win::dispatch_message((const win::msg&)*this); }
-//   };
-//   static_assert(sizeof(message_t) == sizeof(win::msg));
-
-//   /// window message
-//   message_t message{};
-
-//   window() noexcept = default;
-//   window(window&& w) noexcept : _hwnd(exchange(w._hwnd, nullptr)), _pad(w._pad), message(w.message) {}
-//   operator win::hwnd() const noexcept { return _hwnd; }
-//   explicit operator bool() const noexcept { return _hwnd != nullptr; }
-
-//   /// creates a window
-//   [[nodiscard]] window(                                                                            //
-//     const wclass& Class, stringable auto&& Title, style Style, numeric auto&& X, numeric auto&& Y, //
-//     numeric auto&& Width, numeric auto&& Height, const source& _ = {}) {
-//     try {
-//       if (!Class) throw std::runtime_error("invalid window class");
-//       const auto title = cvt<cat1>(Title);
-//       const bool visible = bool(Style & style::visible);
-//       const int size = 500;
-//       _hwnd = win::create_window(Style, Class.name.data(), title.data(), int(X), int(Y), //
-//                                  int(Width), int(Height), nullptr, nullptr, main::hinstance, nullptr);
-//       if (!_hwnd) throw std::runtime_error("failed to call `CreateWindowEx`");
-//       [&](vector<int4> r) { win::get_client_rect(_hwnd, &r.x), _pad.x = (size - r.z) / 2, _pad.y = size - r.w - _pad.x; }({});
-//       win::set_window_pos(_hwnd, int(X), int(Y), int(Width) + _pad.x * 2, int(Height) + _pad.x + _pad.y);
-//       if (visible) win::show_window(_hwnd), win::focus_window(_hwnd);
-//     } catch (const std::exception& e) {
-//       main::log(logger::error, e.what());
-//       main::log(logger::error, "failed to create window", _);
-//     }
-//   }
-
-//   /// moves window
-//   window& operator=(window&& w) {
-//     try {
-//       if (_hwnd && !win::destroy_window(_hwnd)) throw std::runtime_error("failed to destroy window");
-//       _hwnd = exchange(w._hwnd, nullptr), _pad = w._pad, message = w.message;
-//     } catch (const std::exception& e) {
-//       main::log(logger::error, e.what());
-//       main::log(logger::error, "failed to move window");
-//     }
-//     return *this;
-//   }
-
-//   /// destroys window
-//   ~window() noexcept {
-//     try {
-//       if (_hwnd && !win::destroy_window(_hwnd)) main::log(logger::error, "failed to destroy window");
-//     } catch (const std::exception& e) {
-//       main::log(logger::error, e.what());
-//       main::log(logger::error, "failed to destroy window");
-//     } catch (...) { main::log(logger::error, "failed to destroy window"); }
-//   }
-
-//   /// returns text of the window
-//   [[nodiscard]] string<cat1> text() const { return win::get_window_text<cat1>(_hwnd); }
-
-//   /// returns text of the window
-//   template<character Ct> [[nodiscard]] string<Ct> text() const { return win::get_window_text<Ct>(_hwnd); }
-
-//   /// sets text of the window
-//   void text(stringable auto&& Text) {
-//     auto s = cvt<cat2>(Text);
-//     return win::set_window_text(_hwnd, s.data());
-//   }
-// };

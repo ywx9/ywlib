@@ -1,0 +1,7 @@
+.scripts
+.vscode/environment.json
+*.cpp
+*.exe
+*.obj
+*.log
+*.ifc
