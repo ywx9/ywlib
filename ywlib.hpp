@@ -316,19 +316,33 @@ public:
     noexcept(noexcept(select_type<k<As...>, Fs...>::operator()(fwd<As>(Args)...)))
   { return select_type<k<As...>, Fs...>::operator()(fwd<As>(Args)...); }
 };
+
+template<trivially_copyable T> constexpr auto bitcast = []<trivially_copyable U>(const U& v) noexcept requires (sizeof(T) == sizeof(U)) { return __builtin_bit_cast(T, v); };
+inline constexpr auto natcast = []<trivially_copyable T>(const T& v) noexcept {
+  if constexpr (sizeof(T) == 1) return bitcast<unsigned char>;
+  else if constexpr (sizeof(T) == 2) return bitcast<unsigned short>;
+  else if constexpr (sizeof(T) == 4) return bitcast<unsigned int>;
+  else if constexpr (sizeof(T) == 8) return bitcast<unsigned long long>;
+  else static_assert(sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8);
+};
+inline constexpr auto popcount = [](const integral auto& i) ywlib_func_auto(std::popcount(natcast(i)));
+inline constexpr auto countlz = [](const integral auto& i) ywlib_func_auto(std::countl_zero(natcast(i)));
+inline constexpr auto countrz = [](const integral auto& i) ywlib_func_auto(std::countr_zero(natcast(i)));
+inline constexpr auto bitfloor = [](const integral auto& i) ywlib_func_auto(std::bit_floor(natcast(i)));
+inline constexpr auto bitceil = [](const integral auto& i) ywlib_func_auto(std::bit_ceil(natcast(i)));
 }
 namespace std {
 
 template<typename T> struct common_type<yw::none, T> : type_identity<yw::none> {};
 template<typename T> struct common_type<T, yw::none> : type_identity<yw::none> {};
-template<typename Ct> struct formatter : formatter<basic_string_view<Ct>, Ct> {
+template<typename Ct> struct formatter<yw::none, Ct> : formatter<basic_string_view<Ct>, Ct> {
   static constexpr Ct _fmt[] = {Ct('n'), Ct('o'), Ct('n'), Ct('e'), Ct('\0')};
   auto format(yw::none, auto& ctx) const { return formatter<basic_string_view<Ct>, Ct>::format(_fmt, ctx); }
 };
 
-template<typename T> struct common_type<yw::value, T> : common_type<yw::fat8, T> {};
-template<typename T> struct common_type<T, yw::value> : common_type<T, yw::fat8> {};
-template<typename Ct> struct formatter : formatter<double, Ct> {
+template<typename T> struct common_type<yw::value, T> : common_type<double, T> {};
+template<typename T> struct common_type<T, yw::value> : common_type<T, double> {};
+template<typename Ct> struct formatter<yw::value, Ct> : formatter<double, Ct> {
   auto format(yw::value v, auto& ctx) const { return formatter<double, Ct>::format(v._, ctx); }
 };
 }
@@ -460,13 +474,54 @@ template<character Ct> using string_view = std::basic_string_view<Ct>;
 template<character Ct, typename... Ts> using format_string = std::basic_format_string<Ct, Ts...>;
 template<typename T, typename Ct = iter_value_t<T>> concept stringable = nt_convertible_to<T&, string_view<Ct>>;
 
-template<typename... Ts> inline constexpr str format(
-  format_string<char, Ts...> Fmt, Ts&&... Args) { return std::format(Fmt, fwd<Ts>(Args)...); }
-template<typename... Ts> inline constexpr wstr format(
-  format_string<wchar, Ts...> Fmt, Ts&&... Args) { return std::format(Fmt, fwd<Ts>(Args)...); }
+template<typename... Ts> inline constexpr str
+format(format_string<char, Ts...> Fmt, Ts&&... Args) { return std::format(Fmt, fwd<Ts>(Args)...); }
+template<typename... Ts> inline constexpr wstr
+format(format_string<wchar, Ts...> Fmt, Ts&&... Args) { return std::format(Fmt, fwd<Ts>(Args)...); }
 
-template<typename... Ts> inline constexpr void print(
-  format_string<char, Ts...> Fmt, Ts&&... Args) { std::print(Fmt, fwd<Ts>(Args)...); }
+template<typename... Ts> inline constexpr void
+print(format_string<char, Ts...> Fmt, Ts&&... Args) { std::print(Fmt, fwd<Ts>(Args)...); }
+
+template<character Ct> constexpr string<Ct> to_string(const string_view<char> s) {
+  if constexpr (same_as<Ct, char32_t>) {
+    string<char32_t> r(s.size(), {});
+    auto out = r.begin();
+    for (auto in = s.begin(), se = s.end(); in < se;) {
+      if (unsigned char c = *in++; c < 0x80) *out++ = c;
+      else if (c < 0xe0) *out++ = (c & 0x1f) << 6 | (*in++ & 0x3f);
+      else if (c < 0xf0) *out++ = (c & 0x0f) << 12 | (*in++ & 0x3f) << 6 | (*in++ & 0x3f);
+      else *out++ = (c & 0x07) << 18 | (*in++ & 0x3f) << 12 | (*in++ & 0x3f) << 6 | (*in++ & 0x3f);
+    }
+    r.resize(out - r.begin());
+    return r;
+  } else if constexpr (sizeof(Ct) == 2) {
+    string<Ct> r(s.size(), {});
+    auto out = r.begin();
+    for (auto in = s.begin(), se = s.end(); in < se;) {
+      if (unsigned char c = *in++; c < 0x80) *out++ = c;
+      else if (c < 0xe0) *out++ = (c & 0x1f) << 6 | (*in++ & 0x3f);
+      else if (c < 0xf0) *out++ = (c & 0x0f) << 12 | (*in++ & 0x3f) << 6 | (*in++ & 0x3f);
+      else if (char32_t u = (c & 0x07) << 18 | (*in++ & 0x3f) << 12 | (*in++ & 0x3f) << 6 | (*in++ & 0x3f); (u -= 0x10000), true)
+        *out++ = Ct(0xd800 | (u >> 10)), *out++ = Ct(0xdc00 | (u & 0x3ff));
+    }
+    r.resize(out - r.begin());
+    return r;
+  } else return string<Ct>(bitcast<string_view<Ct>>(s));
+}
+
+template<character Ct> constexpr string_view<Ct> to_string(const string_view<wchar> s) {
+  if constexpr (same_as<Ct, char32_t>) { // utf-16 to utf-32
+    string<char32_t> r(s.size(), {});
+    auto out = r.begin();
+    for (auto in = s.begin(), se = s.end(); in < se;) {
+      if (wchar c = *in++; c < 0xd800 || c >= 0xe000) *out++ = c;
+      else if (c < 0xdc00) {
+        if (wchar d = *in++; d >= 0xdc00 && d < 0xe000) *out++ = (c & 0x3ff) << 10 | (d & 0x3ff) | 0x10000;
+        else *out++ = c;
+      } else *out++ = c;
+    }
+  }
+}
 }
 
 export namespace yw { // FILE
@@ -540,11 +595,13 @@ struct source {
 }
 namespace std {
 
-template<typename Ct> struct formatter<yw::source, Ct> : formatter<string<Ct>, Ct> {
+template<typename Ct> struct formatter<yw::source, Ct> : formatter<basic_string<Ct>, Ct> {
   auto format(const yw::source& s, auto& ctx) const {
     return formatter<string<Ct>, Ct>::format(s.to_string<Ct>(), ctx);
   }
 };
+template<typename Ct, typename Tr> std::basic_ostream<Ct, Tr>
+operator<<(std::basic_ostream<Ct, Tr>& os, const yw::source& s) { return os << s.to_string<Ct>(); }
 }
 
 export namespace yw { // TIME
@@ -704,7 +761,7 @@ public:
       str s;
       if constexpr (same_as<iter_value_t<decltype(Text)>, char>)
         s = format("{} [{}] {}\n", now(), Level.name, str_view(Text));
-      else s = format("{} [{}] {}\n", now(), Level.name, cvt<cat1>(Text));
+      else s = format("{} [{}] {}\n", now(), Level.name, cvt<char>(Text));
       if (console) std::cout << s;
       text += s;
     } catch (const std::exception& e) { std::cerr << "logger::operator() failed: " << e.what() << std::endl;
@@ -718,7 +775,7 @@ public:
       str s;
       if constexpr (same_as<iter_value_t<decltype(Text)>, char>)
         s = format("{} [{}] {}\n", now(), Level.name, str_view(Text));
-      else s = format("{} [{}] {}\n", now(), Level.name, cvt<cat1>(Text));
+      else s = format("{} [{}] {}\n", now(), Level.name, cvt<char>(Text));
       if (console) std::cout << _ << std::endl << s;
       text += s;
     } catch (const std::exception& e) { std::cerr << "logger::operator() failed: " << e.what() << std::endl;
