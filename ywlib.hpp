@@ -581,7 +581,7 @@ struct source {
   /// returns a string; `{file}({line},{column})`
   template<character Ct> string<Ct> to_string() const {
     string_view<Ct> f(file);
-    string<Ct> s0{}, s1 = cvt<Ct>(line), s2 = cvt<Ct>(column);
+    string<Ct> s0{}, s1 = to_string<Ct>(line), s2 = to_string<Ct>(column);
     s0.reserve(f.size() + s1.size() + s2.size() + 3);
     s0.append(f), s0.push_back(Ct('('));
     s0.append(s1), s0.push_back(Ct(','));
@@ -619,12 +619,12 @@ struct date {
 
   /// constructor with year, month, and day
   date(numeric auto&& Year, numeric auto&& Month, numeric auto&& Day) noexcept
-    : year(int4(Year)), month(int4(Month)), day(int4(Day)) {}
+    : year(int(Year)), month(int(Month)), day(int(Day)) {}
 
   /// constructor from a `time_point`
   template<typename Clock, typename Duration> date(const std::chrono::time_point<Clock, Duration>& tp) {
     const auto ymd = std::chrono::year_month_day(std::chrono::floor<std::chrono::days>(tp));
-    year = int4(ymd.year()), month = int4(nat4(ymd.month())), day = int4(nat4(ymd.day()));
+    year = int(ymd.year()), month = int(nat4(ymd.month())), day = int(nat4(ymd.day()));
   }
 
   /// returns a string; `YYYY-MM-DD`
@@ -651,12 +651,12 @@ struct clock {
 
   /// constructor with hour, minute, and second
   clock(numeric auto&& Hour, numeric auto&& Minute, numeric auto&& Second) noexcept
-    : hour(int4(Hour)), minute(int4(Minute)), second(int4(Second)) {}
+    : hour(int(Hour)), minute(int(Minute)), second(int(Second)) {}
 
   /// constructor from a `time_point`
   template<typename Clock, typename Duration> clock(const std::chrono::time_point<Clock, Duration>& tp) {
     const std::chrono::hh_mm_ss hms(std::chrono::floor<std::chrono::seconds>(tp - std::chrono::floor<std::chrono::days>(tp)));
-    hour = int4(hms.hours().count()), minute = int4(hms.minutes().count()), second = int4(hms.seconds().count());
+    hour = int(hms.hours().count()), minute = int(hms.minutes().count()), second = int(hms.seconds().count());
   }
 
   /// returns a string; `HH:MM:SS`
