@@ -1,0 +1,14 @@
+**
+
+!.clang-format
+!.gitignore
+!CMakeLists.txt
+!LICENSE
+!README.MD
+!tools/
+!tools/**
+!ywlib/
+!ywlib/yw/
+!ywlib/yw/**
+!ywlib/ywx/
+!ywlib/ywx/**

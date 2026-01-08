@@ -1,0 +1,50 @@
+BasedOnStyle: LLVM
+Language: Cpp
+
+# ------------------------------------------------------------
+# 基本
+# ------------------------------------------------------------
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+
+ColumnLimit: 100
+
+# ------------------------------------------------------------
+# ブレース / レイアウト
+# ------------------------------------------------------------
+BreakBeforeBraces: Attach
+
+# ------------------------------------------------------------
+# スペース / 改行
+# ------------------------------------------------------------
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+SpaceInEmptyBlock: false
+
+ConstructorInitializerIndentWidth: 2
+ContinuationIndentWidth: 2
+
+AllowShortBlocksOnASingleLine: Always
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+AllowShortLoopsOnASingleLine: true
+
+# ------------------------------------------------------------
+# ポインタ / 参照
+# ------------------------------------------------------------
+PointerAlignment: Left
+ReferenceAlignment: Pointer
+
+# ------------------------------------------------------------
+# テンプレート / 型
+# ------------------------------------------------------------
+BreakBeforeConceptDeclarations: Allowed
+BreakTemplateDeclarations: No
+SpaceAfterTemplateKeyword: false
+SplitEmptyFunction: true
+SplitEmptyRecord: true
+
+RequiresClausePosition: WithPreceding
