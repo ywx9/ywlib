@@ -27,7 +27,7 @@ User code (such as `main.cpp`) is generated locally and not committed.
 After cloning the repository, run the initialization script:
 
 ```bash
-python tools/init_vscode.py
+python tools/init.py
 ```
 
 This script will:
@@ -40,7 +40,9 @@ This script will:
 
 4. Create `main.cpp` if it does not exist
 
-5. Generate umbrella headers (`ywlib`, `ywxlib`) if needed
+5. Create `CMakeLists.txt` if it does not exist
+
+6. Generate umbrella headers (`ywlib`, `ywxlib`) if needed
 
 ## Project Structure (simplified)
 

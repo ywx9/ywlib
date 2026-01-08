@@ -292,12 +292,12 @@ template<std::regular T> struct vector<T, 2> {
 
   constexpr T& operator[](integral auto i) noexcept {
     const auto ii = ((i % 2) + 2) % 2;
-    if (!is_cev) return *(&x + ii);
+    if (!std::is_constant_evaluated()) return *(&x + ii);
     return ii == 0 ? x : y;
   }
   const T& operator[](integral auto i) const noexcept {
     const auto ii = ((i % 2) + 2) % 2;
-    if (!is_cev) return *(&x + ii);
+    if (!std::is_constant_evaluated()) return *(&x + ii);
     return ii == 0 ? x : y;
   }
 
@@ -366,12 +366,12 @@ template<std::regular T> struct vector<T, 3> {
 
   constexpr T& operator[](integral auto i) noexcept {
     const auto ii = size_t((i % 3) + 3) % 3;
-    if (!is_cev) return *(&x + ii);
+    if (!std::is_constant_evaluated()) return *(&x + ii);
     return ii == 0 ? x : (ii == 1 ? y : z);
   }
   constexpr const T& operator[](integral auto i) const noexcept {
     const auto ii = ((i % 3) + 3) % 3;
-    if (!is_cev) return *(&x + ii);
+    if (!std::is_constant_evaluated()) return *(&x + ii);
     return ii == 0 ? x : (ii == 1 ? y : z);
   }
 
@@ -450,12 +450,12 @@ template<std::regular T> struct vector<T, 4> {
 
   constexpr T& operator[](integral auto i) {
     const auto ii = size_t((i % 4) + 4) % 4;
-    if (!is_cev) return *(&x + ii);
+    if (!std::is_constant_evaluated()) return *(&x + ii);
     return ii == 0 ? x : (ii == 1 ? y : (ii == 2 ? z : w));
   }
   constexpr const T& operator[](integral auto i) const {
     const auto ii = size_t((i % 4) + 4) % 4;
-    if (!is_cev) return *(&x + ii);
+    if (!std::is_constant_evaluated()) return *(&x + ii);
     return ii == 0 ? x : (ii == 1 ? y : (ii == 2 ? z : w));
   }
 

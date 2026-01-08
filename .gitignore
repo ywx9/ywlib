@@ -2,7 +2,6 @@
 
 !.clang-format
 !.gitignore
-!CMakeLists.txt
 !LICENSE
 !README.MD
 !tools/

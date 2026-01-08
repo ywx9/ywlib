@@ -1,7 +1,10 @@
 #pragma once
 #include <compare>
 #include <concepts>
+#include <format>
+#include <functional>
 #include <iterator>
+#include <print>
 #include <ranges>
 #include <string_view>
 
@@ -59,10 +62,10 @@ template<typename T, typename... Ts> concept same_as = (std::same_as<T, Ts> && .
 template<typename T, typename... Ts> concept different_from = ((!std::same_as<T, Ts>) && ...);
 template<typename T, typename... Ts> concept included_in = (std::same_as<T, Ts> || ...);
 template<typename T, typename... Ts> concept castable_to =
-  ((requires { static_cast<Ts>(declval<T>()); }) && ...);
+  ((requires { static_cast<Ts>(std::declval<T>()); }) && ...);
 template<typename T, typename... Ts> concept convertible_to = (std::convertible_to<T, Ts> && ...);
 template<typename T, typename... Ts> concept nt_castable_to =
-  castable_to<T, Ts...> && noexcept((static_cast<Ts>(declval<T>()), ...));
+  castable_to<T, Ts...> && noexcept((static_cast<Ts>(std::declval<T>()), ...));
 template<typename T, typename... Ts> concept nt_convertible_to =
   convertible_to<T, Ts...> && nt_castable_to<T, Ts...>;
 template<typename T, typename... Ts> concept derived_from = (std::derived_from<T, Ts> && ...);
@@ -163,12 +166,12 @@ inline constexpr auto invoke = []<typename F, typename... As>(F&& f, As&&... as)
   noexcept(nt_invocable<F, As...>) -> decltype(auto) requires invocable<F, As...>
 {
   if constexpr (!is_void<std::invoke_result_t<F, As...>>)
-    return std::invoke(static_cast<F&&>(f), fwd<As>(as)...);
-  else return std::invoke(static_cast<F&&>(f), fwd<As>(as)...), none{};
+    return std::invoke(static_cast<F&&>(f), static_cast<As&&>(as)...);
+  else return std::invoke(static_cast<F&&>(f), static_cast<As&&>(as)...), none{};
 };
 
 template<typename F, typename... As> requires invocable<F, As...>
-using invoke_result = decltype(invoke(declval<F&&>(), declval<As&&>()...));
+using invoke_result = decltype(invoke(std::declval<F>(), std::declval<As>()...));
 
 template<typename F, typename R, typename... As> concept invocable_r =
   invocable<F, As...> && convertible_to<std::invoke_result_t<F, As...>, R>;
@@ -178,7 +181,7 @@ template<typename F, typename R, typename... As> concept nt_invocable_r =
 template<typename R> inline constexpr auto invoke_r =
   []<typename F, typename... As>(F&& f, As&&... as) noexcept(nt_invocable_r<F, R, As...>)
     requires invocable_r<F, R, As...>
-{ return std::invoke_r<R>(fwd<F>(f), fwd<As>(as)...); };
+{ return std::invoke_r<R>(static_cast<F&&>(f), static_cast<As&&>(as)...); };
 
 //////////////////////////////////////// MARK: max
 
@@ -245,10 +248,10 @@ template<size_t I, typename T> inline constexpr int get_strategy = []() -> int {
   if constexpr (std::is_bounded_array_v<std::remove_cvref_t<T>> &&
                 I < std::extent_v<std::remove_cvref_t<T>>)
     return 1 | 4;
-  else if constexpr (requires { get<I>(declval<T&&>()); })
-    return 2 | noexcept(get<I>(declval<T&&>())) * 4;
-  else if constexpr (requires { declval<T&&>().template get<I>(); })
-    return 3 | noexcept(declval<T&&>().template get<I>()) * 4;
+  else if constexpr (requires { get<I>(std::declval<T&&>()); })
+    return 2 | noexcept(get<I>(std::declval<T&&>())) * 4;
+  else if constexpr (requires { std::declval<T&&>().template get<I>(); })
+    return 3 | noexcept(std::declval<T&&>().template get<I>()) * 4;
   return 0;
 }();
 } // namespace internal

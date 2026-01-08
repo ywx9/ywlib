@@ -46,11 +46,25 @@ def run_cmake(root: Path, build: Path, extra: list[str]) -> int:
     print("[init_vscode] running:", " ".join(cmd))
     return subprocess.run(cmd).returncode
 
+def ensure_cmakelists(workspace: Path):
+    cmakelists = workspace / "CMakeLists.txt"
+    if cmakelists.exists():
+        return
+    template = workspace / "tools" / "templates" / "CMakeLists.txt.in"
+    if not template.exists():
+        raise RuntimeError("CMakeLists.txt template not found")
+    print("[init_vscode] creating CMakeLists.txt from template")
+    cmakelists.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
+
 # ------------------------------------------------------------
 # main
 # ------------------------------------------------------------
 
 def main() -> int:
+    workspace = Path(__file__).resolve().parents[1]
+    ensure_main_cpp(workspace)
+    ensure_cmakelists(Path.cwd())
+
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--toolchain",
@@ -147,9 +161,6 @@ def main() -> int:
         )
 
     subprocess.run(["cmake", "--build", str(build), "--target", "ywlib_umbrellas"], check=False)
-
-    workspace = Path(__file__).resolve().parents[1]
-    ensure_main_cpp(workspace)
 
     return 0
 
