@@ -42,7 +42,7 @@ This script will:
 
 5. Create `CMakeLists.txt` if it does not exist
 
-6. Generate umbrella headers (`ywlib`, `ywxlib`) if needed
+6. Generate umbrella headers (`ywlib`, `ywxlib`)
 
 ## Project Structure (simplified)
 

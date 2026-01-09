@@ -8,7 +8,7 @@ IndentWidth: 2
 TabWidth: 2
 UseTab: Never
 
-ColumnLimit: 100
+ColumnLimit: 120
 
 # ------------------------------------------------------------
 # ブレース / レイアウト

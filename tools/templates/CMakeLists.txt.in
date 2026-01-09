@@ -19,8 +19,13 @@ if (WIN32)
   target_compile_definitions(${YOUR_APP_NAME} PRIVATE NOMINMAX UNICODE _UNICODE)
 endif()
 
+target_compile_options(${YOUR_APP_NAME} PRIVATE
+  $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
+  $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-finput-charset=UTF-8 -fexec-charset=UTF-8>
+)
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
-  target_link_libraries(ywlib_app PRIVATE stdc++exp)
+  target_link_libraries(${YOUR_APP_NAME} PRIVATE stdc++exp)
 endif()
 
 # ============================================================

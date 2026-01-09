@@ -61,22 +61,18 @@ template<typename T> concept is_function = !is_const<const T> && !is_reference<T
 template<typename T, typename... Ts> concept same_as = (std::same_as<T, Ts> && ...);
 template<typename T, typename... Ts> concept different_from = ((!std::same_as<T, Ts>) && ...);
 template<typename T, typename... Ts> concept included_in = (std::same_as<T, Ts> || ...);
-template<typename T, typename... Ts> concept castable_to =
-  ((requires { static_cast<Ts>(std::declval<T>()); }) && ...);
+template<typename T, typename... Ts> concept castable_to = ((requires { static_cast<Ts>(std::declval<T>()); }) && ...);
 template<typename T, typename... Ts> concept convertible_to = (std::convertible_to<T, Ts> && ...);
 template<typename T, typename... Ts> concept nt_castable_to =
   castable_to<T, Ts...> && noexcept((static_cast<Ts>(std::declval<T>()), ...));
-template<typename T, typename... Ts> concept nt_convertible_to =
-  convertible_to<T, Ts...> && nt_castable_to<T, Ts...>;
+template<typename T, typename... Ts> concept nt_convertible_to = convertible_to<T, Ts...> && nt_castable_to<T, Ts...>;
 template<typename T, typename... Ts> concept derived_from = (std::derived_from<T, Ts> && ...);
 
 template<typename T> concept is_void = same_as<remove_cv<T>, void>;
 template<typename T> concept is_bool = same_as<remove_cv<T>, bool>;
 template<typename T> concept is_nullptr = same_as<remove_cv<T>, decltype(nullptr)>;
-template<typename T> concept char_type =
-  included_in<remove_cv<T>, char, wchar_t, char8_t, char16_t, char32_t>;
-template<typename T> concept int_type =
-  included_in<remove_cv<T>, signed char, short, int, long, long long>;
+template<typename T> concept char_type = included_in<remove_cv<T>, char, wchar_t, char8_t, char16_t, char32_t>;
+template<typename T> concept int_type = included_in<remove_cv<T>, signed char, short, int, long, long long>;
 template<typename T> concept uint_type =
   included_in<remove_cv<T>, uint8_t, uint16_t, uint32_t, unsigned long, uint64_t>;
 template<typename T> concept float_type = included_in<remove_cv<T>, float, double, long double>;
@@ -108,11 +104,9 @@ template<size_t I, typename T, typename... Ts> constexpr auto _select(T&& a, Ts&
 /// selects the I-th argument from the given arguments.
 /// \note If I is a bool value, selects the first argument if I is true.
 template<std::convertible_to<size_t> auto I, typename... Ts>
-requires((is_bool<decltype(I)> && sizeof...(Ts) == 2) ||
-         (!is_bool<decltype(I)> && I < sizeof...(Ts)))
+requires((is_bool<decltype(I)> && sizeof...(Ts) == 2) || (!is_bool<decltype(I)> && I < sizeof...(Ts)))
 constexpr auto select(Ts&&... as) noexcept {
-  if constexpr (is_bool<decltype(I)>)
-    return internal::_select<size_t(!I)>(static_cast<Ts&&>(as)...);
+  if constexpr (is_bool<decltype(I)>) return internal::_select<size_t(!I)>(static_cast<Ts&&>(as)...);
   else return internal::_select<size_t(I)>(static_cast<Ts&&>(as)...);
 }
 
@@ -123,8 +117,7 @@ template<std::convertible_to<size_t> auto I, typename... Ts> using select_type =
 
 /// selects the value of the I-th argument from the given arguments.
 /// \note If I is a bool value, selects the first argument if I is true.
-template<std::convertible_to<size_t> auto I, auto... Vs> constexpr auto select_value =
-  select<I>(Vs...);
+template<std::convertible_to<size_t> auto I, auto... Vs> constexpr auto select_value = select<I>(Vs...);
 
 //////////////////////////////////////// MARK: none
 
@@ -150,9 +143,8 @@ template<typename T> concept is_none = same_as<remove_cv<T>, none>;
 
 //////////////////////////////////////// MARK: common_type
 
-template<typename... Ts> using common_type = select_type<requires {
-  typename std::common_reference<Ts...>::type;
-}, std::common_reference<Ts...>, std::type_identity<none>>::type;
+template<typename... Ts> using common_type = select_type<requires { typename std::common_reference<Ts...>::type; },
+                                                         std::common_reference<Ts...>, std::type_identity<none>>::type;
 
 template<typename... Ts> concept common_with = !is_none<common_type<Ts...>>;
 
@@ -178,58 +170,102 @@ template<typename F, typename R, typename... As> concept invocable_r =
 template<typename F, typename R, typename... As> concept nt_invocable_r =
   nt_invocable<F, As...> && nt_convertible_to<std::invoke_result_t<F, As...>, R>;
 
-template<typename R> inline constexpr auto invoke_r =
-  []<typename F, typename... As>(F&& f, As&&... as) noexcept(nt_invocable_r<F, R, As...>)
-    requires invocable_r<F, R, As...>
+template<typename R>
+inline constexpr auto invoke_r = []<typename F, typename... As>(F&& f, As&&... as) noexcept(nt_invocable_r<F, R, As...>)
+                                   requires invocable_r<F, R, As...>
 { return std::invoke_r<R>(static_cast<F&&>(f), static_cast<As&&>(as)...); };
 
 //////////////////////////////////////// MARK: max
 
 inline constexpr struct {
   static constexpr none operator()() noexcept { return {}; }
-  template<typename T> static constexpr decltype(auto) operator()(T&& a) noexcept {
-    return static_cast<T&&>(a);
-  }
-  template<typename T, std::common_with<T> U>
-  static constexpr auto operator()(T&& a, U&& b) noexcept(noexcept(a < b)) {
-    return a < b ? std::common_type_t<T, U>(static_cast<U&&>(b))
-                 : std::common_type_t<T, U>(static_cast<T&&>(a));
+  template<typename T> static constexpr decltype(auto) operator()(T&& a) noexcept { return static_cast<T&&>(a); }
+  template<typename T, std::common_with<T> U> static constexpr auto operator()(T&& a, U&& b) noexcept(noexcept(a < b)) {
+    return a < b ? std::common_type_t<T, U>(static_cast<U&&>(b)) : std::common_type_t<T, U>(static_cast<T&&>(a));
   }
   template<typename T, typename U, typename... Ts> //
   static constexpr std::common_type_t<T, U, Ts...> operator()(T&& a, U&& b, Ts&&... cs) {
-    return operator()(operator()(static_cast<T&&>(a), static_cast<U&&>(b)),
-                      static_cast<Ts&&>(cs)...);
+    return operator()(operator()(static_cast<T&&>(a), static_cast<U&&>(b)), static_cast<Ts&&>(cs)...);
   }
 } max;
 
 inline constexpr struct {
   static constexpr none operator()() noexcept { return {}; }
-  template<typename T> static constexpr decltype(auto) operator()(T&& a) noexcept {
-    return static_cast<T&&>(a);
-  }
-  template<typename T, std::common_with<T> U>
-  static constexpr auto operator()(T&& a, U&& b) noexcept(noexcept(b < a)) {
-    return b < a ? std::common_type_t<T, U>(static_cast<U&&>(b))
-                 : std::common_type_t<T, U>(static_cast<T&&>(a));
+  template<typename T> static constexpr decltype(auto) operator()(T&& a) noexcept { return static_cast<T&&>(a); }
+  template<typename T, std::common_with<T> U> static constexpr auto operator()(T&& a, U&& b) noexcept(noexcept(b < a)) {
+    return b < a ? std::common_type_t<T, U>(static_cast<U&&>(b)) : std::common_type_t<T, U>(static_cast<T&&>(a));
   }
   template<typename T, typename U, typename... Ts> //
   static constexpr std::common_type_t<T, U, Ts...> operator()(T&& a, U&& b, Ts&&... cs) {
-    return operator()(operator()(static_cast<T&&>(a), static_cast<U&&>(b)),
-                      static_cast<Ts&&>(cs)...);
+    return operator()(operator()(static_cast<T&&>(a), static_cast<U&&>(b)), static_cast<Ts&&>(cs)...);
   }
 } min;
 
-//////////////////////////////////////// MARK: iter_value_t
+//////////////////////////////////////// MARK: iterator / range
+
+template<std::ranges::range R> using iterator_t = std::ranges::iterator_t<R>;
+template<std::ranges::range R> using sentinel_t = std::ranges::sentinel_t<R>;
+
+inline constexpr auto begin = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::begin(std::declval<R>())))
+                                requires requires { std::ranges::begin(std::declval<R>()); }
+{ return std::ranges::begin(fwd<R>(r)); };
+inline constexpr auto end = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::end(std::declval<R>())))
+                              requires requires { std::ranges::end(std::declval<R>()); }
+{ return std::ranges::end(fwd<R>(r)); };
+inline constexpr auto size = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::size(std::declval<R>())))
+                               requires requires { std::ranges::size(std::declval<R>()); }
+{ return std::ranges::size(fwd<R>(r)); };
+inline constexpr auto data = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::data(std::declval<R>())))
+                               requires requires { std::ranges::data(std::declval<R>()); }
+{ return std::ranges::data(fwd<R>(r)); };
 
 namespace internal {
-template<typename T> struct _iter_value_t : std::type_identity<void> {};
-template<typename I> requires requires { typename std::iter_value_t<I>; }
-struct _iter_value_t<I> : std::type_identity<std::iter_value_t<I>> {};
-template<typename R> requires requires { typename std::ranges::range_value_t<R>; }
-struct _iter_value_t<R> : std::type_identity<typename std::ranges::range_value_t<R>> {};
+template<typename T, template<typename> typename> struct iter_type : std::type_identity<void> {};
+template<std::input_iterator I, template<typename> typename Tm> struct iter_type<I, Tm> : std::type_identity<Tm<I>> {};
+template<std::ranges::input_range R, template<typename> typename Tm> struct iter_type<R, Tm>
+  : std::type_identity<Tm<iterator_t<R>>> {};
 } // namespace internal
 
-template<typename T> using iter_value_t = internal::_iter_value_t<T>::type;
+template<typename T> using iter_value_t = internal::iter_type<remove_cvref<T>, std::iter_value_t>::type;
+template<typename T> using iter_difference_t = internal::iter_type<remove_cvref<T>, std::iter_difference_t>::type;
+template<typename T> using iter_reference_t = internal::iter_type<remove_cvref<T>, std::iter_reference_t>::type;
+
+template<typename I> concept input_iterator = std::input_iterator<I>;
+template<typename I> concept forward_iterator = std::forward_iterator<I>;
+template<typename I> concept bidirectional_iterator = std::bidirectional_iterator<I>;
+template<typename I> concept random_access_iterator = std::random_access_iterator<I>;
+
+template<typename R> concept sized_range = std::ranges::sized_range<R>;
+template<typename R> concept input_range = std::ranges::input_range<R>;
+template<typename R> concept forward_range = std::ranges::forward_range<R>;
+template<typename R> concept bidirectional_range = std::ranges::bidirectional_range<R>;
+template<typename R> concept random_access_range = std::ranges::random_access_range<R>;
+
+template<typename I, typename T = iter_value_t<I>> concept contiguous_iterator =
+  std::contiguous_iterator<I> && same_as<T, iter_value_t<I>>;
+template<typename R, typename T = iter_value_t<R>> concept contiguous_range =
+  std::ranges::contiguous_range<R> && sized_range<R> && same_as<T, iter_value_t<R>>;
+
+template<typename I, typename T = iter_value_t<I>> concept output_iterator = std::output_iterator<I, T>;
+template<typename R, typename T = iter_value_t<R>> concept output_range = std::ranges::output_range<R, T>;
+
+template<typename S, typename I> concept sentinel_for = std::sentinel_for<S, I>;
+template<typename S, typename I> concept sized_sentinel_for = std::sized_sentinel_for<S, I>;
+
+//////////////////////////////////////////////////////////////////////////////// MARK: char / string
+
+using namespace std::string_view_literals;
+using namespace std::string_literals;
+
+inline constexpr auto is_ascii = []<char_type C>(C c) noexcept { return 0x20 <= c && c < 0x7F; };
+inline constexpr auto is_digit = []<char_type C>(C c) noexcept { return '0' <= c && c <= '9'; };
+inline constexpr auto is_lower = []<char_type C>(C c) noexcept { return 'a' <= c && c <= 'z'; };
+inline constexpr auto is_upper = []<char_type C>(C c) noexcept { return 'A' <= c && c <= 'Z'; };
+inline constexpr auto is_alpha = []<char_type C>(C c) noexcept { return is_lower(c) || is_upper(c); };
+inline constexpr auto is_alnum = []<char_type C>(C c) noexcept { return is_alpha(c) || is_digit(c); };
+inline constexpr auto is_xdigit = []<char_type C>(C c) noexcept {
+  return is_digit(c) || (('a' <= c && c <= 'f') || ('A' <= c && c <= 'F'));
+};
 
 template<typename S, typename T = iter_value_t<S>> concept stringable =
   std::convertible_to<S, std::basic_string_view<T>>;
@@ -245,11 +281,9 @@ template<typename T, size_t N = extent<T>> concept tuple_like = extent<T> == N &
 namespace internal {
 template<size_t I, typename T> inline constexpr int get_strategy = []() -> int {
   using std::get;
-  if constexpr (std::is_bounded_array_v<std::remove_cvref_t<T>> &&
-                I < std::extent_v<std::remove_cvref_t<T>>)
+  if constexpr (std::is_bounded_array_v<std::remove_cvref_t<T>> && I < std::extent_v<std::remove_cvref_t<T>>)
     return 1 | 4;
-  else if constexpr (requires { get<I>(std::declval<T&&>()); })
-    return 2 | noexcept(get<I>(std::declval<T&&>())) * 4;
+  else if constexpr (requires { get<I>(std::declval<T&&>()); }) return 2 | noexcept(get<I>(std::declval<T&&>())) * 4;
   else if constexpr (requires { std::declval<T&&>().template get<I>(); })
     return 3 | noexcept(std::declval<T&&>().template get<I>()) * 4;
   return 0;
@@ -263,13 +297,11 @@ template<size_t I> inline constexpr auto get =                           //
   using std::get;
   if constexpr ((internal::get_strategy<I, T> & 3) == 1) return a[I];
   else if constexpr ((internal::get_strategy<I, T> & 3) == 2) return get<I>(static_cast<T&&>(a));
-  else if constexpr ((internal::get_strategy<I, T> & 3) == 3)
-    return static_cast<T&&>(a).template get<I>();
+  else if constexpr ((internal::get_strategy<I, T> & 3) == 3) return static_cast<T&&>(a).template get<I>();
 };
 
 template<typename T, size_t I> concept gettable = requires { yw::get<I>(std::declval<T>()); };
-template<typename T, size_t I> concept nt_gettable =
-  gettable<T, I> && noexcept(yw::get<I>(std::declval<T>()));
+template<typename T, size_t I> concept nt_gettable = gettable<T, I> && noexcept(yw::get<I>(std::declval<T>()));
 template<typename T, size_t I> requires gettable<T, I>
 using element_t = decltype(get<I>(std::declval<T>()));
 
