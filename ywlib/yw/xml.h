@@ -255,7 +255,7 @@ public:
   std::vector<child> children;
   element() = default;
   element(std::string_view& rest);
-  const element& operator[](std::string_view ElementName) const;
+  const element* operator[](std::string_view ElementName) const;
 };
 
 //////////////////////////////////////// MARK: child
@@ -298,21 +298,21 @@ public:
   child(element a) : _val(std::move(a)), type(child_type::element) {}
   bool error() const { return _val.index() == 0 && !std::get<bool>(_val); }
   bool empty() const { return _val.index() == 0 && std::get<bool>(_val); }
-  const xml::comment& comment() const {
-    if (!std::holds_alternative<xml::comment>(_val)) return {};
-    return std::get<xml::comment>(_val);
+  const xml::comment* comment() const {
+    if (!std::holds_alternative<xml::comment>(_val)) return nullptr;
+    return std::addressof(std::get<xml::comment>(_val));
   }
-  const xml::text& text() const {
-    if (!std::holds_alternative<xml::text>(_val)) return {};
-    return std::get<xml::text>(_val);
+  const xml::text* text() const {
+    if (!std::holds_alternative<xml::text>(_val)) return nullptr;
+    return std::addressof(std::get<xml::text>(_val));
   }
-  const xml::pi& pi() const {
-    if (!std::holds_alternative<xml::pi>(_val)) return {};
-    return std::get<xml::pi>(_val);
+  const xml::pi* pi() const {
+    if (!std::holds_alternative<xml::pi>(_val)) return nullptr;
+    return std::addressof(std::get<xml::pi>(_val));
   }
-  const xml::element& element() const {
-    if (!std::holds_alternative<xml::element>(_val)) return {};
-    return std::get<xml::element>(_val);
+  const xml::element* element() const {
+    if (!std::holds_alternative<xml::element>(_val)) return nullptr;
+    return std::addressof(std::get<xml::element>(_val));
   }
 };
 
@@ -334,12 +334,12 @@ element::element(std::string_view& rest) {
   } else throw std::runtime_error("xml::element: invalid end tag");
 }
 
-const element& element::operator[](std::string_view ElementName) const {
+const element* element::operator[](std::string_view ElementName) const {
   for (const auto& child : children) {
     if (child.type == child_type::element)
-      if (const auto& e = child.element(); e.name == ElementName) return e;
+      if (const auto& e = child.element(); e->name == ElementName) return e;
   }
-  return empty_element;
+  return nullptr;
 }
 
 //////////////////////////////////////////////////////////////////////////////// MARK: DOCUMENT
@@ -359,7 +359,7 @@ class document {
         if (it == rest.end()) throw "invalid version number";
         else if (is_digit(*it)) continue;
         else if (*it != quote) throw "expected closing quote";
-        auto result = yw::from_string<double>(std::string_view(rest.begin() + 1, it));
+        auto result = yw::stov<double>(std::string_view(rest.begin() + 1, it));
         rest = {it + 1, rest.end()};
         return result;
       }
@@ -397,10 +397,10 @@ class document {
 
 public:
   double version{1.0};
-  str encoding;
-  array<misc> miscs;
+  std::string encoding;
+  std::vector<misc> miscs;
   element root;
-  array<misc> end_miscs;
+  std::vector<misc> end_miscs;
   document() : version{} {}
   document(std::string_view& XMLDocument);
 };
@@ -446,7 +446,7 @@ document::document(std::string_view& XMLDocument) {
   }
 }
 
-template<stringable<char> S> inline std::expected<document, str> from_string(S&& xml_doc) {
+template<stringable<char> S> document from_string(S&& xml_doc) {
   const auto original = std::string_view(xml_doc);
   auto rest = original;
   auto doc = document(rest);
@@ -457,28 +457,17 @@ template<stringable<char> S> inline std::expected<document, str> from_string(S&&
     fore_part = fore_part.substr(fore_part.size() < 20 ? 0 : fore_part.size() - 20);
     auto back_part = rest.substr(0, [&](size_t s) noexcept { return s == npos ? 0 : s; }(rest.find_first_of('\n')));
     back_part = back_part.substr(0, back_part.size() < 20 ? back_part.size() : 20);
-    auto here = str(fore_part.size(), ' ') + '^';
-    return std::unexpected(
-      format("[ywlib] yw::xml::from_string: error at line {}\n{}{}\n{}", line, fore_part, back_part, here));
+    auto here = std::string(fore_part.size(), ' ') + '^';
+    // return std::unexpected(
+    //   format("[ywlib] yw::xml::from_string: error at line {}\n{}{}\n{}", line, fore_part, back_part, here));
+    return {};
   } else return doc;
 }
 
-template<stringable S> requires different_from<iter_value_t<S>, char>
-std::expected<document, str> from_string(S&& xml_doc) {
-  str temp = unicode<char>(static_cast<S&&>(xml_doc));
-  return from_string(temp);
-}
-
-template<path_like T> std::expected<document, str> from_file(T&& xml_file) {
-  decltype(auto) p = to_path(static_cast<T&&>(xml_file));
-  size_t file_size{};
-  if (auto size_ = file::size(p); size_.has_value()) file_size = *size_;
-  else return std::unexpected(format("[ywlib] xml::from_file: failed to get file size: {}", unicode<char>(p.native())));
-  auto reader = file::open_to_read(p);
-  auto doc = reader();
+inline document from_file(const std::filesystem::path& p) {
+  auto reader = yw::reader(p);
+  auto doc = reader.read_as_string();
   reader.close();
-  if (doc.size() != file_size)
-    return std::unexpected(format("[ywlib] yw::xml::from_file: failed to read file: {}", unicode<char>(p.native())));
   return from_string(std::move(doc));
 }
 } // namespace xml

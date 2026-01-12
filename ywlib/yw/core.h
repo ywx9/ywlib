@@ -1,4 +1,5 @@
 #pragma once
+#include <charconv>
 #include <compare>
 #include <concepts>
 #include <format>
@@ -269,6 +270,21 @@ inline constexpr auto is_xdigit = []<char_type C>(C c) noexcept {
 
 template<typename S, typename T = iter_value_t<S>> concept stringable =
   std::convertible_to<S, std::basic_string_view<T>>;
+
+template<arithmetic T> constexpr auto stov = [](stringable<char> auto&& str) -> T {
+  const auto sv = std::string_view(str);
+  T result{};
+  std::from_chars(sv.data(), sv.data() + sv.size(), result);
+  return result;
+};
+
+constexpr auto vtos = [](arithmetic auto value) -> std::string {
+  auto temp = std::string(32, '\0');
+  const auto [ptr, ec] = std::to_chars(temp.data(), temp.data() + temp.size(), value);
+  if (ec == std::errc()) temp.resize(ptr - temp.data());
+  else temp.clear();
+  return temp;
+};
 
 //////////////////////////////////////// MARK: GET
 
