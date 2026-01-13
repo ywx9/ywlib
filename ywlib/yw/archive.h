@@ -30,10 +30,126 @@
 
 namespace yw {
 
+inline const struct {
+  static_assert(std::endian::native == std::endian::little, "archive: only little-endian is supported");
+  static constexpr std::uint32_t entry_magic = 0x45415759;  // 'YWAE'
+  static constexpr std::uint32_t footer_magic = 0x46415759; // 'YWAF'
+  static constexpr std::uint32_t max_name_size = 2048;
+
+  struct entry_header {
+    std::uint32_t magic;
+    std::uint32_t name_length;
+    std::uint64_t data_length;
+  };
+  static_assert(sizeof(entry_header) == 16);
+
+  struct footer_header {
+    std::uint32_t magic;
+    std::uint32_t file_count;
+  };
+  static_assert(sizeof(footer_header) == 8);
+
+  struct entry {
+    std::string name;
+    std::uint64_t entry_offset;
+    std::uint64_t data_offset;
+    std::uint64_t data_length;
+  };
+
+  class reader {
+    yw::reader _reader;
+    std::vector<entry> _metas;
+  public:
+    explicit reader(const std::filesystem::path& path) : _reader(path) {
+      const auto file_size = _reader.size();
+      if (file_size < sizeof(footer_header))
+        throw std::runtime_error("archive::reader: file too small to be a valid archive");
+
+      // Read footer
+      _reader.seek(file_size - sizeof(std::uint64_t));
+      std::uint64_t footer_offset;
+      _reader.read_exact(&footer_offset, sizeof(footer_offset));
+      if (footer_offset + sizeof(footer_header) > static_cast<std::uint64_t>(file_size))
+        throw std::runtime_error("archive::reader: invalid footer offset");
+
+      _reader.seek(footer_offset);
+      footer_header footer;
+      _reader.read_exact(&footer, sizeof(footer));
+      if (footer.magic != footer_magic) throw std::runtime_error("archive::reader: invalid footer magic");
+      if (footer.file_count == 0) throw std::runtime_error("archive::reader: archive contains no entries");
+
+      // Read entry offsets
+      std::vector<std::uint64_t> entry_offsets(footer.file_count);
+      _reader.read_exact(entry_offsets.data(), entry_offsets.size() * sizeof(std::uint64_t));
+
+      // Read entries
+      _metas.reserve(footer.file_count);
+      for (std::uint32_t i = 0; i < footer.file_count; ++i) {
+        _reader.seek(entry_offsets[i]);
+        entry_header eh;
+        _reader.read_exact(&eh, sizeof(eh));
+
+        if (eh.magic != entry_magic) throw std::runtime_error("archive::reader: invalid entry magic");
+        if (eh.name_length == 0 || eh.name_length > max_name_size)
+          throw std::runtime_error("archive::reader: invalid entry name length");
+
+        std::string name(eh.name_length, '\0');
+        _reader.read_exact(name.data(), eh.name_length);
+
+        const std::uint64_t data_offset = entry_offsets[i] + sizeof(eh) + eh.name_length;
+        _metas.push_back(entry{name, entry_offsets[i], data_offset, eh.data_length});
+      }
+    }
+
+    bool is_open() const noexcept { return _reader.is_open(); }
+
+    const std::vector<entry>& entries() const noexcept { return _metas; }
+
+    std::vector<std::byte> extract(stringable<char> auto&& name) {
+      if (!_reader.is_open()) throw std::runtime_error("archive::reader: reader is not open");
+      auto sv = std::string_view(name);
+      for (const auto& e : _metas) {
+        if (e.name == sv) {
+          _reader.seek(e.data_offset);
+          std::vector<std::byte> data(e.data_length);
+          _reader.read_exact(data.data(), e.data_length);
+          return data;
+        }
+      }
+      throw std::runtime_error("archive::reader: entry not found");
+    }
+
+    void extract_to(stringable<char> auto&& name, yw::writer& out) {
+      if (!_reader.is_open()) throw std::runtime_error("archive::reader: reader is not open");
+      auto sv = std::string_view(name);
+      for (const auto& e : _metas) {
+        if (e.name == sv) {
+          _reader.seek(e.data_offset);
+          const std::size_t buffer_size = 4096;
+          std::vector<std::byte> buffer(buffer_size);
+          std::uint64_t remaining = e.data_length;
+          while (remaining > 0) {
+            const std::size_t to_read = static_cast<std::size_t>(std::min<std::uint64_t>(buffer_size, remaining));
+            _reader.read_exact(buffer.data(), to_read);
+            out.write_exact(buffer.data(), to_read);
+            remaining -= to_read;
+          }
+          return;
+        }
+      }
+      throw std::runtime_error("archive::reader: entry not found");
+    }
+  };
+
+} archive;
+
+} // namespace yw
+
+namespace yw_test {
+
 class archive {
 public:
-  static_assert(std::endian::native == std::endian::little,
-                "archive: only little-endian is supported");
+  static_assert(std::endian::native == std::endian::little, "archive: only little-endian is supported");
   static constexpr std::uint32_t entry_magic = 0x45415759;  // 'YWAE'
   static constexpr std::uint32_t footer_magic = 0x46415759; // 'YWAF'
   static constexpr std::uint32_t max_name_size = 2048;
@@ -78,10 +194,8 @@ public:
       _reader.seek(footer_offset);
       footer_header footer;
       _reader.read_exact(&footer, sizeof(footer));
-      if (footer.magic != footer_magic)
-        throw std::runtime_error("archive::reader: invalid footer magic");
-      if (footer.file_count == 0)
-        throw std::runtime_error("archive::reader: archive contains no entries");
+      if (footer.magic != footer_magic) throw std::runtime_error("archive::reader: invalid footer magic");
+      if (footer.file_count == 0) throw std::runtime_error("archive::reader: archive contains no entries");
 
       // Read entry offsets
       std::vector<std::uint64_t> entry_offsets(footer.file_count);
@@ -94,8 +208,7 @@ public:
         entry_header eh;
         _reader.read_exact(&eh, sizeof(eh));
 
-        if (eh.magic != entry_magic)
-          throw std::runtime_error("archive::reader: invalid entry magic");
+        if (eh.magic != entry_magic) throw std::runtime_error("archive::reader: invalid entry magic");
         if (eh.name_length == 0 || eh.name_length > max_name_size)
           throw std::runtime_error("archive::reader: invalid entry name length");
 
@@ -135,8 +248,7 @@ public:
           std::vector<std::byte> buffer(buffer_size);
           std::uint64_t remaining = e.data_length;
           while (remaining > 0) {
-            const std::size_t to_read =
-                static_cast<std::size_t>(std::min<std::uint64_t>(buffer_size, remaining));
+            const std::size_t to_read = static_cast<std::size_t>(std::min<std::uint64_t>(buffer_size, remaining));
             _reader.read_exact(buffer.data(), to_read);
             out.write_exact(buffer.data(), to_read);
             remaining -= to_read;
@@ -156,10 +268,8 @@ public:
   public:
     writer() noexcept = default;
 
-    explicit writer(const std::filesystem::path& path)
-      : _writer(path, yw::writer::open_mode::update_or_create) {
-      if (!_writer.is_open())
-        throw std::runtime_error("archive::writer: failed to open file for writing");
+    explicit writer(const std::filesystem::path& path) : _writer(path, yw::writer::open_mode::update_or_create) {
+      if (!_writer.is_open()) throw std::runtime_error("archive::writer: failed to open file for writing");
       _writer.seek(0, yw::writer::whence::end);
       _base_offset = _writer.tell();
     }
@@ -226,8 +336,7 @@ public:
         const auto relative_path = std::filesystem::relative(entry.path(), source_dir).string();
         auto reader = yw::reader(entry.path());
         if (!reader.is_open())
-          throw std::runtime_error(
-              "archive::create_archive: failed to open source file for reading");
+          throw std::runtime_error("archive::create_archive: failed to open source file for reading");
         const auto file_size = reader.size();
         std::vector<std::byte> file_data(file_size);
         reader.read_exact(file_data.data(), file_size);
@@ -239,8 +348,7 @@ public:
   }
 
   /// extracts all entries from 'archive_path' into 'output_dir'
-  static void extract_all(const std::filesystem::path& archive_path,
-                          const std::filesystem::path& output_dir) {
+  static void extract_all(const std::filesystem::path& archive_path, const std::filesystem::path& output_dir) {
     reader arch_reader(archive_path);
     if (!arch_reader.is_open())
       throw std::runtime_error("archive::extract_all: failed to open archive file for reading");
@@ -249,11 +357,10 @@ public:
       const auto output_path = output_dir / e.name;
       std::filesystem::create_directories(output_path.parent_path());
       yw::writer writer(output_path, yw::writer::open_mode::truncate);
-      if (!writer.is_open())
-        throw std::runtime_error("archive::extract_all: failed to open output file for writing");
+      if (!writer.is_open()) throw std::runtime_error("archive::extract_all: failed to open output file for writing");
       arch_reader.extract_to(e.name, writer);
     }
   }
 };
 
-} // namespace yw
+} // namespace yw_test

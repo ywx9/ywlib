@@ -3,6 +3,7 @@
 
 #include <filesystem>
 #include <format>
+#include <optional>
 #include <print>
 #include <string>
 #include <string_view>
@@ -75,4 +76,67 @@ inline constexpr struct {
   }
 } print;
 
+//////////////////////////////////////// MARK: format_with_location
+
+class format_with_location {
+  std::source_location _fail_site;
+  std::optional<std::source_location> _call_site{};
+
+  static bool _same_location(const std::source_location& a, const std::source_location& b) noexcept {
+    return a.file_name() == b.file_name() && a.line() == b.line() && a.column() == b.column();
+  }
+
+public:
+  format_with_location(const std::source_location& call_site = std::source_location::current(),
+                       const std::source_location& fail_site = std::source_location::current())
+    : _fail_site(fail_site) {
+    if (!_same_location(call_site, fail_site)) _call_site = call_site;
+  }
+
+  std::string operator()(stringable<char> auto&& msg) const {
+    if (_call_site)
+      return format("{}({}): {}\n <- {}({})\n", _fail_site.file_name(), _fail_site.line(), msg, _call_site->file_name(),
+                    _call_site->line());
+    else return format("{}({}): {}\n", _fail_site.file_name(), _fail_site.line(), msg);
+  }
+};
+
+//////////////////////////////////////// MARK: print_with_location
+
+class print_with_location {
+  std::source_location _fail_site;
+  std::optional<std::source_location> _call_site{};
+  bool _handled{false};
+
+  static bool _same_location(const std::source_location& a, const std::source_location& b) noexcept {
+    return a.file_name() == b.file_name() && a.line() == b.line() && a.column() == b.column();
+  }
+
+public:
+  print_with_location(const std::source_location& call_site = std::source_location::current(),
+                      const std::source_location& fail_site = std::source_location::current())
+    : _fail_site(fail_site) {
+    if (!_same_location(call_site, fail_site)) _call_site = call_site;
+  }
+
+  ~print_with_location() noexcept {
+    try {
+      if (_handled) return;
+      if (_call_site)
+        print_fallback("{}({}): no message attached\n <- {}({})\n", _fail_site.file_name(), _fail_site.line(),
+                       _call_site->file_name(), _call_site->line());
+      else print_fallback("{}({}): no message attached\n", _fail_site.file_name(), _fail_site.line());
+    } catch (...) { print("print_with_location: exception thrown during destruction\n"); }
+  }
+
+  void operator()(stringable<char> auto&& msg) noexcept {
+    _handled = true;
+    try {
+      if (_call_site)
+        print_fallback("{}({}): {}\n <- {}({})\n", _fail_site.file_name(), _fail_site.line(), msg,
+                       _call_site->file_name(), _call_site->line());
+      else print_fallback("{}({}): {}\n", _fail_site.file_name(), _fail_site.line(), msg);
+    } catch (...) { print("print_with_location: exception thrown during operator()\n"); }
+  }
+};
 } // namespace yw

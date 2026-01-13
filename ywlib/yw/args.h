@@ -3,7 +3,10 @@
 #include "yw/unicode.h"
 
 #include <cctype>
+#include <expected>
+#include <format>
 #include <optional>
+#include <source_location>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -24,8 +27,7 @@ namespace yw {
 
 inline class {
   static bool _is_option_token(std::string_view tok) { return tok != "-" && tok.starts_with("-"); }
-  static std::optional<std::pair<std::string_view, std::string_view>>
-  _split_eq(std::string_view tok) {
+  static std::optional<std::pair<std::string_view, std::string_view>> _split_eq(std::string_view tok) {
     if (auto i = tok.find('='); i == std::string_view::npos) return std::nullopt;
     else if (i == 0) return std::nullopt; // ignore "=xxx"
     else return std::pair<std::string_view, std::string_view>{tok.substr(0, i), tok.substr(i + 1)};
@@ -37,8 +39,7 @@ inline class {
       if (!after_double_dash && tok == "--") after_double_dash = true;
       else if (after_double_dash) positionals.emplace_back(tok);
       else if (!_is_option_token(tok)) positionals.emplace_back(tok);
-      else if (auto kv = _split_eq(tok))
-        options[std::string(kv->first)].push_back(std::string(kv->second));
+      else if (auto kv = _split_eq(tok)) options[std::string(kv->first)].push_back(std::string(kv->second));
       else {
         std::string key(tok);
         if (i + 1 < argc) {
@@ -54,10 +55,10 @@ inline class {
       }
     }
   }
-  void _parse_win() {
+  std::expected<void, std::string> _parse_win(const std::source_location& sl) {
     int argc;
     auto argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
-    if (!argv) throw std::runtime_error("CommandLineToArgvW failed");
+    if (!argv) return std::unexpected(std::format("{}({})\n: CommandLineToArgvW failed", sl.file_name(), sl.line()));
     program_name = unicode<char>(std::filesystem::path(argv[0]).stem().native());
     std::vector<std::string> args;
     args.reserve(argc);
@@ -81,9 +82,7 @@ public:
 #endif
   }
 
-  bool has(stringable<char> auto&& key) const {
-    return options.find(std::string(key)) != options.end();
-  }
+  bool has(stringable<char> auto&& key) const { return options.find(std::string(key)) != options.end(); }
 
   std::optional<std::string_view> value(stringable<char> auto&& key) const {
     auto it = options.find(std::string(key));

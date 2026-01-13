@@ -84,6 +84,33 @@ cmake --build build
 
 The executable name is defined at the top of `CMakeLists.txt`.
 
+## Design Philosophy
+
+### Error Handling Design
+
+ywlib adopts a layered approach to error handling in order to balance
+clarity, performance, and usability.
+
+At the core level, functions that may fail at runtime return
+`yw::result<T>` (or `yw::status` for value-less operations).
+This includes failures caused by I/O, external input, resource acquisition,
+or environment-dependent conditions.
+Errors are treated as values and must be handled explicitly.
+
+Functions that are guaranteed not to fail by design return plain values,
+references, or `void`.
+For cases where a value may or may not exist but no detailed error information
+is required, pointer types or `std::optional` are used instead of `result`.
+
+To improve diagnostics, ywlib uses `std::source_location` to record both:
+- the call site where an operation was requested, and
+- the failure site where the error actually occurred.
+
+The call site is captured via a default argument, while the failure site is
+captured at the point of error creation.
+This design provides precise and low-overhead error context without imposing
+runtime cost on successful paths.
+
 ## Notes
 
 - `main.cpp` is intentionally ignored by git.
