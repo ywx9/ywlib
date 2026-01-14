@@ -1,28 +1,40 @@
 #pragma once
 #include "yw/core.h"
-#include "yw/unicode.h"
 
-#include <stacktrace>
-#include <stdexcept>
+#include <source_location>
 
 namespace yw {
 
-class error : public std::exception {
-  std::string _what;
+/// error codes used in ywlib
+enum class errors : uint32_t {
+  success = 0,
+  invalid_argument,
+  operation_failed,
+  not_initialized,
+};
 
-public:
-  std::stacktrace stack;
+/// represents an error condition in ywlib
+struct error {
+  std::string_view message;
+  std::string_view source_file;
+  uint32_t source_line;
+  errors code;
+  error(errors c, std::string_view msg, const std::source_location& loc = std::source_location::current())
+    : message(msg), source_file(loc.file_name()), source_line(static_cast<int>(loc.line())), code(c) {}
+};
 
-  template<stringable<char> S> error(S&& msg, std::stacktrace st = std::stacktrace::current()) : stack(std::move(st)) {
-    std::ostringstream oss;
-    oss << std::string_view(msg) << "\nStack trace:\n" << stack;
-    _what = oss.str();
-  }
+/// makes an error object from an error code
+#define yw_make_error(code) yw::error(code, #code)
 
-  const char* what() const noexcept override {
-    try {
-      return _what.c_str();
-    } catch (...) { return "yw::error: failed to retrieve what() message"; }
+} // namespace yw
+
+namespace std {
+
+template<typename C> struct formatter<yw::error, C> {
+  formatter<basic_string<C>, C> fmt;
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::error& err, auto& ctx) const {
+    return fmt.format(std::format("{}({}): {}", err.source_file, err.source_line, err.message), ctx);
   }
 };
-} // namespace yw
+} // namespace std

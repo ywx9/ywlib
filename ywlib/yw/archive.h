@@ -1,8 +1,7 @@
 #pragma once
 
 #include "yw/core.h"
-#include "yw/reader.h"
-#include "yw/writer.h"
+#include "yw/file.h"
 
 #include <vector>
 
@@ -32,9 +31,9 @@ namespace yw {
 
 inline const struct {
   static_assert(std::endian::native == std::endian::little, "archive: only little-endian is supported");
-  static constexpr std::uint32_t entry_magic = 0x45415759;  // 'YWAE'
-  static constexpr std::uint32_t footer_magic = 0x46415759; // 'YWAF'
-  static constexpr std::uint32_t max_name_size = 2048;
+  const std::uint32_t entry_magic = 0x45415759;  // 'YWAE'
+  const std::uint32_t footer_magic = 0x46415759; // 'YWAF'
+  const std::uint32_t max_name_size = 2048;
 
   struct entry_header {
     std::uint32_t magic;
@@ -56,12 +55,56 @@ inline const struct {
     std::uint64_t data_length;
   };
 
-  class reader {
-    yw::reader _reader;
-    std::vector<entry> _metas;
+  /// archive writer/reader
+  class handler {
+    file_handler _fh;
+    std::vector<entry> _entries;
+    explicit handler(file_handler&& fh) : _fh(std::move(fh)) {}
+
   public:
-    explicit reader(const std::filesystem::path& path) : _reader(path) {
-      const auto file_size = _reader.size();
+    handler() noexcept = default;
+    handler(const handler&) = delete;
+    handler& operator=(const handler&) = delete;
+    handler(handler&&) noexcept = default;
+    handler& operator=(handler&&) noexcept = default;
+    ~handler() = default;
+
+    /// creates and opens an archive handler
+    /// \return opened archive handler or error string
+    static std::expected<handler, error> create(const std::filesystem::path& p, open_mode mode) {
+      if (auto fexp = yw::open(p, mode); !fexp) return std::unexpected(fexp.error());
+      else return handler(std::move(fexp.value()));
+    }
+
+    bool is_open() const noexcept { return _fh.is_open(); }
+    const std::filesystem::path& path() const noexcept { return _fh.path(); }
+    const std::vector<entry>& entries() const noexcept { return _entries; }
+
+    std::expected<std::vector<std::byte>, error> extract(stringable<char> auto&& name) {
+      if (!_fh.is_open()) return std::unexpected("file not open");
+      auto sv = std::string_view(name);
+      for (const auto& e : _entries)
+        if (e.name == sv) {
+          if (!_fh.seek(e.data_offset)) return std::unexpected("failed to seek to data offset");
+          std::vector<std::byte> data(e.data_length);
+          if (auto rex = _fh.read_exact(data.data(), e.data_length); !rex) return std::unexpected(rex.error());
+          return data;
+        }
+      return std::unexpected("entry not found");
+    }
+  };
+
+  class reader {
+    file_handler _fh;
+    std::vector<entry> _metas;
+    explicit reader(const std::filesystem::path& p) {
+      if (auto fexp = yw::open(p, open_mode::read_existing); !fexp)
+        throw std::runtime_error("archive::reader: failed to open file: " + fexp.error());
+    }
+
+  public:
+    static reader create(const std::filesystem::path& path) : _fh(path) {
+      const auto file_size = _fh.file_size();
       if (file_size < sizeof(footer_header))
         throw std::runtime_error("archive::reader: file too small to be a valid archive");
 

@@ -93,11 +93,11 @@ public:
     if (!_same_location(call_site, fail_site)) _call_site = call_site;
   }
 
-  std::string operator()(stringable<char> auto&& msg) const {
+  template<stringable<char> S, typename... Ts> std::string operator()(S&& fmt, Ts&&... as) const {
     if (_call_site)
-      return format("{}({}): {}\n <- {}({})\n", _fail_site.file_name(), _fail_site.line(), msg, _call_site->file_name(),
-                    _call_site->line());
-    else return format("{}({}): {}\n", _fail_site.file_name(), _fail_site.line(), msg);
+      return format("{}({}): {}\n <- {}({})\n", _fail_site.file_name(), _fail_site.line(), format(fmt, as...),
+                    _call_site->file_name(), _call_site->line());
+    else return format("{}({}): {}\n", _fail_site.file_name(), _fail_site.line(), format(fmt, as...));
   }
 };
 
@@ -129,13 +129,13 @@ public:
     } catch (...) { print("print_with_location: exception thrown during destruction\n"); }
   }
 
-  void operator()(stringable<char> auto&& msg) noexcept {
+  template<stringable<char> S, typename... Ts> void operator()(S&& fmt, Ts&&... as) && noexcept {
     _handled = true;
     try {
       if (_call_site)
-        print_fallback("{}({}): {}\n <- {}({})\n", _fail_site.file_name(), _fail_site.line(), msg,
+        print_fallback("{}({}): {}\n <- {}({})\n", _fail_site.file_name(), _fail_site.line(), format(fmt, as...),
                        _call_site->file_name(), _call_site->line());
-      else print_fallback("{}({}): {}\n", _fail_site.file_name(), _fail_site.line(), msg);
+      else print_fallback("{}({}): {}\n", _fail_site.file_name(), _fail_site.line(), format(fmt, as...));
     } catch (...) { print("print_with_location: exception thrown during operator()\n"); }
   }
 };
