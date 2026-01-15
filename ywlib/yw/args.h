@@ -1,20 +1,5 @@
 #pragma once
 #include "yw/core.h"
-#include "yw/unicode.h"
-
-#include <cctype>
-#include <expected>
-#include <format>
-#include <optional>
-#include <source_location>
-#include <string>
-#include <string_view>
-#include <unordered_map>
-#include <vector>
-
-#if defined(_WIN32) || defined(_WIN64)
-#include <windows.h>
-#endif
 
 /**
  * \note
@@ -55,16 +40,21 @@ inline class {
       }
     }
   }
-  std::expected<void, std::string> _parse_win(const std::source_location& sl) {
+  std::expected<void, error_trace> _parse_win(const source& sl) {
+#ifdef _WIN32
     int argc;
     auto argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
-    if (!argv) return std::unexpected(std::format("{}({})\n: CommandLineToArgvW failed", sl.file_name(), sl.line()));
+    if (!argv)
+      return unexpected_error(
+        errors::operation_failed, "args::parse: CommandLineToArgvW failed", int(::GetLastError()));
     program_name = unicode<char>(std::filesystem::path(argv[0]).stem().native());
     std::vector<std::string> args;
     args.reserve(argc);
     for (int i = 0; i < argc; ++i) args.emplace_back(unicode<char>(std::wstring_view(argv[i])));
     ::LocalFree(argv);
     _parse(argc, args.data());
+#endif
+    return {};
   }
 
 public:
@@ -73,31 +63,30 @@ public:
   std::vector<std::string> positionals{};
 
   /// parses command line arguments
-  void parse(int argc, char** argv) {
+  std::expected<void, error_trace> parse(int argc, char** argv) {
 #if defined(_WIN32) || defined(_WIN64)
-    _parse_win();
+    return _parse_win();
 #else
     program_name = std::filesystem::path(argv[0]).stem().native();
     _parse(argc, argv);
+    return {};
 #endif
   }
 
-  bool has(stringable<char> auto&& key) const { return options.find(std::string(key)) != options.end(); }
+  bool has(stringable<char> auto&& key) const { return options.find(std::string_view(key)) != options.end(); }
 
   std::optional<std::string_view> value(stringable<char> auto&& key) const {
-    auto it = options.find(std::string(key));
-    if (it == options.end() || it->second.empty()) return std::nullopt;
-    return std::string_view(it->second.front());
+    if (auto it = options.find(std::string_view(key)); it == options.end() || it->second.empty()) return std::nullopt;
+    else return std::string_view(it->second.front());
   }
 
   std::vector<std::string_view> values(stringable<char> auto&& key) const {
     std::vector<std::string_view> out;
-    auto it = options.find(std::string(key));
+    auto it = options.find(std::string_view(key));
     if (it == options.end()) return out;
     out.reserve(it->second.size());
     for (auto& s : it->second) out.emplace_back(s);
     return out;
   }
 } args;
-
 } // namespace yw

@@ -26,11 +26,16 @@ SpaceInEmptyBlock: false
 ConstructorInitializerIndentWidth: 2
 ContinuationIndentWidth: 2
 
+AlignAfterOpenBracket: false
+
 AllowShortBlocksOnASingleLine: Always
 AllowShortCaseLabelsOnASingleLine: true
 AllowShortFunctionsOnASingleLine: All
 AllowShortIfStatementsOnASingleLine: AllIfsAndElse
 AllowShortLoopsOnASingleLine: true
+
+BreakAfterOpenBracketBracedList: true
+BreakAfterOpenBracketFunction: true
 
 # ------------------------------------------------------------
 # ポインタ / 参照
@@ -47,4 +52,4 @@ SpaceAfterTemplateKeyword: false
 SplitEmptyFunction: true
 SplitEmptyRecord: true
 
-RequiresClausePosition: WithPreceding
+RequiresClausePosition: SingleLine

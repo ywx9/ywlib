@@ -1,90 +1,88 @@
 #pragma once
-#include <array>
-#include <ranges>
-#include <stdexcept>
-#include <string>
-#include <string_view>
+#include "yw/core.h"
 
 namespace yw {
-
 namespace internal {
-static constexpr char encode_table[] = {
-    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', //
-    'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f', //
-    'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', //
-    'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/'};
-static constexpr unsigned char decode_table[] = {                   //
-    99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, //
-    99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, //
-    99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 62, 99, 99, 99, 63, //
-    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 99, 99, 99, 98, 99, 99, //
-    99, +0, +1, +2, +3, +4, +5, +6, +7, +8, +9, 10, 11, 12, 13, 14, //
-    15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 99, 99, 99, 99, 99, //
-    99, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
-    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 99, 99, 99, 99, 99};
+static constexpr char _b64_encode_table[] = {
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', //
+  'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f', //
+  'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', //
+  'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/'};
+static constexpr unsigned char _b64_decode_table[] = {            //
+  99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, //
+  99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, //
+  99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 62, 99, 99, 99, 63, //
+  52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 99, 99, 99, 98, 99, 99, //
+  99, +0, +1, +2, +3, +4, +5, +6, +7, +8, +9, 10, 11, 12, 13, 14, //
+  15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 99, 99, 99, 99, 99, //
+  99, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 99, 99,
+  99, 99, 99};
+inline constexpr std::string _b64_encode(const void* data, size_t size) {
+  const auto input_bits = size * 8;
+  const auto blocks = (input_bits + 5) / 6;
+  const auto output_bytes = (blocks + 3) / 4 * 4;
+  std::string result(output_bytes, '=');
+  auto it = reinterpret_cast<const unsigned char*>(data);
+  const auto end = it + size;
+  auto out = result.data();
+  for (; it + 3 <= end; it += 3) {
+    *out++ = _b64_encode_table[*it >> 2];
+    *out++ = _b64_encode_table[((*it & 3) << 4) | (it[1] >> 4)];
+    *out++ = _b64_encode_table[((it[1] & 15) << 2) | (it[2] >> 6)];
+    *out++ = _b64_encode_table[it[2] & 63];
+  }
+  if (it + 1 == end) {
+    *out++ = _b64_encode_table[*it >> 2];
+    *out++ = _b64_encode_table[(*it & 3) << 4];
+  } else if (it + 2 == end) {
+    *out++ = _b64_encode_table[*it >> 2];
+    *out++ = _b64_encode_table[(*it & 3) << 4 | (it[1] >> 4)];
+    *out++ = _b64_encode_table[(it[1] & 15) << 2];
+  }
+  return result;
+}
+template<contiguous_range Out> std::expected<Out, error_trace> _b64_decode(stringable<char> auto&& encoded) {
+  std::string_view sv(encoded);
+  using C = iter_value_t<Out>;
+  const size_t m = sv.size();
+  if (m % 4 != 0) return unexpected_error(errors::invalid_argument, "base64::decode: invalid length");
+  if (m == 0) return {};
+  Out result;
+  result.reserve((m * 3) / 4);
+  const char* it = sv.data();
+  for (const char* const end = it + m; it < end; it += 4) {
+    const auto a = internal::_b64_decode_table[*it];
+    if (a >= 64) return unexpected_error(errors::invalid_argument, "base64::decode: invalid character");
+    const auto b = internal::_b64_decode_table[*(it + 1)];
+    if (b >= 64) return unexpected_error(errors::invalid_argument, "base64::decode: invalid character");
+    result.emplace_back(C((a << 2) | (b >> 4)));
+    const auto c = internal::_b64_decode_table[*(it + 2)];
+    const auto d = internal::_b64_decode_table[*(it + 3)];
+    if (c < 64) {
+      result.emplace_back(C((b << 4) | (c >> 2)));
+      if (d >= 64) {
+        if (d == 98 && it + 4 == end) break;
+        if (d != 98) return unexpected_error(errors::invalid_argument, "base64::decode: invalid padding");
+        else return unexpected_error(errors::invalid_argument, "base64::decode: invalid padding");
+      } else result.emplace_back(C((c << 6) | d));
+    } else if (c == 98 && d == 98 && it + 4 == end) break;
+    else if (c == 98) return unexpected_error(errors::invalid_argument, "base64::decode: invalid padding");
+    else return unexpected_error(errors::invalid_argument, "base64::decode: invalid character");
+  }
+  return result;
+}
 } // namespace internal
 
 inline const struct {
-  static constexpr std::string encode(const void* Data, size_t Size) {
-    const auto size = Size;
-    const auto input_bits = size * 8;
-    const auto blocks = (input_bits + 5) / 6;
-    const auto output_bytes = (blocks + 3) / 4 * 4;
-    std::string result;
-    result.resize(output_bytes, '=');
-    const char* const input = reinterpret_cast<const char*>(Data);
-    size_t i{};
-    auto out = result.data();
-    for (; i + 3 <= size; i += 3) {
-      *out++ = internal::encode_table[input[i] >> 2];
-      *out++ = internal::encode_table[((input[i] & 3) << 4) | (input[i + 1] >> 4)];
-      *out++ = internal::encode_table[((input[i + 1] & 15) << 2) | (input[i + 2] >> 6)];
-      *out++ = internal::encode_table[input[i + 2] & 63];
-    }
-    if (i + 1 == size) {
-      *out++ = internal::encode_table[input[i] >> 2];
-      *out++ = internal::encode_table[(input[i] & 3) << 4];
-    } else if (i + 2 == size) {
-      *out++ = internal::encode_table[input[i] >> 2];
-      *out++ = internal::encode_table[(input[i] & 3) << 4 | (input[i + 1] >> 4)];
-      *out++ = internal::encode_table[(input[i + 1] & 15) << 2];
-    }
-    return result;
+  static constexpr std::string encode(const void* Data, size_t Size) { return internal::_b64_encode(Data, Size); }
+  template<contiguous_range R> static constexpr std::string encode(const R& Data) {
+    return internal::_b64_encode(std::ranges::data(Data), std::ranges::size(Data));
   }
-
-  template<std::ranges::contiguous_range R> static constexpr std::string encode(const R& Data) {
-    return encode(std::data(Data), std::size(Data));
+  static constexpr std::expected<std::vector<std::byte>, error_trace> decode(stringable<char> auto&& encoded) {
+    return internal::_b64_decode<std::vector<std::byte>>(encoded);
   }
-
-  static constexpr std::string decode(stringable<char> auto&& Base64) {
-    std::string_view sv(Base64);
-    const size_t m = sv.size(), n = (m * 3) / 4;
-    if (m % 4 != 0) throw std::runtime_error("invalid base64 string length");
-    if (m == 0) return {};
-    std::string result;
-    result.reserve(n);
-    const char* in = sv.data();
-    for (const char* const end = in + m; in < end; in += 4) {
-      const auto a = internal::decode_table[*in];
-      if (a >= 64) throw std::runtime_error("invalid base64 character");
-      const auto b = internal::decode_table[*(in + 1)];
-      if (b >= 64) throw std::runtime_error("invalid base64 character");
-      result.push_back((a << 2) | (b >> 4));
-      const auto c = internal::decode_table[*(in + 2)];
-      const auto d = internal::decode_table[*(in + 3)];
-      if (c < 64) {
-        result.push_back((b << 4) | (c >> 2));
-        if (d >= 64) {
-          if (d == 98 && in + 4 == end) break;
-          if (d != 98) throw std::runtime_error("invalid base64 character");
-          else throw std::runtime_error("invalid base64 padding");
-        } else result.push_back((c << 6) | d);
-      } else if (c == 98 && d == 98 && in + 4 == end) break;
-      else if (c == 98) throw std::runtime_error("invalid base64 padding");
-      else throw std::runtime_error("invalid base64 character");
-    }
-    return result;
+  static constexpr std::expected<std::string, error_trace> decode_as_string(stringable<char> auto&& encoded) {
+    return internal::_b64_decode<std::string>(encoded);
   }
 } base64{};
-
 } // namespace yw

@@ -14,69 +14,6 @@
 
 namespace yw {
 
-//////////////////////////////////////// MARK: null_terminated
-
-template<char_type C> class null_terminated {
-  enum {
-    _unknown,
-    _has_string,
-    _has_string_view,
-  } _flag{};
-  union {
-    std::unique_ptr<std::basic_string<C>> _string_ptr;
-    std::basic_string_view<C> _string_view;
-  };
-  template<typename S> static constexpr bool _is_array = is_bounded_array<remove_ref<S>> && same_as<iter_value_t<S>, C>;
-  template<typename S> static constexpr bool _mismatch_encoding = stringable<S> && different_from<iter_value_t<S>, C>;
-
-public:
-  ~null_terminated() {
-    if (_flag == _has_string) _string_ptr.reset();
-  }
-  null_terminated() noexcept : _flag{_has_string_view}, _string_view{} {}
-  null_terminated(null_terminated&& nt) noexcept : _flag(std::exchange(nt._flag, _has_string_view)) {
-    if (_flag == _has_string) _string_ptr = std::move(nt._string_ptr);
-    else if (_flag == _has_string_view) _string_view = std::move(nt._string_view);
-    nt._string_view = {};
-  }
-  null_terminated& operator=(null_terminated&& nt) noexcept {
-    if (_flag == _has_string) _string_ptr.reset();
-    _flag = std::exchange(nt._flag, _has_string_view);
-    if (_flag == _has_string) _string_ptr = std::move(nt._string_ptr);
-    else _string_view = std::move(nt._string_view);
-    nt._string_view = {};
-    return *this;
-  }
-
-  null_terminated(const std::basic_string<C>& str) : _flag{_has_string_view}, _string_view{str} {}
-  null_terminated(std::basic_string<C>&& str)
-    : _flag{_has_string}, _string_ptr{std::make_unique<std::basic_string<C>>(std::move(str))} {}
-  null_terminated(const std::basic_string<C>&& str)
-    : _flag{_has_string}, _string_ptr{std::make_unique<std::basic_string<C>>(std::move(str))} {}
-  template<typename S> requires _is_array<S>
-  null_terminated(const S& a) : _flag{_has_string_view}, _string_view{a} {}
-  template<typename S> requires _mismatch_encoding<S>
-  null_terminated(S&& s) : _flag{_has_string}, _string_ptr{} {
-    if constexpr (different_from<iter_value_t<S>, C>)
-      _string_ptr = std::make_unique<std::basic_string<C>>(unicode<C>(s));
-    else _string_ptr = std::make_unique<std::basic_string<C>>(std::basic_string<C>(std::basic_string_view<C>(s)));
-  }
-
-  operator std::basic_string_view<C>() const noexcept {
-    if (_flag == _has_string) return std::basic_string_view<C>(*_string_ptr);
-    else return _string_view;
-  }
-
-  bool empty() const noexcept { return _flag == _has_string ? _string_ptr->empty() : _string_view.empty(); }
-  size_t size() const noexcept { return _flag == _has_string ? _string_ptr->size() : _string_view.size(); }
-  const C* data() const noexcept { return _flag == _has_string ? _string_ptr->data() : _string_view.data(); }
-  const C* begin() const noexcept { return data(); }
-  const C* end() const noexcept {
-    if (_flag == _has_string) return _string_ptr->data() + _string_ptr->size();
-    else return _string_view.data() + _string_view.size();
-  }
-};
-
 //////////////////////////////////////// MARK: ok/yes
 
 inline bool ok(const null_terminated<wchar_t>& Text, const null_terminated<wchar_t>& Title = L"Confirmation") {

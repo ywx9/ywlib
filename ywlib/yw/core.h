@@ -2,12 +2,20 @@
 #include <charconv>
 #include <compare>
 #include <concepts>
+#include <expected>
+#include <filesystem>
 #include <format>
 #include <functional>
 #include <iterator>
+#include <memory>
 #include <print>
 #include <ranges>
+#include <source_location>
 #include <string_view>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace yw {
 
@@ -100,8 +108,7 @@ template<typename T> concept is_class = std::is_class_v<T>;
 template<typename T> concept is_union = std::is_union_v<T>;
 template<typename T> concept is_object = std::is_object_v<T>;
 
-template<auto V, typename T = decltype(V)> requires convertible_to<decltype(V), T>
-struct constant {
+template<auto V, typename T = decltype(V)> requires convertible_to<decltype(V), T> struct constant {
   using type = T;
   static constexpr type value{V};
   consteval operator type() const noexcept { return value; }
@@ -158,7 +165,7 @@ template<typename T> concept is_none = same_as<remove_cv<T>, none>;
 //////////////////////////////////////// MARK: common_type
 
 template<typename... Ts> using common_type = select_type<requires { typename std::common_reference<Ts...>::type; },
-                                                         std::common_reference<Ts...>, std::type_identity<none>>::type;
+  std::common_reference<Ts...>, std::type_identity<none>>::type;
 
 template<typename... Ts> concept common_with = !is_none<common_type<Ts...>>;
 
@@ -169,8 +176,7 @@ template<typename F, typename... As> concept nt_invocable =
   invocable<F, As...> && std::is_nothrow_invocable_v<F, As...>;
 
 inline constexpr auto invoke = []<typename F, typename... As>(F&& f, As&&... as) //
-  noexcept(nt_invocable<F, As...>) -> decltype(auto) requires invocable<F, As...>
-{
+  noexcept(nt_invocable<F, As...>) -> decltype(auto) requires invocable<F, As...> {
   if constexpr (!is_void<std::invoke_result_t<F, As...>>)
     return std::invoke(static_cast<F&&>(f), static_cast<As&&>(as)...);
   else return std::invoke(static_cast<F&&>(f), static_cast<As&&>(as)...), none{};
@@ -321,8 +327,7 @@ template<size_t I, typename T> inline constexpr int get_strategy = []() -> int {
 
 template<size_t I> inline constexpr auto get =                           //
   []<typename T>(T&& a) noexcept(bool(internal::get_strategy<I, T> & 4)) //
-  -> decltype(auto) requires(internal::get_strategy<I, T> != 0)
-{
+  -> decltype(auto) requires(internal::get_strategy<I, T> != 0) {
   using std::get;
   if constexpr ((internal::get_strategy<I, T> & 3) == 1) return a[I];
   else if constexpr ((internal::get_strategy<I, T> & 3) == 2) return get<I>(static_cast<T&&>(a));
@@ -331,8 +336,7 @@ template<size_t I> inline constexpr auto get =                           //
 
 template<typename T, size_t I> concept gettable = requires { yw::get<I>(std::declval<T>()); };
 template<typename T, size_t I> concept nt_gettable = gettable<T, I> && noexcept(yw::get<I>(std::declval<T>()));
-template<typename T, size_t I> requires gettable<T, I>
-using element_t = decltype(get<I>(std::declval<T>()));
+template<typename T, size_t I> requires gettable<T, I> using element_t = decltype(get<I>(std::declval<T>()));
 
 } // namespace yw
 
@@ -354,3 +358,290 @@ template<typename C> struct formatter<yw::none, C> {
   }
 };
 } // namespace std
+
+//////////////////////////////////////// MARK: unicode
+
+namespace yw {
+template<char_type C> inline constexpr auto unicode = []<stringable S>(S&& s) -> std::basic_string<C> {
+  using From = iter_value_t<S>;
+  if constexpr (same_as<S&&, std::basic_string<C>&&>) return std::move(s);
+  if constexpr (same_as<From, C>) return std::basic_string<C>(std::basic_string_view<C>(s));
+  const auto sv_original = std::basic_string_view<From>(s);
+  if constexpr (sizeof(From) == sizeof(C))
+    return std::basic_string<C>(std::bit_cast<std::basic_string_view<C>>(sv_original));
+  using T = select_type<sizeof(From) / 2, char8_t, char16_t, char32_t>;
+  const auto sv = std::bit_cast<std::basic_string_view<T>>(sv_original);
+  constexpr auto scale = select_value<yw::max(int(sizeof(T)) - int(sizeof(C)), 0), 1, 3, 2, 4>;
+  auto r = std::basic_string<C>(sv.size() * scale, C{});
+  auto out = r.data();
+  for (auto s = sv.data(), end = s + sv.size(); s < end;) {
+    char32_t uc;
+    if constexpr (same_as<T, char8_t>) {
+      const auto c = char32_t(*s);
+      const auto i = unsigned(c >= 0xc0) + unsigned(c >= 0xe0) + unsigned(c >= 0xf0);
+      const auto j = i + 1 + unsigned(i != 0);
+      uc = char32_t(-int(i == 3) & s[i < 3 ? i : 3] & 0x3f);
+      uc |= char32_t((-int(i > 1) & s[i < 2 ? i : 2] & 0x3f)) << (6 * (i > 1 ? i - 2 : 0));
+      uc |= char32_t((-int(i > 0) & s[i < 1 ? 1 : 1] & 0x3f)) << (6 * (i > 0 ? i - 1 : 0));
+      uc |= char32_t(char8_t(c << j) >> j) << (6 * i);
+      s += i + 1;
+    } else if constexpr (same_as<T, char16_t>) {
+      const auto c = char32_t(*s);
+      const bool b = (c & 0xff00) == 0xd800;
+      uc = c ^ (-int(b) & (c ^ (0x10000 | ((c - 0xd800) << 10 | char32_t(s[b] - 0xdc00)))));
+      s += 1 + b;
+    } else uc = char32_t(*s++);
+    if constexpr (sizeof(C) == 1) {
+      const auto i = unsigned(uc >= 0x80) + unsigned(uc >= 0x800) + unsigned(uc >= 0x10000);
+      out[i < 3 ? i : 3] = C(0x80 | (uc & 0x3f));
+      out[i < 2 ? i : 2] = C(0x80 | ((uc >> (6 * (i > 1 ? i - 2 : 0))) & 0x3f));
+      out[i < 1 ? i : 1] = C(0x80 | ((uc >> (6 * (i > 0 ? i - 1 : 0))) & 0x3f));
+      *out = C(uint32_t(((i + (i >> 1)) << 4) + (-i & 0xb0)) | ((uc >> (6 * i)) & (0x3f >> i | -int(i == 0))));
+      out += i + 1;
+    } else if constexpr (sizeof(C) == 2) {
+      const bool b = uc >= 0x10000;
+      out[b] = C(0xdc00 | (uc & 0x3ff));
+      *out = C(uc ^ ((uc ^ (0xd800 | (uc >> 10))) & -int(b)));
+      out += 1 + b;
+    } else *out++ = C(uc);
+  }
+  r.resize(out - r.data());
+  return r;
+};
+} // namespace yw
+
+//////////////////////////////////////// MARK: source
+
+namespace yw {
+struct source {
+  std::string_view file;
+  uint32_t line, column;
+  source(const std::source_location& loc = std::source_location::current()) noexcept
+    : file(loc.file_name()), line(loc.line()), column(loc.column()) {}
+  friend constexpr bool operator==(const source& a, const source& b) noexcept {
+    return a.file == b.file && a.line == b.line && a.column == b.column;
+  }
+};
+} // namespace yw
+namespace std {
+template<typename C> struct formatter<yw::source, C> {
+  formatter<basic_string<C>, C> fmt;
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::source& src, auto& ctx) const {
+    auto s = std::format("{}({},{})", src.file, src.line, src.column);
+    return fmt.format(yw::unicode<C>(move(s)), ctx);
+  }
+};
+} // namespace std
+
+//////////////////////////////////////// MARK: null_terminated
+
+namespace yw {
+template<char_type C> class null_terminated {
+  enum { _unknown, _has_string, _has_string_view } _flag{};
+  union {
+    std::unique_ptr<std::basic_string<C>> _ptr;
+    std::basic_string_view<C> _view;
+  };
+  template<typename S> static constexpr bool _is_array = is_bounded_array<remove_ref<S>> && same_as<iter_value_t<S>, C>;
+
+public:
+  ~null_terminated() {
+    if (_flag == _has_string) _ptr.reset();
+  }
+  null_terminated() noexcept : _flag{_has_string_view}, _view{} {}
+  null_terminated(const null_terminated& nt) : _flag(nt._flag) {
+    if (_flag == _has_string) _ptr = std::make_unique<std::basic_string<C>>(*nt._ptr);
+    else if (_flag == _has_string_view) _view = nt._view;
+  }
+  null_terminated(null_terminated&& nt) noexcept : _flag(std::exchange(nt._flag, _has_string_view)) {
+    if (_flag == _has_string) _ptr = std::move(nt._ptr);
+    else if (_flag == _has_string_view) _view = std::move(nt._view);
+    nt._view = {};
+  }
+  null_terminated& operator=(const null_terminated& nt) {
+    if (_flag == _has_string) _ptr.reset();
+    if ((_flag = nt._flag) == _has_string) _ptr = std::make_unique<std::basic_string<C>>(*nt._ptr);
+    else _view = nt._view;
+    return *this;
+  }
+  null_terminated& operator=(null_terminated&& nt) noexcept {
+    if (this == &nt) return *this;
+    if (_flag == _has_string) _ptr.reset();
+    _flag = std::exchange(nt._flag, _has_string_view);
+    if (_flag == _has_string) _ptr = std::move(nt._ptr);
+    else _view = std::move(nt._view);
+    nt._view = {};
+    return *this;
+  }
+  null_terminated(const std::basic_string<C>& str) : _flag{_has_string_view}, _view{str} {}
+  null_terminated(std::basic_string<C>&& str)
+    : _flag{_has_string}, _ptr{std::make_unique<std::basic_string<C>>(std::move(str))} {}
+  null_terminated(const std::basic_string<C>&& str)
+    : _flag{_has_string}, _ptr{std::make_unique<std::basic_string<C>>(std::move(str))} {}
+  template<typename S> requires _is_array<S> null_terminated(const S& a) : _flag{_has_string_view}, _view{a} {}
+  template<stringable S> requires(!_is_array<S>) null_terminated(S&& s) : _flag{_has_string}, _ptr{} {
+    if constexpr (different_from<iter_value_t<S>, C>) _ptr = std::make_unique<std::basic_string<C>>(unicode<C>(s));
+    else _ptr = std::make_unique<std::basic_string<C>>(std::basic_string<C>(std::basic_string_view<C>(s)));
+  }
+
+  operator std::basic_string_view<C>() const noexcept {
+    return _flag == _has_string ? std::basic_string_view<C>(*_ptr) : _view;
+  }
+
+  bool empty() const noexcept { return _flag == _has_string ? _ptr->empty() : _view.empty(); }
+  size_t size() const noexcept { return _flag == _has_string ? _ptr->size() : _view.size(); }
+  const C* data() const noexcept { return _flag == _has_string ? _ptr->data() : _view.data(); }
+  const C* begin() const noexcept { return data(); }
+  const C* end() const noexcept {
+    return _flag == _has_string ? _ptr->data() + _ptr->size() : _view.data() + _view.size();
+  }
+};
+} // namespace yw
+namespace std {
+template<typename C> struct formatter<yw::null_terminated<C>, C> {
+  formatter<basic_string_view<C>, C> fmt;
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::null_terminated<C>& str, auto& ctx) const {
+    return fmt.format(static_cast<basic_string_view<C>>(str), ctx);
+  }
+};
+} // namespace std
+
+//////////////////////////////////////// MARK: error
+
+namespace yw {
+enum class errors : uint32_t {
+  success = 0,
+  invalid_argument,
+  operation_failed,
+  not_initialized,
+};
+struct error {
+  null_terminated<char> message;
+  errors code;
+  int system_code;
+  explicit error(errors e, null_terminated<char> msg, int sys_code = 0) noexcept
+    : message(std::move(msg)), code(e), system_code(sys_code) {}
+};
+struct error_trace {
+  yw::error error;
+  std::vector<source> frames;
+  error_trace(yw::error err, const source& src = {}) : error(std::move(err)) {
+    frames.reserve(8);
+    frames.push_back(src);
+  }
+  error_trace& push(const source& src = {}) & {
+    frames.push_back(src);
+    return *this;
+  }
+};
+inline std::unexpected<error_trace> unexpected_error(
+  errors e, null_terminated<char> msg, int sys_code = 0, const source& src = {}) {
+  return std::unexpected<error_trace>(error_trace(yw::error(e, std::move(msg), sys_code), src));
+}
+inline std::unexpected<error_trace> unexpected_error(error_trace& e, const source& src = {}) {
+  return std::unexpected<error_trace>(std::move(e.push(src)));
+}
+inline std::unexpected<error_trace> unexpected_error(std::unexpected<error_trace>& e, const source& src = {}) {
+  e.error().push(src);
+  return std::move(e);
+}
+} // namespace yw
+namespace std {
+template<typename C> struct formatter<yw::error, C> {
+  formatter<basic_string<C>, C> fmt;
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::error& err, auto& ctx) const {
+    std::string s;
+    if (err.system_code == 0) s = std::format("{}", err.message);
+    else s = std::format("{} (code={})", err.message, err.system_code);
+    return fmt.format(yw::unicode<C>(move(s)), ctx);
+  }
+};
+template<typename C> struct formatter<yw::error_trace, C> {
+  formatter<basic_string<C>, C> fmt;
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::error_trace& err, auto& ctx) const {
+    std::string s = std::format("{}", err.error.message);
+    for (const auto& src : err.frames) s += std::format("\n  at {}({},{})", src.file, src.line, src.column);
+    return fmt.format(yw::unicode<C>(move(s)), ctx);
+  }
+};
+} // namespace std
+
+//////////////////////////////////////// MARK: format
+
+namespace yw {
+inline constexpr struct {
+  template<typename C, typename T> static std::basic_string<C> as(const T& a) {
+    if constexpr (same_as<T, std::filesystem::path>) return unicode<C>(a.native());
+    else if constexpr (same_as<T, char>) return std::format("{}", a);
+    else if constexpr (same_as<T, wchar_t>) return std::format(L"{}", a);
+    else return unicode<C>(std::format("{}", a));
+  }
+  template<stringable S, typename... Ts> static std::basic_string<iter_value_t<S>> operator()(S&& fmt, Ts&&... as) {
+    using C = iter_value_t<S>;
+    if constexpr (included_in<std::filesystem::path, remove_cvref<Ts>...>) {
+      constexpr auto _to_string = []<typename T>(T&& a) -> decltype(auto) {
+        if constexpr (same_as<T, std::filesystem::path>) return unicode<C>(a.native());
+        else return static_cast<T&&>(a);
+      };
+      return operator()(static_cast<S&&>(fmt), _to_string(static_cast<Ts&&>(as))...);
+    } else if constexpr (same_as<C, char>) return std::vformat(std::string_view(fmt), std::make_format_args(as...));
+    else if constexpr (same_as<C, wchar_t>) return std::vformat(std::wstring_view(fmt), std::make_wformat_args(as...));
+    else if constexpr (same_as<C, char8_t>) {
+      auto s = std::vformat(bitcast<std::string_view>(std::basic_string_view<C>(fmt)), std::make_format_args(as...));
+      return string<C>(reinterpret_cast<std::basic_string<C>&&>(mv(s)));
+    } else if constexpr (same_as<C, char16_t>) {
+      auto s = std::vformat(bitcast<std::wstring_view>(std::basic_string_view<C>(fmt)), std::make_wformat_args(as...));
+      return string<C>(reinterpret_cast<std::basic_string<C>&&>(mv(s)));
+    } else if constexpr (same_as<C, char32_t>) {
+      const auto f{unicode<char>(fmt)};
+      return unicode<C>(std::vformat(f, std::make_format_args(as...)));
+    } else throw "yw::format: unsupported character type";
+  }
+} format;
+} // namespace yw
+
+//////////////////////////////////////// MARK: print
+
+namespace yw {
+inline constexpr struct {
+  template<typename S, typename... Ts> static void operator()(S&& fmt, Ts&&... as) {
+#ifdef _WIN32
+    if constexpr (sizeof...(Ts) == 0) {
+      const auto s = format.as<wchar_t>(fmt);
+      ::WriteConsoleW(::GetStdHandle(STD_OUTPUT_HANDLE), s.data(), unsigned(s.size()), nullptr, nullptr);
+    } else {
+      const auto s = unicode<wchar_t>(format(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...));
+      ::WriteConsoleW(::GetStdHandle(STD_OUTPUT_HANDLE), s.data(), unsigned(s.size()), nullptr, nullptr);
+    }
+#else
+    if constexpr (sizeof...(Ts) == 0) {
+      const auto s = format.as<char>(fmt);
+      std::fputs((const char*)s.data(), stdout);
+    } else {
+      const auto s = unicode<char>(format(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...));
+      std::fputs((const char*)s.data(), stdout);
+    }
+#endif
+  }
+} print_inline;
+
+inline constexpr struct {
+  static void operator()() {
+#ifdef _WIN32
+    ::WriteConsoleW(::GetStdHandle(STD_OUTPUT_HANDLE), L"\n", 1, nullptr, nullptr);
+#else
+    std::fputc('\n', stdout);
+#endif
+  }
+  template<typename S, typename... Ts> static void operator()(S&& fmt, Ts&&... as) {
+    print_inline(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
+    operator()();
+  }
+} print;
+}
+
+//////////////////////////////////////// MARK:
