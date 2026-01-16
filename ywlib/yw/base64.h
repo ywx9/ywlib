@@ -73,7 +73,7 @@ template<contiguous_range Out> std::expected<Out, error_trace> _b64_decode(strin
 }
 } // namespace internal
 
-inline const struct {
+struct _base64 {
   static constexpr std::string encode(const void* Data, size_t Size) { return internal::_b64_encode(Data, Size); }
   template<contiguous_range R> static constexpr std::string encode(const R& Data) {
     return internal::_b64_encode(std::ranges::data(Data), std::ranges::size(Data));
@@ -84,5 +84,7 @@ inline const struct {
   static constexpr std::expected<std::string, error_trace> decode_as_string(stringable<char> auto&& encoded) {
     return internal::_b64_decode<std::string>(encoded);
   }
-} base64{};
+};
+
+inline constexpr _base64 base64{};
 } // namespace yw

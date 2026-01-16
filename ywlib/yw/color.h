@@ -9,82 +9,71 @@ namespace yw {
 //////////////////////////////////////// MARK: rgba
 
 struct rgba {
-  std::uint8_t r{}, g{}, b{}, a{255};
+  uint8_t r{};
+  uint8_t g{};
+  uint8_t b{};
+  uint8_t a{255};
   constexpr rgba() noexcept = default;
-  constexpr rgba(std::integral auto red, std::integral auto green, std::integral auto blue,
-                 std::integral auto alpha) noexcept
-    : r(static_cast<std::uint8_t>(red)), g(static_cast<std::uint8_t>(green)),
-      b(static_cast<std::uint8_t>(blue)), a(static_cast<std::uint8_t>(alpha)) {}
-  constexpr rgba(std::integral auto red, std::integral auto green, std::integral auto blue) noexcept
-    : rgba(red, green, blue, 255) {}
-  constexpr rgba(std::integral auto rrggbb, std::integral auto alpha) noexcept
-    : r(static_cast<std::uint8_t>((rrggbb >> 16) & 0xFF)),
-      g(static_cast<std::uint8_t>((rrggbb >> 8) & 0xFF)),
-      b(static_cast<std::uint8_t>(rrggbb & 0xFF)), a(static_cast<std::uint8_t>(alpha)) {}
-  constexpr rgba(std::integral auto rrggbb) noexcept : rgba(rrggbb, 255) {}
+  constexpr rgba(integral auto red, integral auto green, integral auto blue, integral auto alpha) noexcept
+    : r(static_cast<uint8_t>(red)), g(static_cast<uint8_t>(green)), b(static_cast<uint8_t>(blue)),
+      a(static_cast<uint8_t>(alpha)) {}
+  constexpr rgba(integral auto red, integral auto green, integral auto blue) noexcept : rgba(red, green, blue, 255) {}
+  constexpr rgba(integral auto rrggbb, integral auto alpha) noexcept
+    : r(static_cast<uint8_t>((rrggbb >> 16) & 0xFF)), g(static_cast<uint8_t>((rrggbb >> 8) & 0xFF)),
+      b(static_cast<uint8_t>(rrggbb & 0xFF)), a(static_cast<uint8_t>(alpha)) {}
+  constexpr rgba(integral auto rrggbb) noexcept : rgba(rrggbb, 255) {}
 
-  template<uint64_t I> requires(I < 4)
-  constexpr float& get() noexcept {
-    return select<I>(r, g, b, a);
-  }
-  template<uint64_t I> requires(I < 4)
-  constexpr const float& get() const noexcept {
-    return select<I>(r, g, b, a);
-  }
+  template<uint64_t I> requires(I < 4) constexpr float& get() noexcept { return select<I>(r, g, b, a); }
+  template<uint64_t I> requires(I < 4) constexpr const float& get() const noexcept { return select<I>(r, g, b, a); }
 };
 static_assert(sizeof(rgba) == 4);
 
 //////////////////////////////////////// MARK: bgra
 
 struct bgra {
-  std::uint8_t b{}, g{}, r{}, a{255};
+  uint8_t b{};
+  uint8_t g{};
+  uint8_t r{};
+  uint8_t a{255};
   constexpr bgra() noexcept = default;
-  constexpr bgra(std::integral auto blue, std::integral auto green, std::integral auto red,
-                 std::integral auto alpha) noexcept
-    : b(static_cast<std::uint8_t>(blue)), g(static_cast<std::uint8_t>(green)),
-      r(static_cast<std::uint8_t>(red)), a(static_cast<std::uint8_t>(alpha)) {}
-  constexpr bgra(std::integral auto blue, std::integral auto green, std::integral auto red) noexcept
-    : bgra(blue, green, red, 255) {}
-  constexpr bgra(std::integral auto rrggbb, std::integral auto alpha) noexcept
-    : b(static_cast<std::uint8_t>(rrggbb & 0xFF)),
-      g(static_cast<std::uint8_t>((rrggbb >> 8) & 0xFF)),
-      r(static_cast<std::uint8_t>((rrggbb >> 16) & 0xFF)), a(static_cast<std::uint8_t>(alpha)) {}
-  constexpr bgra(std::integral auto rrggbb) noexcept : bgra(rrggbb, 255) {}
+  constexpr bgra(integral auto blue, integral auto green, integral auto red, integral auto alpha) noexcept
+    : b(static_cast<uint8_t>(blue)), g(static_cast<uint8_t>(green)), r(static_cast<uint8_t>(red)),
+      a(static_cast<uint8_t>(alpha)) {}
+  constexpr bgra(integral auto blue, integral auto green, integral auto red) noexcept : bgra(blue, green, red, 255) {}
+  constexpr bgra(integral auto rrggbb, integral auto alpha) noexcept
+    : b(static_cast<uint8_t>(rrggbb & 0xFF)), g(static_cast<uint8_t>((rrggbb >> 8) & 0xFF)),
+      r(static_cast<uint8_t>((rrggbb >> 16) & 0xFF)), a(static_cast<uint8_t>(alpha)) {}
+  constexpr bgra(integral auto rrggbb) noexcept : bgra(rrggbb, 255) {}
   explicit constexpr bgra(const rgba& color) noexcept : bgra(color.b, color.g, color.r, color.a) {}
   explicit constexpr operator rgba() const noexcept { return rgba{r, g, b, a}; }
 
-  template<uint64_t I> requires(I < 4)
-  constexpr float& get() noexcept {
-    return select<I>(b, g, r, a);
-  }
-  template<uint64_t I> requires(I < 4)
-  constexpr const float& get() const noexcept {
-    return select<I>(b, g, r, a);
-  }
+  template<uint64_t I> requires(I < 4) constexpr float& get() noexcept { return select<I>(b, g, r, a); }
+  template<uint64_t I> requires(I < 4) constexpr const float& get() const noexcept { return select<I>(b, g, r, a); }
 };
 static_assert(sizeof(bgra) == 4);
 
 //////////////////////////////////////// MARK: color
 
 struct color {
-  float r{}, g{}, b{}, a{1.0f};
+  float r{};
+  float g{};
+  float b{};
+  float a{1.0f};
 
   constexpr color() noexcept = default;
 
-  constexpr color(arithmetic auto red, arithmetic auto green, arithmetic auto blue,
-                  arithmetic auto alpha) noexcept
+  constexpr color(arithmetic auto red, arithmetic auto green, arithmetic auto blue, arithmetic auto alpha) noexcept
     : r(static_cast<float>(red)), g(static_cast<float>(green)), b(static_cast<float>(blue)),
       a(static_cast<float>(alpha)) {}
 
   constexpr color(arithmetic auto red, arithmetic auto green, arithmetic auto blue) noexcept
     : color(red, green, blue, 1.0f) {}
 
-  constexpr color(std::integral auto rrggbb, arithmetic auto alpha) noexcept
-    : r(static_cast<float>((rrggbb >> 16) & 0xFF) / 255.0f),
-      g(static_cast<float>((rrggbb >> 8) & 0xFF) / 255.0f),
+  constexpr color(integral auto rrggbb, arithmetic auto alpha) noexcept
+    : r(static_cast<float>((rrggbb >> 16) & 0xFF) / 255.0f), g(static_cast<float>((rrggbb >> 8) & 0xFF) / 255.0f),
       b(static_cast<float>(rrggbb & 0xFF) / 255.0f), a(static_cast<float>(alpha)) {}
 
-  constexpr color(std::integral auto rrggbb) noexcept : color(rrggbb, 1.0f) {}
+  constexpr color(integral auto rrggbb) noexcept : color(rrggbb, 1.0f) {}
 
   constexpr color(const rgba& col) noexcept
     : r(static_cast<float>(col.r) / 255.0f), g(static_cast<float>(col.g) / 255.0f),
@@ -95,12 +84,12 @@ struct color {
       b(static_cast<float>(col.b) / 255.0f), a(static_cast<float>(col.a) / 255.0f) {}
 
   explicit operator rgba() const noexcept {
-    return rgba{static_cast<std::uint8_t>(r * 255.0f), static_cast<std::uint8_t>(g * 255.0f),
-                static_cast<std::uint8_t>(b * 255.0f), static_cast<std::uint8_t>(a * 255.0f)};
+    return rgba{static_cast<uint8_t>(r * 255.0f), static_cast<uint8_t>(g * 255.0f), static_cast<uint8_t>(b * 255.0f),
+      static_cast<uint8_t>(a * 255.0f)};
   }
   explicit operator bgra() const noexcept {
-    return bgra{static_cast<std::uint8_t>(b * 255.0f), static_cast<std::uint8_t>(g * 255.0f),
-                static_cast<std::uint8_t>(r * 255.0f), static_cast<std::uint8_t>(a * 255.0f)};
+    return bgra{static_cast<uint8_t>(b * 255.0f), static_cast<uint8_t>(g * 255.0f), static_cast<uint8_t>(r * 255.0f),
+      static_cast<uint8_t>(a * 255.0f)};
   }
 
   constexpr color srgb_to_linear() const noexcept {
@@ -117,16 +106,86 @@ struct color {
     return color(fn(r), fn(g), fn(b), a);
   }
 
-  template<uint64_t I> requires(I < 4)
-  constexpr float& get() noexcept {
-    return select<I>(r, g, b, a);
-  }
-  template<uint64_t I> requires(I < 4)
-  constexpr const float& get() const noexcept {
-    return select<I>(r, g, b, a);
-  }
+  template<uint64_t I> requires(I < 4) constexpr float& get() noexcept { return select<I>(r, g, b, a); }
+  template<uint64_t I> requires(I < 4) constexpr const float& get() const noexcept { return select<I>(r, g, b, a); }
 };
 static_assert(sizeof(color) == 16);
+
+//////////////////////////////////////// MARK: oklab
+
+struct oklab {
+  float l{};
+  float a{};
+  float b{};
+  float alpha{1.0f};
+
+  constexpr oklab() noexcept = default;
+  constexpr oklab(arithmetic auto L, arithmetic auto A, arithmetic auto B, arithmetic auto Alpha) noexcept
+    : l(L), a(A), b(B), alpha(Alpha) {}
+  constexpr oklab(arithmetic auto L, arithmetic auto A, arithmetic auto B) noexcept : oklab(L, A, B, 1.0f) {}
+
+  static constexpr oklab from_linear_rgb(const color& rgb) noexcept {
+    oklab lab;
+    const auto l_ = 0.4122214708f * rgb.r + 0.5363325363f * rgb.g + 0.0514459929f * rgb.b;
+    const auto m_ = 0.2119034982f * rgb.r + 0.6806995451f * rgb.g + 0.1073969566f * rgb.b;
+    const auto s_ = 0.0883024619f * rgb.r + 0.2817188376f * rgb.g + 0.6299787005f * rgb.b;
+    const auto l_cbrt = yw::cbrt(l_);
+    const auto m_cbrt = yw::cbrt(m_);
+    const auto s_cbrt = yw::cbrt(s_);
+    lab.l = 0.2104542553f * l_cbrt + 0.7936177850f * m_cbrt - 0.0040720468f * s_cbrt;
+    lab.a = 1.9779984951f * l_cbrt - 2.4285922050f * m_cbrt + 0.4505937099f * s_cbrt;
+    lab.b = 0.0259040371f * l_cbrt + 0.7827717662f * m_cbrt - 0.8086757660f * s_cbrt;
+    lab.alpha = rgb.a;
+    return lab;
+  }
+
+  static constexpr oklab from_srgb(const color& srgb) noexcept { return from_linear_rgb(srgb.srgb_to_linear()); }
+
+  constexpr color to_linear_rgb() const noexcept {
+    const auto l_ = this->l + 0.3963377774f * this->a + 0.2158037573f * this->b;
+    const auto m_ = this->l - 0.1055613458f * this->a - 0.0638541728f * this->b;
+    const auto s_ = this->l - 0.0894841775f * this->a - 1.2914855480f * this->b;
+    const auto l_cube = l_ * l_ * l_;
+    const auto m_cube = m_ * m_ * m_;
+    const auto s_cube = s_ * s_ * s_;
+    const auto r = -1.2684380046f * l_cube + 2.6097574011f * m_cube - 0.3413193965f * s_cube;
+    const auto g = 4.0767416621f * l_cube - 3.3077115913f * m_cube + 0.2309699292f * s_cube;
+    const auto b = -0.0041960863f * l_cube - 0.7034186147f * m_cube + 1.7076147010f * s_cube;
+    return color(r, g, b, alpha);
+  }
+
+  constexpr color to_srgb() const noexcept { return to_linear_rgb().linear_to_srgb(); }
+};
+
+static_assert(sizeof(oklab) == 16);
+
+//////////////////////////////////////// MARK: oklch
+
+struct oklch {
+  float l{};
+  float c{};
+  float h{};
+  float a{1.0f};
+  constexpr oklch() noexcept = default;
+  constexpr oklch(arithmetic auto L, arithmetic auto C, arithmetic auto H, arithmetic auto A) noexcept
+    : l(L.x), c(C.x), h(H.x), a(A.x) {}
+  constexpr oklch(arithmetic auto L, arithmetic auto C, arithmetic auto H) noexcept : oklch(L, C, H, 1.0f) {}
+  constexpr oklch(const oklab& Lab) noexcept
+    : l(Lab.l), c(yw::hypot(Lab.a, Lab.b)), h(yw::atan2(Lab.b, Lab.a)), a(Lab.alpha) {}
+  constexpr operator oklab() const noexcept { return oklab(l, c * cos(h), c * sin(h), a); }
+
+  static constexpr oklch from_linear_rgb(const color& rgb) noexcept { return oklch(oklab::from_linear_rgb(rgb)); }
+  static constexpr oklch from_srgb(const color& srgb) noexcept { return from_linear_rgb(srgb.srgb_to_linear()); }
+
+  constexpr color to_linear_rgb() const noexcept {
+    const auto a_ = c * cos(h);
+    const auto b_ = c * sin(h);
+    return oklab(l, a_, b_, a).to_linear_rgb();
+  }
+  constexpr color to_srgb() const noexcept { return to_linear_rgb().linear_to_srgb(); }
+};
+
+static_assert(sizeof(oklch) == 16);
 
 //////////////////////////////////////// MARK: predefined colors
 
@@ -278,19 +337,10 @@ inline constexpr auto yw = color(rgba(0x081020));
 
 namespace std {
 
-//////////////////////////////////////// MARK: std::common_type
-
-template<> struct common_type<yw::rgba, yw::bgra> : std::type_identity<yw::color> {};
-template<> struct common_type<yw::bgra, yw::rgba> : std::type_identity<yw::color> {};
-template<> struct common_type<yw::rgba, yw::color> : std::type_identity<yw::color> {};
-template<> struct common_type<yw::color, yw::rgba> : std::type_identity<yw::color> {};
-template<> struct common_type<yw::bgra, yw::color> : std::type_identity<yw::color> {};
-template<> struct common_type<yw::color, yw::bgra> : std::type_identity<yw::color> {};
-
-//////////////////////////////////////// MARK: std::formatter
+//////////////////////////////////////// MARK: formatter
 
 template<typename C> struct formatter<yw::rgba, C> {
-  std::formatter<int, C> fmt{};
+  formatter<int, C> fmt{};
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::rgba& col, auto& ctx) {
     auto out = ctx.out();
@@ -303,7 +353,7 @@ template<typename C> struct formatter<yw::rgba, C> {
 };
 
 template<typename C> struct formatter<yw::bgra, C> {
-  std::formatter<int, C> fmt{};
+  formatter<int, C> fmt{};
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::bgra& col, auto& ctx) {
     auto out = ctx.out();
@@ -316,7 +366,7 @@ template<typename C> struct formatter<yw::bgra, C> {
 };
 
 template<typename C> struct formatter<yw::color, C> {
-  std::formatter<float, C> fmt{};
+  formatter<float, C> fmt{};
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::color& col, auto& ctx) {
     auto out = ctx.out();
@@ -324,6 +374,32 @@ template<typename C> struct formatter<yw::color, C> {
     *out++ = ',', out = fmt.format(col.g, ctx);
     *out++ = ',', out = fmt.format(col.b, ctx);
     *out++ = ',', out = fmt.format(col.a, ctx), *out++ = ')';
+    return out;
+  }
+};
+
+template<typename C> struct formatter<yw::oklab, C> {
+  std::formatter<float, C> fmt{};
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::oklab& Lab, auto& ctx) {
+    auto out = ctx.out();
+    *out++ = '(', out = fmt.format(Lab.l, ctx);
+    *out++ = ',', out = fmt.format(Lab.a, ctx);
+    *out++ = ',', out = fmt.format(Lab.b, ctx);
+    *out++ = ',', out = fmt.format(Lab.alpha, ctx), *out++ = ')';
+    return out;
+  }
+};
+
+template<typename C> struct formatter<yw::oklch, C> {
+  std::formatter<float, C> fmt{};
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::oklch& Lch, auto& ctx) {
+    auto out = ctx.out();
+    *out++ = '(', out = fmt.format(Lch.l, ctx);
+    *out++ = ',', out = fmt.format(Lch.c, ctx);
+    *out++ = ',', out = fmt.format(Lch.h, ctx);
+    *out++ = ',', out = fmt.format(Lch.a, ctx), *out++ = ')';
     return out;
   }
 };

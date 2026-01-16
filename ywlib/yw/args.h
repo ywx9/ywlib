@@ -10,7 +10,7 @@
 
 namespace yw {
 
-inline class {
+class _args {
   static bool _is_option_token(std::string_view tok) { return tok != "-" && tok.starts_with("-"); }
   static std::optional<std::pair<std::string_view, std::string_view>> _split_eq(std::string_view tok) {
     if (auto i = tok.find('='); i == std::string_view::npos) return std::nullopt;
@@ -40,7 +40,7 @@ inline class {
       }
     }
   }
-  std::expected<void, error_trace> _parse_win(const source& sl) {
+  std::expected<void, error_trace> _parse_win() {
 #ifdef _WIN32
     int argc;
     auto argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
@@ -88,5 +88,7 @@ public:
     for (auto& s : it->second) out.emplace_back(s);
     return out;
   }
-} args;
+};
+
+inline _args args{};
 } // namespace yw
