@@ -9,15 +9,13 @@
  * 用途: Simplestな非圧縮アーカイブ
  * 規則:
  * - 数値フィールドはすべてリトルエンディアン
- * - 最初のエントリの前には任意のデータがあってもよい
- * - エントリ-エントリ間、エントリ-フッタ間にパディングは入らない
- * - ファイル名はUTF-8エンコードされた文字列で2048バイトまで
+ * - パディングは許容されない
+ * - エントリ名は2048バイト未満のUTF-8文字列
  * - フッタでのオフセットの並びはエントリの順序と対応する
  * - CRC32は各エントリのデータに対してIEEE 802.3準拠で計算する
  *   - (poly=0x04C11DB7, init=0xFFFFFFFF, refin=true, refout=true, xorout=0xFFFFFFFF)
  *   - "123456789" => 0xCBF43926
  * 構造:
- * - (任意のデータがあってもよい)
  * - エントリ[N]
  *   - マジックナンバ(4) == YWAE; (0x45415759)
  *   - ファイル名の長さ(4)
@@ -67,41 +65,86 @@ public:
   class handle {
     file_handle _fh;
     std::vector<entry> _entries;
-    uint64_t _headder_offset = 0;
+    uint64_t _footer_offset = 0;
     explicit handle(file_handle&& fh, std::vector<entry>&& entries)
       : _fh(std::move(fh)), _entries(std::move(entries)) {}
-    std::expected<void, error_trace> _init(uint64_t file_size) {
-      if (file_size < 16) {
-        _headder_offset = file_size;
-        return {};
-      }
+    std::expected<uint64_t, error_trace> _get_file_size() {
+      if (auto res = _fh.seek(0, seek_whence::end); !res) return unexpected_error(res.error());
+      if (auto res = _fh.tell(); !res) return unexpected_error(res.error());
+      else return static_cast<uint64_t>(res.value());
+    }
+    std::expected<uint64_t, error_trace> _get_footer_offset() {
       if (auto res = _fh.seek(8, seek_whence::end); !res) return unexpected_error(res.error());
-      uint64_t footer_offset;
       if (auto res = _fh.read_trivial<uint64_t>(); !res) return unexpected_error(res.error());
-      else footer_offset = _to_le(res.value());
-      if (footer_offset + 16 > file_size) {
-        _headder_offset = file_size;
-        return {};
-      }
-      if (auto res = _fh.seek(static_cast<int64_t>(footer_offset), seek_whence::begin); !res)
-        return unexpected_error(res.error());
+      else return _to_le(res.value());
+    }
+    std::expected<uint32_t, error_trace> _get_entry_count(uint64_t footer_offset) {
+      if (auto res = _fh.seek(int64_t(footer_offset)); !res) return unexpected_error(res.error());
       footer f;
-      if (auto res = _fh.read_trivial<footer>(); !res) return unexpected_error(res.error());
-      else f = res.value();
-      f.magic = _to_le(f.magic), f.file_count = _to_le(f.file_count);
-      const bool no_padded_footer = (footer_offset + sizeof(footer) + f.file_count * 8 == file_size + sizeof(uint64_t));
-      if (f.magic == footer_magic && no_padded_footer) {
-        std::vector<uint64_t> footer_offsets(f.file_count);
-        if (auto res = _fh.read_exact(footer_offsets.data(), footer_offsets.size() * sizeof(uint64_t)); !res)
-          return unexpected_error(res.error());
-        for (size_t i = 0; i < footer_offsets.size(); ++i) footer_offsets[i] = _to_le(footer_offsets[i]);
-        _headder_offset = footer_offsets[0];
-        _entries.resize(f.file_count);
-      } else if (f.magic != footer_magic && !no_padded_footer) {
-        _headder_offset = file_size;
-        return {};
-      } else {
-      }
+      if (auto res = _fh.read_trivial(f); !res) return unexpected_error(res.error());
+      else if (_to_le(f.magic) == footer_magic) return _to_le(f.file_count);
+      else return unexpected_error(errors::invalid_file, "archive: invalid footer magic");
+    }
+    std::expected<void, error_trace> _read_entry(size_t i, const std::vector<uint64_t>& offsets) {
+      const auto offset = offsets[i];
+      if (offset >= _footer_offset)
+        return unexpected_error(errors::invalid_file, format("archive: invalid entry offset {:x}", offset));
+      header h;
+      if (auto res = _fh.seek(int64_t(offset)); !res) return unexpected_error(res.error());
+      if (auto res = _fh.read_trivial(h); !res) return unexpected_error(res.error());
+      else if (_to_le(h.magic) != entry_magic)
+        return unexpected_error(errors::invalid_file, format("archive: invalid entry magic at offset {:x}", offset));
+      const uint32_t name_length = _to_le(h.name_length);
+      const uint64_t data_length = _to_le(h.data_length);
+      const uint64_t data_offset = offset + sizeof(header) + name_length;
+      const uint64_t crc_offset = data_offset + data_length;
+      if (name_length == 0 || name_length > max_name_size)
+        return unexpected_error(errors::invalid_file, format("archive: invalid name length at offset {:x}", offset));
+      _entries[i].name.resize(name_length);
+      if (auto res = _fh.read_exact(_entries[i].name.data(), name_length); !res) return unexpected_error(res.error());
+      _entries[i].entry_offset = offset;
+      _entries[i].data_offset = data_offset;
+      _entries[i].data_length = data_length;
+      if (auto res = _fh.seek(int64_t(crc_offset)); !res) return unexpected_error(res.error());
+      if (auto res = _fh.read_trivial<uint32_t>(); !res) return unexpected_error(res.error());
+      else _entries[i].crc32 = _to_le(res.value());
+      const auto next = crc_offset + sizeof(uint32_t);
+      if ((i == offsets.size() - 1 && next != _footer_offset) || (i < offsets.size() - 1 && next != offsets[i + 1]))
+        return unexpected_error(errors::invalid_file, format("archive: invalid entry format at offset {:x}", offset));
+      return {};
+    }
+    std::expected<void, error_trace> _read_existing() {
+      uint64_t file_size;
+      if (auto res = _get_file_size(); !res) return unexpected_error(res.error());
+      else file_size = res.value();
+      if (auto res = _get_footer_offset(); !res) return unexpected_error(res.error());
+      else _footer_offset = res.value();
+      if (_footer_offset + sizeof(footer) > file_size)
+        return unexpected_error(errors::invalid_file, "archive: invalid footer offset");
+      std::vector<uint64_t> offsets;
+      if (auto res = _get_entry_count(_footer_offset); !res) return unexpected_error(res.error());
+      else offsets.resize(res.value());
+      if (_footer_offset + sizeof(footer) + (1 + offsets.size()) * sizeof(uint64_t) != file_size)
+        return unexpected_error(errors::invalid_file, "archive: invalid entry count");
+      if (offsets.empty() && _footer_offset == 0) return {}; // empty archive
+      else if (offsets.empty()) return unexpected_error(errors::invalid_file, "archive: invalid entry count");
+      if (auto rest = _fh.read_exact(offsets.data(), offsets.size() * sizeof(uint64_t)); !rest)
+        return unexpected_error(rest.error());
+      for (auto& off : offsets) off = _to_le(off);
+      if ((offsets.empty() && _footer_offset != 0) || (!offsets.empty() && offsets.front() != 0))
+        return unexpected_error(errors::invalid_file, "archive: unexpected data before first entry");
+      _entries.resize(offsets.size());
+      for (size_t i = 0; i < offsets.size(); ++i)
+        if (auto res = _read_entry(i, offsets); !res) return unexpected_error(res.error());
+      return {};
+    }
+    std::expected<void, error_trace> _update_existing() {
+      uint64_t file_size;
+      if (auto res = _get_file_size(); !res) return unexpected_error(res.error());
+      else file_size = res.value();
+      if (auto res = _get_footer_offset(); !res) return unexpected_error(res.error());
+      else _footer_offset = res.value();
+
     }
   };
 };
@@ -122,7 +165,7 @@ inline constexpr _archive archive{};
 //       else footer_offset = _to_le(res.value());
 //       if (footer_offset + 8 > static_cast<uint64_t>(file_size))
 //         return unexpected_error(errors::operation_failed, "archive::handle: invalid footer offset");
-//       _fh.seek(static_cast<int64_t>(footer_offset), seek_whence::begin);
+//       _fh.seek(int64_t(footer_offset));
 //       uint32_t file_count;
 //       if (auto res = _fh.read_trivial<uint32_t>(); !res) return unexpected_error(res.error());
 //       else file_count = _to_le(res.value());
@@ -133,7 +176,7 @@ inline constexpr _archive archive{};
 //         return unexpected_error(res.error());
 //       for (size_t i = 0; i < entry_offsets.size(); ++i) _entries[i].entry_offset = _to_le(entry_offsets[i]);
 //       for (auto& e : _entries) {
-//         _fh.seek(static_cast<int64_t>(e.entry_offset), seek_whence::begin);
+//         _fh.seek(int64_t(e.entry_offset));
 //         header h;
 //         if (auto res = _fh.read_trivial<header>(); !res) return unexpected_error(res.error());
 //         else h = res.value();
@@ -149,7 +192,7 @@ inline constexpr _archive archive{};
 //         if (auto res = _fh.read_exact(e.name.data(), name_length); !res) return unexpected_error(res.error());
 //         e.data_offset = e.entry_offset + sizeof(header) + name_length;
 //         e.data_length = data_length;
-//         if (auto res = _fh.seek(static_cast<int64_t>(e.data_offset + e.data_length), seek_whence::begin); !res)
+//         if (auto res = _fh.seek(int64_t(e.data_offset + e.data_length)); !res)
 //           return unexpected_error(res.error());
 //         if (auto res = _fh.read_trivial<uint32_t>(); !res) return unexpected_error(res.error());
 //         else e.crc32 = _to_le(res.value());

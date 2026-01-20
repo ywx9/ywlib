@@ -8,6 +8,8 @@ namespace yw {
 enum class open_mode { unknown, read_existing, update_existing, create_always, create_new, append, update_or_create };
 enum class seek_whence { begin = SEEK_SET, current = SEEK_CUR, end = SEEK_END };
 
+class file_handle;
+
 } // namespace yw
 
 #ifdef _WIN32
@@ -146,7 +148,9 @@ public:
     else return static_cast<int64_t>(pos);
   }
 
-  std::expected<void, error_trace> seek(int64_t off, seek_whence w) { return _seek(off, w); }
+  std::expected<void, error_trace> seek(integral auto off, seek_whence w = seek_whence::begin) {
+    return _seek(static_cast<int64_t>(off), w);
+  }
 
   std::expected<int64_t, error_trace> file_size() const {
     if (!_file) return unexpected_error(errors::not_initialized, "file_handle: not initialized");
@@ -185,6 +189,11 @@ public:
     T v{};
     if (auto res = read_exact(&v, sizeof(T)); !res) return unexpected_error(res.error());
     else return v;
+  }
+
+  template<trivial T> std::expected<void, error_trace> read_trivial(T& v) {
+    if (auto res = read_exact(&v, sizeof(T)); !res) return unexpected_error(res.error());
+    else return {};
   }
 
   /// writes up to 'bytes' from 'src' to the file.

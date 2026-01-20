@@ -514,6 +514,7 @@ namespace yw {
 enum class errors : uint32_t {
   success = 0,
   invalid_argument,
+  invalid_file,
   operation_failed,
   not_initialized,
 };
