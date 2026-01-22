@@ -464,8 +464,11 @@ template<stringable<char> S> document from_string(S&& xml_doc) {
   } else return doc;
 }
 
-inline document from_file(const std::filesystem::path& p) {
-  auto reader = yw::reader(p);
+inline std::expected<document, error_trace> from_file(const std::filesystem::path& p) {
+  file_handle fh;
+  if (auto res = yw::open(p, open_mode::read_existing); !res) return unexpected_error(res.error());
+  else fh = std::move(res.value());
+
   auto doc = reader.read_as_string();
   reader.close();
   return from_string(std::move(doc));

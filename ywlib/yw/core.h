@@ -515,6 +515,7 @@ enum class errors : uint32_t {
   success = 0,
   invalid_argument,
   invalid_file,
+  invalid_operation,
   operation_failed,
   not_initialized,
 };
