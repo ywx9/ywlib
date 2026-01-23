@@ -91,14 +91,16 @@ public:
     if (auto res = fh->read_trivial<uint64_t>(); !res) return unexpected_error(res.error());
     else footer_offset = _to_le(res.value());
     if (footer_offset + sizeof(footer) + sizeof(uint64_t) > file_size)
-      return unexpected_error(e, "invalid footer offset");
+      return unexpected_error(e, "archive: invalid footer offset", {}, file_size - 8);
     footer f;
     if (auto res = fh->seek(int64_t(footer_offset)); !res) return unexpected_error(res.error());
     if (auto res = fh->read_trivial(f); !res) return unexpected_error(res.error());
-    else if (_to_le(f.magic) != footer_magic) return unexpected_error(e, "invalid footer magic");
+    else if (_to_le(f.magic) != footer_magic)
+      return unexpected_error(e, "archive: invalid footer magic", {}, footer_offset);
     const uint32_t entry_count = _to_le(f.entry_count);
     const auto footer_size = sizeof(footer) + entry_count * sizeof(uint64_t) + sizeof(uint64_t);
-    if (footer_offset + footer_size != file_size) return unexpected_error(e, "invalid entry count");
+    if (footer_offset + footer_size != file_size)
+      return unexpected_error(e, "archive: invalid entry count", {}, footer_offset + 4);
     if (entry_count == 0) return handle(std::move(fh.value()), {}, {0, footer_offset}, mode);
     /// \note need to check entries
     std::vector<uint64_t> offsets(entry_count);
@@ -108,14 +110,17 @@ public:
     std::vector<entry> entries(entry_count);
     for (uint32_t i = 0; i < entry_count; ++i) {
       const auto off = offsets[i];
-      if (off >= footer_offset) return unexpected_error(e, "invalid entry offset");
+      if (off >= footer_offset)
+        return unexpected_error(e, "archive: invalid entry offset", {}, footer_offset + 8 + i * 8);
       if (auto res = fh->seek(int64_t(off)); !res) return unexpected_error(res.error());
       header h;
       if (auto res = fh->read_trivial(h); !res) return unexpected_error(res.error());
-      else if (_to_le(h.magic) != entry_magic) return unexpected_error(e, "invalid entry magic");
+      else if (_to_le(h.magic) != entry_magic) return unexpected_error(e, "archive: invalid entry magic", {}, off);
       const uint32_t name_length = _to_le(h.name_length);
-      if (name_length == 0 || name_length > max_name_size) return unexpected_error(e, "invalid name length");
-      if (off + sizeof(header) + name_length > footer_offset) return unexpected_error(e, "invalid entry size");
+      if (name_length == 0 || name_length > max_name_size)
+        return unexpected_error(e, "archive: invalid name length", {}, off + 4);
+      if (off + sizeof(header) + name_length > footer_offset)
+        return unexpected_error(e, "archive: invalid entry size", {}, off + 8);
       const uint64_t data_length = _to_le(h.data_length);
       const uint64_t data_offset = off + sizeof(header) + name_length;
       const uint64_t crc_offset = data_offset + data_length;
@@ -130,7 +135,7 @@ public:
       const bool is_last = (i == entry_count - 1);
       if (auto res = fh->tell(); !res) return unexpected_error(res.error());
       else if (const auto cur = res.value(); (is_last && cur != footer_offset) || (!is_last && cur != offsets[i + 1]))
-        return unexpected_error(e, "archive: invalid entry size");
+        return unexpected_error(e, "archive: invalid entry size", {}, crc_offset);
     }
     return handle(std::move(fh.value()), std::move(entries), {offsets[0], footer_offset}, mode);
   }
@@ -247,7 +252,7 @@ public:
     if (!data && data_length) return unexpected_error(errors::invalid_argument, "null data pointer");
     const std::string_view sv(name);
     if (sv.size() == 0 || sv.size() > max_name_size)
-      return unexpected_error(errors::invalid_argument, "invalid entry name length");
+      return unexpected_error(errors::invalid_argument, "archive: invalid entry name length");
     if (_mode != open_mode::create_always && _mode != open_mode::create_new && _mode != open_mode::update_existing &&
         _mode != open_mode::update_or_create)
       return unexpected_error(errors::invalid_operation, "archive not opened in write mode");

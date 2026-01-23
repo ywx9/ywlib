@@ -414,12 +414,12 @@ template<char_type C> inline constexpr auto unicode = []<stringable S>(S&& s) ->
 
 namespace yw {
 struct source {
-  std::string_view file;
+  std::string_view file, func;
   uint32_t line, column;
   source(const std::source_location& loc = std::source_location::current()) noexcept
-    : file(loc.file_name()), line(loc.line()), column(loc.column()) {}
+    : file(loc.file_name()), func(loc.function_name()), line(loc.line()), column(loc.column()) {}
   friend constexpr bool operator==(const source& a, const source& b) noexcept {
-    return a.file == b.file && a.line == b.line && a.column == b.column;
+    return a.file == b.file && a.func == b.func && a.line == b.line && a.column == b.column;
   }
 };
 } // namespace yw
@@ -428,7 +428,7 @@ template<typename C> struct formatter<yw::source, C> {
   formatter<basic_string<C>, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::source& src, auto& ctx) const {
-    auto s = std::format("{}({},{})", src.file, src.line, src.column);
+    auto s = std::format("{} in {}({},{})", src.func, src.file, src.line, src.column);
     return fmt.format(yw::unicode<C>(move(s)), ctx);
   }
 };
@@ -520,11 +520,12 @@ enum class errors : uint32_t {
   not_initialized,
 };
 struct error {
-  null_terminated<char> message;
   errors code;
   int system_code;
-  explicit error(errors e, null_terminated<char> msg, int sys_code = 0) noexcept
-    : message(std::move(msg)), code(e), system_code(sys_code) {}
+  uint64_t position;
+  null_terminated<char> message;
+  explicit error(errors e, null_terminated<char> msg, int sys_code = 0, uint64_t pos = uint64_t(-1)) noexcept
+    : code(e), system_code(sys_code), message(std::move(msg)), position(pos) {}
 };
 struct error_trace {
   yw::error error;
@@ -539,8 +540,8 @@ struct error_trace {
   }
 };
 inline std::unexpected<error_trace> unexpected_error(
-  errors e, null_terminated<char> msg, int sys_code = 0, const source& src = {}) {
-  return std::unexpected<error_trace>(error_trace(yw::error(e, std::move(msg), sys_code), src));
+  errors e, null_terminated<char> msg, int sys_code = 0, uint64_t pos = uint64_t(-1), const source& src = {}) {
+  return std::unexpected<error_trace>(error_trace(yw::error(e, std::move(msg), sys_code, pos), src));
 }
 inline std::unexpected<error_trace> unexpected_error(error_trace& e, const source& src = {}) {
   return std::unexpected<error_trace>(std::move(e.push(src)));
@@ -558,6 +559,7 @@ template<typename C> struct formatter<yw::error, C> {
     std::string s;
     if (err.system_code == 0) s = std::format("{}", err.message);
     else s = std::format("{} (code={})", err.message, err.system_code);
+    if (err.position != uint64_t(-1)) s += std::format("\n  input offset={}", err.position);
     return fmt.format(yw::unicode<C>(move(s)), ctx);
   }
 };
@@ -566,7 +568,7 @@ template<typename C> struct formatter<yw::error_trace, C> {
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::error_trace& err, auto& ctx) const {
     std::string s = std::format("{}", err.error.message);
-    for (const auto& src : err.frames) s += std::format("\n  at {}({},{})", src.file, src.line, src.column);
+    for (const auto& src : err.frames) s += std::format("\n  at {}", src);
     return fmt.format(yw::unicode<C>(move(s)), ctx);
   }
 };
