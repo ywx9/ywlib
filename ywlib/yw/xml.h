@@ -10,6 +10,8 @@
 
 namespace yw::xml {
 
+template<bool View> using string_type = select_type<View, std::string_view, std::string>;
+
 enum class child_type {
   unknown,
   comment,
@@ -93,7 +95,7 @@ constexpr std::unexpected<error_trace> unexpected_error(
   const auto line_start = doc.data() + line_start_index;
   const auto column = uint64_t(pos - line_start + 1);
   auto s = std::format("{} (line {}, column {})", msg, line, column);
-  return yw::unexpected_error(errors::invalid_argument, null_terminated<char>(std::move(s)), 0, offset, src);
+  return yw::unexpected_error(errors::invalid_argument, std::move(s), 0, offset, src);
 }
 
 //////////////////////////////////////// MARK: comment
@@ -102,10 +104,23 @@ template<bool View> class comment {
   constexpr comment(std::string_view Data) noexcept : data(Data) {}
 
 public:
-  select_type<View, std::string_view, std::string> data{};
+  string_type<View> data{};
   explicit constexpr operator bool() const { return !data.empty(); }
   constexpr operator std::string_view() const { return data; }
   constexpr comment() noexcept = default;
+
+  constexpr size_t to_string_size() const { return data.size() + 7; }
+  constexpr char* to_string_into(char* out) const {
+    auto it = std::ranges::copy("<!--"sv, out).out;
+    it = std::ranges::copy(data, it).out;
+    it = std::ranges::copy("-->"sv, it).out;
+    return it;
+  }
+  constexpr std::string to_string() const {
+    std::string result(to_string_size(), '\0');
+    to_string_into(result.data());
+    return result;
+  }
 
   static constexpr std::expected<comment<View>, error_trace> parse(std::string_view& rest, std::string_view doc) {
     if (!rest.starts_with("<!--"sv)) return unexpected_error("xml: expected comment '<!--'", rest.data(), doc);
@@ -126,10 +141,20 @@ template<bool View> class text {
   constexpr text(std::string_view Data) noexcept : data(Data) {}
 
 public:
-  select_type<View, std::string_view, std::string> data{};
+  string_type<View> data{};
   explicit constexpr operator bool() const { return !data.empty(); }
   constexpr operator std::string_view() const { return data; }
   constexpr text() noexcept = default;
+
+  constexpr size_t to_string_size() const { return data.size(); }
+  constexpr char* to_string_into(char* out) const {
+    return std::ranges::copy(data, out).out;
+  }
+  constexpr std::string to_string() const {
+    std::string result(to_string_size(), '\0');
+    to_string_into(result.data());
+    return result;
+  }
 
   static constexpr std::expected<text<View>, error_trace> parse(std::string_view& rest, std::string_view doc) {
     const char* start = rest.data();
@@ -146,11 +171,12 @@ public:
         if (const auto r = _extract_reference(rest); r.empty())
           return unexpected_error("xml: invalid character reference", before, doc);
       } else if (rest.front() == '<') break;
-      else if (rest.starts_with("]]>"sv)) return unexpected_error("xml: ']]>' is not allowed in character data", rest.data(), doc);
+      else if (rest.starts_with("]]>"sv))
+        return unexpected_error("xml: ']]>' is not allowed in character data", rest.data(), doc);
       else if (!_is_char(rest.front())) return unexpected_error("xml: invalid character in text", rest.data(), doc);
       else rest.remove_prefix(1);
     }
-    return text<View>(std::string_view(start, static_cast<size_t>(rest.data(); - start)));
+    return text<View>(std::string_view(start, rest.data()));
   }
 };
 
@@ -158,15 +184,31 @@ public:
 
 template<bool View> class pi {
   constexpr pi(std::string_view Target, std::string_view Data) noexcept : target(Target), data(Data) {}
+
 public:
-  select_type<View, std::string_view, std::string> target{};
-  select_type<View, std::string_view, std::string> data{};
-  explicit operator bool() const { return !target.empty(); }
-  operator std::string_view() const { return target; }
+  string_type<View> target{};
+  string_type<View> data{};
+  explicit constexpr operator bool() const { return !target.empty(); }
+  constexpr operator std::string_view() const { return target; }
   constexpr pi() noexcept = default;
 
+  constexpr size_t to_string_size() const { return target.size() + data.size() + 4 + !data.empty(); }
+  constexpr char* to_string_into(char* out) const {
+    auto it = std::ranges::copy("<?"sv, out).out;
+    it = std::ranges::copy(target, it).out;
+    if (!data.empty()) *it = ' ', it = std::ranges::copy(data, it + 1).out;
+    it = std::ranges::copy("?>"sv, it).out;
+    return it;
+  }
+  constexpr std::string to_string() const {
+    std::string result(to_string_size(), '\0');
+    to_string_into(result.data());
+    return result;
+  }
+
   static constexpr std::expected<pi<View>, error_trace> parse(std::string_view& rest, std::string_view doc) {
-    if (!rest.starts_with("<?"sv)) return unexpected_error("xml: expected processing instruction '<?'", rest.data(), doc);
+    if (!rest.starts_with("<?"sv))
+      return unexpected_error("xml: expected processing instruction '<?'", rest.data(), doc);
     rest.remove_prefix(2);
     const char* target_pos = rest.data();
     auto target = _extract_name(rest);
@@ -178,8 +220,8 @@ public:
     const auto sr = std::ranges::search(rest, "?>"sv);
     if (sr.begin() == rest.end())
       return unexpected_error("xml: unterminated processing instruction (missing '?>')", data_start, doc);
-    auto data = std::string_view(data_start,static_cast<size_t>(std::to_address(sr.begin()) - data_start));
-    rest = std::string_view(std::to_address(sr.end()),rest.data() + rest.size() - std::to_address(sr.end()));
+    auto data = std::string_view(data_start, static_cast<size_t>(std::to_address(sr.begin()) - data_start));
+    rest = std::string_view(std::to_address(sr.end()), rest.data() + rest.size() - std::to_address(sr.end()));
     return pi<View>(target, data);
   }
 };
@@ -189,11 +231,28 @@ public:
 template<bool View> class misc {
   using value_type = std::variant<std::monostate, comment<View>, pi<View>>;
   std::variant<std::monostate, comment<View>, pi<View>> _value{};
+
 public:
   constexpr misc() = default;
   constexpr misc(comment<View> c) : _value(std::move(c)) {}
   constexpr misc(pi<View> p) : _value(std::move(p)) {}
   constexpr explicit operator bool() const { return _value.index() != 0; }
+
+  constexpr size_t to_string_size() const {
+    if (auto p = std::get_if<comment<View>>(&_value); p) return p->to_string_size();
+    else if (auto p = std::get_if<pi<View>>(&_value); p) return p->to_string_size();
+    else return 0;
+  }
+  constexpr char* to_string_into(char* out) const {
+    if (auto p = std::get_if<comment<View>>(&_value); p) return p->to_string_into(out);
+    else if (auto p = std::get_if<pi<View>>(&_value); p) return p->to_string_into(out);
+    else return out;
+  }
+  constexpr std::string to_string() const {
+    if (auto p = std::get_if<comment<View>>(&_value); p) return p->to_string();
+    else if (auto p = std::get_if<pi<View>>(&_value); p) return p->to_string();
+    else return {};
+  }
 
   constexpr const value_type& get() const { return _value; }
   constexpr value_type& get() { return _value; }
@@ -235,12 +294,27 @@ public:
 
 template<bool View> class attribute {
   constexpr attribute(std::string_view Name, std::string_view Value) noexcept : name(Name), value(Value) {}
+
 public:
-  select_type<View, std::string_view, std::string> name{};
-  select_type<View, std::string_view, std::string> value{};
+  string_type<View> name{};
+  string_type<View> value{};
   explicit constexpr operator bool() const { return !name.empty(); }
   constexpr operator std::string_view() const { return name; }
   constexpr attribute() noexcept = default;
+
+  constexpr size_t to_string_size() const { return name.size() + value.size() + 3; }
+  constexpr char* to_string_into(char* out) const {
+    auto it = std::ranges::copy(name, out).out;
+    it = std::ranges::copy("=\""sv, it).out;
+    it = std::ranges::copy(value, it).out;
+    *it = '"';
+    return it + 1;
+  }
+  constexpr std::string to_string() const {
+    std::string result(to_string_size(), '\0');
+    to_string_into(result.data());
+    return result;
+  }
 
   static constexpr std::expected<attribute<View>, error_trace> parse(std::string_view& rest, std::string_view doc) {
     const char* name_pos = rest.data();
@@ -280,9 +354,11 @@ public:
 template<bool View> class child;
 
 template<bool View> class element {
-  constexpr element(std::string_view Name, std::vector<attribute<View>> Attributes, std::vector<child<View>> Children) noexcept;
+  constexpr element(
+    std::string_view Name, std::vector<attribute<View>> Attributes, std::vector<child<View>> Children) noexcept;
+
 public:
-  select_type<View, std::string_view, std::string> name{};
+  string_type<View> name{};
   std::vector<attribute<View>> attributes{};
   std::vector<child<View>> children{};
   constexpr element() noexcept = default;
@@ -291,12 +367,27 @@ public:
   constexpr element(element&&) noexcept;
   constexpr element& operator=(const element&);
   constexpr element& operator=(element&&) noexcept;
+  constexpr explicit operator bool() const { return !name.empty(); }
+
+  constexpr size_t to_string_size() const;
+  constexpr char* to_string_into(char* out) const;
+  constexpr std::string to_string() const;
 
   static constexpr std::expected<element, error_trace> parse(std::string_view& rest, std::string_view doc);
+
+  constexpr bool has_attribute(std::string_view attr_name) const noexcept {
+    return std::ranges::any_of(attributes, [attr_name](const auto& attr) { return attr.name == attr_name; });
+  }
+
+  constexpr element* first_element() noexcept;
+  constexpr const element* first_element() const noexcept;
 };
+
+/////////////////////////////////////// MARK: child
 
 template<bool View> class child {
   std::variant<std::monostate, comment<View>, pi<View>, text<View>, element<View>> _value{};
+
 public:
   constexpr child() noexcept = default;
   constexpr child(comment<View> c) : _value(std::move(c)) {}
@@ -304,6 +395,28 @@ public:
   constexpr child(text<View> t) : _value(std::move(t)) {}
   constexpr child(element<View> e) : _value(std::move(e)) {}
   constexpr explicit operator bool() const { return _value.index() != 0; }
+
+  constexpr size_t to_string_size() const {
+    if (auto p = std::get_if<comment<View>>(&_value); p) return p->to_string_size();
+    else if (auto p = std::get_if<pi<View>>(&_value); p) return p->to_string_size();
+    else if (auto p = std::get_if<text<View>>(&_value); p) return p->to_string_size();
+    else if (auto p = std::get_if<element<View>>(&_value); p) return p->to_string_size();
+    else return 0;
+  }
+  constexpr char* to_string_into(char* out) const {
+    if (auto p = std::get_if<comment<View>>(&_value); p) return p->to_string_into(out);
+    else if (auto p = std::get_if<pi<View>>(&_value); p) return p->to_string_into(out);
+    else if (auto p = std::get_if<text<View>>(&_value); p) return p->to_string_into(out);
+    else if (auto p = std::get_if<element<View>>(&_value); p) return p->to_string_into(out);
+    else return out;
+  }
+  constexpr std::string to_string() const {
+    if (auto p = std::get_if<comment<View>>(&_value); p) return p->to_string();
+    else if (auto p = std::get_if<pi<View>>(&_value); p) return p->to_string();
+    else if (auto p = std::get_if<text<View>>(&_value); p) return p->to_string();
+    else if (auto p = std::get_if<element<View>>(&_value); p) return p->to_string();
+    else return {};
+  }
 
   constexpr const auto& get() const { return _value; }
   constexpr auto& get() { return _value; }
@@ -353,7 +466,7 @@ public:
   }
 
   static constexpr std::expected<child<View>, error_trace> parse(std::string_view& rest, std::string_view doc) {
-    else if (rest.front() == '<') {
+    if (rest.front() == '<') {
       if (rest[1] == '!') {
         if (rest[2] == '-') {
           if (auto res = comment<View>::parse(rest, doc); res) return child<View>(std::move(*res));
@@ -367,27 +480,63 @@ public:
         else return yw::unexpected_error(res.error());
       } else if (rest[1] == '/') return unexpected_error("xml: unexpected end tag", rest.data(), doc);
       else {
-        if (auto res = element<View>::parse(rest, doc); res) return child<View>(std::move(*res));
-        else return yw::unexpected_error(res.error());
+        if (auto res = element<View>::parse(rest, doc); res) {
+          return child<View>(std::move(*res));
+        } else {
+          return yw::unexpected_error(res.error());
+        }
       }
-    } else {
+    }
+    else {
       if (auto res = text<View>::parse(rest, doc); res) return child<View>(std::move(*res));
       else return yw::unexpected_error(res.error());
     }
   }
 };
 
-template<bool View> inline element<View>::~element() = default;
-template<bool View> inline element<View>::element(const element&) = default;
-template<bool View> inline element<View>::element(element&&) noexcept = default;
-template<bool View> inline element<View>& element<View>::operator=(const element&) = default;
-template<bool View> inline element<View>& element<View>::operator=(element&&) noexcept = default;
+/////////////////////////////////////// MARK: element definitions
 
-template<bool View> inline constexpr element<View>::element(
+template<bool View> constexpr element<View>::~element() = default;
+template<bool View> constexpr element<View>::element(const element&) = default;
+template<bool View> constexpr element<View>::element(element&&) noexcept = default;
+template<bool View> constexpr element<View>& element<View>::operator=(const element&) = default;
+template<bool View> constexpr element<View>& element<View>::operator=(element&&) noexcept = default;
+
+template<bool View> constexpr element<View>::element(
   std::string_view Name, std::vector<attribute<View>> Attributes, std::vector<child<View>> Children) noexcept
   : name(Name), attributes(std::move(Attributes)), children(std::move(Children)) {}
 
-template<bool View> inline std::expected<element<View>, error_trace> element<View>::parse(std::string_view& rest, std::string_view doc) {
+template<bool View> constexpr size_t element<View>::to_string_size() const {
+  size_t size = 2 + name.size() + 1; // <name>
+  for (const auto& attr : attributes) size += attr.to_string_size() + 1; // space + attr
+  if (!children.empty()) {
+    size += 1; // >
+    for (const auto& child : children) size += child.to_string_size(); // child
+    size += 3 + name.size(); // </name>
+  } else size += 2; // />
+  return size;
+}
+template<bool View> constexpr char* element<View>::to_string_into(char* out) const {
+  auto it = std::ranges::copy("<"sv, out).out;
+  it = std::ranges::copy(name, it).out;
+  for (const auto& attr : attributes) *it = ' ', it = attr.to_string_into(it + 1);
+  if (!children.empty()) {
+    *it++ = '>';
+    for (const auto& child : children) it = child.to_string_into(it);
+    it = std::ranges::copy("</"sv, it).out;
+    it = std::ranges::copy(name, it).out;
+    *it++ = '>';
+  } else it = std::ranges::copy("/>"sv, it).out;
+  return it;
+}
+template<bool View> constexpr std::string element<View>::to_string() const {
+  std::string result(to_string_size(), '\0');
+  to_string_into(result.data());
+  return result;
+}
+
+template<bool View> inline constexpr std::expected<element<View>, error_trace> element<View>::parse(
+  std::string_view& rest, std::string_view doc) {
   const char* doc_end = doc.data() + doc.size();
   if (rest.empty()) return unexpected_error("xml: unexpected end of input (expected start tag)", doc_end, doc);
   if (rest.front() != '<') return unexpected_error("xml: expected start tag '<'", rest.data(), doc);
@@ -402,10 +551,10 @@ template<bool View> inline std::expected<element<View>, error_trace> element<Vie
     const char* attr_pos = rest.data();
     if (auto res = attribute<View>::parse(rest, doc); res) {
       attribute<View>& attr = *res;
-      if (std::ranges::find(attributes, attr.name, {}, &attribute<View>::name) != attributes.end())
+      if (std::ranges::find(attributes, attr.name, &attribute<View>::name) != attributes.end())
         return unexpected_error("xml: duplicate attribute name", attr_pos, doc);
       attributes.push_back(std::move(attr));
-    } return yw::unexpected_error(res.error());
+    } else return yw::unexpected_error(res.error());
   }
   bool is_self_closing = false;
   if (rest.starts_with("/>"sv)) is_self_closing = true, rest.remove_prefix(2);
@@ -420,7 +569,8 @@ template<bool View> inline std::expected<element<View>, error_trace> element<Vie
       else return yw::unexpected_error(res.error());
     }
     rest.remove_prefix(2);
-    if (auto end_name = _extract_name(rest); end_name != name)
+    auto end_name = _extract_name(rest);
+    if (end_name != name)
       return unexpected_error("xml: end tag name does not match start tag name", rest.data(), doc);
     _extract_whitespace(rest);
     if (rest.empty() || rest.front() != '>')
@@ -429,259 +579,94 @@ template<bool View> inline std::expected<element<View>, error_trace> element<Vie
   }
   return element<View>(name, std::move(attributes), std::move(children));
 }
+
+/////////////////////////////////// MARK: document
+
+template<bool View> class document {
+  constexpr document(std::vector<misc<View>> Prolog, xml::element<View> Root, std::vector<misc<View>> Trailing) noexcept
+    : prolog(std::move(Prolog)), element(std::move(Root)), trailing_misc(std::move(Trailing)) {}
+public:
+  string_type<View> xml_declaration;
+  std::vector<misc<View>> prolog;
+  xml::element<View> element;
+  std::vector<misc<View>> trailing_misc;
+
+  constexpr document() = default;
+
+  constexpr bool has_xml_declaration() const noexcept { return !xml_declaration.empty(); }
+
+  constexpr size_t to_string_size() const {
+    size_t size = xml_declaration.size() + (has_xml_declaration() ? 1 : 0); // xml declaration + newline
+    for (const auto& m : prolog) size += m.to_string_size() + 1;            // misc + newline
+    size += element.to_string_size();
+    for (const auto& m : trailing_misc) size += m.to_string_size() + 1;     // newline + misc
+    return size;
+  }
+  constexpr char* to_string_into(char* out) const {
+    auto it = out;
+    if (has_xml_declaration()) {
+      it = std::ranges::copy(xml_declaration, it).out;
+      *it++ = '\n';
+    }
+    for (const auto& m : prolog) {
+      it = std::ranges::copy(m.to_string(), it).out;
+      *it++ = '\n';
+    }
+    it = std::ranges::copy(element.to_string(), it).out;
+    for (const auto& m : trailing_misc) {
+      *it++ = '\n';
+      it = std::ranges::copy(m.to_string(), it).out;
+    }
+    return it;
+  }
+  constexpr std::string to_string() const {
+    std::string result(to_string_size(), '\0');
+    to_string_into(result.data());
+    return result;
+  }
+
+  static constexpr std::expected<document<View>, error_trace> parse(std::string_view doc) {
+    std::string_view rest = doc;
+    const char* doc_end = doc.data() + doc.size();
+    if (rest.size() >= 3 && char8_t(rest[0]) == 0xEF && char8_t(rest[1]) == 0xBB && char8_t(rest[2]) == 0xBF) rest.remove_prefix(3);
+    _extract_whitespace(rest);
+    string_type<View> xml_declaration;
+    if (rest.starts_with("<?xml"sv)) {
+      const char* decl_begin = rest.data();
+      if (rest.size() < 6 || !_is_s(rest[5])) return unexpected_error("xml: invalid xml declaration", rest.data(), doc);
+      const auto sr = std::ranges::search(rest, "?>"sv);
+      if (sr.begin() == rest.end())
+        return unexpected_error("xml: unterminated xml declaration (missing '?>')", rest.data(), doc);
+      xml_declaration = string_type<View>(decl_begin, sr.end());
+      rest.remove_prefix(static_cast<size_t>(sr.end() - decl_begin));
+      _extract_whitespace(rest);
+    }
+    std::vector<misc<View>> prolog;
+    while (true) {
+      if (rest.starts_with("<!--"sv) || rest.starts_with("<?"sv)) {
+        if (auto m = misc<View>::parse(rest, doc); !m) return yw::unexpected_error(m.error());
+        else prolog.push_back(std::move(*m));
+        _extract_whitespace(rest);
+      } else if (!rest.starts_with("<!DOCTYPE"sv)) break;
+      else return unexpected_error("xml: DOCTYPE is not supported", rest.data(), doc);
+    }
+    if (rest.empty()) return unexpected_error("xml: missing root element", doc_end, doc);
+    xml::element<View> element;
+    if (rest.starts_with("<"sv)) {
+      if (auto r = xml::element<View>::parse(rest, doc); !r) return yw::unexpected_error(r.error());
+      else element = std::move(*r);
+    } else return unexpected_error("xml: expected root element", rest.data(), doc);
+    std::vector<misc<View>> trailing_misc;
+    while (true) {
+      _extract_whitespace(rest);
+      if (rest.starts_with("<!--"sv) || rest.starts_with("<?"sv)) {
+        if (auto m = misc<View>::parse(rest, doc); !m) return yw::unexpected_error(m.error());
+        else trailing_misc.push_back(std::move(*m));
+      } else break;
+    }
+    _extract_whitespace(rest);
+    if (!rest.empty()) return unexpected_error("xml: unexpected content after root element", rest.data(), doc);
+    return document<View>(std::move(prolog), std::move(element), std::move(trailing_misc));
+  }
+};
 } // namespace yw::xml
-
-
-// //////////////////////////////////////// MARK: element
-
-// class child;
-
-// class element {
-//   int start_tag(std::string_view& rest) {
-//     if (rest.empty() || rest.front() != '<') throw std::runtime_error("xml::element: expected <");
-//     rest.remove_prefix(1);
-//     if (name = extract_name(rest); name.empty()) throw std::runtime_error("xml::element: invalid element name");
-//     while (true) {
-//       if (const auto ws = extract_whitespace(rest); !ws.empty()) {
-//         if (rest.front() == '>') return rest.remove_prefix(1), 1;
-//         else if (rest.starts_with("/>"sv)) return rest.remove_prefix(2), 2;
-//         if (auto attr = attribute(rest); attr.name.empty()) throw std::runtime_error("xml::element: invalid
-//         attribute"); else if (std::ranges::find_if(attributes, [&](const attribute& a) noexcept { return a.name ==
-//         attr.name; }) !=
-//                  attributes.end())
-//           throw std::runtime_error("xml::element: duplicate attribute name");
-//         else attributes.push_back(std::move(attr));
-//       } else {
-//         if (rest.front() == '>') return rest.remove_prefix(1), 1;
-//         else if (rest.starts_with("/>"sv)) return rest.remove_prefix(2), 2;
-//         else throw std::runtime_error("xml::element: expected whitespace or > or />");
-//       }
-//     }
-//     return 0;
-//   }
-
-// public:
-//   std::string name;
-//   std::vector<attribute> attributes;
-//   std::vector<child> children;
-//   element() = default;
-//   element(std::string_view& rest);
-//   const element* operator[](std::string_view ElementName) const;
-// };
-
-// //////////////////////////////////////// MARK: child
-
-// class child {
-//   std::variant<bool, xml::comment, xml::pi, xml::text, xml::element> _val;
-
-// public:
-//   child_type type{};
-//   child() noexcept = default;
-//   child(std::string_view& rest) : _val{false} {
-//     if (rest.size() < 3) throw std::runtime_error("xml::child: invalid child");
-//     else if (rest[0] == '<') {
-//       if (rest[1] == '!') {
-//         if (rest[2] == '-') {
-//           if (auto temp = xml::comment(rest); temp.data.empty())
-//             throw std::runtime_error("xml::child: invalid comment");
-//           else _val = std::move(temp), type = child_type::comment;
-//         } else if (rest[2] == '[') {
-//           if (auto temp = xml::text(rest); temp.data.empty()) throw std::runtime_error("xml::child: invalid text");
-//           else _val = std::move(temp), type = child_type::text;
-//         }
-//       } else if (rest[1] == '?') {
-//         if (auto temp = xml::pi(rest); temp.data.empty())
-//           throw std::runtime_error("xml::child: invalid processing instruction");
-//         else _val = std::move(temp), type = child_type::pi;
-//       } else if (rest[1] == '/') _val = true, type = child_type::unknown;
-//       else {
-//         if (auto temp = xml::element(rest); temp.name.empty()) throw std::runtime_error("xml::child: invalid
-//         element"); else _val = std::move(temp), type = child_type::element;
-//       }
-//     } else {
-//       if (auto temp = xml::text(rest); temp.data.empty()) throw std::runtime_error("xml::child: invalid text");
-//       else _val = std::move(temp), type = child_type::text;
-//     }
-//   }
-//   child(comment a) : _val(std::move(a)), type(child_type::comment) {}
-//   child(text a) : _val(std::move(a)), type(child_type::text) {}
-//   child(pi a) : _val(std::move(a)), type(child_type::pi) {}
-//   child(element a) : _val(std::move(a)), type(child_type::element) {}
-//   bool error() const { return _val.index() == 0 && !std::get<bool>(_val); }
-//   bool empty() const { return _val.index() == 0 && std::get<bool>(_val); }
-//   const xml::comment* comment() const {
-//     if (!std::holds_alternative<xml::comment>(_val)) return nullptr;
-//     return std::addressof(std::get<xml::comment>(_val));
-//   }
-//   const xml::text* text() const {
-//     if (!std::holds_alternative<xml::text>(_val)) return nullptr;
-//     return std::addressof(std::get<xml::text>(_val));
-//   }
-//   const xml::pi* pi() const {
-//     if (!std::holds_alternative<xml::pi>(_val)) return nullptr;
-//     return std::addressof(std::get<xml::pi>(_val));
-//   }
-//   const xml::element* element() const {
-//     if (!std::holds_alternative<xml::element>(_val)) return nullptr;
-//     return std::addressof(std::get<xml::element>(_val));
-//   }
-// };
-
-// element::element(std::string_view& rest) {
-//   if (const int result = start_tag(rest); result == 2) return;
-//   else if (result == 0) throw std::runtime_error("xml::element: invalid start tag");
-//   while (true) {
-//     if (auto temp = child(rest); temp.error()) throw std::runtime_error("xml::element: invalid child");
-//     else if (temp.empty()) break;
-//     else children.push_back(std::move(temp));
-//   }
-//   if (rest.starts_with("</"sv)) {
-//     if (rest.remove_prefix(2); rest.starts_with(name)) {
-//       rest.remove_prefix(name.size());
-//       extract_whitespace(rest);
-//       if (rest.empty() || rest.front() != '>') throw std::runtime_error("xml::element: expected > in end tag");
-//       else rest.remove_prefix(1);
-//     }
-//   } else throw std::runtime_error("xml::element: invalid end tag");
-// }
-
-// const element* element::operator[](std::string_view ElementName) const {
-//   for (const auto& child : children) {
-//     if (child.type == child_type::element)
-//       if (const auto& e = child.element(); e->name == ElementName) return e;
-//   }
-//   return nullptr;
-// }
-
-// //////////////////////////////////////////////////////////////////////////////// MARK: DOCUMENT
-
-// class document {
-//   static constexpr auto is_enc_start = [](char c) noexcept { return is_alpha(c); };
-//   static constexpr auto is_enc{[](char c) noexcept { return is_alnum(c) || c == '-' || c == '_' || c == '.'; }};
-//   double extract_version(std::string_view& rest) {
-//     try {
-//       // if (!rest.starts_with("version"sv)) return 0.0;
-//       rest.remove_prefix(7);
-//       if (const auto eq = extract_equal(rest); eq.empty() || rest.size() < 4) return 0.0;
-//       const auto quote = rest.front();
-//       if (quote != '"' && quote != '\'') throw "expected quote(\" or ')";
-//       if (rest[1] != '1' || rest[2] != '.' || !is_digit(rest[3])) throw "expected version number (1.xxx)";
-//       for (auto it = rest.begin() + 4;; ++it) {
-//         if (it == rest.end()) throw "invalid version number";
-//         else if (is_digit(*it)) continue;
-//         else if (*it != quote) throw "expected closing quote";
-//         auto result = yw::stov<double>(std::string_view(rest.begin() + 1, it));
-//         rest = {it + 1, rest.end()};
-//         return result;
-//       }
-//     } catch (std::string_view e) { print("[ywlib] xml::document::version: {}", e); }
-//     return 0.0;
-//   }
-//   std::string_view extract_encoding(std::string_view& rest) {
-//     try {
-//       // if (!rest.starts_with("encoding"sv)) return {};
-//       rest.remove_prefix(8);
-//       if (const auto eq = extract_equal(rest); eq.empty() || rest.size() < 3) return {};
-//       const auto quote = rest.front();
-//       if (quote != '"' && quote != '\'') return {};
-//       if (!is_enc_start(rest[1])) return {};
-//       const auto it = std::ranges::find_if_not(rest.begin() + 1, rest.end(), is_enc);
-//       if (it == rest.end() || *it != quote) return {};
-//       auto result = std::string_view(rest.begin() + 1, it);
-//       rest = {it + 1, rest.end()};
-//       return result;
-//     } catch (std::string_view e) { print("[ywlib] xml::document::encoding: {}", e); }
-//     return {};
-//   }
-//   int extract_xml_decl(std::string_view& rest) {
-//     // if (!rest.starts_with("<?xml"sv)) return 2; // no xml decl
-//     rest.remove_prefix(5);
-//     extract_whitespace(rest);
-//     if (rest.starts_with("version")) version = extract_version(rest);
-//     extract_whitespace(rest);
-//     if (rest.starts_with("encoding")) encoding = extract_encoding(rest);
-//     const auto sr = std::ranges::search(rest, "?>"sv);
-//     if (sr.empty()) return 0; // error
-//     rest = {sr.end(), rest.end()};
-//     return 1; // xml decl is valid
-//   }
-
-// public:
-//   double version{1.0};
-//   std::string encoding;
-//   std::vector<misc> miscs;
-//   element root;
-//   std::vector<misc> end_miscs;
-//   document() : version{} {}
-//   document(std::string_view& XMLDocument);
-// };
-
-// document::document(std::string_view& XMLDocument) {
-//   if (XMLDocument.starts_with("<?xml"sv)) { // XML宣言があるなら
-//     if (const bool res = extract_xml_decl(XMLDocument); res == 0) {
-//       version = 0.0;
-//       encoding.clear();
-//     }
-//   }
-//   // analyzes miscs
-//   while (true) {
-//     auto temp = misc(XMLDocument);
-//     if (temp.error()) {
-//       version = 0.0;
-//       encoding.clear();
-//       miscs.clear();
-//       return;
-//     } else if (temp.empty()) break;
-//     else miscs.push_back(std::move(temp));
-//   }
-//   // analyzes root-element
-//   root = element(XMLDocument);
-//   if (root.name.empty()) {
-//     version = 0.0;
-//     encoding.clear();
-//     miscs.clear();
-//     return;
-//   }
-//   // analyzes miscs
-//   while (true) {
-//     auto temp = misc(XMLDocument);
-//     if (temp.error()) {
-//       version = 0.0;
-//       encoding.clear();
-//       miscs.clear();
-//       root = {};
-//       end_miscs.clear();
-//       return;
-//     } else if (temp.empty()) break;
-//     else end_miscs.push_back(std::move(temp));
-//   }
-// }
-
-// template<stringable<char> S> document from_string(S&& xml_doc) {
-//   const auto original = std::string_view(xml_doc);
-//   auto rest = original;
-//   auto doc = document(rest);
-//   if (doc.version < 1.0) {
-//     auto fore_part = std::string_view(original.begin(), rest.begin());
-//     const auto line = std::ranges::count(original.begin(), rest.begin(), '\n') + 1;
-//     fore_part = fore_part.substr([&](size_t s) noexcept { return s == npos ? 0 : s; }(fore_part.find_last_of('\n')));
-//     fore_part = fore_part.substr(fore_part.size() < 20 ? 0 : fore_part.size() - 20);
-//     auto back_part = rest.substr(0, [&](size_t s) noexcept { return s == npos ? 0 : s; }(rest.find_first_of('\n')));
-//     back_part = back_part.substr(0, back_part.size() < 20 ? back_part.size() : 20);
-//     auto here = std::string(fore_part.size(), ' ') + '^';
-//     // return std::unexpected(
-//     //   format("[ywlib] yw::xml::from_string: error at line {}\n{}{}\n{}", line, fore_part, back_part, here));
-//     return {};
-//   } else return doc;
-// }
-
-// inline std::expected<document, error_trace> from_file(const std::filesystem::path& p) {
-//   file_handle fh;
-//   if (auto res = yw::open(p, open_mode::read_existing); !res) return unexpected_error(res.error());
-//   else fh = std::move(res.value());
-
-//   auto doc = reader.read_as_string();
-//   reader.close();
-//   return from_string(std::move(doc));
-// }
-// } // namespace yw::xml

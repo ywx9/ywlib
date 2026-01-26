@@ -9,8 +9,8 @@ inline class {
   comptr<IDXGISwapChain1> _swapchain;
   ATOM _class_atom{0};
   int4 _pad;
-public:
 
+public:
   bool _error(const char* msg) const {
     std::print("window: {}\n", msg);
     return false;
@@ -48,7 +48,7 @@ public:
       if (!::RegisterClassW(&wc)) return _fatal("RegisterClassW failed");
     }
     _hwnd = ::CreateWindowExW(WS_EX_ACCEPTFILES, class_name, Title.data(), WS_CAPTION | WS_SYSMENU, 0, 0, 400, 400,
-                              nullptr, nullptr, hinstance, 0);
+      nullptr, nullptr, hinstance, 0);
     if (!_hwnd) return _fatal("CreateWindowExW failed");
     DXGI_SWAP_CHAIN_DESC1 desc{UINT(Size.x), UINT(Size.y), bitmap::dxgiformat, false, DXGI_SAMPLE_DESC(1, 0), {}, 2};
     desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT, desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
@@ -62,18 +62,17 @@ public:
     const auto w = Size.x + _pad.z, h = Size.y + _pad.w;
     RECT desktop{};
     ::GetWindowRect(::GetDesktopWindow(), &desktop);
-    ::SetWindowPos(_hwnd, nullptr, (desktop.right - w) / 2, (desktop.bottom - h) / 2, w, h,
-                   SWP_NOZORDER | SWP_NOACTIVATE);
+    ::SetWindowPos(
+      _hwnd, nullptr, (desktop.right - w) / 2, (desktop.bottom - h) / 2, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
     if (!Hidden) ::ShowWindow(_hwnd, SW_SHOW), ::SetForegroundWindow(_hwnd), ::SetActiveWindow(_hwnd);
     return {};
   }
 
-  bool open(uint2 Size, null_terminated<wchar_t> Title = args.program_name) {
+  bool open(uint2 Size, null_terminated<wchar_t> Title = args::program_name) {
     return open(Size, std::move(Title), false);
   }
 
-  bool open(uint2 Size, is_bool auto Hidden) { return open(Size, args.program_name, Hidden); }
-
+  bool open(uint2 Size, is_bool auto Hidden) { return open(Size, args::program_name, Hidden); }
   bool close() {
     if (!_hwnd) throw std::runtime_error("window not opened");
     ::DestroyWindow(std::exchange(_hwnd, nullptr));
@@ -123,6 +122,15 @@ public:
       std::print("window: ResizeBuffers failed\n");
       return false;
     }
+  }
+
+  std::expected<bool, error_trace> update() {
+    _swapchain->Present(1, 0);
+    for (MSG msg; ::PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);) {
+      ::TranslateMessage(&msg), ::DispatchMessageW(&msg);
+      if (msg.message == WM_QUIT) return false;
+    }
+    return true;
   }
 } window;
 } // namespace yw

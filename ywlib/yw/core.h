@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <charconv>
 #include <compare>
 #include <concepts>
@@ -438,63 +439,40 @@ template<typename C> struct formatter<yw::source, C> {
 
 namespace yw {
 template<char_type C> class null_terminated {
-  enum { _unknown, _has_string, _has_string_view } _flag{};
-  union {
-    std::unique_ptr<std::basic_string<C>> _ptr;
-    std::basic_string_view<C> _view;
-  };
+  std::variant<std::basic_string<C>, std::basic_string_view<C>> _data;
   template<typename S> static constexpr bool _is_array = is_bounded_array<remove_ref<S>> && same_as<iter_value_t<S>, C>;
 
 public:
-  ~null_terminated() {
-    if (_flag == _has_string) _ptr.reset();
-  }
-  null_terminated() noexcept : _flag{_has_string_view}, _view{} {}
-  null_terminated(const null_terminated& nt) : _flag(nt._flag) {
-    if (_flag == _has_string) _ptr = std::make_unique<std::basic_string<C>>(*nt._ptr);
-    else if (_flag == _has_string_view) _view = nt._view;
-  }
-  null_terminated(null_terminated&& nt) noexcept : _flag(std::exchange(nt._flag, _has_string_view)) {
-    if (_flag == _has_string) _ptr = std::move(nt._ptr);
-    else if (_flag == _has_string_view) _view = std::move(nt._view);
-    nt._view = {};
-  }
-  null_terminated& operator=(const null_terminated& nt) {
-    if (_flag == _has_string) _ptr.reset();
-    if ((_flag = nt._flag) == _has_string) _ptr = std::make_unique<std::basic_string<C>>(*nt._ptr);
-    else _view = nt._view;
-    return *this;
-  }
-  null_terminated& operator=(null_terminated&& nt) noexcept {
-    if (this == &nt) return *this;
-    if (_flag == _has_string) _ptr.reset();
-    _flag = std::exchange(nt._flag, _has_string_view);
-    if (_flag == _has_string) _ptr = std::move(nt._ptr);
-    else _view = std::move(nt._view);
-    nt._view = {};
-    return *this;
-  }
-  null_terminated(const std::basic_string<C>& str) : _flag{_has_string_view}, _view{str} {}
-  null_terminated(std::basic_string<C>&& str)
-    : _flag{_has_string}, _ptr{std::make_unique<std::basic_string<C>>(std::move(str))} {}
-  null_terminated(const std::basic_string<C>&& str)
-    : _flag{_has_string}, _ptr{std::make_unique<std::basic_string<C>>(std::move(str))} {}
-  template<typename S> requires _is_array<S> null_terminated(const S& a) : _flag{_has_string_view}, _view{a} {}
-  template<stringable S> requires(!_is_array<S>) null_terminated(S&& s) : _flag{_has_string}, _ptr{} {
-    if constexpr (different_from<iter_value_t<S>, C>) _ptr = std::make_unique<std::basic_string<C>>(unicode<C>(s));
-    else _ptr = std::make_unique<std::basic_string<C>>(std::basic_string<C>(std::basic_string_view<C>(s)));
+  constexpr null_terminated() : _data(std::basic_string_view<C>{}) {}
+  constexpr null_terminated(std::basic_string<C>& str) : _data(std::in_place_index_t<1>{}, str) {}
+  constexpr null_terminated(const std::basic_string<C>& str) : _data(std::in_place_index_t<1>{}, str) {}
+  constexpr null_terminated(std::basic_string<C>&& str) : _data(std::in_place_index_t<0>{}, std::move(str)) {}
+  constexpr null_terminated(const std::basic_string<C>&& str) : _data(std::in_place_index_t<0>{}, std::move(str)) {}
+  template<typename S> requires _is_array<S> constexpr null_terminated(const S& a)
+    : _data(std::in_place_index_t<1>{}, std::basic_string_view<C>(a, std::char_traits<C>::length(a))) {}
+  template<stringable S> requires(!_is_array<S>) constexpr null_terminated(S&& s) : _data() {
+    if constexpr (different_from<iter_value_t<S>, C>) _data.template emplace<0>(unicode<C>(static_cast<S&&>(s)));
+    else _data.template emplace<0>(std::basic_string<C>(std::basic_string_view<C>(static_cast<S&&>(s))));
   }
 
-  operator std::basic_string_view<C>() const noexcept {
-    return _flag == _has_string ? std::basic_string_view<C>(*_ptr) : _view;
+  constexpr operator std::basic_string_view<C>() const {
+    return std::visit([](const auto& v) { return std::basic_string_view<C>(v); }, _data);
   }
 
-  bool empty() const noexcept { return _flag == _has_string ? _ptr->empty() : _view.empty(); }
-  size_t size() const noexcept { return _flag == _has_string ? _ptr->size() : _view.size(); }
-  const C* data() const noexcept { return _flag == _has_string ? _ptr->data() : _view.data(); }
-  const C* begin() const noexcept { return data(); }
+  bool empty() const noexcept {
+    return std::visit([](const auto& v) { return v.empty(); }, _data);
+  }
+  size_t size() const noexcept {
+    return std::visit([](const auto& v) { return v.size(); }, _data);
+  }
+  const C* data() const noexcept {
+    return std::visit([](const auto& v) { return v.data(); }, _data);
+  }
+  const C* begin() const noexcept {
+    return std::visit([](const auto& v) { return v.data(); }, _data);
+  }
   const C* end() const noexcept {
-    return _flag == _has_string ? _ptr->data() + _ptr->size() : _view.data() + _view.size();
+    return std::visit([](const auto& v) { return v.data() + v.size(); }, _data);
   }
 };
 } // namespace yw
@@ -646,6 +624,6 @@ inline constexpr struct {
     operator()();
   }
 } print;
-}
+} // namespace yw
 
 //////////////////////////////////////// MARK:

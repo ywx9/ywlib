@@ -4,13 +4,19 @@ cmake_minimum_required(VERSION 3.20)
 # User-configurable section
 # ============================================================
 set(YOUR_APP_NAME app)
+set(CONSOLE ON)
 
 # ============================================================
 # Executable (your current build target)
 # ============================================================
 project(ywlib LANGUAGES CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-add_executable(${YOUR_APP_NAME} main.cpp)
+
+if (WIN32 AND !CONSOLE)
+  add_executable(${YOUR_APP_NAME} WIN32 main.cpp)
+else()
+  add_executable(${YOUR_APP_NAME} main.cpp)
+endif()
 
 target_compile_features(${YOUR_APP_NAME} PRIVATE cxx_std_23)
 target_include_directories(${YOUR_APP_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ywlib")

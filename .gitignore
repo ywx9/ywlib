@@ -4,6 +4,8 @@
 !.gitignore
 !LICENSE
 !README.MD
+!docs/
+!docs/**
 !tools/
 !tools/**
 !ywlib/
