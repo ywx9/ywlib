@@ -669,4 +669,13 @@ public:
     return document<View>(std::move(prolog), std::move(element), std::move(trailing_misc));
   }
 };
+
+/// opens and parses an XML document from a file
+inline std::expected<document<false>, error_trace> open(const std::filesystem::path& path) {
+  if (auto fh = yw::open(path, open_mode::read_existing); !fh) return yw::unexpected_error(fh.error());
+  else if (auto size = fh->file_size(); !size) return yw::unexpected_error(size.error());
+  else if (std::string content(static_cast<size_t>(*size), '\0'); false) return {};
+  else if (auto read = fh->read_exact(content.data(), content.size()); !read) return yw::unexpected_error(read.error());
+  else return document<false>::parse(content);
+}
 } // namespace yw::xml

@@ -154,13 +154,11 @@ public:
 
   std::expected<int64_t, error_trace> file_size() const {
     if (!_file) return unexpected_error(errors::not_initialized, "file_handle: not initialized");
-    const auto cur = tell();
-    if (!_seek(0, seek_whence::end))
-      return unexpected_error(errors::operation_failed, "file_handle: failed to seek to end");
-    const auto size = tell();
-    if (!_seek(cur.value_or(0), seek_whence::begin))
-      return unexpected_error(errors::operation_failed, "file_handle: failed to seek to begin");
-    return size;
+    if (auto cur = tell(); !cur) return unexpected_error(cur.error());
+    else if (auto res = _seek(0, seek_whence::end); !res) return unexpected_error(res.error());
+    else if (auto size = tell(); !size) return unexpected_error(size.error());
+    else if (auto res = _seek(cur.value(), seek_whence::begin); !res) return unexpected_error(res.error());
+    else return size.value();
   }
 
   std::expected<size_t, error_trace> read(void* dst, size_t bytes) {

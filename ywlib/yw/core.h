@@ -502,12 +502,14 @@ struct error {
   int system_code;
   uint64_t position;
   null_terminated<char> message;
+  error() noexcept : code(errors::success), system_code(0), position(uint64_t(-1)), message() {}
   explicit error(errors e, null_terminated<char> msg, int sys_code = 0, uint64_t pos = uint64_t(-1)) noexcept
     : code(e), system_code(sys_code), message(std::move(msg)), position(pos) {}
 };
 struct error_trace {
   yw::error error;
   std::vector<source> frames;
+  error_trace() = default;
   error_trace(yw::error err, const source& src = {}) : error(std::move(err)) {
     frames.reserve(8);
     frames.push_back(src);
@@ -624,6 +626,14 @@ inline constexpr struct {
     operator()();
   }
 } print;
+
+//////////////////////////////////////// MARK: print_error
+
+inline constexpr struct {
+  template<stringable<char> S> static void operator()(S&& message, const error_trace& err, const source& src = {}) {
+    print("{}\n  at {}\n{}", err, src, message);
+  }
+} print_error;
 } // namespace yw
 
 //////////////////////////////////////// MARK:
