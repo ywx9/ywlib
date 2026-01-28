@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.20)
 # User-configurable section
 # ============================================================
 set(YOUR_APP_NAME app)
-set(CONSOLE ON)
+set(SHOW_CONSOLE ON)
 
 # ============================================================
 # Executable (your current build target)
@@ -12,7 +12,7 @@ set(CONSOLE ON)
 project(ywlib LANGUAGES CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-if (WIN32 AND !CONSOLE)
+if (WIN32 AND !SHOW_CONSOLE)
   add_executable(${YOUR_APP_NAME} WIN32 main.cpp)
 else()
   add_executable(${YOUR_APP_NAME} main.cpp)
@@ -23,6 +23,7 @@ target_include_directories(${YOUR_APP_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}
 
 if (WIN32)
   target_compile_definitions(${YOUR_APP_NAME} PRIVATE NOMINMAX UNICODE _UNICODE)
+  target_link_libraries(${YOUR_APP_NAME} PRIVATE dxgi d3d11 d2d1 dwrite dxguid windowscodecs)
 endif()
 
 target_compile_options(${YOUR_APP_NAME} PRIVATE

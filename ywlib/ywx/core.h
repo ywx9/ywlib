@@ -148,7 +148,7 @@ public:
 //////////////////////////////////////// MARK: dxgi
 
 inline class {
-  ::IDXGIFactory1* _factory{nullptr};
+  ::IDXGIFactory2* _factory{nullptr};
   ::IDXGIDevice2* _device{nullptr};
   bool _initialized{false};
 
@@ -156,8 +156,8 @@ public:
   std::expected<void, error_trace> initialize() {
     if (_initialized) return {};
     if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
-    auto hr = CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&_factory));
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDXGIFactory1 failed", hr);
+    auto hr = ::CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void**>(&_factory));
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDXGIFactory2 failed", hr);
     hr = d3d.device()->QueryInterface(__uuidof(IDXGIDevice2), reinterpret_cast<void**>(&_device));
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDevice failed", hr);
     _initialized = true;
@@ -170,7 +170,7 @@ public:
     _initialized = false;
   }
 
-  ::IDXGIFactory1* factory() { return _factory; }
+  ::IDXGIFactory2* factory() { return _factory; }
   ::IDXGIDevice2* device() { return _device; }
 } dxgi;
 

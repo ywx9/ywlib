@@ -67,7 +67,8 @@ public:
     auto hr = swapchain->GetBuffer(0, __uuidof(IDXGISurface), reinterpret_cast<void**>(&surface.get()));
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "GetBuffer failed", hr);
     comptr<::ID2D1Bitmap1> bmp;
-    hr = d2d.context()->CreateBitmapFromDxgiSurface(surface.get(), &properties, &bmp.get());
+    D2D1_BITMAP_PROPERTIES1 bp{pixelformat, 96.0f, 96.0f, D2D1_BITMAP_OPTIONS(3), nullptr};
+    hr = d2d.context()->CreateBitmapFromDxgiSurface(surface.get(), &bp, &bmp.get());
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBitmapFromDxgiSurface failed", hr);
     return bitmap(std::move(bmp), size);
   }

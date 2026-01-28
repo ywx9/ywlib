@@ -117,7 +117,7 @@ template<auto V, typename T = decltype(V)> requires convertible_to<decltype(V), 
 };
 
 namespace internal {
-template<size_t I, typename T, typename... Ts> constexpr auto _select(T&& a, Ts&&... as) noexcept {
+template<size_t I, typename T, typename... Ts> constexpr decltype(auto) _select(T&& a, Ts&&... as) noexcept {
   if constexpr (I == 0) return static_cast<T&&>(a);
   else return _select<I - 1>(static_cast<Ts&&>(as)...);
 }
@@ -127,7 +127,7 @@ template<size_t I, typename T, typename... Ts> constexpr auto _select(T&& a, Ts&
 /// \note If I is a bool value, selects the first argument if I is true.
 template<std::convertible_to<size_t> auto I, typename... Ts>
 requires((is_bool<decltype(I)> && sizeof...(Ts) == 2) || (!is_bool<decltype(I)> && I < sizeof...(Ts)))
-constexpr auto select(Ts&&... as) noexcept {
+constexpr decltype(auto) select(Ts&&... as) noexcept {
   if constexpr (is_bool<decltype(I)>) return internal::_select<size_t(!I)>(static_cast<Ts&&>(as)...);
   else return internal::_select<size_t(I)>(static_cast<Ts&&>(as)...);
 }
@@ -135,7 +135,7 @@ constexpr auto select(Ts&&... as) noexcept {
 /// selects the type of the I-th argument from the given types.
 /// \note If I is a bool value, selects the first type if I is true.
 template<std::convertible_to<size_t> auto I, typename... Ts> using select_type =
-  decltype(select<I>(std::type_identity<Ts>{}...))::type;
+  remove_ref<decltype(select<I>(std::type_identity<Ts>{}...))>::type;
 
 /// selects the value of the I-th argument from the given arguments.
 /// \note If I is a bool value, selects the first argument if I is true.

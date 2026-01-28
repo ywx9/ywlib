@@ -66,11 +66,11 @@ template<std::regular T, size_t N> struct vector {
   }
   template<size_t I> requires(I < N)
   constexpr auto&& get() && {
-    return mv(_vals[I]);
+    return std::move(_vals[I]);
   }
   template<size_t I> requires(I < N)
   constexpr const auto&& get() const&& {
-    return mv(_vals[I]);
+    return std::move(_vals[I]);
   }
 
   constexpr vector operator()() const noexcept { return *this; }
@@ -242,7 +242,7 @@ template<std::regular T> struct vector<T, 1> {
   }
   template<size_t I> requires(I == 0)
   constexpr T&& get() && noexcept {
-    return mv(x);
+    return std::move(x);
   }
   template<size_t I> requires(I == 0)
   constexpr const T& get() const& noexcept {
@@ -250,7 +250,7 @@ template<std::regular T> struct vector<T, 1> {
   }
   template<size_t I> requires(I == 0)
   constexpr const T&& get() const&& noexcept {
-    return mv(x);
+    return std::move(x);
   }
 
   constexpr vector operator()() const noexcept { return *this; }
@@ -304,22 +304,10 @@ template<std::regular T> struct vector<T, 2> {
     return ii == 0 ? x : y;
   }
 
-  template<size_t I> requires(I < 2)
-  constexpr T& get() & noexcept {
-    return select<I>(x, y);
-  }
-  template<size_t I> requires(I < 2)
-  constexpr T&& get() && noexcept {
-    return mv(select<I>(x, y));
-  }
-  template<size_t I> requires(I < 2)
-  constexpr const T& get() const& noexcept {
-    return select<I>(x, y);
-  }
-  template<size_t I> requires(I < 2)
-  constexpr const T&& get() const&& noexcept {
-    return mv(select<I>(x, y));
-  }
+  template<size_t I> requires(I < 2) constexpr T& get() & noexcept { return select<I>(x, y); }
+  template<size_t I> requires(I < 2) constexpr T&& get() && noexcept { return std::move(select<I>(x, y)); }
+  template<size_t I> requires(I < 2) constexpr const T& get() const& noexcept { return select<I>(x, y); }
+  template<size_t I> requires(I < 2) constexpr const T&& get() const&& noexcept { return std::move(select<I>(x, y)); }
 
   constexpr vector operator()() const noexcept { return *this; }
 };
@@ -384,7 +372,7 @@ template<std::regular T> struct vector<T, 3> {
   }
   template<size_t I> requires(I < 3)
   constexpr T&& get() && noexcept {
-    return mv(select<I>(x, y, z));
+    return std::move(select<I>(x, y, z));
   }
   template<size_t I> requires(I < 3)
   constexpr const T& get() const& noexcept {
@@ -392,7 +380,7 @@ template<std::regular T> struct vector<T, 3> {
   }
   template<size_t I> requires(I < 3)
   constexpr const T&& get() const&& noexcept {
-    return mv(select<I>(x, y, z));
+    return std::move(select<I>(x, y, z));
   }
 
   constexpr vector operator()() const noexcept { return *this; }
@@ -468,7 +456,7 @@ template<std::regular T> struct vector<T, 4> {
   }
   template<size_t I> requires(I < 4)
   constexpr T&& get() && noexcept {
-    return mv(select<I>(x, y, z, w));
+    return std::move(select<I>(x, y, z, w));
   }
   template<size_t I> requires(I < 4)
   constexpr const T& get() const& noexcept {
@@ -476,7 +464,7 @@ template<std::regular T> struct vector<T, 4> {
   }
   template<size_t I> requires(I < 4)
   constexpr const T&& get() const&& noexcept {
-    return mv(select<I>(x, y, z, w));
+    return std::move(select<I>(x, y, z, w));
   }
 
   constexpr vector operator()() const noexcept { return *this; }
