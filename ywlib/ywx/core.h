@@ -333,8 +333,8 @@ public:
 
 //////////////////////////////////////// MARK: render_target
 
-namespace internal {
-inline std::variant<std::monostate, ::ID2D1Image*, ::ID3D11RenderTargetView*> render_target;
+namespace sys {
+inline std::variant<std::monostate, ::ID2D1Image*, ::ID3D11RenderTargetView*> rendertarget;
 }
 
 } // namespace yw

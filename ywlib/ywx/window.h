@@ -47,16 +47,20 @@ enum class window_style : uint32_t {
 };
 
 class window {
+  friend class control;
+  friend class subwindow;
   friend bool ::yw::mainloop();
   friend LRESULT __stdcall decltype(window_class)::proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
   static constexpr int initial_size = 400;
   inline static std::vector<HWND> _active_window_list;
 
   HWND _hwnd = nullptr;
+  window_style _style = window_style::unknown;
   int4 _pad;
   bitmap _rendertarget;
   comptr<::IDXGISwapChain1> _swapchain;
-  std::vector<control> _controls; // 実装途中
+  std::vector<HWND> _subwindows;
+  std::vector<control> _controls;
 
   std::expected<void, error_trace> _create_window(null_terminated<wchar_t> title, window_style style) {
     if (auto res = window_class.initialize(); !res) return unexpected_error(res.error());
@@ -132,7 +136,7 @@ public:
   window(const window&) = delete;
   window& operator=(const window&) = delete;
 
-  ~window() {
+  virtual ~window() {
     if (!_hwnd) return;
     auto it = std::find(_active_window_list.begin(), _active_window_list.end(), _hwnd);
     if (it != _active_window_list.end()) _active_window_list.erase(it);
@@ -157,6 +161,7 @@ public:
   }
 
   HWND handle() const noexcept { return _hwnd; }
+  window_style style() const noexcept { return _style; }
 
   static std::expected<window, error_trace> create(int2 Pos, uint2 Size, null_terminated<wchar_t> Title,
     window_style Style = window_style::regular, bool Hidden = false) {
@@ -204,27 +209,66 @@ public:
   auto begin_draw() { return _rendertarget.begin_draw(); }
   auto begin_draw(const color& clear_color) { return _rendertarget.begin_draw(clear_color);  }
   auto end_draw() { return _rendertarget.end_draw();  }
+};
 
+//////////////////////////////////////// MARK: subwindow
+
+enum class subwindow_style : uint32_t {
+  unknown,
+  subwindow, // ex) secondary windows
+  modal,     // ex) message box
+  temporary, // ex) context menu
+};
+
+class subwindow {
+  static window_style _select_window_style(window_style parent_style, subwindow_style style) {
+    switch (style) {
+    case subwindow_style::subwindow: return parent_style;
+    case subwindow_style::modal: return window_style::fixed;
+    case subwindow_style::temporary: return window_style::borderless;
+    default: return window_style::unknown;
+    }
+  }
+  window _owner;
+  const window* _parent{nullptr};
+  subwindow_style _style{subwindow_style::unknown};
+  subwindow(const window& parent, window&& w, subwindow_style style)
+    : _owner(std::move(w)), _parent(&parent), _style(style) {}
+public:
+  subwindow() noexcept = default;
+  subwindow(const subwindow&) = delete;
+  subwindow& operator=(const subwindow&) = delete;
+
+  virtual ~subwindow() {
+
+  }
 };
 
 //////////////////////////////////////// MARK: control
 
 class control {
-protected:
-  const control* _parent = nullptr;
-  control(const control& parent, float2 offset, float2 size);
-public:
-  float2 position, size, rounded_radius;
-  float text_size{};
-  bool visible{}, enabled{};
+// protected:
+//   std::variant<std::monostate, HWND, control*> _parent;
+//   control(const control& group, float2 position, float2 size);
+//   control(const window& wnd, float2 position, float2 size);
+// public:
+//   float2 position, size, rounded_radius;
+//   float text_size{};
+//   bool visible{}, enabled{};
 
-  control() noexcept = default;
-  control(const control&) = delete;
-  control& operator=(const control&) = delete;
+//   control() noexcept = default;
+//   control(const control&) = delete;
+//   control& operator=(const control&) = delete;
 
-  virtual ~control() {
+//   virtual ~control() {
+//     if (_parent.index() != 1) return;
+//     if (auto p = reinterpret_cast<window*>(::GetWindowLongPtrW(std::get<1>(_parent), GWLP_USERDATA)); !p) return;
+//     else if (auto it = std::find(p->_controls.begin(), p->_controls.end(), this); it != p->_controls.end()) p->_controls.erase(it);
+//   }
 
-  }
+//   virtual std::expected<void, error_trace> draw() = 0;
+//   virtual std::expected<void, error_trace> focus() = 0;
+//   virtual std::expected<LRESULT, error_trace> proc(UINT msg, WPARAM wparam, LPARAM lparam) = 0;
 };
 
 //////////////////////////////////////// MARK: window_class proc
@@ -245,7 +289,7 @@ inline LRESULT __stdcall decltype(window_class)::proc(HWND hwnd, UINT msg, WPARA
   return ::DefWindowProcW(hwnd, msg, wparam, lparam);
 }
 
-///////////////////////////////////////// MARK: mainloop
+//////////////////////////////////////// MARK: mainloop
 
 inline bool mainloop() {
   for (auto hw : window::_active_window_list) {

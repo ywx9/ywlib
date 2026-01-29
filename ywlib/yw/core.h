@@ -116,7 +116,7 @@ template<auto V, typename T = decltype(V)> requires convertible_to<decltype(V), 
   consteval type operator()() const noexcept { return value; }
 };
 
-namespace internal {
+namespace sys {
 template<size_t I, typename T, typename... Ts> constexpr decltype(auto) _select(T&& a, Ts&&... as) noexcept {
   if constexpr (I == 0) return static_cast<T&&>(a);
   else return _select<I - 1>(static_cast<Ts&&>(as)...);
@@ -128,8 +128,8 @@ template<size_t I, typename T, typename... Ts> constexpr decltype(auto) _select(
 template<std::convertible_to<size_t> auto I, typename... Ts>
 requires((is_bool<decltype(I)> && sizeof...(Ts) == 2) || (!is_bool<decltype(I)> && I < sizeof...(Ts)))
 constexpr decltype(auto) select(Ts&&... as) noexcept {
-  if constexpr (is_bool<decltype(I)>) return internal::_select<size_t(!I)>(static_cast<Ts&&>(as)...);
-  else return internal::_select<size_t(I)>(static_cast<Ts&&>(as)...);
+  if constexpr (is_bool<decltype(I)>) return sys::_select<size_t(!I)>(static_cast<Ts&&>(as)...);
+  else return sys::_select<size_t(I)>(static_cast<Ts&&>(as)...);
 }
 
 /// selects the type of the I-th argument from the given types.
@@ -240,16 +240,16 @@ inline constexpr auto data = []<std::ranges::range R>(R&& r) noexcept(noexcept(s
                                requires requires { std::ranges::data(std::declval<R>()); }
 { return std::ranges::data(fwd<R>(r)); };
 
-namespace internal {
+namespace sys {
 template<typename T, template<typename> typename> struct iter_type : std::type_identity<void> {};
 template<std::input_iterator I, template<typename> typename Tm> struct iter_type<I, Tm> : std::type_identity<Tm<I>> {};
 template<std::ranges::input_range R, template<typename> typename Tm> struct iter_type<R, Tm>
   : std::type_identity<Tm<iterator_t<R>>> {};
 } // namespace internal
 
-template<typename T> using iter_value_t = internal::iter_type<remove_cvref<T>, std::iter_value_t>::type;
-template<typename T> using iter_difference_t = internal::iter_type<remove_cvref<T>, std::iter_difference_t>::type;
-template<typename T> using iter_reference_t = internal::iter_type<remove_cvref<T>, std::iter_reference_t>::type;
+template<typename T> using iter_value_t = sys::iter_type<remove_cvref<T>, std::iter_value_t>::type;
+template<typename T> using iter_difference_t = sys::iter_type<remove_cvref<T>, std::iter_difference_t>::type;
+template<typename T> using iter_reference_t = sys::iter_type<remove_cvref<T>, std::iter_reference_t>::type;
 
 template<typename I> concept input_iterator = std::input_iterator<I>;
 template<typename I> concept forward_iterator = std::forward_iterator<I>;
@@ -314,7 +314,7 @@ template<typename T> inline constexpr size_t extent = select_type<requires {
 
 template<typename T, size_t N = extent<T>> concept tuple_like = extent<T> == N && N != 0;
 
-namespace internal {
+namespace sys {
 template<size_t I, typename T> inline constexpr int get_strategy = []() -> int {
   using std::get;
   if constexpr (std::is_bounded_array_v<std::remove_cvref_t<T>> && I < std::extent_v<std::remove_cvref_t<T>>)
@@ -327,12 +327,12 @@ template<size_t I, typename T> inline constexpr int get_strategy = []() -> int {
 } // namespace internal
 
 template<size_t I> inline constexpr auto get =                           //
-  []<typename T>(T&& a) noexcept(bool(internal::get_strategy<I, T> & 4)) //
-  -> decltype(auto) requires(internal::get_strategy<I, T> != 0) {
+  []<typename T>(T&& a) noexcept(bool(sys::get_strategy<I, T> & 4)) //
+  -> decltype(auto) requires(sys::get_strategy<I, T> != 0) {
   using std::get;
-  if constexpr ((internal::get_strategy<I, T> & 3) == 1) return a[I];
-  else if constexpr ((internal::get_strategy<I, T> & 3) == 2) return get<I>(static_cast<T&&>(a));
-  else if constexpr ((internal::get_strategy<I, T> & 3) == 3) return static_cast<T&&>(a).template get<I>();
+  if constexpr ((sys::get_strategy<I, T> & 3) == 1) return a[I];
+  else if constexpr ((sys::get_strategy<I, T> & 3) == 2) return get<I>(static_cast<T&&>(a));
+  else if constexpr ((sys::get_strategy<I, T> & 3) == 3) return static_cast<T&&>(a).template get<I>();
 };
 
 template<typename T, size_t I> concept gettable = requires { yw::get<I>(std::declval<T>()); };

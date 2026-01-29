@@ -77,9 +77,9 @@ public:
 
   std::expected<void, error_trace> begin_draw() {
     if (!*this) return unexpected_error(errors::not_initialized, "bitmap not initialized");
-    if (internal::render_target.index() != 0)
+    if (sys::rendertarget.index() != 0)
       return unexpected_error(errors::invalid_operation, "another render target is already in drawing state");
-    internal::render_target = _bitmap.get();
+    sys::rendertarget = _bitmap.get();
     d2d.context()->SetTarget(_bitmap.get());
     d2d.context()->BeginDraw();
     return {};
@@ -93,12 +93,12 @@ public:
 
   std::expected<void, error_trace> end_draw() {
     if (!*this) return unexpected_error(errors::not_initialized, "bitmap not initialized");
-    if (internal::render_target.index() != 1 || std::get<1>(internal::render_target) != _bitmap.get())
+    if (sys::rendertarget.index() != 1 || std::get<1>(sys::rendertarget) != _bitmap.get())
       return unexpected_error(errors::invalid_operation, "bitmap not in drawing state");
     if (auto hr = d2d.context()->EndDraw(); FAILED(hr))
       return unexpected_error(errors::operation_failed, "EndDraw failed", hr);
     d2d.context()->SetTarget(nullptr);
-    internal::render_target = std::monostate{};
+    sys::rendertarget = std::monostate{};
     return {};
   }
 
@@ -146,9 +146,9 @@ public:
 
 inline std::expected<void, error_trace> draw_bitmap(float2 pos, float2 size, const bitmap& b, float1 opacity = 1.0f) {
   if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-  if (internal::render_target.index() != 1)
+  if (sys::rendertarget.index() != 1)
     return unexpected_error(errors::invalid_operation, "draw_bitmap: render target not set");
-  if (std::get<1>(internal::render_target) == static_cast<::ID2D1Bitmap1*>(b))
+  if (std::get<1>(sys::rendertarget) == static_cast<::ID2D1Bitmap1*>(b))
     return unexpected_error(errors::invalid_operation, "draw_bitmap: cannot draw bitmap onto itself");
   if (!b) return {}; // nothing to draw
   D2D1_RECT_F rect = D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y);
@@ -158,9 +158,9 @@ inline std::expected<void, error_trace> draw_bitmap(float2 pos, float2 size, con
 
 inline std::expected<void, error_trace> draw_bitmap(float2 pos, const bitmap& b, float1 opacity = 1.0f) {
   if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-  if (internal::render_target.index() != 1)
+  if (sys::rendertarget.index() != 1)
     return unexpected_error(errors::invalid_operation, "draw_bitmap: render target not set");
-  if (std::get<1>(internal::render_target) == static_cast<::ID2D1Bitmap1*>(b))
+  if (std::get<1>(sys::rendertarget) == static_cast<::ID2D1Bitmap1*>(b))
     return unexpected_error(errors::invalid_operation, "draw_bitmap: cannot draw bitmap onto itself");
   if (!b) return {};
   D2D1_RECT_F rect = D2D1::RectF(pos.x, pos.y, pos.x + b.size().x, pos.y + b.size().y);
@@ -172,7 +172,7 @@ inline std::expected<void, error_trace> draw_bitmap(float2 pos, const bitmap& b,
 
 inline std::expected<void, error_trace> draw_line(float2 p0, float2 p1, const color& c, float1 width = 1.0f) {
   if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-  if (internal::render_target.index() != 1)
+  if (sys::rendertarget.index() != 1)
     return unexpected_error(errors::invalid_operation, "draw_line: render target not set");
   d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
   d2d.context()->DrawLine(
@@ -189,7 +189,7 @@ inline std::expected<void, error_trace> draw_line(float2 p0, float2 p1, float1 w
 inline std::expected<void, error_trace> draw_rectangle(
   float2 pos, float2 size, const color& c, float1 border_width = 1.0f) {
   if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-  if (internal::render_target.index() != 1)
+  if (sys::rendertarget.index() != 1)
     return unexpected_error(errors::invalid_operation, "draw_rectangle: render target not set");
   d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
   D2D1_RECT_F rect = D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y);
@@ -203,7 +203,7 @@ inline std::expected<void, error_trace> draw_rectangle(float2 pos, float2 size, 
 
 inline std::expected<void, error_trace> fill_rectangle(float2 pos, float2 size, const color& c = colors::black) {
   if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-  if (internal::render_target.index() != 1)
+  if (sys::rendertarget.index() != 1)
     return unexpected_error(errors::invalid_operation, "fill_rectangle: render target not set");
   d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
   D2D1_RECT_F rect = D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y);
@@ -216,7 +216,7 @@ inline std::expected<void, error_trace> fill_rectangle(float2 pos, float2 size, 
 inline std::expected<void, error_trace> draw_round_rectangle(
   float2 pos, float2 size, float2 radius, const color& c, float1 border_width = 1.0f) {
   if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-  if (internal::render_target.index() != 1)
+  if (sys::rendertarget.index() != 1)
     return unexpected_error(errors::invalid_operation, "draw_round_rectangle: render target not set");
   d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
   D2D1_ROUNDED_RECT r{D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
@@ -232,7 +232,7 @@ inline std::expected<void, error_trace> draw_round_rectangle(
 inline std::expected<void, error_trace> fill_round_rectangle(
   float2 pos, float2 size, float2 radius, const color& c = colors::black) {
   if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-  if (internal::render_target.index() != 1)
+  if (sys::rendertarget.index() != 1)
     return unexpected_error(errors::invalid_operation, "fill_round_rectangle: render target not set");
   d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
   D2D1_ROUNDED_RECT r{D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
@@ -245,7 +245,7 @@ inline std::expected<void, error_trace> fill_round_rectangle(
 inline std::expected<void, error_trace> draw_ellipse(
   float2 center, float2 radius, const color& c, float1 border_width = 1.0f) {
   if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-  if (internal::render_target.index() != 1)
+  if (sys::rendertarget.index() != 1)
     return unexpected_error(errors::invalid_operation, "draw_ellipse: render target not set");
   d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
   D2D1_ELLIPSE ellipse = D2D1::Ellipse(D2D1::Point2F(center.x, center.y), radius.x, radius.y);
@@ -259,12 +259,11 @@ inline std::expected<void, error_trace> draw_ellipse(float2 center, float2 radiu
 
 inline std::expected<void, error_trace> fill_ellipse(float2 center, float2 radius, const color& c = colors::black) {
   if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-  if (internal::render_target.index() != 1)
+  if (sys::rendertarget.index() != 1)
     return unexpected_error(errors::invalid_operation, "fill_ellipse: render target not set");
   d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
   D2D1_ELLIPSE ellipse = D2D1::Ellipse(D2D1::Point2F(center.x, center.y), radius.x, radius.y);
   d2d.context()->FillEllipse(&ellipse, d2d.solid_brush());
   return {};
 }
-
 } // namespace yw

@@ -2,7 +2,7 @@
 #include "yw/core.h"
 
 namespace yw {
-namespace internal {
+namespace sys {
 static constexpr char _b64_encode_table[] = {                                     //
   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', //
   'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f', //
@@ -51,13 +51,13 @@ template<contiguous_range Out> std::expected<Out, error_trace> _b64_decode(strin
   result.reserve((m * 3) / 4);
   const char* it = sv.data();
   for (const char* const end = it + m; it < end; it += 4) {
-    const auto a = internal::_b64_decode_table[*it];
+    const auto a = sys::_b64_decode_table[*it];
     if (a >= 64) return unexpected_error(errors::invalid_argument, "base64::decode: invalid character");
-    const auto b = internal::_b64_decode_table[*(it + 1)];
+    const auto b = sys::_b64_decode_table[*(it + 1)];
     if (b >= 64) return unexpected_error(errors::invalid_argument, "base64::decode: invalid character");
     result.emplace_back(C((a << 2) | (b >> 4)));
-    const auto c = internal::_b64_decode_table[*(it + 2)];
-    const auto d = internal::_b64_decode_table[*(it + 3)];
+    const auto c = sys::_b64_decode_table[*(it + 2)];
+    const auto d = sys::_b64_decode_table[*(it + 3)];
     if (c < 64) {
       result.emplace_back(C((b << 4) | (c >> 2)));
       if (d >= 64) {
@@ -74,15 +74,15 @@ template<contiguous_range Out> std::expected<Out, error_trace> _b64_decode(strin
 } // namespace internal
 
 struct _base64 {
-  static constexpr std::string encode(const void* Data, size_t Size) { return internal::_b64_encode(Data, Size); }
+  static constexpr std::string encode(const void* Data, size_t Size) { return sys::_b64_encode(Data, Size); }
   template<contiguous_range R> static constexpr std::string encode(const R& Data) {
-    return internal::_b64_encode(std::ranges::data(Data), std::ranges::size(Data));
+    return sys::_b64_encode(std::ranges::data(Data), std::ranges::size(Data));
   }
   static constexpr std::expected<std::vector<std::byte>, error_trace> decode(stringable<char> auto&& encoded) {
-    return internal::_b64_decode<std::vector<std::byte>>(encoded);
+    return sys::_b64_decode<std::vector<std::byte>>(encoded);
   }
   static constexpr std::expected<std::string, error_trace> decode_as_string(stringable<char> auto&& encoded) {
-    return internal::_b64_decode<std::string>(encoded);
+    return sys::_b64_decode<std::string>(encoded);
   }
 };
 

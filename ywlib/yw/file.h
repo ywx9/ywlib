@@ -13,7 +13,7 @@ class file_handle;
 } // namespace yw
 
 #ifdef _WIN32
-namespace yw::internal {
+namespace yw::sys {
 inline std::expected<FILE*, error_trace> _open_win(const std::filesystem::path& p, open_mode mode) {
   const auto generic_read_write = GENERIC_READ | GENERIC_WRITE;
   DWORD desired = 0, disp = 0, share = FILE_SHARE_READ;
@@ -119,7 +119,7 @@ public:
 
   static std::expected<file_handle, error_trace> create(const std::filesystem::path& path, open_mode mode) {
 #ifdef _WIN32
-    if (auto fexp = internal::_open_win(path, mode); !fexp)
+    if (auto fexp = sys::_open_win(path, mode); !fexp)
 #else
     if (auto fexp = internal::_open_posix(path, mode); !fexp)
 #endif
