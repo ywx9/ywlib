@@ -630,8 +630,9 @@ inline constexpr struct {
 //////////////////////////////////////// MARK: print_error
 
 inline constexpr struct {
-  template<stringable<char> S> static void operator()(S&& message, const error_trace& err, const source& src = {}) {
+  template<stringable<char> S> static int operator()(S&& message, const error_trace& err, const source& src = {}) {
     print("{}\n  at {}\n{}", err, src, message);
+    return err.error.system_code;
   }
 } print_error;
 } // namespace yw

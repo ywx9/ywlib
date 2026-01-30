@@ -26,17 +26,22 @@ inline bool yes(const null_terminated<wchar_t>& Text, const null_terminated<wcha
 
 //////////////////////////////////////// MARK: print_fallback
 
-inline const struct {
-  template<typename S, typename... Ts> void operator()(S&& fmt, Ts&&... as) const {
-    const auto s = format(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
-    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (h != nullptr && h != INVALID_HANDLE_VALUE) {
-      print_inline(s);
-      if (DWORD _; GetConsoleMode(h, &_) != 0) return;
-    }
-    ok(s, L"Message");
-  }
-} print_fallback;
+/// prints formatted string and shows message box as fallback
+inline constexpr auto print_fallback = []<typename S, typename... Ts>(S&& fmt, Ts&&... as) {
+  const auto s = format(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
+  print(s);
+  ok(s, L"Message");
+};
+
+/// prints error message and shows message box as fallback
+/// \return system error code
+inline constexpr auto print_error_fallback = //
+  []<stringable S>(S&& message, const error_trace& err, const source& src = {}) -> int {
+  const auto s = format("{}\n  at {}\n{}", err, src, message);
+  print(s);
+  ok(s, L"Error");
+  return err.error.system_code;
+};
 
 //////////////////////////////////////// MARK: comptr
 
@@ -250,7 +255,8 @@ public:
 //////////////////////////////////////// MARK: dwrite
 
 inline class {
-  ::IDWriteFactory1* _factory{nullptr};
+  ::IDWriteFactory1* _factory = nullptr;
+  ::IDWriteTextFormat* _text_format = nullptr;
   bool _initialized{false};
 
 public:
@@ -260,16 +266,20 @@ public:
     auto hr = ::DWriteCreateFactory(
       DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory1), reinterpret_cast<IUnknown**>(&_factory));
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "DWriteCreateFactory failed", hr);
+    hr = _factory->CreateTextFormat(L"", nullptr, DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
+      DWRITE_FONT_STRETCH_NORMAL, 16.0f, L"", &_text_format);
     _initialized = true;
     return {};
   }
 
   void release() {
+    if (_text_format) std::exchange(_text_format, nullptr)->Release();
     if (_factory) std::exchange(_factory, nullptr)->Release();
     _initialized = false;
   }
 
   ::IDWriteFactory1* factory() { return _factory; }
+  ::IDWriteTextFormat* text_format() { return _text_format; }
 } dwrite;
 
 ///////////////////////////////////////// MARK: wic
@@ -331,10 +341,42 @@ public:
   ::IXAudio2MasteringVoice* mastering_voice() { return _mastering_voice; }
 } xaudio2;
 
-//////////////////////////////////////// MARK: render_target
+//////////////////////////////////////// MARK: drawing
 
-namespace sys {
-inline std::variant<std::monostate, ::ID2D1Image*, ::ID3D11RenderTargetView*> rendertarget;
-}
+class drawing {
+  inline static std::variant<std::monostate, ID2D1Image*, ID3D11RenderTargetView*> _rendertarget{};
+  source _source;
+  drawing(const source& src) : _source(src) {}
+public:
+  ~drawing() {
+    if (dimension() == 2) {
+      if (auto hr = d2d.context()->EndDraw(); FAILED(hr))
+        print_fallback("drawing failed (code={}) that starts at {}", hr, _source);
+      d2d.context()->SetTarget(nullptr);
+    } else if (dimension() == 3) {
+      // nothing to do yet
+    }
+    _rendertarget = std::monostate{};
+  }
+
+  static std::expected<drawing, error_trace> create(ID2D1Image* rendertarget, const source& src) {
+    if (_rendertarget.index() != 0) return unexpected_error(errors::invalid_operation, "rendertarget already set");
+    if (rendertarget == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
+    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
+    _rendertarget = rendertarget;
+    d2d.context()->SetTarget(rendertarget);
+    d2d.context()->BeginDraw();
+    return drawing{src};
+  }
+  static std::expected<drawing, error_trace> create(ID3D11RenderTargetView* rendertarget, const source& src) {
+    if (_rendertarget.index() != 0) return unexpected_error(errors::invalid_operation, "rendertarget already set");
+    if (rendertarget == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
+    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
+    // nothing to do yet
+    return drawing{src};
+  }
+
+  static uint32_t dimension() { return uint32_t(_rendertarget.index() ? _rendertarget.index() + 1 : 0); }
+};
 
 } // namespace yw

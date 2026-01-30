@@ -1,12 +1,11 @@
 #pragma once
-#include "ywx/bitmap.h"
-#include "ywx/core.h"
+#include "ywx/text_format.h"
 
 namespace yw {
 
 class window;
-class control;
 class subwindow;
+class control;
 
 bool mainloop();
 
@@ -47,12 +46,13 @@ enum class window_style : uint32_t {
 };
 
 class window {
-  friend class control;
+protected:
   friend class subwindow;
+  friend class control;
   friend bool ::yw::mainloop();
   friend LRESULT __stdcall decltype(window_class)::proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
   static constexpr int initial_size = 400;
-  inline static std::vector<HWND> _active_window_list;
+  inline static std::vector<HWND> _active_window_list{};
 
   HWND _hwnd = nullptr;
   window_style _style = window_style::unknown;
@@ -60,7 +60,7 @@ class window {
   bitmap _rendertarget;
   comptr<::IDXGISwapChain1> _swapchain;
   std::vector<HWND> _subwindows;
-  std::vector<control> _controls;
+  std::vector<std::unique_ptr<control>> _controls;
 
   std::expected<void, error_trace> _create_window(null_terminated<wchar_t> title, window_style style) {
     if (auto res = window_class.initialize(); !res) return unexpected_error(res.error());
@@ -74,13 +74,17 @@ class window {
       initial_size, initial_size, nullptr, nullptr, window_class.hinstance, nullptr);
     if (!hwnd) return unexpected_error(errors::operation_failed, "CreateWindowExW failed", ::GetLastError());
     ::SetWindowLongPtrW(_hwnd = hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+    _active_window_list.push_back(_hwnd);
+    _style = style;
     return {};
   }
 
   std::expected<void, error_trace> _calculate_padding() {
     RECT client_rect{}, window_rect{};
-    if (!::GetClientRect(_hwnd, &client_rect)) return unexpected_error(errors::operation_failed, "GetClientRect failed", ::GetLastError());
-    if (!::GetWindowRect(_hwnd, &window_rect)) return unexpected_error(errors::operation_failed, "GetWindowRect failed", ::GetLastError());
+    if (!::GetClientRect(_hwnd, &client_rect))
+      return unexpected_error(errors::operation_failed, "GetClientRect failed", ::GetLastError());
+    if (!::GetWindowRect(_hwnd, &window_rect))
+      return unexpected_error(errors::operation_failed, "GetWindowRect failed", ::GetLastError());
     const auto width = window_rect.right - window_rect.left;
     const auto height = window_rect.bottom - window_rect.top;
     const auto pad_left = (width - client_rect.right) / 2; // left, right and bottom are same
@@ -90,7 +94,8 @@ class window {
   }
 
   std::expected<void, error_trace> _resize(uint2 size) {
-    print("required client size: {} x {}\npadding: left {}, top {}, right {}, bottom {}", size.x, size.y, _pad.x, _pad.y, _pad.z, _pad.w);
+    print("required client size: {} x {}\npadding: left {}, top {}, right {}, bottom {}", size.x, size.y, _pad.x,
+      _pad.y, _pad.z, _pad.w);
     const auto w = size.x + _pad.z, h = size.y + _pad.w;
     print("calculated window size: {} x {}", w, h);
     if (!::SetWindowPos(_hwnd, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE))
@@ -117,8 +122,10 @@ class window {
 
   std::expected<void, error_trace> _move_to_center() {
     RECT r;
-    if (auto desktop = ::GetDesktopWindow(); !desktop) return unexpected_error(errors::operation_failed, "GetDesktopWindow failed", ::GetLastError());
-    else if (!::GetClientRect(desktop, &r)) return unexpected_error(errors::operation_failed, "GetClientRect failed", ::GetLastError());
+    if (auto desktop = ::GetDesktopWindow(); !desktop)
+      return unexpected_error(errors::operation_failed, "GetDesktopWindow failed", ::GetLastError());
+    else if (!::GetClientRect(desktop, &r))
+      return unexpected_error(errors::operation_failed, "GetClientRect failed", ::GetLastError());
     const auto wh = int2(_rendertarget.size()) + int2(_pad.z, _pad.w);
     const auto x = (r.right - wh.x) / 2, y = (r.bottom - wh.y) / 2;
     if (::SetWindowPos(_hwnd, nullptr, x, y, wh.x, wh.y, SWP_NOZORDER | SWP_NOACTIVATE)) return {};
@@ -132,6 +139,8 @@ class window {
   }
 
 public:
+  inline static error_trace last_error{error()};
+
   window() noexcept = default;
   window(const window&) = delete;
   window& operator=(const window&) = delete;
@@ -143,8 +152,10 @@ public:
     ::DestroyWindow(std::exchange(_hwnd, nullptr));
   }
 
-  window(window&& other) noexcept : _hwnd(std::exchange(other._hwnd, nullptr)), _pad(other._pad), _rendertarget(std::move(other._rendertarget)),
-    _swapchain(std::move(other._swapchain)), _controls(std::move(other._controls)) {
+  window(window&& other) noexcept
+    : _hwnd(std::exchange(other._hwnd, nullptr)), _style(other._style), _pad(other._pad),
+      _rendertarget(std::move(other._rendertarget)), _swapchain(std::move(other._swapchain)),
+      _controls(std::move(other._controls)) {
     ::SetWindowLongPtrW(_hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
   }
 
@@ -152,6 +163,7 @@ public:
     if (this == &other) return *this;
     if (_hwnd) ::DestroyWindow(_hwnd);
     _hwnd = std::exchange(other._hwnd, nullptr);
+    _style = other._style;
     _pad = other._pad;
     _rendertarget = std::move(other._rendertarget);
     _swapchain = std::move(other._swapchain);
@@ -160,55 +172,66 @@ public:
     return *this;
   }
 
+  explicit operator bool() const noexcept { return _hwnd != nullptr; }
+
   HWND handle() const noexcept { return _hwnd; }
   window_style style() const noexcept { return _style; }
 
-  static std::expected<window, error_trace> create(int2 Pos, uint2 Size, null_terminated<wchar_t> Title,
-    window_style Style = window_style::regular, bool Hidden = false) {
+  static std::expected<window, error_trace> create(int2 pos, uint2 size, null_terminated<wchar_t> title,
+    window_style style = window_style::regular, bool hidden = false) {
     window w;
-    if (auto res = w._create_window(std::move(Title), Style); !res) return unexpected_error(res.error());
+    if (auto res = w._create_window(std::move(title), style); !res) return unexpected_error(res.error());
     else if (auto res = w._calculate_padding(); !res) return unexpected_error(res.error());
-    else if (auto res = w._resize(Size); !res) return unexpected_error(res.error());
-    else if (auto res = w._move_to(Pos); !res) return unexpected_error(res.error());
-    if (!Hidden) w._show();
+    else if (auto res = w._resize(size); !res) return unexpected_error(res.error());
+    else if (auto res = w._move_to(pos); !res) return unexpected_error(res.error());
+    if (!hidden) w._show();
     return std::move(w);
   }
 
   static std::expected<window, error_trace> create(
-    uint2 Size, null_terminated<wchar_t> Title, window_style Style = window_style::regular, bool Hidden = false) {
+    uint2 size, null_terminated<wchar_t> title, window_style style = window_style::regular, bool hidden = false) {
     window w;
-    if (auto res = w._create_window(std::move(Title), Style); !res) return unexpected_error(res.error());
+    if (auto res = w._create_window(std::move(title), style); !res) return unexpected_error(res.error());
     else if (auto res = w._calculate_padding(); !res) return unexpected_error(res.error());
-    else if (auto res = w._resize(Size); !res) return unexpected_error(res.error());
+    else if (auto res = w._resize(size); !res) return unexpected_error(res.error());
     else if (auto res = w._move_to_center(); !res) return unexpected_error(res.error());
-    if (!Hidden) w._show();
+    if (!hidden) w._show();
     return std::move(w);
   }
 
-  static std::expected<window, error_trace> create(HWND hwnd) {
-    window w;
-    w._hwnd = hwnd;
-    ::SetWindowLongPtrW(w._hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&w));
-    if (auto res = w._calculate_padding(); !res) return unexpected_error(res.error());
-    return std::move(w);
-  }
-
-  /// get current client size
+  /// gets current client size
   std::expected<uint2, error_trace> size() const {
     if (!_hwnd) return unexpected_error(errors::not_initialized, "window not initialized");
     if (RECT rect{}; ::GetClientRect(_hwnd, &rect)) return uint2(rect.right, rect.bottom);
     else return unexpected_error(errors::operation_failed, "GetClientRect failed", ::GetLastError());
   }
 
-  /// set client size
+  /// sets client size
   std::expected<void, error_trace> size(uint2 Size) {
     if (!_hwnd) return unexpected_error(errors::not_initialized, "window not initialized");
     return _resize(uint2(Size.x, Size.y));
   }
 
-  auto begin_draw() { return _rendertarget.begin_draw(); }
-  auto begin_draw(const color& clear_color) { return _rendertarget.begin_draw(clear_color);  }
-  auto end_draw() { return _rendertarget.end_draw();  }
+  /// gets current window position; left-top corner of the window (including non-client area)
+  std::expected<int2, error_trace> position() const {
+    if (!_hwnd) return unexpected_error(errors::not_initialized, "window not initialized");
+    if (RECT rect{}; ::GetWindowRect(_hwnd, &rect)) return int2{rect.left, rect.top};
+    else return unexpected_error(errors::operation_failed, "GetWindowRect failed", ::GetLastError());
+  }
+
+  /// sets window position; left-top corner of the window (including non-client area)
+  std::expected<void, error_trace> position(int2 Pos) {
+    if (!_hwnd) return unexpected_error(errors::not_initialized, "window not initialized");
+    return _move_to(int2(Pos.x, Pos.y));
+  }
+
+  auto begin_draw(const source& src = {}) { return _rendertarget.begin_draw(src); }
+  auto begin_draw(const color& clear_color, const source& src = {}) { return _rendertarget.begin_draw(clear_color, src); }
+
+  virtual void close() {
+    if (!_hwnd) return;
+    ::DestroyWindow(std::exchange(_hwnd, nullptr));
+  }
 };
 
 //////////////////////////////////////// MARK: subwindow
@@ -220,7 +243,7 @@ enum class subwindow_style : uint32_t {
   temporary, // ex) context menu
 };
 
-class subwindow {
+class subwindow : public window {
   static window_style _select_window_style(window_style parent_style, subwindow_style style) {
     switch (style) {
     case subwindow_style::subwindow: return parent_style;
@@ -229,46 +252,81 @@ class subwindow {
     default: return window_style::unknown;
     }
   }
-  window _owner;
-  const window* _parent{nullptr};
+  HWND _main{nullptr};
   subwindow_style _style{subwindow_style::unknown};
-  subwindow(const window& parent, window&& w, subwindow_style style)
-    : _owner(std::move(w)), _parent(&parent), _style(style) {}
+
 public:
+  ~subwindow() = default;
   subwindow() noexcept = default;
   subwindow(const subwindow&) = delete;
   subwindow& operator=(const subwindow&) = delete;
+  subwindow(subwindow&&) noexcept = default;
+  subwindow& operator=(subwindow&&) noexcept = default;
 
-  virtual ~subwindow() {
-
+  /// creates subwindow attached to the given main_window
+  /// \param pos position relative to the main_window's client area
+  static std::expected<subwindow, error_trace> create(window& main_window, int2 pos, uint2 size,
+    null_terminated<wchar_t> title, subwindow_style style = subwindow_style::subwindow, bool hidden = false) {
+    if (!main_window) return unexpected_error(errors::not_initialized, "main window is not initialized");
+    subwindow sw;
+    print(uint32_t(main_window.style()));
+    if (const auto ws = _select_window_style(main_window.style(), style); ws == window_style::unknown)
+      return unexpected_error(errors::invalid_argument, "invalid subwindow style");
+    else if (auto res = sw._create_window(std::move(title), ws); !res) return unexpected_error(res.error());
+    if (auto res = sw._calculate_padding(); !res) return unexpected_error(res.error());
+    if (auto res = sw._resize(size); !res) return unexpected_error(res.error());
+    if (auto main_pos = main_window.position(); !main_pos) return unexpected_error(main_pos.error());
+    else {
+      print("main window position: {}", * main_pos);
+      if (auto res = sw._move_to(*main_pos + pos); !res) return unexpected_error(res.error());
+    }
+    if (!hidden) sw._show();
+    sw._main = main_window._hwnd, sw._style = style;
+    main_window._subwindows.push_back(sw._hwnd);
+    return std::move(sw);
   }
 };
 
 //////////////////////////////////////// MARK: control
 
 class control {
-// protected:
-//   std::variant<std::monostate, HWND, control*> _parent;
-//   control(const control& group, float2 position, float2 size);
-//   control(const window& wnd, float2 position, float2 size);
-// public:
-//   float2 position, size, rounded_radius;
-//   float text_size{};
-//   bool visible{}, enabled{};
+  control(const control&) = delete;
+  control& operator=(const control&) = delete;
+protected:
+  HWND _owner = nullptr;
+public:
+  control() noexcept = default;
+  control(control&&) noexcept = default;
+  control& operator=(control&&) noexcept = default;
 
-//   control() noexcept = default;
-//   control(const control&) = delete;
-//   control& operator=(const control&) = delete;
+  float2 position{}, size{}, rounded_radius{};
+  yw::text_layout text_layout{};
+  float text_size{};
 
-//   virtual ~control() {
-//     if (_parent.index() != 1) return;
-//     if (auto p = reinterpret_cast<window*>(::GetWindowLongPtrW(std::get<1>(_parent), GWLP_USERDATA)); !p) return;
-//     else if (auto it = std::find(p->_controls.begin(), p->_controls.end(), this); it != p->_controls.end()) p->_controls.erase(it);
-//   }
 
-//   virtual std::expected<void, error_trace> draw() = 0;
-//   virtual std::expected<void, error_trace> focus() = 0;
-//   virtual std::expected<LRESULT, error_trace> proc(UINT msg, WPARAM wparam, LPARAM lparam) = 0;
+  // protected:
+  //   std::variant<std::monostate, HWND, control*> _parent;
+  //   control(const control& group, float2 position, float2 size);
+  //   control(const window& wnd, float2 position, float2 size);
+  // public:
+  //   float2 position, size, rounded_radius;
+  //   float text_size{};
+  //   bool visible{}, enabled{};
+
+  //   control() noexcept = default;
+  //   control(const control&) = delete;
+  //   control& operator=(const control&) = delete;
+
+  //   virtual ~control() {
+  //     if (_parent.index() != 1) return;
+  //     if (auto p = reinterpret_cast<window*>(::GetWindowLongPtrW(std::get<1>(_parent), GWLP_USERDATA)); !p) return;
+  //     else if (auto it = std::find(p->_controls.begin(), p->_controls.end(), this); it != p->_controls.end())
+  //     p->_controls.erase(it);
+  //   }
+
+  //   virtual std::expected<void, error_trace> draw() = 0;
+  //   virtual std::expected<void, error_trace> focus() = 0;
+  //   virtual std::expected<LRESULT, error_trace> proc(UINT msg, WPARAM wparam, LPARAM lparam) = 0;
 };
 
 //////////////////////////////////////// MARK: window_class proc
@@ -278,13 +336,16 @@ inline LRESULT __stdcall decltype(window_class)::proc(HWND hwnd, UINT msg, WPARA
   if (!self) return ::DefWindowProcW(hwnd, msg, wparam, lparam);
   switch (msg) {
   case WM_NCDESTROY: {
-    ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+    for (auto& subs : self->_subwindows) ::DestroyWindow(subs);
+    self->_subwindows.clear();
     auto it = std::find(window::_active_window_list.begin(), window::_active_window_list.end(), hwnd);
     if (it != window::_active_window_list.end()) window::_active_window_list.erase(it);
+    else window::last_error = error(errors::invalid_operation, "window not found in active window list");
+    print("Window destroyed: hwnd = {}", uintptr_t(hwnd));
+    ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
     if (window::_active_window_list.empty()) ::PostQuitMessage(0);
     break;
   }
-  case WM_CREATE: window::_active_window_list.push_back(hwnd); return 0;
   }
   return ::DefWindowProcW(hwnd, msg, wparam, lparam);
 }
@@ -300,6 +361,7 @@ inline bool mainloop() {
   }
   for (MSG msg; ::PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);) {
     if (msg.message == WM_QUIT) return false;
+    if (window::last_error.error.code != errors::success) return false;
     ::TranslateMessage(&msg), ::DispatchMessageW(&msg);
   }
   return true;
