@@ -2,7 +2,57 @@
 from __future__ import annotations
 
 import argparse
+import os
+import tempfile
+import time
 from pathlib import Path
+
+
+def atomic_write_text(path: Path, text: str, encoding: str = "utf-8",
+                      retries: int = 1000, delay: float = 0.02) -> None:
+    """
+    Write text to `path` robustly on Windows:
+    - write to a temp file in the same directory
+    - os.replace() to atomically swap
+    - retry on PermissionError (file watcher / AV / clangd race)
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    last_err: Exception | None = None
+    for _ in range(retries):
+        tmp_path: Path | None = None
+        try:
+            fd, tmp_name = tempfile.mkstemp(
+                prefix=path.name + ".", suffix=".tmp", dir=str(path.parent)
+            )
+            tmp_path = Path(tmp_name)
+
+            # Use newline="\n" for stable output across environments
+            with os.fdopen(fd, "w", encoding=encoding, newline="\n") as f:
+                f.write(text)
+                f.flush()
+                os.fsync(f.fileno())
+
+            os.replace(tmp_path, path)  # atomic-ish on Windows (replaces existing)
+            return
+
+        except PermissionError as e:
+            # Typical: file is briefly locked by watcher / AV / indexer
+            last_err = e
+            time.sleep(delay)
+
+        finally:
+            if tmp_path is not None and tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
+
+    raise PermissionError(
+        f"[gen_umbrella] PermissionError: failed to write '{path}' after {retries} retries"
+    ) from last_err
+
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -41,9 +91,10 @@ def main() -> int:
         lines.append(f'#include "{args.prefix}/{h.name}"')
     lines.append("")
 
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines), encoding="utf-8")
+    # Ensure trailing newline for nicer diffs
+    atomic_write_text(out, "\n".join(lines) + "\n", encoding="utf-8")
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

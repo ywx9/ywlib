@@ -27,7 +27,7 @@ public:
     if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
     auto hr = dwrite.factory()->CreateTextFormat(
       name.data(), nullptr, weight, style, stretch, size.x, L"", &tf._text_format.get());
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int32_t(hr));
     return std::move(tf);
   }
 
@@ -47,7 +47,7 @@ public:
     if (n == 0) return unexpected_error(errors::invalid_operation, "GetFontFamilyNameLength returned 0");
     std::wstring name(n, L'\0');
     if (auto hr = _text_format->GetFontFamilyName(name.data(), n + 1); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "GetFontFamilyName failed", hr);
+      return unexpected_error(errors::operation_failed, "GetFontFamilyName failed", int32_t(hr));
     return name;
   }
   std::expected<float, error_trace> font_size() const {
@@ -116,7 +116,7 @@ public:
 inline std::expected<void, error_trace> draw_text(
   float2 pos, float2 size, stringable<wchar_t> auto&& text, const text_format& tf, const color& c = colors::black) {
   if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
-  if (sys::rendertarget.index() != 1) return unexpected_error(errors::invalid_operation, "render target not set");
+  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
   auto sv = std::wstring_view(text);
   d2d.context()->DrawTextW(sv.data(), static_cast<UINT>(sv.size()), static_cast<IDWriteTextFormat*>(tf),
@@ -143,14 +143,30 @@ public:
   text_layout& operator=(text_layout&&) = default;
 
   /// creates text layout
-  static std::expected<text_layout, error_trace> create(
-    stringable<wchar_t> auto&& text, const text_format& tf, float2 size) {
+  template<castable_to<IDWriteTextFormat*> T>
+  static std::expected<text_layout, error_trace> create(stringable<wchar_t> auto&& text, T&& text_format, float2 size) {
     if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
     auto sv = std::wstring_view(text);
+    auto tf = static_cast<IDWriteTextFormat*>(text_format);
+    if (!tf) return unexpected_error(errors::not_initialized, "text_format is not initialized");
     text_layout tl;
-    auto hr = dwrite.factory()->CreateTextLayout(
-      sv.data(), UINT(sv.size()), (IDWriteTextFormat*)tf, size.x, size.y, &tl._text_layout.get());
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", hr);
+    auto hr =
+      dwrite.factory()->CreateTextLayout(sv.data(), UINT(sv.size()), tf, size.x, size.y, &tl._text_layout.get());
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", int32_t(hr));
+    return std::move(tl);
+  }
+
+  /// creates text layout from another text layout
+  template<castable_to<IDWriteTextLayout*> T>
+  static std::expected<text_layout, error_trace> create(stringable<wchar_t> auto&& text, T&& source) {
+    if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
+    auto sv = std::wstring_view(text);
+    auto tf = static_cast<IDWriteTextFormat*>(static_cast<IDWriteTextLayout*>(source));
+    if (!tf) return unexpected_error(errors::not_initialized, "source text_layout is not initialized");
+    text_layout tl;
+    auto hr = dwrite.factory()->CreateTextLayout(sv.data(), UINT(sv.size()), tf, source._text_layout->GetMaxWidth(),
+      source._text_layout->GetMaxHeight(), &tl._text_layout.get());
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", int32_t(hr));
     return std::move(tl);
   }
 
@@ -160,7 +176,7 @@ public:
     DWRITE_HIT_TEST_METRICS metrics{};
     float x = 0.0f, y = 0.0f;
     auto hr = _text_layout->HitTestTextPosition(text_position.x, is_trailing, &x, &y, &metrics);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "HitTestTextPosition failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "HitTestTextPosition failed", int32_t(hr));
     return float4(metrics.left, metrics.top, metrics.width, metrics.height);
   }
 
@@ -170,15 +186,21 @@ public:
     DWRITE_HIT_TEST_METRICS metrics{};
     BOOL is_inside = FALSE, is_trailing = FALSE;
     auto hr = _text_layout->HitTestPoint(point.x, point.y, &is_inside, &is_trailing, &metrics);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "HitTestPoint failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "HitTestPoint failed", int32_t(hr));
     return metrics.textPosition + uint32_t(is_trailing);
+  }
+
+  /// returns the size of the text layout
+  std::expected<float2, error_trace> layout_size() const {
+    if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
+    return float2(_text_layout->GetMaxWidth(), _text_layout->GetMaxHeight());
   }
 };
 
 inline std::expected<void, error_trace> draw_text_layout(
   float2 pos, const text_layout& tl, const color& c = colors::black) {
   if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
-  if (sys::rendertarget.index() != 1) return unexpected_error(errors::invalid_operation, "render target not set");
+  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
   d2d.context()->DrawTextLayout(D2D1_POINT_2F{pos.x, pos.y}, static_cast<IDWriteTextLayout*>(tl), d2d.solid_brush());
   return {};

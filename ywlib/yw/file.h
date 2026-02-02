@@ -38,22 +38,22 @@ inline std::expected<FILE*, error_trace> _open_win(const std::filesystem::path& 
   case open_mode::update_or_create:
     desired = generic_read_write, disp = OPEN_ALWAYS, fdopen_mode = "r+b", osf_flags = _O_RDWR;
     break;
-  default: return unexpected_error(errors::invalid_argument, "file_handle::create: invalid open_mode");
+  default: return unexpected_error(errors::invalid_argument, "file_handle: invalid open_mode");
   }
   auto h = ::CreateFileW(p.c_str(), desired, share, nullptr, disp, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (h == INVALID_HANDLE_VALUE) {
-    return unexpected_error(errors::operation_failed, "file_handle::create: CreateFileW failed", int(::GetLastError()));
+    return unexpected_error(errors::operation_failed, "file_handle: CreateFileW failed", int32_t(::GetLastError()));
   } else {
     if (const int fd = ::_open_osfhandle(reinterpret_cast<intptr_t>(h), osf_flags); fd == -1) {
       ::CloseHandle(h);
-      return unexpected_error(errors::operation_failed, "file_handle::create: _open_osfhandle failed", errno);
+      return unexpected_error(errors::operation_failed, "file_handle: _open_osfhandle failed", errno);
     } else if (std::FILE* f = ::_fdopen(fd, fdopen_mode); !f) {
       ::_close(fd);
-      return unexpected_error(errors::operation_failed, "file_handle::create: _fdopen failed", errno);
+      return unexpected_error(errors::operation_failed, "file_handle: _fdopen failed", errno);
     } else return f;
   }
 }
-} // namespace yw::internal
+} // namespace yw::sys
 #else
 #include <unistd.h>
 namespace yw::internal {

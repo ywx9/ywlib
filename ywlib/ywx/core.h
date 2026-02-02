@@ -91,7 +91,7 @@ public:
     const D3D_FEATURE_LEVEL _levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
     auto hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, _levels,
       _countof(_levels), D3D11_SDK_VERSION, &_device, nullptr, &_context);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "D3D11CreateDevice failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "D3D11CreateDevice failed", int32_t(hr));
     D3D11_BLEND_DESC blend_desc{};
     blend_desc.RenderTarget[0].BlendEnable = TRUE;
     blend_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
@@ -102,7 +102,7 @@ public:
     blend_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
     blend_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
     hr = _device->CreateBlendState(&blend_desc, &_blend_state);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBlendState failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBlendState failed", int32_t(hr));
     _context->OMSetBlendState(_blend_state, nullptr, 0xffffffff);
     D3D11_RASTERIZER_DESC rasterizer_desc{};
     rasterizer_desc.FillMode = D3D11_FILL_SOLID;
@@ -110,7 +110,7 @@ public:
     rasterizer_desc.FrontCounterClockwise = TRUE;
     rasterizer_desc.DepthClipEnable = TRUE;
     hr = _device->CreateRasterizerState(&rasterizer_desc, &_rasterizer_state);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateRasterizerState failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateRasterizerState failed", int32_t(hr));
     _context->RSSetState(_rasterizer_state);
     D3D11_SAMPLER_DESC sampler_desc{};
     sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
@@ -119,14 +119,14 @@ public:
     sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
     sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
     hr = _device->CreateSamplerState(&sampler_desc, &_sampler_state);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSamplerState failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSamplerState failed", int32_t(hr));
     _context->PSSetSamplers(0, 1, &_sampler_state);
     D3D11_DEPTH_STENCIL_DESC depth_stencil_desc{};
     depth_stencil_desc.DepthEnable = TRUE;
     depth_stencil_desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
     depth_stencil_desc.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL; // Reverse-Z
     hr = _device->CreateDepthStencilState(&depth_stencil_desc, &_depth_stencil_state);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDepthStencilState failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDepthStencilState failed", int32_t(hr));
     _context->OMSetDepthStencilState(_depth_stencil_state, 0);
     _initialized = true;
     return {};
@@ -162,9 +162,9 @@ public:
     if (_initialized) return {};
     if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     auto hr = ::CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void**>(&_factory));
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDXGIFactory2 failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDXGIFactory2 failed", int32_t(hr));
     hr = d3d.device()->QueryInterface(__uuidof(IDXGIDevice2), reinterpret_cast<void**>(&_device));
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDevice failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDevice failed", int32_t(hr));
     _initialized = true;
     return {};
   }
@@ -188,7 +188,7 @@ public:
   std::expected<void, error_trace> initialize() {
     if (_initialized) return {};
     auto hr = ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CoInitializeEx failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CoInitializeEx failed", int32_t(hr));
     _initialized = true;
     return {};
   }
@@ -217,13 +217,13 @@ public:
     if (auto res = coinit.initialize(); !res) return unexpected_error(res.error());
     auto hr = ::D2D1CreateFactory(
       D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), reinterpret_cast<void**>(&_factory));
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "D2D1CreateFactory failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "D2D1CreateFactory failed", int32_t(hr));
     hr = _factory->CreateDevice(dxgi.device(), &_device);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDevice failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDevice failed", int32_t(hr));
     hr = _device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &_context);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDeviceContext failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDeviceContext failed", int32_t(hr));
     hr = _context->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &_solid_brush);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSolidColorBrush failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSolidColorBrush failed", int32_t(hr));
     D2D1_STROKE_STYLE_PROPERTIES stroke_style_props{};
     stroke_style_props.startCap = D2D1_CAP_STYLE_ROUND;
     stroke_style_props.endCap = D2D1_CAP_STYLE_ROUND;
@@ -231,7 +231,7 @@ public:
     stroke_style_props.lineJoin = D2D1_LINE_JOIN_ROUND;
     stroke_style_props.miterLimit = 10.0f;
     hr = _factory->CreateStrokeStyle(&stroke_style_props, nullptr, 0, &_stroke_style);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateStrokeStyle failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateStrokeStyle failed", int32_t(hr));
     _initialized = true;
     return {};
   }
@@ -265,7 +265,7 @@ public:
     if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
     auto hr = ::DWriteCreateFactory(
       DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory1), reinterpret_cast<IUnknown**>(&_factory));
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "DWriteCreateFactory failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "DWriteCreateFactory failed", int32_t(hr));
     hr = _factory->CreateTextFormat(L"", nullptr, DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
       DWRITE_FONT_STRETCH_NORMAL, 16.0f, L"", &_text_format);
     _initialized = true;
@@ -294,7 +294,7 @@ public:
     if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
     auto hr = ::CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&_factory));
     if (FAILED(hr))
-      return unexpected_error(errors::operation_failed, "CoCreateInstance for WICImagingFactory2 failed", hr);
+      return unexpected_error(errors::operation_failed, "CoCreateInstance for WICImagingFactory2 failed", int32_t(hr));
     _initialized = true;
     return {};
   }
@@ -324,9 +324,9 @@ public:
     if (_initialized) return {};
     if (auto res = coinit.initialize(); !res) return unexpected_error(res.error());
     auto hr = ::XAudio2Create(&_xaudio2, 0, XAUDIO2_DEFAULT_PROCESSOR);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "XAudio2Create failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "XAudio2Create failed", int32_t(hr));
     hr = _xaudio2->CreateMasteringVoice(&_mastering_voice);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateMasteringVoice failed", hr);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateMasteringVoice failed", int32_t(hr));
     _initialized = true;
     return {};
   }
@@ -346,18 +346,27 @@ public:
 class drawing {
   inline static std::variant<std::monostate, ID2D1Image*, ID3D11RenderTargetView*> _rendertarget{};
   source _source;
-  drawing(const source& src) : _source(src) {}
+  bool _active = false;
+  drawing(const source& src) : _source(src), _active(true) {}
+  drawing(const drawing&) = delete;
+  drawing& operator=(const drawing&) = delete;
+  drawing& operator=(drawing&&) = delete;
+
 public:
   ~drawing() {
-    if (dimension() == 2) {
+    if (!_active) return;
+    _active = false;
+    if (d2d_drawing()) {
       if (auto hr = d2d.context()->EndDraw(); FAILED(hr))
         print_fallback("drawing failed (code={}) that starts at {}", hr, _source);
       d2d.context()->SetTarget(nullptr);
-    } else if (dimension() == 3) {
+    } else if (d3d_drawing()) {
       // nothing to do yet
     }
     _rendertarget = std::monostate{};
   }
+
+  drawing(drawing&& other) : _source(other._source), _active(std::exchange(other._active, false)) {}
 
   static std::expected<drawing, error_trace> create(ID2D1Image* rendertarget, const source& src) {
     if (_rendertarget.index() != 0) return unexpected_error(errors::invalid_operation, "rendertarget already set");
@@ -376,7 +385,9 @@ public:
     return drawing{src};
   }
 
-  static uint32_t dimension() { return uint32_t(_rendertarget.index() ? _rendertarget.index() + 1 : 0); }
+  static bool d2d_drawing() { return _rendertarget.index() == 1; }
+  static bool d3d_drawing() { return _rendertarget.index() == 2; }
+  static bool not_drawing() { return _rendertarget.index() == 0; }
 };
 
 } // namespace yw

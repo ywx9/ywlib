@@ -57,7 +57,7 @@ inline std::expected<void, error_trace> _parse_win() {
   int argc;
   auto argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
   if (!argv)
-    return unexpected_error(errors::operation_failed, "args::parse: CommandLineToArgvW failed", int(::GetLastError()));
+    return unexpected_error(errors::operation_failed, "args: CommandLineToArgvW failed", int(::GetLastError()));
   program_name = unicode<char>(std::filesystem::path(argv[0]).stem().native());
   std::vector<std::string> args;
   args.reserve(argc);

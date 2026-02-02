@@ -30,7 +30,7 @@ public:
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     wc.lpszClassName = name.data();
     if (!::RegisterClassW(&wc))
-      return unexpected_error(errors::operation_failed, "RegisterClassW failed", ::GetLastError());
+      return unexpected_error(errors::operation_failed, "RegisterClassW failed", int32_t(::GetLastError()));
     _initialized = true;
     return {};
   };
@@ -56,11 +56,11 @@ protected:
 
   HWND _hwnd = nullptr;
   window_style _style = window_style::unknown;
-  int4 _pad;
-  bitmap _rendertarget;
-  comptr<::IDXGISwapChain1> _swapchain;
-  std::vector<HWND> _subwindows;
-  std::vector<std::unique_ptr<control>> _controls;
+  int4 _pad{};
+  bitmap _rendertarget{};
+  comptr<::IDXGISwapChain1> _swapchain{};
+  std::vector<HWND> _subwindows{};
+  std::vector<std::unique_ptr<control>> _controls{};
 
   std::expected<void, error_trace> _create_window(null_terminated<wchar_t> title, window_style style) {
     if (auto res = window_class.initialize(); !res) return unexpected_error(res.error());
@@ -72,7 +72,7 @@ protected:
     }
     auto hwnd = ::CreateWindowExW(0, window_class.name.data(), title.data(), static_cast<DWORD>(style), 0, 0,
       initial_size, initial_size, nullptr, nullptr, window_class.hinstance, nullptr);
-    if (!hwnd) return unexpected_error(errors::operation_failed, "CreateWindowExW failed", ::GetLastError());
+    if (!hwnd) return unexpected_error(errors::operation_failed, "CreateWindowExW failed", int32_t(::GetLastError()));
     ::SetWindowLongPtrW(_hwnd = hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
     _active_window_list.push_back(_hwnd);
     _style = style;
@@ -82,9 +82,9 @@ protected:
   std::expected<void, error_trace> _calculate_padding() {
     RECT client_rect{}, window_rect{};
     if (!::GetClientRect(_hwnd, &client_rect))
-      return unexpected_error(errors::operation_failed, "GetClientRect failed", ::GetLastError());
+      return unexpected_error(errors::operation_failed, "GetClientRect failed", int32_t(::GetLastError()));
     if (!::GetWindowRect(_hwnd, &window_rect))
-      return unexpected_error(errors::operation_failed, "GetWindowRect failed", ::GetLastError());
+      return unexpected_error(errors::operation_failed, "GetWindowRect failed", int32_t(::GetLastError()));
     const auto width = window_rect.right - window_rect.left;
     const auto height = window_rect.bottom - window_rect.top;
     const auto pad_left = (width - client_rect.right) / 2; // left, right and bottom are same
@@ -93,43 +93,46 @@ protected:
     return {};
   }
 
-  std::expected<void, error_trace> _resize(uint2 size) {
-    print("required client size: {} x {}\npadding: left {}, top {}, right {}, bottom {}", size.x, size.y, _pad.x,
-      _pad.y, _pad.z, _pad.w);
-    const auto w = size.x + _pad.z, h = size.y + _pad.w;
-    print("calculated window size: {} x {}", w, h);
-    if (!::SetWindowPos(_hwnd, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE))
-      return unexpected_error(errors::operation_failed, "SetWindowPos failed", ::GetLastError());
+  std::expected<void, error_trace> _resize_d3d(uint2 size) {
+    _rendertarget = {};
     if (_swapchain) {
       if (auto hr = _swapchain->ResizeBuffers(0, size.x, size.y, DXGI_FORMAT_UNKNOWN, 0); FAILED(hr))
-        return unexpected_error(errors::operation_failed, "ResizeBuffers failed", hr);
+        return unexpected_error(errors::operation_failed, "ResizeBuffers failed", int32_t(hr));
     } else {
       if (auto res = dxgi.initialize(); !res) return unexpected_error(res.error());
       auto desc = DXGI_SWAP_CHAIN_DESC1(size.x, size.y, bitmap::dxgiformat, false, DXGI_SAMPLE_DESC(1, 0), {}, 2);
       desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT, desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
       auto hr = dxgi.factory()->CreateSwapChainForHwnd(d3d.device(), _hwnd, &desc, nullptr, nullptr, &_swapchain.get());
-      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSwapChainForHwnd failed", hr);
+      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSwapChainForHwnd failed", int32_t(hr));
     }
     if (auto res = bitmap::create(_swapchain.get()); !res) return unexpected_error(res.error());
     else _rendertarget = std::move(*res);
     return {};
   }
 
+  std::expected<void, error_trace> _resize(uint2 size) {
+    const auto w = size.x + _pad.z, h = size.y + _pad.w;
+    if (!::SetWindowPos(_hwnd, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE))
+      return unexpected_error(errors::operation_failed, "SetWindowPos failed", int32_t(::GetLastError()));
+    if (auto res = _resize_d3d(size); !res) return unexpected_error(res.error());
+    return {};
+  }
+
   std::expected<void, error_trace> _move_to(int2 pos) {
     if (::SetWindowPos(_hwnd, nullptr, pos.x, pos.y, 0, 0, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSIZE)) return {};
-    else return unexpected_error(errors::operation_failed, "SetWindowPos failed", ::GetLastError());
+    else return unexpected_error(errors::operation_failed, "SetWindowPos failed", int32_t(::GetLastError()));
   }
 
   std::expected<void, error_trace> _move_to_center() {
     RECT r;
     if (auto desktop = ::GetDesktopWindow(); !desktop)
-      return unexpected_error(errors::operation_failed, "GetDesktopWindow failed", ::GetLastError());
+      return unexpected_error(errors::operation_failed, "GetDesktopWindow failed", int32_t(::GetLastError()));
     else if (!::GetClientRect(desktop, &r))
-      return unexpected_error(errors::operation_failed, "GetClientRect failed", ::GetLastError());
+      return unexpected_error(errors::operation_failed, "GetClientRect failed", int32_t(::GetLastError()));
     const auto wh = int2(_rendertarget.size()) + int2(_pad.z, _pad.w);
     const auto x = (r.right - wh.x) / 2, y = (r.bottom - wh.y) / 2;
     if (::SetWindowPos(_hwnd, nullptr, x, y, wh.x, wh.y, SWP_NOZORDER | SWP_NOACTIVATE)) return {};
-    else return unexpected_error(errors::operation_failed, "SetWindowPos failed", ::GetLastError());
+    else return unexpected_error(errors::operation_failed, "SetWindowPos failed", int32_t(::GetLastError()));
   }
 
   void _show() {
@@ -203,7 +206,7 @@ public:
   std::expected<uint2, error_trace> size() const {
     if (!_hwnd) return unexpected_error(errors::not_initialized, "window not initialized");
     if (RECT rect{}; ::GetClientRect(_hwnd, &rect)) return uint2(rect.right, rect.bottom);
-    else return unexpected_error(errors::operation_failed, "GetClientRect failed", ::GetLastError());
+    else return unexpected_error(errors::operation_failed, "GetClientRect failed", int32_t(::GetLastError()));
   }
 
   /// sets client size
@@ -216,7 +219,7 @@ public:
   std::expected<int2, error_trace> position() const {
     if (!_hwnd) return unexpected_error(errors::not_initialized, "window not initialized");
     if (RECT rect{}; ::GetWindowRect(_hwnd, &rect)) return int2{rect.left, rect.top};
-    else return unexpected_error(errors::operation_failed, "GetWindowRect failed", ::GetLastError());
+    else return unexpected_error(errors::operation_failed, "GetWindowRect failed", int32_t(::GetLastError()));
   }
 
   /// sets window position; left-top corner of the window (including non-client area)
@@ -226,7 +229,9 @@ public:
   }
 
   auto begin_draw(const source& src = {}) { return _rendertarget.begin_draw(src); }
-  auto begin_draw(const color& clear_color, const source& src = {}) { return _rendertarget.begin_draw(clear_color, src); }
+  auto begin_draw(const color& clear_color, const source& src = {}) {
+    return _rendertarget.begin_draw(clear_color, src);
+  }
 
   virtual void close() {
     if (!_hwnd) return;
@@ -269,17 +274,13 @@ public:
     null_terminated<wchar_t> title, subwindow_style style = subwindow_style::subwindow, bool hidden = false) {
     if (!main_window) return unexpected_error(errors::not_initialized, "main window is not initialized");
     subwindow sw;
-    print(uint32_t(main_window.style()));
     if (const auto ws = _select_window_style(main_window.style(), style); ws == window_style::unknown)
       return unexpected_error(errors::invalid_argument, "invalid subwindow style");
     else if (auto res = sw._create_window(std::move(title), ws); !res) return unexpected_error(res.error());
     if (auto res = sw._calculate_padding(); !res) return unexpected_error(res.error());
     if (auto res = sw._resize(size); !res) return unexpected_error(res.error());
     if (auto main_pos = main_window.position(); !main_pos) return unexpected_error(main_pos.error());
-    else {
-      print("main window position: {}", * main_pos);
-      if (auto res = sw._move_to(*main_pos + pos); !res) return unexpected_error(res.error());
-    }
+    else if (auto res = sw._move_to(*main_pos + pos); !res) return unexpected_error(res.error());
     if (!hidden) sw._show();
     sw._main = main_window._hwnd, sw._style = style;
     main_window._subwindows.push_back(sw._hwnd);
@@ -292,41 +293,56 @@ public:
 class control {
   control(const control&) = delete;
   control& operator=(const control&) = delete;
+
 protected:
   HWND _owner = nullptr;
+  control(window& owner) noexcept : _owner(owner._hwnd) {
+    if (owner) owner._controls.push_back(std::unique_ptr<control>(this));
+  }
+
 public:
   control() noexcept = default;
   control(control&&) noexcept = default;
   control& operator=(control&&) noexcept = default;
 
-  float2 position{}, size{}, rounded_radius{};
-  yw::text_layout text_layout{};
-  float text_size{};
+  float2 position{}, size{}, padding = float2::fill(1.0f), rounded_radius{};
+  float border_width = 1.0f;
+  color background_color = colors::white, border_color = colors::black;
+  bool visible{true}, enabled{true};
 
+  virtual ~control() {
+    if (!_owner) return;
+    if (auto p = reinterpret_cast<window*>(::GetWindowLongPtrW(_owner, GWLP_USERDATA)); !p) return;
+    else if (auto it = std::find(p->_controls.begin(), p->_controls.end(), this); it != p->_controls.end())
+      p->_controls.erase(it);
+  }
 
-  // protected:
-  //   std::variant<std::monostate, HWND, control*> _parent;
-  //   control(const control& group, float2 position, float2 size);
-  //   control(const window& wnd, float2 position, float2 size);
-  // public:
-  //   float2 position, size, rounded_radius;
-  //   float text_size{};
-  //   bool visible{}, enabled{};
+  control(control&& other) noexcept
+    : _owner(std::exchange(other._owner, nullptr)), position(other.position), size(other.size), padding(other.padding),
+      rounded_radius(other.rounded_radius), border_width(other.border_width), background_color(other.background_color),
+      border_color(other.border_color), visible(other.visible), enabled(other.enabled) {}
 
-  //   control() noexcept = default;
-  //   control(const control&) = delete;
-  //   control& operator=(const control&) = delete;
+  control& operator=(control&& other) noexcept {
+    if (this == &other) return *this;
+    _owner = std::exchange(other._owner, nullptr);
+    position = other.position;
+    size = other.size;
+    padding = other.padding;
+    rounded_radius = other.rounded_radius;
+    border_width = other.border_width;
+    background_color = other.background_color;
+    border_color = other.border_color;
+    visible = other.visible;
+    enabled = other.enabled;
+    return *this;
+  }
 
-  //   virtual ~control() {
-  //     if (_parent.index() != 1) return;
-  //     if (auto p = reinterpret_cast<window*>(::GetWindowLongPtrW(std::get<1>(_parent), GWLP_USERDATA)); !p) return;
-  //     else if (auto it = std::find(p->_controls.begin(), p->_controls.end(), this); it != p->_controls.end())
-  //     p->_controls.erase(it);
-  //   }
+  bool hit_test(float2 point) const {
+    return point.x >= position.x && point.x <= position.x + size.x && point.y >= position.y &&
+           point.y <= position.y + size.y;
+  }
 
-  //   virtual std::expected<void, error_trace> draw() = 0;
-  //   virtual std::expected<void, error_trace> focus() = 0;
-  //   virtual std::expected<LRESULT, error_trace> proc(UINT msg, WPARAM wparam, LPARAM lparam) = 0;
+  virtual std::expected<void, error_trace> draw() = 0;
 };
 
 //////////////////////////////////////// MARK: window_class proc
@@ -335,6 +351,14 @@ inline LRESULT __stdcall decltype(window_class)::proc(HWND hwnd, UINT msg, WPARA
   auto self = reinterpret_cast<window*>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
   if (!self) return ::DefWindowProcW(hwnd, msg, wparam, lparam);
   switch (msg) {
+  case WM_SIZE: {
+    const auto width = LOWORD(lparam), height = HIWORD(lparam);
+    if (auto res = self->_resize_d3d(uint2(width, height)); !res) {
+      window::last_error = res.error().push();
+      print_error("Window resize failed", window::last_error);
+    }
+    return 0;
+  }
   case WM_NCDESTROY: {
     for (auto& subs : self->_subwindows) ::DestroyWindow(subs);
     self->_subwindows.clear();

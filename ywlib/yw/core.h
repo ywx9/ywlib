@@ -109,6 +109,22 @@ template<typename T> concept is_class = std::is_class_v<T>;
 template<typename T> concept is_union = std::is_union_v<T>;
 template<typename T> concept is_object = std::is_object_v<T>;
 
+namespace _ {
+template<typename T, template<typename...> typename Tm> inline constexpr bool _specialization_of{0};
+template<template<typename...> typename Tm, typename... Ts> inline constexpr bool _specialization_of<Tm<Ts...>, Tm>{1};
+template<typename T, typename U> inline constexpr bool _variation_of{0};
+template<template<typename...> typename Tm, typename... Ts, typename... Us>
+inline constexpr bool _variation_of<Tm<Ts...>, Tm<Us...>>{1};
+template<template<auto...> typename Tm, auto... Ts, auto... Us>
+inline constexpr bool _variation_of<Tm<Ts...>, Tm<Us...>>{1};
+template<template<typename, auto...> typename Tm, typename T, auto... Ts, typename U, auto... Us>
+inline constexpr bool _variation_of<Tm<T, Ts...>, Tm<U, Us...>>{1};
+} // namespace _
+
+template<typename T, template<typename...> typename Tm> concept specialization_of =
+  _::_specialization_of<remove_cvref<T>, Tm>;
+template<typename T, typename U> concept variation_of = _::_variation_of<remove_cvref<T>, remove_cvref<U>>;
+
 template<auto V, typename T = decltype(V)> requires convertible_to<decltype(V), T> struct constant {
   using type = T;
   static constexpr type value{V};
@@ -121,7 +137,7 @@ template<size_t I, typename T, typename... Ts> constexpr decltype(auto) _select(
   if constexpr (I == 0) return static_cast<T&&>(a);
   else return _select<I - 1>(static_cast<Ts&&>(as)...);
 }
-} // namespace internal
+} // namespace sys
 
 /// selects the I-th argument from the given arguments.
 /// \note If I is a bool value, selects the first argument if I is true.
@@ -245,7 +261,7 @@ template<typename T, template<typename> typename> struct iter_type : std::type_i
 template<std::input_iterator I, template<typename> typename Tm> struct iter_type<I, Tm> : std::type_identity<Tm<I>> {};
 template<std::ranges::input_range R, template<typename> typename Tm> struct iter_type<R, Tm>
   : std::type_identity<Tm<iterator_t<R>>> {};
-} // namespace internal
+} // namespace sys
 
 template<typename T> using iter_value_t = sys::iter_type<remove_cvref<T>, std::iter_value_t>::type;
 template<typename T> using iter_difference_t = sys::iter_type<remove_cvref<T>, std::iter_difference_t>::type;
@@ -288,8 +304,8 @@ inline constexpr auto is_xdigit = []<char_type C>(C c) noexcept {
   return is_digit(c) || (('a' <= c && c <= 'f') || ('A' <= c && c <= 'F'));
 };
 
-template<typename S, typename T = iter_value_t<S>> concept stringable =
-  std::convertible_to<S, std::basic_string_view<T>>;
+template<typename S, typename C = iter_value_t<S>> concept stringable =
+  std::convertible_to<S, std::basic_string_view<C>> && std::constructible_from<std::basic_string_view<C>, S>;
 
 template<arithmetic T> constexpr auto stov = [](stringable<char> auto&& str) -> T {
   const auto sv = std::string_view(str);
@@ -324,9 +340,9 @@ template<size_t I, typename T> inline constexpr int get_strategy = []() -> int {
     return 3 | noexcept(std::declval<T&&>().template get<I>()) * 4;
   return 0;
 }();
-} // namespace internal
+} // namespace sys
 
-template<size_t I> inline constexpr auto get =                           //
+template<size_t I> inline constexpr auto get =                      //
   []<typename T>(T&& a) noexcept(bool(sys::get_strategy<I, T> & 4)) //
   -> decltype(auto) requires(sys::get_strategy<I, T> != 0) {
   using std::get;
@@ -429,7 +445,7 @@ template<typename C> struct formatter<yw::source, C> {
   formatter<basic_string<C>, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::source& src, auto& ctx) const {
-    auto s = std::format("{} in {}({},{})", src.func, src.file, src.line, src.column);
+    auto s = std::format("{}({},{}) in {}", src.file, src.line, src.column, src.func);
     return fmt.format(yw::unicode<C>(move(s)), ctx);
   }
 };
@@ -499,11 +515,11 @@ enum class errors : uint32_t {
 };
 struct error {
   errors code;
-  int system_code;
+  int32_t system_code;
   uint64_t position;
   null_terminated<char> message;
   error() noexcept : code(errors::success), system_code(0), position(uint64_t(-1)), message() {}
-  explicit error(errors e, null_terminated<char> msg, int sys_code = 0, uint64_t pos = uint64_t(-1)) noexcept
+  explicit error(errors e, null_terminated<char> msg, int32_t sys_code = 0, uint64_t pos = uint64_t(-1)) noexcept
     : code(e), system_code(sys_code), message(std::move(msg)), position(pos) {}
 };
 struct error_trace {
@@ -520,7 +536,7 @@ struct error_trace {
   }
 };
 inline std::unexpected<error_trace> unexpected_error(
-  errors e, null_terminated<char> msg, int sys_code = 0, uint64_t pos = uint64_t(-1), const source& src = {}) {
+  errors e, null_terminated<char> msg, int32_t sys_code = 0, uint64_t pos = uint64_t(-1), const source& src = {}) {
   return std::unexpected<error_trace>(error_trace(yw::error(e, std::move(msg), sys_code, pos), src));
 }
 inline std::unexpected<error_trace> unexpected_error(error_trace& e, const source& src = {}) {
@@ -540,16 +556,16 @@ template<typename C> struct formatter<yw::error, C> {
     if (err.system_code == 0) s = std::format("{}", err.message);
     else s = std::format("{} (code={})", err.message, err.system_code);
     if (err.position != uint64_t(-1)) s += std::format("\n  input offset={}", err.position);
-    return fmt.format(yw::unicode<C>(move(s)), ctx);
+    return fmt.format(yw::unicode<C>(std::move(s)), ctx);
   }
 };
 template<typename C> struct formatter<yw::error_trace, C> {
   formatter<basic_string<C>, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::error_trace& err, auto& ctx) const {
-    std::string s = std::format("{}", err.error.message);
+    std::string s = std::format("{}", err.error);
     for (const auto& src : err.frames) s += std::format("\n  at {}", src);
-    return fmt.format(yw::unicode<C>(move(s)), ctx);
+    return fmt.format(yw::unicode<C>(std::move(s)), ctx);
   }
 };
 } // namespace std
@@ -575,11 +591,13 @@ inline constexpr struct {
     } else if constexpr (same_as<C, char>) return std::vformat(std::string_view(fmt), std::make_format_args(as...));
     else if constexpr (same_as<C, wchar_t>) return std::vformat(std::wstring_view(fmt), std::make_wformat_args(as...));
     else if constexpr (same_as<C, char8_t>) {
-      auto s = std::vformat(bitcast<std::string_view>(std::basic_string_view<C>(fmt)), std::make_format_args(as...));
-      return string<C>(reinterpret_cast<std::basic_string<C>&&>(mv(s)));
+      auto s =
+        std::vformat(std::bit_cast<std::string_view>(std::basic_string_view<C>(fmt)), std::make_format_args(as...));
+      return std::basic_string<C>(reinterpret_cast<std::basic_string<C>&&>(std::move(s)));
     } else if constexpr (same_as<C, char16_t>) {
-      auto s = std::vformat(bitcast<std::wstring_view>(std::basic_string_view<C>(fmt)), std::make_wformat_args(as...));
-      return string<C>(reinterpret_cast<std::basic_string<C>&&>(mv(s)));
+      auto s =
+        std::vformat(std::bit_cast<std::wstring_view>(std::basic_string_view<C>(fmt)), std::make_wformat_args(as...));
+      return std::basic_string<C>(reinterpret_cast<std::basic_string<C>&&>(std::move(s)));
     } else if constexpr (same_as<C, char32_t>) {
       const auto f{unicode<char>(fmt)};
       return unicode<C>(std::vformat(f, std::make_format_args(as...)));
@@ -630,11 +648,42 @@ inline constexpr struct {
 //////////////////////////////////////// MARK: print_error
 
 inline constexpr struct {
-  template<stringable<char> S> static int operator()(S&& message, const error_trace& err, const source& src = {}) {
-    print("{}\n  at {}\n{}", err, src, message);
+  template<stringable S> static int operator()(S&& message, const error_trace& err, const source& src = {}) {
+#ifdef _WIN32
+    // auto s0 = format(L"{}", err);
+    // auto s1 = format(L"\n  at {}\n", src);
+    // auto s2 = format(L"{}", unicode<wchar_t>(message));
+    std::wstring s;
+    if constexpr (stringable<S, wchar_t>) s = format(L"{}\n  at {}\n{}", err, src, std::wstring_view(message));
+    else s = format(L"{}\n  at {}\n{}", err, src, unicode<wchar_t>(message));
+    ::WriteConsoleW(::GetStdHandle(STD_ERROR_HANDLE), s.data(), unsigned(s.size()), nullptr, nullptr);
+#else
+    if constexpr (!stringable<char, S>) {
+      const auto s = format("{}\n  at {}\n{}", err, src, unicode<char>(message));
+      std::fputs((const char*)s.data(), stderr);
+    } else {
+      const auto s = format("{}\n  at {}\n{}", err, src, std::string_view(message));
+      std::fputs((const char*)s.data(), stderr);
+    }
+#endif
     return err.error.system_code;
   }
 } print_error;
-} // namespace yw
 
-//////////////////////////////////////// MARK:
+//////////////////////////////////////// MARK: assume
+
+template<typename T> requires(!is_void<T>)
+[[nodiscard]] T assume(std::expected<T, yw::error_trace>&& res, const source& src = {}) {
+  if (!res) {
+    print_error("Assumption failed", res.error(), src);
+    std::exit(int(res.error().error.system_code));
+  }
+  return std::move(res.value());
+}
+void assume(std::expected<void, yw::error_trace>&& res, const source& src = {}) {
+  if (!res) {
+    print_error("Assumption failed", res.error(), src);
+    std::exit(int(res.error().error.system_code));
+  }
+}
+} // namespace yw
