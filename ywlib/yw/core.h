@@ -508,11 +508,11 @@ template<typename C> struct formatter<yw::null_terminated<C>, C> {
 namespace yw {
 enum class errors : uint32_t {
   success = 0,
-  invalid_argument,
-  invalid_file,
-  invalid_operation,
-  operation_failed,
-  not_initialized,
+  invalid_argument,  // part of `invalid_operation`; ex) argument out of range
+  invalid_file,      // unexpected file format
+  invalid_operation, // wrong use of API; ex) file_handle::write called on read-only file
+  operation_failed,  // unexpected error from system or library
+  not_initialized,   // part of `invalid_operation`; system/object is not initialized
 };
 struct error {
   errors code;
