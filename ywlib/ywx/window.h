@@ -14,33 +14,27 @@ enum class window_style : uint32_t {
   borderless = WS_POPUP,                            // fixed-sized window without title bar and border
 };
 
+class window_body;
 class window;
 class subwindow;
-
-//////////////////////////////////////// MARK: control
-
-class control {
-public:
-  virtual ~control() = default;
-  control() = default;
-};
+class control;
 
 //////////////////////////////////////// MARK: window_class
 
 inline class {
   bool _initialized = false;
-  static LRESULT __stdcall _proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
 
 public:
+  static LRESULT __stdcall proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
   const HINSTANCE hinstance = ::GetModuleHandleW(nullptr);
   const std::wstring_view name = L"ywlib_window";
-  slotlist<window> active_windows{};
+  slotlist<window_body> windows{};
   error_trace last_error{};
 
   std::expected<void, error_trace> initialize() {
     if (_initialized) return {};
     WNDCLASSW wc{};
-    wc.lpfnWndProc = _proc;
+    wc.lpfnWndProc = proc;
     wc.hInstance = hinstance;
     wc.hCursor = ::LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
@@ -50,61 +44,69 @@ public:
   }
 } window_class;
 
-//////////////////////////////////////// MARK: window_base
+//////////////////////////////////////// MARK: window_body
 
-class window_base {
-  window_base(const window_base&) = delete;
-  window_base& operator=(const window_base&) = delete;
-protected:
-  window_base() = default;
+class window_body {
 public:
+  class master;
+  class slave;
+
+  slotlist<window_body>::id master_id{};
+  slotlist<window_body>::id slave_id{};
+
   HWND hwnd{};
   window_style style{};
   int4 margin{};
-  stopwatch timer{};
   bitmap rendertarget{};
-  comptr<::IDXGISwapChain1> swapchain{};
-  slotlist<window>::id main_id{};
-  slotlist<subwindow>::id sub_id{};
+  comptr<IDXGISwapChain1> swapchain{};
 
-  window_base(window_base&&) noexcept = default;
-  window_base& operator=(window_base&&) noexcept = default;
+  bool close_confirmation{};
 
-  std::expected<void, error_trace> create_window(const wchar_t* t, window_style s) {
-    switch (style = s) {
+  slotlist<window_body> slaves{};
+  slotlist<control_body> controls{};
+
+  ~window_body() = default;
+  window_body() = default;
+  window_body(window_body&&) = default;
+  window_body& operator=(window_body&&) = default;
+
+  window_body(const window_body&) = delete;
+  window_body& operator=(const window_body&) = delete;
+
+  bool is_master() const noexcept { return slave_id == slotlist<window_body>::id{}; }
+
+  std::expected<void, error_trace> create(const wchar_t* t, window_style s) {
+    switch (this->style = s) {
     case window_style::regular:
     case window_style::fixed:
     case window_style::borderless: break;
     default: return unexpected_error(errors::invalid_argument, "invalid window style");
     }
-    hwnd = ::CreateWindowExW(0, window_class.name.data(), t, DWORD(style), 0, 0, 0, 0, 0, 0, window_class.hinstance, 0);
+    hwnd = ::CreateWindowExW(
+      WS_EX_ACCEPTFILES, window_class.name.data(), t, DWORD(s), 0, 0, 0, 0, 0, 0, window_class.hinstance, 0);
     if (!hwnd) return unexpected_win32_error("CreateWindowExW failed");
-    ::SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
-    return {};
-  }
-  std::expected<void, error_trace> calculate_padding() {
+    ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
     RECT cr{}, wr{};
     if (!::GetClientRect(hwnd, &cr)) return unexpected_win32_error("GetClientRect failed");
     if (!::GetWindowRect(hwnd, &wr)) return unexpected_win32_error("GetWindowRect failed");
-    const auto left = (wr.right - wr.left - cr.right) / 2, top = wr.bottom - wr.top - cr.bottom - left;
+    const auto left = (wr.right - wr.left - cr.right) / 2;
+    const auto top = wr.bottom - wr.top - cr.bottom - left;
     margin = int4(left, top, 2 * left, left + top);
     return {};
   }
+
   std::expected<void, error_trace> set_sizepos(int2 s, int2 p) {
     if (::SetWindowPos(hwnd, nullptr, p.x, p.y, s.x + margin.z, s.y + margin.w, SWP_NOZORDER)) return {};
     else return unexpected_win32_error("SetWindowPos failed");
   }
+
   std::expected<void, error_trace> set_sizepos(int2 s) {
     if (HWND desktop; !(desktop = ::GetDesktopWindow())) return unexpected_win32_error("GetDesktopWindow failed");
     else if (RECT r; !::GetClientRect(desktop, &r)) return unexpected_win32_error("GetClientRect failed");
     else return set_sizepos(s, int2((r.right - s.x - margin.z) / 2, (r.bottom - s.y - margin.w) / 2));
   }
-  void _show() {
-    ::ShowWindow(hwnd, SW_SHOW);
-    ::SetForegroundWindow(hwnd);
-    ::SetActiveWindow(hwnd);
-  }
-  std::expected<void, error_trace> resize_d3d(uint2 size) {
+
+  std::expected<void, error_trace> resize_rendertarget(uint2 size) {
     if (swapchain) {
       rendertarget = {};
       if (auto hr = swapchain->ResizeBuffers(0, size.x, size.y, DXGI_FORMAT_UNKNOWN, 0); FAILED(hr))
@@ -117,81 +119,362 @@ public:
       if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSwapChainForHwnd failed", int32_t(hr));
     }
     if (auto res = bitmap::create(swapchain.get()); !res) return unexpected_error(res.error());
-    else return rendertarget = std::move(*res), std::expected<void, error_trace>{};
+    else return rendertarget = std::move(*res), std::expected<void, error_trace>();
   }
-  bool is_master() const noexcept { return sub_id == slotlist<subwindow>::id{}; }
 };
 
-///////////////////////////////////////// MARK: subwindow
+//////////////////////////////////////// MARK: window
 
-class subwindow : public window_base {
-  subwindow() = default;
+class window {
+  friend class subwindow;
+
+protected:
+  slotlist<window_body>::id _master_id;
+  window(slotlist<window_body>::id mid) : _master_id(mid) {}
+  window_body* _get_body() const noexcept { return window_class.windows.get(_master_id); }
+
 public:
-  slotlist<control> controls{};
+  window(window&& other) noexcept : _master_id(std::exchange(other._master_id, {})) {}
+  window& operator=(window&& other) noexcept {
+    if (this != &other) _master_id = std::exchange(other._master_id, {});
+    return *this;
+  }
+  explicit operator bool() const noexcept { return window_class.windows.contains(_master_id); }
 
-  void present() {
-    if (!(rendertarget && swapchain)) return;
-    if (auto d = rendertarget.begin_draw(); d) for (const auto& c : controls) c->draw();
-    swapchain->Present(1, 0);
+  HWND hwnd() const noexcept {
+    const auto body = _get_body();
+    return body ? body->hwnd : HWND();
   }
 
-  /// \param style if unknown, inherits the style of the master window.
-  static std::expected<window::slave, error_trace> open(const window::master& master, int2 pos, int2 size,
-    null_terminated<wchar_t> title, window_style style = window_style::unknown, bool hidden = false);
+  window_style style() const noexcept {
+    const auto body = _get_body();
+    return body ? body->style : window_style::unknown;
+  }
+
+  int2 margin() const noexcept {
+    const auto body = _get_body();
+    return body ? int2(body->margin.x, body->margin.y) : int2();
+  }
+
+  int2 size() const noexcept {
+    if (const auto body = _get_body(); body && body->hwnd)
+      if (RECT r; ::GetClientRect(body->hwnd, &r)) return int2(r.right - r.left, r.bottom - r.top);
+    return {};
+  }
+
+  std::expected<void, error_trace> size(int2 Size) {
+    if (const auto body = _get_body(); body && body->hwnd) {
+      if (::SetWindowPos(body->hwnd, nullptr, 0, 0, Size.x, Size.y, SWP_NOZORDER | SWP_NOMOVE)) return {};
+      else return unexpected_win32_error("SetWindowPos failed");
+    } else return unexpected_error(errors::not_initialized, "window is not initialized");
+  }
+
+  int2 position() const noexcept {
+    if (const auto body = _get_body(); body && body->hwnd)
+      if (RECT r; ::GetWindowRect(body->hwnd, &r)) return int2(r.left, r.top);
+    return {};
+  }
+
+  std::expected<void, error_trace> position(int2 Pos) {
+    if (const auto body = _get_body(); body && body->hwnd) {
+      if (::SetWindowPos(body->hwnd, nullptr, Pos.x, Pos.y, 0, 0, SWP_NOZORDER | SWP_NOSIZE)) return {};
+      else return unexpected_win32_error("SetWindowPos failed");
+    } else return unexpected_error(errors::not_initialized, "window is not initialized");
+  }
+
+  void show() const noexcept {
+    const auto body = _get_body();
+    const auto hwnd = body ? body->hwnd : HWND();
+    if (hwnd) ::ShowWindow(hwnd, SW_SHOW), ::SetForegroundWindow(hwnd), ::SetActiveWindow(hwnd);
+  }
+
+  void hide() const noexcept {
+    if (const auto body = _get_body(); body && body->hwnd) ::ShowWindow(body->hwnd, SW_HIDE);
+  }
+
+  void enable() const noexcept {
+    if (const auto body = _get_body(); body && body->hwnd) ::EnableWindow(body->hwnd, TRUE);
+  }
+
+  void disable() const noexcept {
+    if (const auto body = _get_body(); body && body->hwnd) ::EnableWindow(body->hwnd, FALSE);
+  }
+
+  void close() const noexcept {
+    if (const auto body = _get_body(); body && body->hwnd) ::DestroyWindow(body->hwnd);
+  }
+
+  bool close_confirmation() const noexcept {
+    const auto body = _get_body();
+    return body ? body->close_confirmation : false;
+  }
+
+  void close_confirmation(bool v) noexcept {
+    const auto body = _get_body();
+    if (body) body->close_confirmation = v;
+  }
+
+  std::expected<drawing, error_trace> begin_draw(const source& src = {}) {
+    const auto body = _get_body();
+    if (!body) return unexpected_error(errors::not_initialized, "window is not initialized");
+    if (auto& rendertarget = body->rendertarget; rendertarget) return rendertarget.begin_draw(src);
+    else return unexpected_error(errors::not_initialized, "rendertarget is not initialized");
+  }
+
+  std::expected<drawing, error_trace> begin_draw(const color& clear_color, const source& src = {}) {
+    const auto body = _get_body();
+    if (!body) return unexpected_error(errors::not_initialized, "window is not initialized");
+    if (auto& rendertarget = body->rendertarget; rendertarget) return rendertarget.begin_draw(clear_color, src);
+    else return unexpected_error(errors::not_initialized, "rendertarget is not initialized");
+  }
+
+  static std::expected<window, error_trace> open(
+    int2 pos, int2 size, null_terminated<wchar_t> title, window_style style = window_style::regular, bool hidden) {
+    if (auto res = window_class.initialize(); !res) return unexpected_error(res.error());
+    std::unique_ptr<window_body> body = std::make_unique<window_body>();
+    if (auto res = body->create(title.data(), style); !res) return unexpected_error(res.error());
+    if (auto res = body->set_sizepos(size, pos); !res) return unexpected_error(res.error());
+    if (!hidden) ::ShowWindow(body->hwnd, SW_SHOW), ::SetForegroundWindow(body->hwnd), ::SetActiveWindow(body->hwnd);
+    auto id = window_class.windows.push(std::move(body));
+    if (auto master = window_class.windows.get(id); master) master->master_id = id;
+    else return unexpected_error(errors::operation_failed, "failed to get window body after creation");
+    return window(id);
+  }
+
+  static std::expected<window, error_trace> open(
+    int2 size, null_terminated<wchar_t> title, window_style style = window_style::regular, bool hidden) {
+    if (auto res = window_class.initialize(); !res) return unexpected_error(res.error());
+    std::unique_ptr<window_body> body = std::make_unique<window_body>();
+    if (auto res = body->create(title.data(), style); !res) return unexpected_error(res.error());
+    if (auto res = body->set_sizepos(size); !res) return unexpected_error(res.error());
+    if (!hidden) ::ShowWindow(body->hwnd, SW_SHOW), ::SetForegroundWindow(body->hwnd), ::SetActiveWindow(body->hwnd);
+    auto id = window_class.windows.push(std::move(body));
+    if (auto master = window_class.windows.get(id); master) master->master_id = id;
+    else return unexpected_error(errors::operation_failed, "failed to get window body after creation");
+    return window(id);
+  }
 };
 
-///////////////////////////////////////// MARK: window
+//////////////////////////////////////// MARK: subwindow
 
-class window : public window_base {
-  window() = default;
+class subwindow : public window {
+  slotlist<window_body>::id _slave_id;
+  subwindow(slotlist<window_body>::id mid, slotlist<window_body>::id sid) noexcept : window(mid), _slave_id(sid) {}
+  window_body* _get_slave_body() const noexcept {
+    if (const auto master = _get_body(); !master) return nullptr;
+    else return master->slaves.get(_slave_id);
+  }
+  using window::open;
+
 public:
-  class master;
-  class slave;
+  subwindow(subwindow&& other) noexcept
+    : window(std::exchange(other._master_id, {})), _slave_id(std::exchange(other._slave_id, {})) {}
 
-  slotlist<subwindow> slaves{};
-  slotlist<control> controls{};
-
-  void present() {
-    if (!(rendertarget && swapchain)) return;
-    if (auto d = rendertarget.begin_draw(); d) for (const auto& c : controls) c->draw();
-    swapchain->Present(1, 0);
+  subwindow& operator=(subwindow&& other) noexcept {
+    if (this == &other) return *this;
+    _master_id = std::exchange(other._master_id, {});
+    _slave_id = std::exchange(other._slave_id, {});
+    return *this;
   }
 
-  static std::expected<master, error_trace> open(int2 pos, int2 size, null_terminated<wchar_t> title,
-    window_style style = window_style::regular, bool hidden = false);
-  static std::expected<master, error_trace> open(
-    int2 size, null_terminated<wchar_t> title, window_style style = window_style::regular, bool hidden = false);
+  explicit operator bool() const noexcept {
+    const auto master = _get_body();
+    return master && master->slaves.contains(_slave_id);
+  }
+
+  int2 position() const noexcept {
+    if (const auto master = _get_body(); !master) return {};
+    else if (const auto master_hwnd = master->hwnd; !master_hwnd) return {};
+    else if (const auto slave = _get_slave_body(); !slave || !slave->hwnd) return {};
+    else if (const auto slave_hwnd = slave->hwnd; !slave_hwnd) return {};
+    else if (RECT mr; !::GetWindowRect(master_hwnd, &mr)) return {};
+    else if (RECT sr; !::GetWindowRect(slave_hwnd, &sr)) return {};
+    else return int2(sr.left - mr.left, sr.top - mr.top);
+  }
+
+  void position(int2 pos) noexcept {
+    if (const auto master = _get_body(); !master) return;
+    else if (const auto master_hwnd = master->hwnd; !master_hwnd) return;
+    else if (const auto slave = _get_slave_body(); !slave || !slave->hwnd) return;
+    else if (const auto slave_hwnd = slave->hwnd; !slave_hwnd) return;
+    else if (RECT mr; !::GetWindowRect(master_hwnd, &mr)) return;
+    else ::SetWindowPos(slave_hwnd, nullptr, mr.left + pos.x, mr.top + pos.y, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
+  }
+
+  static std::expected<subwindow, error_trace> open(window& master, int2 pos, int2 size, null_terminated<wchar_t> title,
+    window_style style = window_style::regular, bool hidden) {
+    if (!master) return unexpected_error(errors::invalid_argument, "master window is not valid");
+    std::unique_ptr<window_body> slave_body = std::make_unique<window_body>();
+    if (auto res = slave_body->create(title.data(), style); !res) return unexpected_error(res.error());
+    if (auto res = slave_body->set_sizepos(size, pos + master.position()); !res) return unexpected_error(res.error());
+    if (!hidden) ::ShowWindow(slave_body->hwnd, SW_SHOW);
+    if (const auto master_body = master._get_body(); master_body) {
+      auto sid = master_body->slaves.push(std::move(slave_body));
+      if (auto slave = master_body->slaves.get(sid); slave) slave->master_id = master._master_id, slave->slave_id = sid;
+      else return unexpected_error(errors::operation_failed, "failed to get slave window body after creation");
+      return subwindow(master._master_id, sid);
+    } else return unexpected_error(errors::invalid_argument, "master window body is not valid");
+  }
 };
 
-//////////////////////////////////////// MARK: window procedure
+//////////////////////////////////////// MARK: control_body
 
-inline LRESULT __stdcall decltype(window_class)::_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
-  auto self = reinterpret_cast<window_base*>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-  if (!self) return ::DefWindowProcW(hwnd, msg, wparam, lparam);
-  switch (msg) {
-  case WM_SIZE: {
-    const auto width = LOWORD(lparam), height = HIWORD(lparam);
-    if (auto res = self->resize_d3d(uint2(width, height)); !res) {
-      window_class.last_error = res.error().push();
-      print_error("Window resize failed", window_class.last_error);
-    }
-    return 0;
+class control_body {
+public:
+  slotlist<window_body>::id master_id{};
+  slotlist<window_body>::id slave_id{};
+  slotlist<control_body>::id control_id{};
+
+  float2 position{}, size{}, radius{};
+  color background{}, border{};
+  float border_width{};
+  bool visible{}, enabled{};
+
+  bool hit_test(float2 point) const {
+    return point.x >= position.x && point.x <= position.x + size.x && point.y >= position.y &&
+           point.y <= position.y + size.y;
   }
-  case WM_NCDESTROY:
-    ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-    if (self->is_master()) window_class.active_windows.erase(self->main_id);
-    else window_class.active_windows.get(self->main_id)->slaves.erase(self->sub_id);
-    if (window_class.active_windows.empty()) ::PostQuitMessage(0);
-    break;
+
+  virtual void draw() const {
+    fill_round_rectangle(position, size, radius, background);
+    draw_round_rectangle(position, size, radius, border, border_width);
   }
-  return ::DefWindowProcW(hwnd, msg, wparam, lparam);
-}
+};
+
+//////////////////////////////////////// MARK: control
+
+class control {
+  slotlist<window_body>::id _master_id;
+  slotlist<window_body>::id _slave_id;
+  slotlist<control_body>::id _control_id;
+  control(slotlist<window_body>::id mid, slotlist<window_body>::id sid, slotlist<control_body>::id cid) noexcept
+    : _master_id(mid), _slave_id(sid), _control_id(cid) {}
+  control_body* _get_body() const noexcept {
+    const auto master = window_class.windows.get(_master_id);
+    if (_slave_id != slotlist<window_body>::id{}) {
+      const auto slave = master ? master->slaves.get(_slave_id) : nullptr;
+      return slave ? slave->controls.get(_control_id) : nullptr;
+    } else return master ? master->controls.get(_control_id) : nullptr;
+  }
+
+public:
+  control(control&& other) noexcept
+    : _master_id(std::exchange(other._master_id, {})), _slave_id(std::exchange(other._slave_id, {})),
+      _control_id(std::exchange(other._control_id, {})) {}
+
+  control& operator=(control&& other) noexcept {
+    if (this == &other) return *this;
+    _master_id = std::exchange(other._master_id, {});
+    _slave_id = std::exchange(other._slave_id, {});
+    _control_id = std::exchange(other._control_id, {});
+    return *this;
+  }
+
+  explicit operator bool() const noexcept {
+    const auto master = window_class.windows.get(_master_id);
+    if (_slave_id != slotlist<window_body>::id{}) {
+      const auto slave = master ? master->slaves.get(_slave_id) : nullptr;
+      return slave && slave->controls.contains(_control_id);
+    } else return master && master->controls.contains(_control_id);
+  }
+
+  float2 position() const noexcept {
+    return [body = _get_body()] { return body ? body->position : float2(); }();
+  }
+
+  void position(float2 pos) noexcept {
+    if (const auto body = _get_body(); body) body->position = pos;
+  }
+
+  float2 size() const noexcept {
+    return [body = _get_body()] { return body ? body->size : float2(); }();
+  }
+
+  void size(float2 s) noexcept {
+    if (const auto body = _get_body(); body) body->size = s;
+  }
+
+  float2 radius() const noexcept {
+    return [body = _get_body()] { return body ? body->radius : float2(); }();
+  }
+
+  void radius(float2 r) noexcept {
+    if (const auto body = _get_body(); body) body->radius = r;
+  }
+
+  color background() const noexcept {
+    return [body = _get_body()] { return body ? body->background : color(); }();
+  }
+
+  void background(const color& c) noexcept {
+    if (const auto body = _get_body(); body) body->background = c;
+  }
+
+  color border() const noexcept {
+    return [body = _get_body()] { return body ? body->border : color(); }();
+  }
+
+  void border(const color& c) noexcept {
+    if (const auto body = _get_body(); body) body->border = c;
+  }
+
+  float border_width() const noexcept {
+    return [body = _get_body()] { return body ? body->border_width : 0.0f; }();
+  }
+
+  void border_width(float w) noexcept {
+    if (const auto body = _get_body(); body) body->border_width = w;
+  }
+
+  bool visible() const noexcept {
+    return [body = _get_body()] { return body ? body->visible : false; }();
+  }
+
+  void visible(bool v) noexcept {
+    if (const auto body = _get_body(); body) body->visible = v;
+  }
+
+  bool enabled() const noexcept {
+    return [body = _get_body()] { return body ? body->enabled : false; }();
+  }
+
+  void enabled(bool v) noexcept {
+    if (const auto body = _get_body(); body) body->enabled = v;
+  }
+
+  bool hit_test(float2 point) const noexcept {
+    return [body = _get_body(), point]() { return body ? body->hit_test(point) : false; }();
+  }
+};
 
 //////////////////////////////////////// MARK: mainloop
 
 inline bool mainloop() {
-  for (auto id : window_class.active_windows)
-    if (auto wnd = window_class.active_windows.get(id); wnd) wnd->present();
+  constexpr auto present = [&](window_body& body) -> bool {
+    auto d = body.rendertarget.begin_draw();
+    if (!d) return window_class.last_error = d.error().push(), false;
+
+  };
+  for (auto& mb : window_class.windows) {
+    if (auto d = mb.rendertarget.begin_draw(); !d) {
+      window_class.last_error = d.error().push();
+      break;
+    } else
+      for (auto& cb : mb.controls)
+        if (cb.visible) cb.draw();
+    mb.swapchain->Present(1, 0);
+    for (auto& sb : mb.slaves) {
+      if (auto d = sb.rendertarget.begin_draw(); !d) {
+      window_class.last_error = d.error().push();
+      break;
+      }
+      else {
+        for (auto& cb : sb.controls)
+          if (cb.visible) cb.draw();
+      }
+      sb.swapchain->Present(1, 0);
+    }
+  }
   for (MSG msg; ::PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);) {
     if (msg.message == WM_QUIT) return false;
     if (window_class.last_error.error.code != errors::success) return false;
@@ -200,268 +483,30 @@ inline bool mainloop() {
   return true;
 }
 
-//////////////////////////////////////// MARK: window::master
+//////////////////////////////////////// MARK: window procedures
 
-class window::master {
-  friend class window;
-  friend class subwindow;
-  slotlist<window>::id _id{};
-  master(slotlist<window>::id id) : _id(id) {}
-  master(const master&) = delete;
-  master& operator=(const master&) = delete;
-  window* _window() const { return window_class.active_windows.get(_id); }
-
-public:
-  master() = default;
-  master(master&& other) noexcept : _id(std::exchange(other._id, slotlist<window>::id{})) {}
-  master& operator=(master&& other) noexcept {
-    if (this != &other) _id = std::exchange(other._id, slotlist<window>::id{});
-    return *this;
+inline LRESULT __stdcall decltype(window_class)::proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+  auto self = reinterpret_cast<window*>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+  if (!self) return ::DefWindowProcW(hwnd, msg, wparam, lparam);
+  switch (msg) {
+  case WM_SIZE: {
+    const auto width = LOWORD(lparam), height = HIWORD(lparam);
+    if (auto res = self->_resize_d3d(uint2(width, height)); !res) window_class.last_error = res.error().push();
+    return 0;
   }
-  ~master() {
-    if (const auto w = _window(); w && w->hwnd) ::DestroyWindow(w->hwnd);
+  case WM_CLOSE:
+    if (self->close_confirmation && ::MessageBoxW(hwnd, L"Close window?", L"Confirmation", MB_YESNO) == IDNO) return 0;
+    return ::DestroyWindow(hwnd), 0;
+  case WM_NCDESTROY:
+    ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+    if (!self->is_subwindow()) {
+      for (auto& subwin : self->_subwindows) self->_subwindows.get(subwin)->close();
+      window_class.windows.erase(self->_window_id);
+      if (window_class.windows.empty()) ::PostQuitMessage(0);
+    } else if (const auto master = window_class.windows.get(self->_window_id); master)
+      master->_subwindows.erase(self->_subwindow_id);
+    break;
   }
-
-  explicit operator bool() const noexcept { return _window() != nullptr; }
-
-  window_style style() const {
-    const auto w = _window();
-    return w ? w->style : window_style::unknown;
-  }
-
-  std::expected<void, error_trace> show() {
-    if (const auto w = _window(); !w) return ::ShowWindow(w->hwnd, SW_SHOW), std::expected<void, error_trace>{};
-    else return unexpected_error(errors::invalid_operation, "window not found");
-  }
-
-  std::expected<void, error_trace> hide() {
-    if (const auto w = _window(); !w) return ::ShowWindow(w->hwnd, SW_HIDE), std::expected<void, error_trace>{};
-    else return unexpected_error(errors::invalid_operation, "window not found");
-  }
-
-  std::expected<void, error_trace> enable() {
-    if (const auto w = _window(); !w)
-      return w->timer.start(), ::EnableWindow(w->hwnd, TRUE), std::expected<void, error_trace>{};
-    else return unexpected_error(errors::invalid_operation, "window not found");
-  }
-
-  std::expected<void, error_trace> disable() {
-    if (const auto w = _window(); !w)
-      return w->timer.stop(), ::EnableWindow(w->hwnd, FALSE), std::expected<void, error_trace>{};
-    else return unexpected_error(errors::invalid_operation, "window not found");
-  }
-
-  std::expected<int2, error_trace> size() const {
-    if (const auto w = _window(); w) {
-      if (RECT r; ::GetClientRect(w->hwnd, &r)) return int2{r.right - r.left, r.bottom - r.top};
-      else return unexpected_win32_error("GetClientRect failed");
-    } else return unexpected_error(errors::invalid_operation, "window not found");
-  }
-
-  std::expected<void, error_trace> size(int2 size) {
-    if (const auto w = _window(); w) {
-      if (::SetWindowPos(w->hwnd, nullptr, 0, 0, size.x, size.y, SWP_NOMOVE | SWP_NOZORDER)) return {};
-      else return unexpected_win32_error("SetWindowPos failed");
-    } else return unexpected_error(errors::invalid_operation, "window not found");
-  }
-
-  std::expected<int2, error_trace> position() const {
-    if (const auto w = _window(); w) {
-      if (RECT r; ::GetWindowRect(w->hwnd, &r)) return int2(r.left, r.top);
-      else return unexpected_win32_error("GetWindowRect failed");
-    } else return unexpected_error(errors::invalid_operation, "window not found");
-  }
-
-  std::expected<void, error_trace> position(int2 pos) {
-    if (const auto w = _window(); w) {
-      if (::SetWindowPos(w->hwnd, nullptr, pos.x, pos.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER)) return {};
-      else return unexpected_win32_error("SetWindowPos failed");
-    } else return unexpected_error(errors::invalid_operation, "window not found");
-  }
-
-  std::expected<drawing, error_trace> begin_draw(const source& src = {}) {
-    if (const auto w = _window(); w) {
-      return w->rendertarget.begin_draw(src);
-    } else return unexpected_error(errors::invalid_operation, "window not found");
-  }
-
-  std::expected<drawing, error_trace> begin_draw(const color& clear_color, const source& src = {}) {
-    if (const auto w = _window(); w) {
-      return w->rendertarget.begin_draw(clear_color, src);
-    } else return unexpected_error(errors::invalid_operation, "window not found");
-  }
-
-  std::expected<void, error_trace> close() {
-    if (const auto w = _window(); w) {
-      if (::DestroyWindow(w->hwnd)) return {};
-      else return unexpected_win32_error("DestroyWindow failed");
-    } else return unexpected_error(errors::invalid_operation, "window not found");
-  }
-};
-
-inline std::expected<window::master, error_trace> window::open(
-  int2 pos, int2 size, null_terminated<wchar_t> title, window_style style, bool hidden) {
-  if (auto res = window_class.initialize(); !res) return unexpected_error(res.error());
-  std::unique_ptr<window> w = std::make_unique<window>(window());
-  if (auto res = w->create_window(title.data(), style); !res) return unexpected_error(res.error());
-  if (auto res = w->calculate_padding(); !res) return unexpected_error(res.error());
-  if (auto res = w->set_sizepos(size, pos); !res) return unexpected_error(res.error());
-  if (!hidden) w->_show();
-  auto main_id = window_class.active_windows.push(std::move(w));
-  auto p = window_class.active_windows.get(main_id);
-  return window::master(p->main_id = main_id);
-}
-
-inline std::expected<window::master, error_trace> window::open(
-  int2 size, null_terminated<wchar_t> title, window_style style, bool hidden) {
-  if (auto res = window_class.initialize(); !res) return unexpected_error(res.error());
-  std::unique_ptr<window> w = std::make_unique<window>(window());
-  if (auto res = w->create_window(title.data(), style); !res) return unexpected_error(res.error());
-  if (auto res = w->calculate_padding(); !res) return unexpected_error(res.error());
-  if (auto res = w->set_sizepos(size); !res) return unexpected_error(res.error());
-  if (!hidden) w->_show();
-  auto main_id = window_class.active_windows.push(std::move(w));
-  auto p = window_class.active_windows.get(main_id);
-  return window::master(p->main_id = main_id);
-}
-
-//////////////////////////////////////// MARK: window::slave
-
-class window::slave {
-  friend class subwindow;
-  slotlist<subwindow>::id _id{};
-  slotlist<window>::id _master{};
-  slave(slotlist<subwindow>::id id, slotlist<window>::id master) : _id(id), _master(master) {}
-  slave(const slave&) = delete;
-  slave& operator=(const slave&) = delete;
-  window* _window() const { return window_class.active_windows.get(_master); }
-  subwindow* _subwindow(window* w) const { return w->slaves.get(_id); }
-
-public:
-  slave() = default;
-  slave(slave&& other) noexcept
-    : _id(std::exchange(other._id, slotlist<subwindow>::id{})),
-      _master(std::exchange(other._master, slotlist<window>::id{})) {}
-  slave& operator=(slave&& other) noexcept {
-    if (this == &other) return *this;
-    _id = std::exchange(other._id, slotlist<subwindow>::id{});
-    _master = std::exchange(other._master, slotlist<window>::id{});
-    return *this;
-  }
-  ~slave() {
-    if (const auto w = _window(); !w) return;
-    else if (const auto sw = _subwindow(w); sw && sw->hwnd) ::DestroyWindow(sw->hwnd);
-  }
-
-  explicit operator bool() const noexcept {
-    const auto w = _window();
-    return w && _subwindow(w);
-  }
-
-  window_style style() const {
-    const auto w = _window();
-    if (!w) return window_style::unknown;
-    const auto sw = _subwindow(w);
-    return sw ? sw->style : window_style::unknown;
-  }
-
-  std::expected<void, error_trace> show() {
-    if (const auto w = _window(); !w) return unexpected_error(errors::invalid_operation, "master window not found");
-    else if (const auto sw = _subwindow(w); sw)
-      return ::ShowWindow(sw->hwnd, SW_SHOW), std::expected<void, error_trace>{};
-    else return unexpected_error(errors::invalid_operation, "subwindow not found");
-  }
-
-  std::expected<void, error_trace> hide() {
-    if (const auto w = _window(); !w) return unexpected_error(errors::invalid_operation, "master window not found");
-    else if (const auto sw = _subwindow(w); sw)
-      return ::ShowWindow(sw->hwnd, SW_HIDE), std::expected<void, error_trace>{};
-    else return unexpected_error(errors::invalid_operation, "subwindow not found");
-  }
-
-  std::expected<void, error_trace> enable() {
-    if (const auto w = _window(); !w) return unexpected_error(errors::invalid_operation, "master window not found");
-    else if (const auto sw = _subwindow(w); sw)
-      return sw->timer.start(), ::EnableWindow(sw->hwnd, TRUE), std::expected<void, error_trace>{};
-    else return unexpected_error(errors::invalid_operation, "subwindow not found");
-  }
-
-  std::expected<void, error_trace> disable() {
-    if (const auto w = _window(); !w) return unexpected_error(errors::invalid_operation, "master window not found");
-    else if (const auto sw = _subwindow(w); sw)
-      return sw->timer.stop(), ::EnableWindow(sw->hwnd, FALSE), std::expected<void, error_trace>{};
-    else return unexpected_error(errors::invalid_operation, "subwindow not found");
-  }
-
-  std::expected<int2, error_trace> size() const {
-    if (const auto w = _window(); !w) return unexpected_error(errors::invalid_operation, "master window not found");
-    else if (const auto sw = _subwindow(w); sw) {
-      if (RECT r; ::GetClientRect(sw->hwnd, &r)) return int2{r.right - r.left, r.bottom - r.top};
-      else return unexpected_win32_error("GetClientRect failed");
-    } else return unexpected_error(errors::invalid_operation, "subwindow not found");
-  }
-
-  std::expected<void, error_trace> size(int2 size) {
-    if (const auto w = _window(); !w) return unexpected_error(errors::invalid_operation, "master window not found");
-    else if (const auto sw = _subwindow(w); sw) {
-      if (::SetWindowPos(sw->hwnd, nullptr, 0, 0, size.x, size.y, SWP_NOMOVE | SWP_NOZORDER)) return {};
-      else return unexpected_win32_error("SetWindowPos failed");
-    } else return unexpected_error(errors::invalid_operation, "subwindow not found");
-  }
-
-  std::expected<int2, error_trace> position() const {
-    if (const auto w = _window(); !w) return unexpected_error(errors::invalid_operation, "master window not found");
-    else if (const auto sw = _subwindow(w); sw) {
-      if (RECT mr; !::GetWindowRect(w->hwnd, &mr)) return unexpected_win32_error("GetWindowRect failed");
-      else if (RECT r; ::GetWindowRect(sw->hwnd, &r)) return int2(r.left, r.top);
-      else return unexpected_win32_error("GetWindowRect failed");
-    } else return unexpected_error(errors::invalid_operation, "subwindow not found");
-  }
-
-  std::expected<void, error_trace> position(int2 pos) {
-    if (const auto w = _window(); !w) return unexpected_error(errors::invalid_operation, "master window not found");
-    else if (const auto sw = _subwindow(w); sw) {
-      if (::SetWindowPos(sw->hwnd, nullptr, pos.x, pos.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER)) return {};
-      else return unexpected_win32_error("SetWindowPos failed");
-    } else return unexpected_error(errors::invalid_operation, "subwindow not found");
-  }
-
-  std::expected<drawing, error_trace> begin_draw(const source& src = {}) {
-    if (const auto w = _window(); !w) return unexpected_error(errors::invalid_operation, "master window not found");
-    else if (const auto sw = _subwindow(w); sw) return sw->rendertarget.begin_draw(src);
-    else return unexpected_error(errors::invalid_operation, "subwindow not found");
-  }
-
-  std::expected<drawing, error_trace> begin_draw(const color& clear_color, const source& src = {}) {
-    if (const auto w = _window(); !w) return unexpected_error(errors::invalid_operation, "master window not found");
-    else if (const auto sw = _subwindow(w); sw) return sw->rendertarget.begin_draw(clear_color, src);
-    else return unexpected_error(errors::invalid_operation, "subwindow not found");
-  }
-
-  std::expected<void, error_trace> close() {
-    if (const auto w = _window(); !w) return unexpected_error(errors::invalid_operation, "master window not found");
-    else if (const auto sw = _subwindow(w); sw) {
-      if (::DestroyWindow(sw->hwnd)) return {};
-      else return unexpected_win32_error("DestroyWindow failed");
-    } else return unexpected_error(errors::invalid_operation, "subwindow not found");
-  }
-};
-
-inline std::expected<window::slave, error_trace> subwindow::open(
-  const window::master& master, int2 pos, int2 size, null_terminated<wchar_t> title, window_style style, bool hidden) {
-  const auto mw = master._window();
-  if (!master) return unexpected_error(errors::invalid_argument, "invalid master window");
-  style = style == window_style::unknown ? master.style() : style;
-  if (style == window_style::unknown) return unexpected_error(errors::invalid_argument, "invalid window style");
-  if (RECT r; !::GetWindowRect(mw->hwnd, &r)) return unexpected_win32_error("GetWindowRect failed");
-  else pos = pos + int2(r.left, r.top);
-  std::unique_ptr<subwindow> sw = std::make_unique<subwindow>(subwindow());
-  if (auto res = sw->create_window(title.data(), style); !res) return unexpected_error(res.error());
-  if (auto res = sw->calculate_padding(); !res) return unexpected_error(res.error());
-  if (auto res = sw->set_sizepos(size, pos); !res) return unexpected_error(res.error());
-  if (!hidden) sw->_show();
-  auto sub_id = mw->slaves.push(std::move(sw));
-  auto p = mw->slaves.get(sub_id);
-  return window::slave(p->sub_id = sub_id, p->main_id = master._id);
+  return ::DefWindowProcW(hwnd, msg, wparam, lparam);
 }
 } // namespace yw

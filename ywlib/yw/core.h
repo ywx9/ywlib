@@ -520,7 +520,7 @@ struct error {
   uint64_t position;
   null_terminated<char> message;
   error() noexcept : code(errors::success), system_code(0), position(uint64_t(-1)), message() {}
-  explicit error(errors e, null_terminated<char> msg, int32_t sys_code = 0, uint64_t pos = uint64_t(-1)) noexcept
+  explicit error(errors e, null_terminated<char> msg = {}, int32_t sys_code = 0, uint64_t pos = uint64_t(-1)) noexcept
     : code(e), system_code(sys_code), message(std::move(msg)), position(pos) {}
 };
 struct error_trace {
@@ -554,8 +554,10 @@ template<typename C> struct formatter<yw::error, C> {
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::error& err, auto& ctx) const {
     std::string s;
-    if (err.system_code == 0) s = std::format("{}", err.message);
-    else s = std::format("{} (code={})", err.message, err.system_code);
+    if (!err.message.empty()) {
+      if (err.system_code == 0) s = std::format("{}", err.message);
+      else s = std::format("{} (code={})", err.message, err.system_code);
+    } else if (err.system_code != 0) s = std::format("error code={}", err.system_code);
     if (err.position != uint64_t(-1)) s += std::format("\n  input offset={}", err.position);
     return fmt.format(yw::unicode<C>(std::move(s)), ctx);
   }
@@ -691,101 +693,4 @@ template<typename T> requires(!specialization_of<remove_cvref<T>, std::expected>
 [[nodiscard]] T&& assume(T&& res, const source& = {}) noexcept {
   return static_cast<T&&>(res);
 }
-
-//////////////////////////////////////// MARK: slotlist
-
-template<typename T, typename Del = std::default_delete<T>> class slotlist {
-public:
-  struct id {
-    size_t index{}, generation{};
-    friend constexpr bool operator==(const id& a, const id& b) noexcept {
-      return a.index == b.index && a.generation == b.generation;
-    }
-  };
-  static_assert(sizeof(id) == 16);
-  struct slot {
-    std::unique_ptr<T, Del> pointer{};
-    size_t generation = 1, next_free = size_t(-1);
-  };
-private:
-  std::vector<slot> _slots;
-  std::vector<id> _list;
-  size_t _free_head = size_t(-1);
-
-  id _push(std::unique_ptr<T, Del> p) {
-    if (_free_head != size_t(-1)) {
-      const auto i = _free_head;
-      auto& s = _slots[i];
-      _free_head = s.next_free;
-      s.pointer = std::move(p);
-      s.next_free = size_t(-1);
-      return id{i, s.generation};
-    } else {
-      const auto i = _slots.size();
-      _slots.push_back(slot{std::move(p), 1, size_t(-1)});
-      return id{i, 1};
-    }
-  }
-public:
-  T* get(id i) {
-    if (i.index >= _slots.size()) return nullptr;
-    if (auto& s = _slots[i.index]; s.generation != i.generation) return nullptr;
-    else return s.pointer.get();
-  }
-  void erase(id i) {
-    if (i.index >= _slots.size()) return;
-    if (auto& s = _slots[i.index]; s.generation == i.generation) {
-      s.pointer.reset();
-      s.generation++;
-      s.next_free = _free_head;
-      _free_head = i.index;
-      if (auto it = std::ranges::find(_list, i); it != _list.end()) _list.erase(it);
-    }
-  }
-  id push(std::unique_ptr<T, Del> p) {
-    const auto i = _push(std::move(p));
-    _list.push_back(i);
-    return i;
-  }
-  void clear() {
-    _slots.clear();
-    _list.clear();
-    _free_head = size_t(-1);
-  }
-  void set_order(id i, size_t pos)  {
-    if (pos < _list.size()) {
-      if (auto it = std::ranges::find(_list, i); it != _list.end()) {
-        size_t from = size_t(it - _list.begin());
-        if (pos < from) {
-          std::memmove(_list.data() + pos + 1, _list.data() + pos, (from - pos) * sizeof(id));
-          _list[pos] = i;
-        } else if (pos > from) {
-          std::memmove(_list.data() + from, _list.data() + from + 1, (pos - from) * sizeof(id));
-          _list[pos - 1] = i;
-        }
-      }
-    } else bring_to_last(i);
-  }
-  void bring_to_first(id i) {
-    if (auto it = std::ranges::find(_list, i); it != _list.end()) {
-      size_t from = size_t(it - _list.begin());
-      std::memmove(_list.data() + 1, _list.data(), from * sizeof(id));
-      _list[0] = i;
-    }
-  }
-  void bring_to_last(id i) {
-    if (auto it = std::ranges::find(_list, i); it != _list.end()) {
-      size_t from = size_t(it - _list.begin());
-      std::memmove(_list.data() + from, _list.data() + from + 1, (_list.size() - from - 1) * sizeof(id));
-      _list[_list.size() - 1] = i;
-    }
-  }
-
-  auto begin() noexcept { return _list.begin(); }
-  auto begin() const noexcept { return _list.begin(); }
-  auto end() noexcept { return _list.end(); }
-  auto end() const noexcept { return _list.end(); }
-  auto size() const noexcept { return _list.size(); }
-  auto empty() const noexcept { return _list.empty(); }
-};
 } // namespace yw
