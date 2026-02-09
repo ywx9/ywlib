@@ -12,6 +12,7 @@ public:
     friend constexpr bool operator==(const id& a, const id& b) noexcept {
       return a.index == b.index && a.generation == b.generation;
     }
+    constexpr bool is_zero() const noexcept { return index == 0 && generation == 0; }
   };
   static_assert(sizeof(id) == 16);
   struct slot {
@@ -33,7 +34,7 @@ private:
       s.next_free = size_t(-1);
       return id{i, s.generation};
     } else {
-        const auto i = _slots.size();
+      const auto i = _slots.size();
       _slots.push_back(slot{std::move(p), 1, size_t(-1)});
       return id{i, 1};
     }
@@ -118,7 +119,7 @@ public:
     using value_type = T;
     using difference_type = std::ptrdiff_t;
 
-    iterator(slotlist<T, Del>& list, size_t pos) : _list(&list), _pos(pos) {}
+    iterator(slotlist<T, Del>* list, size_t pos) : _list(list), _pos(pos) {}
     T& operator*() const { return *(_list->_slots[_list->_list[_pos].index].pointer); }
     T* operator->() const { return _list->_slots[_list->_list[_pos].index].pointer.get(); }
     iterator& operator++() { ++_pos; return *this; }
@@ -127,11 +128,11 @@ public:
     iterator operator--(int) { iterator temp = *this; --_pos; return temp; }
     iterator& operator+=(difference_type n) { _pos += n; return *this; }
     iterator& operator-=(difference_type n) { _pos -= n; return *this; }
-    iterator operator+(difference_type n) const { return iterator(*_list, _pos + n); }
-    iterator operator-(difference_type n) const { return iterator(*_list, _pos - n); }
-    difference_type operator-(const iterator& other) const { return difference_type(_pos) - difference_type(other._pos); }
-    bool operator==(const iterator& other) const { return _pos == other._pos; }
-    auto operator<=>(const iterator& other) const { return _pos <=> other._pos; }
+    iterator operator+(difference_type n) const { return iterator(_list, _pos + n); }
+    iterator operator-(difference_type n) const { return iterator(_list, _pos - n); }
+    difference_type operator-(const iterator& i) const { return difference_type(_pos) - difference_type(i._pos); }
+    bool operator==(const iterator& i) const { return _pos == i._pos; }
+    auto operator<=>(const iterator& i) const { return _pos <=> i._pos; }
   };
 
   class const_iterator {
@@ -143,7 +144,7 @@ public:
     using value_type = T;
     using difference_type = std::ptrdiff_t;
 
-    const_iterator(const slotlist<T, Del>& list, size_t pos) : _list(&list), _pos(pos) {}
+    const_iterator(const slotlist<T, Del>* list, size_t pos) : _list(list), _pos(pos) {}
     const T& operator*() const { return *(_list->_slots[_list->_list[_pos].index].pointer); }
     const T* operator->() const { return _list->_slots[_list->_list[_pos].index].pointer.get(); }
     const_iterator& operator++() { ++_pos; return *this; }
@@ -152,17 +153,17 @@ public:
     const_iterator operator--(int) { const_iterator temp = *this; --_pos; return temp; }
     const_iterator& operator+=(difference_type n) { _pos += n; return *this; }
     const_iterator& operator-=(difference_type n) { _pos -= n; return *this; }
-    const_iterator operator+(difference_type n) const { return const_iterator(*_list, _pos + n); }
-    const_iterator operator-(difference_type n) const { return const_iterator(*_list, _pos - n); }
-    difference_type operator-(const const_iterator& other) const { return difference_type(_pos) - difference_type(other._pos); }
-    bool operator==(const const_iterator& other) const { return _pos == other._pos; }
-    auto operator<=>(const const_iterator& other) const { return _pos <=> other._pos; }
+    const_iterator operator+(difference_type n) const { return const_iterator(_list, _pos + n); }
+    const_iterator operator-(difference_type n) const { return const_iterator(_list, _pos - n); }
+    difference_type operator-(const const_iterator& i) const { return difference_type(_pos) - difference_type(i._pos); }
+    bool operator==(const const_iterator& i) const { return _pos == i._pos; }
+    auto operator<=>(const const_iterator& i) const { return _pos <=> i._pos; }
   };
 
-  auto begin() noexcept { return iterator(*this, 0); }
-  auto begin() const noexcept { return const_iterator(*this, 0); }
-  auto end() noexcept { return iterator(*this, _list.size()); }
-  auto end() const noexcept { return const_iterator(*this, _list.size()); }
+  auto begin() noexcept { return iterator(this, 0); }
+  auto begin() const noexcept { return const_iterator(this, 0); }
+  auto end() noexcept { return iterator(this, _list.size()); }
+  auto end() const noexcept { return const_iterator(this, _list.size()); }
   auto size() const noexcept { return _list.size(); }
   auto empty() const noexcept { return _list.empty(); }
   auto operator[](size_t i) noexcept { return get(_list[i]); }

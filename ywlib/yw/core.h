@@ -305,8 +305,11 @@ inline constexpr auto is_xdigit = []<char_type C>(C c) noexcept {
   return is_digit(c) || (('a' <= c && c <= 'f') || ('A' <= c && c <= 'F'));
 };
 
-template<typename S, typename C = iter_value_t<S>> concept stringable =
-  std::convertible_to<S, std::basic_string_view<C>> && std::constructible_from<std::basic_string_view<C>, S>;
+template<typename S, typename C = iter_value_t<S>> concept stringable = requires {
+  requires different_from<C, void>;
+  requires std::convertible_to<S, std::basic_string_view<C>>;
+  requires std::constructible_from<std::basic_string_view<C>, S>;
+};
 
 template<arithmetic T> constexpr auto stov = [](stringable<char> auto&& str) -> T {
   const auto sv = std::string_view(str);
@@ -428,6 +431,118 @@ template<char_type C> inline constexpr auto unicode = []<stringable S>(S&& s) ->
 };
 } // namespace yw
 
+//////////////////////////////////////// MARK: format
+
+namespace yw {
+
+inline constexpr struct {
+  /// \note 以下のステップで変換する
+  /// 1. 文字型を決定する。最初の引数がstringableであればiter_value_t、そうでなければcharとする。
+  /// 2. 引数にstd::filesystem::pathが含まれている場合、それぞれnative()で文字列化する。
+  /// 3. 引数に文字列型が含まれている場合、1で決定した文字型に変換する。
+  /// 4. std::vformat、std::make_format_argsでフォーマットする。
+
+  template<typename T> requires(!stringable<T>) static std::string operator()(const T& a) {
+    if constexpr (same_as<T, std::filesystem::path>) {
+      if constexpr (same_as<std::filesystem::path::value_type, char>) return std::string(a.native());
+      else return unicode<char>(a.native());
+    } else if constexpr (char_type<T> && different_from<T, char>) return unicode<char>(std::basic_string_view<T>(&a));
+    else return std::format("{}", a);
+  }
+
+  template<stringable S, typename... Ts> static std::basic_string<iter_value_t<S>> operator()(S&& fmt, Ts&&... as) {
+    using C = iter_value_t<S>;
+    if constexpr (same_as<C, char8_t>) {
+      auto s = operator()(unicode<char>(static_cast<S&&>(fmt)), static_cast<Ts&&>(as)...);
+      return std::basic_string<C>(reinterpret_cast<std::basic_string<C>&&>(std::move(s)));
+    } else if constexpr (same_as<C, char16_t>) {
+      auto s = operator()(unicode<wchar_t>(static_cast<S&&>(fmt)), static_cast<Ts&&>(as)...);
+      return std::basic_string<C>(reinterpret_cast<std::basic_string<C>&&>(std::move(s)));
+    } else if constexpr (same_as<C, char32_t>) {
+      auto s = operator()(unicode<wchar_t>(static_cast<S&&>(fmt)), static_cast<Ts&&>(as)...);
+      return unicode<C>(s);
+    } else if constexpr (included_in<std::filesystem::path, remove_cvref<Ts>...>) {
+      constexpr auto _to_string = []<typename T>(const T& a) -> decltype(auto) {
+        if constexpr (same_as<T, std::filesystem::path>) return unicode<C>(a.native());
+        else return a;
+      };
+      return operator()(static_cast<S&&>(fmt), _to_string(as)...);
+    } else if constexpr (((stringable<Ts> && different_from<iter_value_t<Ts>, C>) || ...)) {
+      constexpr auto _covert = []<typename S2>(const S2& s) -> decltype(auto) {
+        using C2 = iter_value_t<S2>;
+        if constexpr (stringable<S2> && different_from<C2, C>) return unicode<C>(std::basic_string<C2>(s));
+        else return s;
+      };
+      return operator()(static_cast<S&&>(fmt), _covert(as)...);
+    } else if constexpr (same_as<C, char>) return std::vformat(std::string_view(fmt), std::make_format_args(as...));
+    else return std::vformat(std::wstring_view(fmt), std::make_wformat_args(as...));
+  }
+} format;
+} // namespace yw
+
+//////////////////////////////////////// MARK: print
+
+namespace yw {
+inline constexpr class {
+  template<typename S, typename... Ts> static void _select_out(auto out, S&& fmt, Ts&&... as) {
+#ifdef _WIN32
+    if constexpr (sizeof...(Ts) == 0) {
+      const auto s = format(L"{}", fmt);
+      ::WriteConsoleW(::GetStdHandle(out), s.data(), unsigned(s.size()), nullptr, nullptr);
+    } else {
+      const auto s = unicode<wchar_t>(format(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...));
+      ::WriteConsoleW(::GetStdHandle(out), s.data(), unsigned(s.size()), nullptr, nullptr);
+    }
+#else
+    if constexpr (sizeof...(Ts) == 0) {
+      const auto s = format("{}", fmt);
+      std::fputs((const char*)s.data(), out);
+    } else {
+      const auto s = unicode<char>(format(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...));
+      std::fputs((const char*)s.data(), out);
+    }
+#endif
+  }
+
+public:
+  template<typename S, typename... Ts> static void operator()(S&& fmt, Ts&&... as) {
+#ifdef _WIN32
+    _select_out(STD_OUTPUT_HANDLE, static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
+#else
+    _select_out(stdout, static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
+#endif
+  }
+
+  template<typename S, typename... Ts> static void err(S&& fmt, Ts&&... as) {
+#ifdef _WIN32
+    _select_out(STD_ERROR_HANDLE, static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
+#else
+    _select_out(stderr, static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
+#endif
+  }
+} print_inline;
+
+inline constexpr struct {
+  static void operator()() {
+#ifdef _WIN32
+    ::WriteConsoleW(::GetStdHandle(STD_OUTPUT_HANDLE), L"\n", 1, nullptr, nullptr);
+#else
+    std::fputc('\n', stdout);
+#endif
+  }
+
+  template<typename S, typename... Ts> static void operator()(S&& fmt, Ts&&... as) {
+    print_inline(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
+    operator()();
+  }
+
+  template<typename S, typename... Ts> static void err(S&& fmt, Ts&&... as) {
+    print_inline.err(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
+    operator()();
+  }
+} print;
+} // namespace yw
+
 //////////////////////////////////////// MARK: source
 
 namespace yw {
@@ -514,160 +629,139 @@ enum class errors : uint32_t {
   operation_failed,  // unexpected error from system or library
   not_initialized,   // part of `invalid_operation`; system/object is not initialized
 };
+
 struct error {
   errors code;
   int32_t system_code;
   uint64_t position;
   null_terminated<char> message;
+  mutable bool handled{false};
+
+  ~error() noexcept {
+    try {
+      if (code != errors::success && !handled) {
+        print("unhandled error destroyed");
+        yw::print.err(to_string());
+      }
+    } catch (...) {} // noexcept destructor
+  }
+
   error() noexcept : code(errors::success), system_code(0), position(uint64_t(-1)), message() {}
+
+  error(const error&) = default;
+  error& operator=(const error&) = default;
+
+  /// \note defines move constructor/assignment to clear the moved-from error.
+
+  error(error&& e) noexcept
+    : code(std::exchange(e.code, errors::success)), system_code(std::exchange(e.system_code, 0)),
+      position(std::exchange(e.position, uint64_t(-1))), message(std::move(e.message)), handled(e.handled) {}
+
+  error& operator=(error&& e) noexcept {
+    code = std::exchange(e.code, errors::success);
+    system_code = std::exchange(e.system_code, 0);
+    position = std::exchange(e.position, uint64_t(-1));
+    message = std::move(e.message);
+    handled = std::exchange(e.handled, false);
+    return *this;
+  }
+
   explicit error(errors e, null_terminated<char> msg = {}, int32_t sys_code = 0, uint64_t pos = uint64_t(-1)) noexcept
     : code(e), system_code(sys_code), message(std::move(msg)), position(pos) {}
+
+  explicit operator bool() const noexcept { return code != errors::success; }
+
+  std::string to_string() const {
+    std::string s;
+    if (!message.empty()) {
+      if (system_code == 0) s = std::format("{}", message);
+      else s = std::format("{} (code={})", message, system_code);
+    } else if (system_code != 0) s = std::format("error code={}", system_code);
+    if (position != uint64_t(-1)) s += std::format("\n  input offset={}", position);
+    handled = true;
+    return s;
+  }
 };
-struct error_trace {
+
+class error_trace {
+public:
   yw::error error;
   std::vector<source> frames;
+
+  ~error_trace() noexcept {
+    try {
+      if (error && !error.handled) {
+        print("unhandled error_trace destroyed");
+        yw::print.err(to_string());
+      }
+    } catch (...) {} // noexcept destructor
+  }
+
   error_trace() = default;
+
   error_trace(yw::error err, const source& src = {}) : error(std::move(err)) {
     frames.reserve(8);
     frames.push_back(src);
   }
+
   error_trace& push(const source& src = {}) & {
     frames.push_back(src);
     return *this;
   }
+
+  std::string to_string() const {
+    auto s = error.to_string();
+    for (const auto& src : frames) s += std::format("\n  at {}", src);
+    return s;
+  }
 };
+
 inline std::unexpected<error_trace> unexpected_error(
   errors e, null_terminated<char> msg, int32_t sys_code = 0, uint64_t pos = uint64_t(-1), const source& src = {}) {
   return std::unexpected<error_trace>(error_trace(yw::error(e, std::move(msg), sys_code, pos), src));
 }
+
 inline std::unexpected<error_trace> unexpected_error(error_trace& e, const source& src = {}) {
   return std::unexpected<error_trace>(std::move(e.push(src)));
 }
+
 inline std::unexpected<error_trace> unexpected_error(std::unexpected<error_trace>& e, const source& src = {}) {
   e.error().push(src);
   return std::move(e);
 }
 } // namespace yw
+
 namespace std {
+
 template<typename C> struct formatter<yw::error, C> {
   formatter<basic_string<C>, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::error& err, auto& ctx) const {
-    std::string s;
-    if (!err.message.empty()) {
-      if (err.system_code == 0) s = std::format("{}", err.message);
-      else s = std::format("{} (code={})", err.message, err.system_code);
-    } else if (err.system_code != 0) s = std::format("error code={}", err.system_code);
-    if (err.position != uint64_t(-1)) s += std::format("\n  input offset={}", err.position);
-    return fmt.format(yw::unicode<C>(std::move(s)), ctx);
-  }
+  auto format(const yw::error& err, auto& ctx) const { return fmt.format(yw::unicode<C>(err.to_string()), ctx); }
 };
+
 template<typename C> struct formatter<yw::error_trace, C> {
   formatter<basic_string<C>, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::error_trace& err, auto& ctx) const {
-    std::string s = std::format("{}", err.error);
-    for (const auto& src : err.frames) s += std::format("\n  at {}", src);
-    return fmt.format(yw::unicode<C>(std::move(s)), ctx);
-  }
+  auto format(const yw::error_trace& err, auto& ctx) const { return fmt.format(yw::unicode<C>(err.to_string()), ctx); }
 };
 } // namespace std
 
-//////////////////////////////////////// MARK: format
-
 namespace yw {
-inline constexpr struct {
-  template<typename C, typename T> static std::basic_string<C> as(const T& a) {
-    if constexpr (same_as<T, std::filesystem::path>) return unicode<C>(a.native());
-    else if constexpr (same_as<T, char>) return std::format("{}", a);
-    else if constexpr (same_as<T, wchar_t>) return std::format(L"{}", a);
-    else return unicode<C>(std::format("{}", a));
-  }
-  template<stringable S, typename... Ts> static std::basic_string<iter_value_t<S>> operator()(S&& fmt, Ts&&... as) {
-    using C = iter_value_t<S>;
-    if constexpr (included_in<std::filesystem::path, remove_cvref<Ts>...>) {
-      constexpr auto _to_string = []<typename T>(T&& a) -> decltype(auto) {
-        if constexpr (same_as<T, std::filesystem::path>) return unicode<C>(a.native());
-        else return static_cast<T&&>(a);
-      };
-      return operator()(static_cast<S&&>(fmt), _to_string(static_cast<Ts&&>(as))...);
-    } else if constexpr (same_as<C, char>) return std::vformat(std::string_view(fmt), std::make_format_args(as...));
-    else if constexpr (same_as<C, wchar_t>) return std::vformat(std::wstring_view(fmt), std::make_wformat_args(as...));
-    else if constexpr (same_as<C, char8_t>) {
-      auto s =
-        std::vformat(std::bit_cast<std::string_view>(std::basic_string_view<C>(fmt)), std::make_format_args(as...));
-      return std::basic_string<C>(reinterpret_cast<std::basic_string<C>&&>(std::move(s)));
-    } else if constexpr (same_as<C, char16_t>) {
-      auto s =
-        std::vformat(std::bit_cast<std::wstring_view>(std::basic_string_view<C>(fmt)), std::make_wformat_args(as...));
-      return std::basic_string<C>(reinterpret_cast<std::basic_string<C>&&>(std::move(s)));
-    } else if constexpr (same_as<C, char32_t>) {
-      const auto f{unicode<char>(fmt)};
-      return unicode<C>(std::vformat(f, std::make_format_args(as...)));
-    } else throw "yw::format: unsupported character type";
-  }
-} format;
-} // namespace yw
-
-//////////////////////////////////////// MARK: print
-
-namespace yw {
-inline constexpr struct {
-  template<typename S, typename... Ts> static void operator()(S&& fmt, Ts&&... as) {
-#ifdef _WIN32
-    if constexpr (sizeof...(Ts) == 0) {
-      const auto s = format.as<wchar_t>(fmt);
-      ::WriteConsoleW(::GetStdHandle(STD_OUTPUT_HANDLE), s.data(), unsigned(s.size()), nullptr, nullptr);
-    } else {
-      const auto s = unicode<wchar_t>(format(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...));
-      ::WriteConsoleW(::GetStdHandle(STD_OUTPUT_HANDLE), s.data(), unsigned(s.size()), nullptr, nullptr);
-    }
-#else
-    if constexpr (sizeof...(Ts) == 0) {
-      const auto s = format.as<char>(fmt);
-      std::fputs((const char*)s.data(), stdout);
-    } else {
-      const auto s = unicode<char>(format(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...));
-      std::fputs((const char*)s.data(), stdout);
-    }
-#endif
-  }
-} print_inline;
-
-inline constexpr struct {
-  static void operator()() {
-#ifdef _WIN32
-    ::WriteConsoleW(::GetStdHandle(STD_OUTPUT_HANDLE), L"\n", 1, nullptr, nullptr);
-#else
-    std::fputc('\n', stdout);
-#endif
-  }
-  template<typename S, typename... Ts> static void operator()(S&& fmt, Ts&&... as) {
-    print_inline(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
-    operator()();
-  }
-} print;
 
 //////////////////////////////////////// MARK: print_error
 
 inline constexpr struct {
   template<stringable S> static int operator()(S&& message, const error_trace& err, const source& src = {}) {
 #ifdef _WIN32
-    // auto s0 = format(L"{}", err);
-    // auto s1 = format(L"\n  at {}\n", src);
-    // auto s2 = format(L"{}", unicode<wchar_t>(message));
     std::wstring s;
     if constexpr (stringable<S, wchar_t>) s = format(L"{}\n  at {}\n{}", err, src, std::wstring_view(message));
     else s = format(L"{}\n  at {}\n{}", err, src, unicode<wchar_t>(message));
-    ::WriteConsoleW(::GetStdHandle(STD_ERROR_HANDLE), s.data(), unsigned(s.size()), nullptr, nullptr);
+    print.err(s);
 #else
-    if constexpr (!stringable<char, S>) {
-      const auto s = format("{}\n  at {}\n{}", err, src, unicode<char>(message));
-      std::fputs((const char*)s.data(), stderr);
-    } else {
-      const auto s = format("{}\n  at {}\n{}", err, src, std::string_view(message));
-      std::fputs((const char*)s.data(), stderr);
-    }
+    std::string s;
+    if constexpr (stringable<char, S>) s = format("{}\n  at {}\n{}", err, src, std::string_view(message));
+    else s = format("{}\n  at {}\n{}", err, src, unicode<char>(message));
+    print.err(s);
 #endif
     return err.error.system_code;
   }
