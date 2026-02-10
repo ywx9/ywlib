@@ -3,6 +3,40 @@
 
 namespace yw {
 
+namespace internal {
+
+/// \note requires text_format is initialized
+inline std::expected<std::wstring, error_trace> get_font_name(IDWriteTextFormat* tf) {
+  auto n = tf->GetFontFamilyNameLength();
+  std::wstring name(n, L'\0');
+  if (auto hr = tf->GetFontFamilyName(name.data(), n + 1); SUCCEEDED(hr)) return name;
+  else return unexpected_error(errors::operation_failed, "GetFontFamilyName failed", int32_t(hr));
+}
+
+/// \note requires text_format is initialized
+inline bool set_text_alignment(IDWriteTextFormat* tf, DWRITE_TEXT_ALIGNMENT align) {
+  switch (align) {
+    case DWRITE_TEXT_ALIGNMENT_LEADING:
+    case DWRITE_TEXT_ALIGNMENT_CENTER:
+    case DWRITE_TEXT_ALIGNMENT_TRAILING:
+    case DWRITE_TEXT_ALIGNMENT_JUSTIFIED: tf->SetTextAlignment(align); return {};
+    default: return false;
+  }
+}
+
+/// \note requires text_format is initialized
+inline bool set_paragraph_alignment(IDWriteTextFormat* tf, DWRITE_PARAGRAPH_ALIGNMENT align) {
+  switch (align) {
+    case DWRITE_PARAGRAPH_ALIGNMENT_NEAR:
+    case DWRITE_PARAGRAPH_ALIGNMENT_CENTER:
+    case DWRITE_PARAGRAPH_ALIGNMENT_FAR: tf->SetParagraphAlignment(align); return {};
+    default: return false;
+  }
+}
+}
+
+template<typename T> concept text_format_like = convertible_to<const remove_ref<T>&, IDWriteTextFormat*>;
+
 //////////////////////////////////////// MARK: text_format
 
 class text_format {
@@ -43,25 +77,25 @@ public:
 
   std::expected<std::wstring, error_trace> font_name() const {
     if (!_text_format) return unexpected_error(errors::not_initialized, "text_format is not initialized");
-    auto n = _text_format->GetFontFamilyNameLength();
-    if (n == 0) return unexpected_error(errors::invalid_operation, "GetFontFamilyNameLength returned 0");
-    std::wstring name(n, L'\0');
-    if (auto hr = _text_format->GetFontFamilyName(name.data(), n + 1); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "GetFontFamilyName failed", int32_t(hr));
-    return name;
+    if (auto res = internal::get_font_name(_text_format.get()); res) return std::move(*res);
+    else return unexpected_error(res.error());
   }
+
   std::expected<float, error_trace> font_size() const {
     if (!_text_format) return unexpected_error(errors::not_initialized, "text_format is not initialized");
     return _text_format->GetFontSize();
   }
+
   std::expected<DWRITE_FONT_WEIGHT, error_trace> font_weight() const {
     if (!_text_format) return unexpected_error(errors::not_initialized, "text_format is not initialized");
     return _text_format->GetFontWeight();
   }
+
   std::expected<DWRITE_FONT_STYLE, error_trace> font_style() const {
     if (!_text_format) return unexpected_error(errors::not_initialized, "text_format is not initialized");
     return _text_format->GetFontStyle();
   }
+
   std::expected<DWRITE_FONT_STRETCH, error_trace> font_stretch() const {
     if (!_text_format) return unexpected_error(errors::not_initialized, "text_format is not initialized");
     return _text_format->GetFontStretch();
@@ -73,13 +107,8 @@ public:
   }
   std::expected<void, error_trace> text_alignment(DWRITE_TEXT_ALIGNMENT align) {
     if (!_text_format) return unexpected_error(errors::not_initialized, "text_format is not initialized");
-    switch (align) {
-    case DWRITE_TEXT_ALIGNMENT_LEADING:
-    case DWRITE_TEXT_ALIGNMENT_CENTER:
-    case DWRITE_TEXT_ALIGNMENT_TRAILING:
-    case DWRITE_TEXT_ALIGNMENT_JUSTIFIED: _text_format->SetTextAlignment(align); return {};
-    default: return unexpected_error(errors::invalid_argument, "invalid text alignment value");
-    }
+    if (internal::set_text_alignment(_text_format.get(), align)) return {};
+    else return unexpected_error(errors::invalid_argument, "invalid text alignment value");
   }
 
   std::expected<DWRITE_PARAGRAPH_ALIGNMENT, error_trace> paragraph_alignment() const {
@@ -88,28 +117,8 @@ public:
   }
   std::expected<void, error_trace> paragraph_alignment(DWRITE_PARAGRAPH_ALIGNMENT align) {
     if (!_text_format) return unexpected_error(errors::not_initialized, "text_format is not initialized");
-    switch (align) {
-    case DWRITE_PARAGRAPH_ALIGNMENT_NEAR:
-    case DWRITE_PARAGRAPH_ALIGNMENT_CENTER:
-    case DWRITE_PARAGRAPH_ALIGNMENT_FAR: _text_format->SetParagraphAlignment(align); return {};
-    default: return unexpected_error(errors::invalid_argument, "invalid paragraph alignment value");
-    }
-  }
-
-  std::expected<DWRITE_WORD_WRAPPING, error_trace> word_wrapping() const {
-    if (!_text_format) return unexpected_error(errors::not_initialized, "text_format is not initialized");
-    return _text_format->GetWordWrapping();
-  }
-  std::expected<void, error_trace> word_wrapping(DWRITE_WORD_WRAPPING wrap) {
-    if (!_text_format) return unexpected_error(errors::not_initialized, "text_format is not initialized");
-    switch (wrap) {
-    case DWRITE_WORD_WRAPPING_WRAP:
-    case DWRITE_WORD_WRAPPING_NO_WRAP:
-    case DWRITE_WORD_WRAPPING_EMERGENCY_BREAK:
-    case DWRITE_WORD_WRAPPING_WHOLE_WORD:
-    case DWRITE_WORD_WRAPPING_CHARACTER: _text_format->SetWordWrapping(wrap); return {};
-    default: return unexpected_error(errors::invalid_argument, "invalid word wrapping value");
-    }
+    if (internal::set_paragraph_alignment(_text_format.get(), align)) return {};
+    else return unexpected_error(errors::invalid_argument, "invalid paragraph alignment value");
   }
 };
 
@@ -195,10 +204,55 @@ public:
     if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
     return float2(_text_layout->GetMaxWidth(), _text_layout->GetMaxHeight());
   }
+
+  std::expected<std::wstring, error_trace> font_name() const {
+    if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
+    if (auto res = internal::get_font_name(_text_layout.get()); res) return std::move(*res);
+    else return unexpected_error(res.error());
+  }
+
+  std::expected<float, error_trace> font_size() const {
+    if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
+    return static_cast<IDWriteTextFormat*>(_text_layout.get())->GetFontSize();
+  }
+
+  std::expected<DWRITE_FONT_WEIGHT, error_trace> font_weight() const {
+    if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
+    return static_cast<IDWriteTextFormat*>(_text_layout.get())->GetFontWeight();
+  }
+
+  std::expected<DWRITE_FONT_STYLE, error_trace> font_style() const {
+    if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
+    return static_cast<IDWriteTextFormat*>(_text_layout.get())->GetFontStyle();
+  }
+
+  std::expected<DWRITE_FONT_STRETCH, error_trace> font_stretch() const {
+    if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
+    return static_cast<IDWriteTextFormat*>(_text_layout.get())->GetFontStretch();
+  }
+
+  std::expected<DWRITE_TEXT_ALIGNMENT, error_trace> text_alignment() const {
+    if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
+    return _text_layout->GetTextAlignment();
+  }
+  std::expected<void, error_trace> text_alignment(DWRITE_TEXT_ALIGNMENT align) {
+    if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
+    if (internal::set_text_alignment(_text_layout.get(), align)) return {};
+    else return unexpected_error(errors::invalid_argument, "invalid text alignment value");
+  }
+
+  std::expected<DWRITE_PARAGRAPH_ALIGNMENT, error_trace> paragraph_alignment() const {
+    if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
+    return _text_layout->GetParagraphAlignment();
+  }
+  std::expected<void, error_trace> paragraph_alignment(DWRITE_PARAGRAPH_ALIGNMENT align) {
+    if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
+    if (internal::set_paragraph_alignment(_text_layout.get(), align)) return {};
+    else return unexpected_error(errors::invalid_argument, "invalid paragraph alignment value");
+  }
 };
 
-inline std::expected<void, error_trace> draw_text_layout(
-  float2 pos, const text_layout& tl, const color& c = colors::black) {
+inline std::expected<void, error_trace> draw_text(float2 pos, const text_layout& tl, const color& c = colors::black) {
   if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);

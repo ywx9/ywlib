@@ -16,7 +16,6 @@ enum class window_style : uint32_t {
 
 class window_slot;
 class control_slot;
-class control;
 
 //////////////////////////////////////// MARK: window_class
 
@@ -136,6 +135,12 @@ public:
   }
 };
 
+template<typename Window> concept is_window = requires (Window& w) {
+  typename Window::slot_type;
+  requires derived_from<typename Window::slot_type, window_slot>;
+  { w.hwnd() } -> convertible_to<HWND>;
+};
+
 namespace window {
 
 class master;
@@ -155,7 +160,9 @@ class window::master {
   window_slot* _window() const noexcept { return window_class.windows.get(_master_id); }
 
 public:
-  ~master() noexcept { close(); }
+  using slot_type = window_slot;
+
+  ~master() noexcept { this->close(); }
   master() noexcept : _master_id() {}
   explicit master(slotlist<window_slot>::id mid) noexcept : _master_id(mid) {}
 
@@ -163,7 +170,7 @@ public:
 
   master& operator=(master&& other) noexcept {
     if (this == &other) return *this;
-    close();
+    this->close();
     _master_id = std::exchange(other._master_id, {});
     return *this;
   }
@@ -282,7 +289,9 @@ class window::slave {
   }
 
 public:
-  ~slave() noexcept { close(); }
+  using slot_type = window_slot;
+
+  ~slave() noexcept { this->close(); }
   slave() noexcept : _master_id(), _slave_id() {}
 
   explicit slave(slotlist<window_slot>::id mid, slotlist<window_slot>::id sid) noexcept
@@ -293,7 +302,7 @@ public:
 
   slave& operator=(slave&& other) noexcept {
     if (this == &other) return *this;
-    close();
+    this->close();
     _master_id = std::exchange(other._master_id, {});
     _slave_id = std::exchange(other._slave_id, {});
     return *this;
@@ -398,32 +407,43 @@ inline std::expected<window::slave, error_trace> window::master::open_subwindow(
   return slave(_master_id, slave_id);
 }
 
-template<typename Window> inline constexpr bool is_window_v = false;
-template<> inline constexpr bool is_window_v<window::master> = true;
-template<> inline constexpr bool is_window_v<window::slave> = true;
-template<typename Window> concept is_window = is_window_v<Window>;
-
 //////////////////////////////////////// MARK: control_slot
 
 class control_slot {
-public:
+  control_slot(const control_slot&) = delete;
+  control_slot& operator=(const control_slot&) = delete;
+protected:
   slotlist<window_slot>::id master_id;
   slotlist<window_slot>::id slave_id;
   slotlist<control_slot>::id control_id;
+public:
 
-  float2 position{}, size{}, radius{};
-  color background = colors::white, border = colors::black;
+  float2 position{}, size{}, radius{}, padding{};
+  color background_color = colors::white, border_color = colors::black;
   float border_width = 1.0f;
   bool visible = true, enabled = true;
+
+  virtual ~control_slot() noexcept = default;
+  control_slot() noexcept = default;
+  control_slot(control_slot&&) noexcept = default;
+  control_slot& operator=(control_slot&&) noexcept = default;
 
   bool hit_test(float2 pt) const {
     return pt.x >= position.x && pt.x <= position.x + size.x && pt.y >= position.y && pt.y <= position.y + size.y;
   }
 
-  virtual void draw() const {
-    fill_round_rectangle(position, size, radius, background);
-    draw_round_rectangle(position, size, radius, border, border_width);
+  virtual std::expected<void, error_trace> draw() const {
+    if (auto res = fill_round_rectangle(position, size, radius, background_color); !res) return unexpected_error(res.error());
+    if (auto res = draw_round_rectangle(position, size, radius, border_color, border_width); !res) return unexpected_error(res.error());
+    return {};
   }
+
+  virtual std::expected<bool, error_trace> proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) const { return {}; }
+};
+
+template<typename Control> concept is_control = requires {
+  typename Control::slot_type;
+  requires derived_from<typename Control::slot_type, control_slot>;
 };
 
 //////////////////////////////////////// MARK: mainloop
@@ -458,8 +478,24 @@ inline bool mainloop() {
 //////////////////////////////////////// MARK: window procedures
 
 inline LRESULT __stdcall decltype(window_class)::proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+  struct ids {
+    slotlist<window_slot>::id master_id{};
+    slotlist<window_slot>::id slave_id{};
+    slotlist<control_slot>::id control_id{};
+  };
   auto self = reinterpret_cast<window_slot*>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
   if (!self) return ::DefWindowProcW(hwnd, msg, wparam, lparam);
+  POINT pt{};
+  ::GetCursorPos(&pt);
+  ::ScreenToClient(hwnd, &pt);
+  for (const auto& cb : self->controls | std::ranges::views::reverse) {
+    if (cb.enabled && cb.visible && cb.hit_test(float2(pt.x, pt.y))) {
+      if (auto res = cb.proc(hwnd, msg, wparam, lparam); !res) {
+        window_class.last_error = res.error().push();
+        break;
+      } else if (*res) return 0;
+    }
+  }
   switch (msg) {
   case WM_SIZE: {
     const auto width = LOWORD(lparam), height = HIWORD(lparam);

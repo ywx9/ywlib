@@ -1,65 +1,187 @@
-// #pragma once
-// #include "ywx/window.h"
+#pragma once
+#include "ywx/window.h"
 
-// namespace yw {
+//////////////////////////////////////// MARK: control
 
-// //////////////////////////////////////// MARK: label
+namespace yw::controls {
 
-// class label : public control {
-//   std::wstring _text;
-//   text_layout _text_layout;
+class control {
+protected:
+  slotlist<window_slot>::id _master_id;
+  slotlist<window_slot>::id _slave_id;
+  slotlist<control_slot>::id _control_id;
 
-//   label(window& owner) noexcept : control(owner) {}
+  window_slot* _window() const noexcept {
+    const auto master = window_class.windows.get(_master_id);
+    if (_slave_id.is_zero()) return master;
+    else return master ? master->slaves.get(_slave_id) : nullptr;
+  }
 
-//   template<stringable S> std::expected<void, error_trace> _set_text(S&& text) {
-//     if constexpr (same_as<iter_value_t<S>, wchar_t>) _text = std::wstring(std::wstring_view(text));
-//     else _text = unicode<wchar_t>(static_cast<S&&>(text));
-//     if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
-//     if (auto tl = text_layout::create(_text, _text_layout); !tl) return unexpected_error(tl.error());
-//     else _text_layout = std::move(*tl);
-//     return {};
-//   }
-//   template<castable_to<IDWriteTextFormat*> T> std::expected<void, error_trace> _set_text_format(T&& text_format) {
-//     IDWriteTextFormat* tf = static_cast<IDWriteTextFormat*>(text_format);
-//     if (!tf) return unexpected_error(errors::not_initialized, "text_format is not initialized");
-//     float2 size = {this->size.x - padding.x * 2.0f, this->size.y - padding.y * 2.0f};
-//     if (auto tl_new = text_layout::create(_text, tf, size); !tl_new) return unexpected_error(tl_new.error());
-//     else _text_layout = std::move(*tl_new);
-//     return {};
-//   }
-// public:
-//   color text_color = colors::black;
+  control_slot* _control() const noexcept {
+    const auto w = _window();
+    return w ? w->controls.get(_control_id) : nullptr;
+  }
 
-//   explicit operator bool() const noexcept { return static_cast<bool>(_text_layout); }
+  template<typename Ctrl, typename Slot, typename W> static std::expected<Ctrl, error_trace> _add(W& window) {
+    if (!window) return unexpected_error(errors::invalid_argument, "invalid window");
+    slotlist<window_slot>::id mid, sid;
+    mid.index = ::GetWindowLongPtrW(window.hwnd(), 0);
+    mid.generation = ::GetWindowLongPtrW(window.hwnd(), 8);
+    sid.index = ::GetWindowLongPtrW(window.hwnd(), 16);
+    sid.generation = ::GetWindowLongPtrW(window.hwnd(), 24);
+    auto w = window_class.windows.get(mid);
+    if (w->is_slave) w = w->slaves.get(sid);
+    if (!w) return unexpected_error(errors::invalid_argument, "invalid window");
+    std::unique_ptr<Slot> slot = std::make_unique<Slot>();
+    const auto cid = w->controls.push(std::move(slot));
+    return Ctrl(mid, sid, cid);
+  }
 
-//   /// \note this function is called within mainloop
-//   /// \note d2d.transform may be modified after this call
-//   std::expected<void, error_trace> draw() override {
-//     if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
-//     if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
-//     if (!_text_layout) return {}; // nothing to draw
-//     const float2 layout_size{size.x - padding.x * 2.0f, size.y - padding.y * 2.0f};
-//     if (auto size = _text_layout.layout_size(); !size) return unexpected_error(size.error());
-//     else if (size != layout_size) _set_text_format(_text_layout); // update layout size
-//     d2d.context()->SetTransform(D2D1::Matrix3x2F::Translation(position.x, position.y));
-//     fill_round_rectangle({}, size, rounded_radius, background_color);
-//     draw_round_rectangle({}, size, rounded_radius, border_color, border_width);
-//     draw_text_layout(padding, _text_layout, text_color);
-//     return {};
-//   }
+public:
+  using slot_type = control_slot;
 
+  virtual ~control() noexcept { this->remove(); }
+  control() noexcept : _master_id(), _slave_id(), _control_id() {}
 
+  explicit control(
+    slotlist<window_slot>::id mid, slotlist<window_slot>::id sid, slotlist<control_slot>::id cid) noexcept
+    : _master_id(mid), _slave_id(sid), _control_id(cid) {}
 
-//   template<castable_to<IDWriteTextFormat*> T>
-//   [[nodiscard]] static std::expected<label, error_trace> create(
-//     window& owner, float2 position, float2 size, stringable<wchar_t> auto&& text, T&& text_format) {
-//     label lbl(owner);
-//     lbl.position = position;
-//     lbl.size = size;
-//     if constexpr (same_as<decltype(text)&&, std::wstring&&>) lbl._text = std::move(text);
-//     else lbl._text = unicode<wchar_t>(std::basic_string_view<iter_value_t<decltype(text)>>(text));
-//     if (auto res = lbl._set_text_format(static_cast<T&&>(text_format)); !res) return unexpected_error(res.error());
-//     return std::move(lbl);
-//   }
-// };
-// }
+  control(control&& other) noexcept
+    : _master_id(std::exchange(other._master_id, {})), _slave_id(std::exchange(other._slave_id, {})),
+      _control_id(std::exchange(other._control_id, {})) {}
+
+  control& operator=(control&& other) noexcept {
+    if (this == &other) return *this;
+    this->remove();
+    _master_id = std::exchange(other._master_id, {});
+    _slave_id = std::exchange(other._slave_id, {});
+    _control_id = std::exchange(other._control_id, {});
+    return *this;
+  }
+
+  explicit operator bool() const noexcept {
+    const auto w = _window();
+    return w ? w->controls.contains(_control_id) : false;
+  }
+
+  void remove() noexcept {
+    if (const auto w = _window(); w) w->controls.erase(_control_id);
+  }
+
+  control_slot* operator->() const noexcept { return _control(); }
+
+  static std::expected<control, error_trace> add(auto& window) { return _add<control, control_slot>(window); }
+};
+}
+
+//////////////////////////////////////// MARK: label
+
+namespace yw::controls {
+
+class label : public control {
+public:
+  class slot : public control_slot {
+  protected:
+    std::wstring _text;
+    yw::text_layout _text_layout;
+  public:
+    color text_color = colors::black;
+
+    virtual std::expected<void, error_trace> draw() const override {
+      if (auto res = control_slot::draw(); !res) return unexpected_error(res.error());
+      if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
+      if (auto res = draw_text(position + padding, _text_layout, text_color); !res)
+        return unexpected_error(res.error());
+      return {};
+    }
+
+    const std::wstring& text() const noexcept { return _text; }
+
+    void text(stringable<wchar_t> auto&& Text) {
+      _text.assign(std::wstring_view(Text));
+      if (auto res = yw::text_layout::create(_text, _text_layout); res) _text_layout = std::move(res.value());
+      else _text_layout = {};
+    }
+
+    void reset_text_layout(text_format_like auto&& text_format, float2 size) {
+      if (auto res = yw::text_layout::create(_text, (IDWriteTextFormat*)text_format, size); !res) _text_layout = {};
+      else _text_layout = std::move(res.value());
+    }
+
+    void reset_text_layout(const text_layout& source) {
+      if (auto res = yw::text_layout::create(_text, source); !res) _text_layout = {};
+      else _text_layout = std::move(res.value());
+    }
+
+    std::wstring font_name() const {
+      if (auto res = _text_layout.font_name(); res) return std::move(res.value());
+      else return {};
+    }
+
+    float font_size() const {
+      if (auto res = _text_layout.font_size(); res) return res.value();
+      else return {};
+    }
+
+    DWRITE_FONT_WEIGHT font_weight() const {
+      if (auto res = _text_layout.font_weight(); res) return res.value();
+      else return {};
+    }
+
+    DWRITE_FONT_STYLE font_style() const {
+      if (auto res = _text_layout.font_style(); res) return res.value();
+      else return {};
+    }
+
+    DWRITE_FONT_STRETCH font_stretch() const {
+      if (auto res = _text_layout.font_stretch(); res) return res.value();
+      else return {};
+    }
+
+    DWRITE_TEXT_ALIGNMENT text_alignment() const {
+      if (auto res = _text_layout.text_alignment(); res) return res.value();
+      else return {};
+    }
+    void text_alignment(DWRITE_TEXT_ALIGNMENT align) {
+      if (auto res = _text_layout.text_alignment(align); !res) return;
+    }
+
+    DWRITE_PARAGRAPH_ALIGNMENT paragraph_alignment() const {
+      if (auto res = _text_layout.paragraph_alignment(); res) return res.value();
+      else return {};
+    }
+    void paragraph_alignment(DWRITE_PARAGRAPH_ALIGNMENT align) {
+      if (auto res = _text_layout.paragraph_alignment(align); !res) return;
+    }
+  };
+
+protected:
+  slot* _label() const noexcept { return dynamic_cast<slot*>(_control()); }
+
+public:
+  using slot_type = slot;
+  using control::control;
+  using control::operator bool;
+
+  slot* operator->() const noexcept { return _label(); }
+  static std::expected<label, error_trace> add(is_window auto& window) { return _add<label, slot>(window); }
+};
+}
+
+//////////////////////////////////////// MARK: button
+
+namespace yw::controls {
+
+class button : public control {
+public:
+  class slot : public control_slot {
+  protected:
+    std::wstring _text;
+    yw::text_layout _text_layout;
+  public:
+    color text_color = colors::black;
+    std::function<std::expected<void, error_trace>()> on_click;
+  };
+};
+}

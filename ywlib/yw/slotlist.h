@@ -119,18 +119,21 @@ public:
     using value_type = T;
     using difference_type = std::ptrdiff_t;
 
+    iterator() : _list(nullptr), _pos(0) {}
     iterator(slotlist<T, Del>* list, size_t pos) : _list(list), _pos(pos) {}
     T& operator*() const { return *(_list->_slots[_list->_list[_pos].index].pointer); }
     T* operator->() const { return _list->_slots[_list->_list[_pos].index].pointer.get(); }
-    iterator& operator++() { ++_pos; return *this; }
-    iterator operator++(int) { iterator temp = *this; ++_pos; return temp; }
-    iterator& operator--() { --_pos; return *this; }
-    iterator operator--(int) { iterator temp = *this; --_pos; return temp; }
-    iterator& operator+=(difference_type n) { _pos += n; return *this; }
-    iterator& operator-=(difference_type n) { _pos -= n; return *this; }
-    iterator operator+(difference_type n) const { return iterator(_list, _pos + n); }
-    iterator operator-(difference_type n) const { return iterator(_list, _pos - n); }
-    difference_type operator-(const iterator& i) const { return difference_type(_pos) - difference_type(i._pos); }
+    T& operator[](size_t i) const { return *(_list->_slots[_list->_list[_pos + i].index].pointer); }
+    auto& operator++() { ++_pos; return *this; }
+    auto operator++(int) { iterator temp = *this; ++_pos; return temp; }
+    auto& operator--() { --_pos; return *this; }
+    auto operator--(int) { iterator temp = *this; --_pos; return temp; }
+    auto& operator+=(difference_type n) { _pos += n; return *this; }
+    auto& operator-=(difference_type n) { _pos -= n; return *this; }
+    auto operator+(difference_type n) const { return iterator(_list, _pos + n); }
+    auto operator-(difference_type n) const { return iterator(_list, _pos - n); }
+    auto operator-(const iterator& i) const { return difference_type(_pos) - difference_type(i._pos); }
+    friend auto operator+(difference_type n, const iterator& i) { return iterator(i._list, i._pos + n); }
     bool operator==(const iterator& i) const { return _pos == i._pos; }
     auto operator<=>(const iterator& i) const { return _pos <=> i._pos; }
   };
@@ -144,18 +147,21 @@ public:
     using value_type = T;
     using difference_type = std::ptrdiff_t;
 
+    const_iterator() : _list(nullptr), _pos(0) {}
     const_iterator(const slotlist<T, Del>* list, size_t pos) : _list(list), _pos(pos) {}
     const T& operator*() const { return *(_list->_slots[_list->_list[_pos].index].pointer); }
     const T* operator->() const { return _list->_slots[_list->_list[_pos].index].pointer.get(); }
-    const_iterator& operator++() { ++_pos; return *this; }
-    const_iterator operator++(int) { const_iterator temp = *this; ++_pos; return temp; }
-    const_iterator& operator--() { --_pos; return *this; }
-    const_iterator operator--(int) { const_iterator temp = *this; --_pos; return temp; }
-    const_iterator& operator+=(difference_type n) { _pos += n; return *this; }
-    const_iterator& operator-=(difference_type n) { _pos -= n; return *this; }
-    const_iterator operator+(difference_type n) const { return const_iterator(_list, _pos + n); }
-    const_iterator operator-(difference_type n) const { return const_iterator(_list, _pos - n); }
-    difference_type operator-(const const_iterator& i) const { return difference_type(_pos) - difference_type(i._pos); }
+    const T& operator[](difference_type n) const { return *(_list->_slots[_list->_list[_pos + n].index].pointer); }
+    auto& operator++() { ++_pos; return *this; }
+    auto operator++(int) { const_iterator temp = *this; ++_pos; return temp; }
+    auto& operator--() { --_pos; return *this; }
+    auto operator--(int) { const_iterator temp = *this; --_pos; return temp; }
+    auto& operator+=(difference_type n) { _pos += n; return *this; }
+    auto& operator-=(difference_type n) { _pos -= n; return *this; }
+    auto operator+(difference_type n) const { return const_iterator(_list, _pos + n); }
+    auto operator-(difference_type n) const { return const_iterator(_list, _pos - n); }
+    auto operator-(const const_iterator& i) const { return difference_type(_pos) - difference_type(i._pos); }
+    friend auto operator+(difference_type n, const const_iterator& i) { return const_iterator(i._list, i._pos + n); }
     bool operator==(const const_iterator& i) const { return _pos == i._pos; }
     auto operator<=>(const const_iterator& i) const { return _pos <=> i._pos; }
   };
@@ -166,7 +172,7 @@ public:
   auto end() const noexcept { return const_iterator(this, _list.size()); }
   auto size() const noexcept { return _list.size(); }
   auto empty() const noexcept { return _list.empty(); }
-  auto operator[](size_t i) noexcept { return get(_list[i]); }
-  auto operator[](size_t i) const noexcept { return get(_list[i]); }
+  auto& operator[](size_t i) noexcept { return *get(_list[i]); }
+  auto& operator[](size_t i) const noexcept { return *get(_list[i]); }
 };
 } // namespace yw
