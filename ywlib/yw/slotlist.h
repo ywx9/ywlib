@@ -8,34 +8,34 @@ namespace yw {
 template<typename T, typename Del = std::default_delete<T>> class slotlist {
 public:
   struct id {
-    size_t index{}, generation{};
+    uint32_t index{}, generation{};
     friend constexpr bool operator==(const id& a, const id& b) noexcept {
       return a.index == b.index && a.generation == b.generation;
     }
     constexpr bool is_zero() const noexcept { return index == 0 && generation == 0; }
   };
-  static_assert(sizeof(id) == 16);
+  static_assert(sizeof(id) == 8);
   struct slot {
     std::unique_ptr<T, Del> pointer{};
-    size_t generation = 1, next_free = size_t(-1);
+    uint32_t generation = 1, next_free = uint32_t(-1);
   };
 
 private:
   std::vector<slot> _slots;
   std::vector<id> _list;
-  size_t _free_head = size_t(-1);
+  uint32_t _free_head = uint32_t(-1);
 
   id _push(std::unique_ptr<T, Del> p) {
-    if (_free_head != size_t(-1)) {
+    if (_free_head != uint32_t(-1)) {
       const auto i = _free_head;
       auto& s = _slots[i];
       _free_head = s.next_free;
       s.pointer = std::move(p);
-      s.next_free = size_t(-1);
+      s.next_free = uint32_t(-1);
       return id{i, s.generation};
     } else {
-      const auto i = _slots.size();
-      _slots.push_back(slot{std::move(p), 1, size_t(-1)});
+      const auto i = uint32_t(_slots.size());
+      _slots.push_back(slot{std::move(p), 1, uint32_t(-1)});
       return id{i, 1};
     }
   }
@@ -76,7 +76,7 @@ public:
   void clear() {
     _slots.clear();
     _list.clear();
-    _free_head = size_t(-1);
+    _free_head = uint32_t(-1);
   }
 
   void set_order(id i, size_t pos) {

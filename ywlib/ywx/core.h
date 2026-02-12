@@ -43,6 +43,12 @@ inline constexpr auto print_error_fallback = //
   return err.error.system_code;
 };
 
+//////////////////////////////////////// MARK: unexpected_win32_error
+
+inline std::unexpected<error_trace> unexpected_win32_error(const char* msg, const source& src = {}) {
+  return unexpected_error(errors::operation_failed, msg, int32_t(::GetLastError()), {}, src);
+}
+
 //////////////////////////////////////// MARK: comptr
 
 template<typename Com> class comptr {
