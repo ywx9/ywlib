@@ -628,14 +628,28 @@ enum class errors : uint32_t {
   invalid_operation, // wrong use of API; ex) file_handle::write called on read-only file
   operation_failed,  // unexpected error from system or library
   not_initialized,   // part of `invalid_operation`; system/object is not initialized
+  rendering_during_drawing,
+  drawing_during_rendering,
 };
+
+template<errors E> constexpr auto error_text = []() -> std::string_view {
+  if constexpr (E == errors::success) return "success";
+  else if constexpr (E == errors::invalid_argument) return "invalid argument";
+  else if constexpr (E == errors::invalid_file) return "invalid file format";
+  else if constexpr (E == errors::invalid_operation) return "invalid operation";
+  else if constexpr (E == errors::operation_failed) return "operation failed";
+  else if constexpr (E == errors::not_initialized) return "Object or system not initialized";
+  else if constexpr (E == errors::rendering_during_drawing) return "3D rendering function called during 2D drawing";
+  else if constexpr (E == errors::drawing_during_rendering) return "2D drawing function called during 3D rendering";
+  else return "unknown error";
+}();
 
 struct error {
   errors code;
   int32_t system_code;
   uint64_t position;
   null_terminated<char> message;
-  mutable bool handled{false};
+  mutable bool handled{true};
 
   ~error() noexcept {
     try {
@@ -648,26 +662,27 @@ struct error {
 
   error() noexcept : code(errors::success), system_code(0), position(uint64_t(-1)), message() {}
 
-  error(const error&) = default;
-  error& operator=(const error&) = default;
+  error(const error&) = delete;
+  error& operator=(const error&) = delete;
 
   /// \note defines move constructor/assignment to clear the moved-from error.
 
   error(error&& e) noexcept
     : code(std::exchange(e.code, errors::success)), system_code(std::exchange(e.system_code, 0)),
-      position(std::exchange(e.position, uint64_t(-1))), message(std::move(e.message)), handled(e.handled) {}
+      position(std::exchange(e.position, uint64_t(-1))), message(std::move(e.message)),
+      handled(std::exchange(e.handled, true)) {}
 
   error& operator=(error&& e) noexcept {
     code = std::exchange(e.code, errors::success);
     system_code = std::exchange(e.system_code, 0);
     position = std::exchange(e.position, uint64_t(-1));
     message = std::move(e.message);
-    handled = std::exchange(e.handled, false);
+    handled = std::exchange(e.handled, true);
     return *this;
   }
 
   explicit error(errors e, null_terminated<char> msg = {}, int32_t sys_code = 0, uint64_t pos = uint64_t(-1)) noexcept
-    : code(e), system_code(sys_code), message(std::move(msg)), position(pos) {}
+    : code(e), system_code(sys_code), message(std::move(msg)), position(pos), handled(e == errors::success) {}
 
   explicit operator bool() const noexcept { return code != errors::success; }
 

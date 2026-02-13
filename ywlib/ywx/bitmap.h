@@ -176,7 +176,10 @@ inline std::expected<void, error_trace> draw_rectangle(float2 pos, float2 size, 
 }
 
 inline std::expected<void, error_trace> fill_rectangle(float2 pos, float2 size, const color& c = colors::black) {
-  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
+  if (!drawing::d2d_drawing()) {
+    if (drawing::d3d_drawing()) return unexpected_error(errors::invalid_operation, "in d3d rendering");
+    else return unexpected_error(errors::invalid_operation, "drawing not begun");
+  }
   d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
   d2d.context()->FillRectangle({pos.x, pos.y, pos.x + size.x, pos.y + size.y}, d2d.solid_brush());
   return {};
