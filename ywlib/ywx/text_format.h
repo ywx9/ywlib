@@ -16,26 +16,26 @@ inline std::expected<std::wstring, error_trace> get_font_name(IDWriteTextFormat*
 /// \note requires text_format is initialized
 inline bool set_text_alignment(IDWriteTextFormat* tf, DWRITE_TEXT_ALIGNMENT align) {
   switch (align) {
-    case DWRITE_TEXT_ALIGNMENT_LEADING:
-    case DWRITE_TEXT_ALIGNMENT_CENTER:
-    case DWRITE_TEXT_ALIGNMENT_TRAILING:
-    case DWRITE_TEXT_ALIGNMENT_JUSTIFIED: tf->SetTextAlignment(align); return {};
-    default: return false;
+  case DWRITE_TEXT_ALIGNMENT_LEADING:
+  case DWRITE_TEXT_ALIGNMENT_CENTER:
+  case DWRITE_TEXT_ALIGNMENT_TRAILING:
+  case DWRITE_TEXT_ALIGNMENT_JUSTIFIED: tf->SetTextAlignment(align); return true;
+  default: return false;
   }
 }
 
 /// \note requires text_format is initialized
 inline bool set_paragraph_alignment(IDWriteTextFormat* tf, DWRITE_PARAGRAPH_ALIGNMENT align) {
   switch (align) {
-    case DWRITE_PARAGRAPH_ALIGNMENT_NEAR:
-    case DWRITE_PARAGRAPH_ALIGNMENT_CENTER:
-    case DWRITE_PARAGRAPH_ALIGNMENT_FAR: tf->SetParagraphAlignment(align); return {};
-    default: return false;
+  case DWRITE_PARAGRAPH_ALIGNMENT_NEAR:
+  case DWRITE_PARAGRAPH_ALIGNMENT_CENTER:
+  case DWRITE_PARAGRAPH_ALIGNMENT_FAR: tf->SetParagraphAlignment(align); return true;
+  default: return false;
   }
 }
-}
+} // namespace internal
 
-template<typename T> concept text_format_like = convertible_to<const remove_ref<T>&, IDWriteTextFormat*>;
+template<typename T> concept text_format_like = castable_to<T, IDWriteTextFormat*>;
 
 //////////////////////////////////////// MARK: text_format
 
@@ -152,8 +152,8 @@ public:
   text_layout& operator=(text_layout&&) = default;
 
   /// creates text layout
-  template<castable_to<IDWriteTextFormat*> T>
-  static std::expected<text_layout, error_trace> create(stringable<wchar_t> auto&& text, T&& text_format, float2 size) {
+  static std::expected<text_layout, error_trace> create(
+    stringable<wchar_t> auto&& text, text_format_like auto&& text_format, float2 size) {
     if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
     auto sv = std::wstring_view(text);
     auto tf = static_cast<IDWriteTextFormat*>(text_format);

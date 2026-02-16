@@ -1,65 +1,98 @@
-// #pragma once
-// #include "ywx/control.h"
+#pragma once
+#include "ywx/text_format.h"
+#include "ywx/window.h"
 
-// namespace yw::control {
+namespace yw::control {
 
-// //////////////////////////////////////// MARK: label
+//////////////////////////////////////// MARK: control::label
 
-// class label : public base {
-// public:
-//   class slot : public control::slot {
-//   protected:
-//     std::wstring _text;
-//     yw::text_layout _text_layout;
-//   public:
-//     color text_color = colors::black;
+class label : public base {
+public:
+  class slot : public base::slot {
+  public:
+    float2 padding{};
+    color text_color = colors::black;
+    std::wstring text{};
+    yw::text_layout text_layout{};
 
-//     virtual std::expected<void, error_trace> draw() const override {
-//       if (auto res = control::slot::draw(); !res) return unexpected_error(res.error());
-//       if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
-//       if (auto res = draw_text(position + padding, _text_layout, text_color); !res)
-//         return unexpected_error(res.error());
-//       return {};
-//     }
+    virtual std::expected<void, error_trace> draw() const {
+      if (auto res = base::slot::draw(); !res) return unexpected_error(res.error());
+      if (auto res = draw_text(position + padding, text_layout, text_color); !res) return unexpected_error(res.error());
+      return {};
+    }
 
-//     const std::wstring& text() const noexcept { return _text; }
-//     yw::text_layout& text_layout() noexcept { return _text_layout; }
-//     const yw::text_layout& text_layout() const noexcept { return _text_layout; }
+    virtual std::expected<bool, error_trace> proc(const MSG& msg) { return false; }
+  };
 
-//     void text(stringable<wchar_t> auto&& Text) {
-//       _text.assign(std::wstring_view(Text));
-//       if (auto res = yw::text_layout::create(_text, _text_layout); res) _text_layout = std::move(res.value());
-//       else _text_layout = {};
-//     }
+protected:
+  slot* _label() const noexcept {
+    if (const auto w = _window()) return dynamic_cast<slot*>(w->controls.get(_control_id));
+    else return nullptr;
+  }
 
-//     void text_layout(text_format_like auto&& text_format, float2 size) {
-//       if (auto res = yw::text_layout::create(_text, (IDWriteTextFormat*)text_format, size); !res) _text_layout = {};
-//       else _text_layout = std::move(res.value());
-//     }
+public:
+  using base::base;
+  using base::operator bool;
 
-//     void text_layout(const yw::text_layout& tl) {
-//       if (auto res = yw::text_layout::create(_text, tl); !res) _text_layout = {};
-//       else _text_layout = std::move(res.value());
-//     }
-//   };
+  float2 padding() const noexcept {
+    if (const auto l = _label()) return l->padding;
+    else return float2{};
+  }
 
-// protected:
-//   slot* _label() const noexcept { return dynamic_cast<slot*>(_control()); }
+  color text_color() const noexcept {
+    if (const auto l = _label()) return l->text_color;
+    else return color();
+  }
 
-// public:
-//   using slot_type = slot;
-//   using control::control;
-//   using control::operator bool;
+  std::wstring text() const noexcept {
+    if (const auto l = _label()) return l->text;
+    else return std::wstring{};
+  }
 
-//   slot* operator->() const noexcept { return _label(); }
+  void padding(float2 p) noexcept {
+    if (const auto l = _label()) {
+      if (auto res = yw::text_layout::create(l->text, l->text_layout, l->size - p * 2)) {
+        l->text_layout = std::move(*res);
+        l->padding = p;
+      }
+    }
+  }
 
-//   static std::expected<label, error_trace> add(is_window auto& window) { return _add<label, slot>(window); }
-// };
-// }
+  void text_color(const color& c) noexcept {
+    if (const auto l = _label()) l->text_color = c;
+  }
 
-// //////////////////////////////////////// MARK: button
+  void text(stringable<wchar_t> auto&& t) {
+    auto sv = static_cast<std::wstring_view>(t);
+    if (const auto l = _label()) {
+      if (auto res = yw::text_layout::create(sv, l->text_layout, l->size - l->padding * 2)) {
+        l->text_layout = std::move(*res);
+        l->text.assign(sv);
+      }
+    }
+  }
 
-// namespace yw::controls {
+  void text_format(text_format_like auto&& tf) {
+    if (const auto l = _label()) {
+      if (auto res = yw::text_layout::create(l->text, tf, l->size - l->padding * 2)) {
+        l->text_layout = std::move(*res);
+      }
+    }
+  }
 
-
-// }
+  static std::expected<label, error_trace> add(window::slave& w, float2 position, float2 size) {
+    if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
+    if (auto res = _add<label, slot>(w, position, size); res) {
+      auto& lbl = *res;
+      if (const auto ls = lbl._label()) {
+        if (auto res = yw::text_layout::create(L"", dwrite.text_format(), size); !res)
+          return unexpected_error(res.error());
+        else ls->text_layout = std::move(*res);
+        ls->text_layout.text_alignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+        ls->text_layout.paragraph_alignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        return std::move(lbl);
+      } else return unexpected_error(errors::operation_failed, "failed to get label slot");
+    } else return unexpected_error(res.error());
+  }
+};
+} // namespace yw::control

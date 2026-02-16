@@ -84,30 +84,31 @@ public:
 
 inline class {
   struct pointers {
-    ::ID3D11Device* _device{nullptr};
-    ::ID3D11DeviceContext* _context{nullptr};
-    ::ID3D11BlendState* _blend_state{nullptr};
-    ::ID3D11RasterizerState* _rasterizer_state{nullptr};
-    ::ID3D11SamplerState* _sampler_state{nullptr};
-    ::ID3D11DepthStencilState* _depth_stencil_state{nullptr};
+    ::ID3D11Device* device{};
+    ::ID3D11DeviceContext* context{};
+    ::ID3D11BlendState* blend_state{};
+    ::ID3D11RasterizerState* rasterizer_state{};
+    ::ID3D11SamplerState* sampler_state{};
+    ::ID3D11DepthStencilState* depth_stencil_state{};
+    bool initialized{};
 
     ~pointers() {
-      if (_blend_state) _blend_state->Release();
-      if (_rasterizer_state) _rasterizer_state->Release();
-      if (_sampler_state) _sampler_state->Release();
-      if (_depth_stencil_state) _depth_stencil_state->Release();
-      if (_context) _context->Release();
-      if (_device) _device->Release();
+      if (blend_state) blend_state->Release();
+      if (rasterizer_state) rasterizer_state->Release();
+      if (sampler_state) sampler_state->Release();
+      if (depth_stencil_state) depth_stencil_state->Release();
+      if (context) context->Release();
+      if (device) device->Release();
+      initialized = false;
     }
   } p{};
-  bool _initialized{false};
 
 public:
   std::expected<void, error_trace> initialize() {
-    if (_initialized) return {};
+    if (p.initialized) return {};
     const D3D_FEATURE_LEVEL _levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
     auto hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, _levels,
-      _countof(_levels), D3D11_SDK_VERSION, &p._device, nullptr, &p._context);
+      _countof(_levels), D3D11_SDK_VERSION, &p.device, nullptr, &p.context);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "D3D11CreateDevice failed", int32_t(hr));
     D3D11_BLEND_DESC blend_desc{};
     blend_desc.RenderTarget[0].BlendEnable = TRUE;
@@ -118,109 +119,114 @@ public:
     blend_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
     blend_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
     blend_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-    hr = p._device->CreateBlendState(&blend_desc, &p._blend_state);
+    hr = p.device->CreateBlendState(&blend_desc, &p.blend_state);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBlendState failed", int32_t(hr));
-    p._context->OMSetBlendState(p._blend_state, nullptr, 0xffffffff);
+    p.context->OMSetBlendState(p.blend_state, nullptr, 0xffffffff);
     D3D11_RASTERIZER_DESC rasterizer_desc{};
     rasterizer_desc.FillMode = D3D11_FILL_SOLID;
     rasterizer_desc.CullMode = D3D11_CULL_BACK;
     rasterizer_desc.FrontCounterClockwise = TRUE;
     rasterizer_desc.DepthClipEnable = TRUE;
-    hr = p._device->CreateRasterizerState(&rasterizer_desc, &p._rasterizer_state);
+    hr = p.device->CreateRasterizerState(&rasterizer_desc, &p.rasterizer_state);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateRasterizerState failed", int32_t(hr));
-    p._context->RSSetState(p._rasterizer_state);
+    p.context->RSSetState(p.rasterizer_state);
     D3D11_SAMPLER_DESC sampler_desc{};
     sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
     sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
     sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
     sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
     sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
-    hr = p._device->CreateSamplerState(&sampler_desc, &p._sampler_state);
+    hr = p.device->CreateSamplerState(&sampler_desc, &p.sampler_state);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSamplerState failed", int32_t(hr));
-    p._context->PSSetSamplers(0, 1, &p._sampler_state);
+    p.context->PSSetSamplers(0, 1, &p.sampler_state);
     D3D11_DEPTH_STENCIL_DESC depth_stencil_desc{};
     depth_stencil_desc.DepthEnable = TRUE;
     depth_stencil_desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
     depth_stencil_desc.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL; // Reverse-Z
-    hr = p._device->CreateDepthStencilState(&depth_stencil_desc, &p._depth_stencil_state);
+    hr = p.device->CreateDepthStencilState(&depth_stencil_desc, &p.depth_stencil_state);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDepthStencilState failed", int32_t(hr));
-    p._context->OMSetDepthStencilState(p._depth_stencil_state, 0);
-    _initialized = true;
+    p.context->OMSetDepthStencilState(p.depth_stencil_state, 0);
+    p.initialized = true;
     return {};
   }
 
   void release() {
-    if (p._blend_state) std::exchange(p._blend_state, nullptr)->Release();
-    if (p._rasterizer_state) std::exchange(p._rasterizer_state, nullptr)->Release();
-    if (p._sampler_state) std::exchange(p._sampler_state, nullptr)->Release();
-    if (p._depth_stencil_state) std::exchange(p._depth_stencil_state, nullptr)->Release();
-    if (p._context) std::exchange(p._context, nullptr)->Release();
-    if (p._device) std::exchange(p._device, nullptr)->Release();
-    _initialized = false;
+    if (p.blend_state) std::exchange(p.blend_state, nullptr)->Release();
+    if (p.rasterizer_state) std::exchange(p.rasterizer_state, nullptr)->Release();
+    if (p.sampler_state) std::exchange(p.sampler_state, nullptr)->Release();
+    if (p.depth_stencil_state) std::exchange(p.depth_stencil_state, nullptr)->Release();
+    if (p.context) std::exchange(p.context, nullptr)->Release();
+    if (p.device) std::exchange(p.device, nullptr)->Release();
+    p.initialized = false;
   }
 
-  ::ID3D11Device* device() { return p._device; }
-  ::ID3D11DeviceContext* context() { return p._context; }
-  ::ID3D11BlendState* blend_state() { return p._blend_state; }
-  ::ID3D11RasterizerState* rasterizer_state() { return p._rasterizer_state; }
-  ::ID3D11SamplerState* sampler_state() { return p._sampler_state; }
-  ::ID3D11DepthStencilState* depth_stencil_state() { return p._depth_stencil_state; }
+  ::ID3D11Device* device() { return p.device; }
+  ::ID3D11DeviceContext* context() { return p.context; }
+  ::ID3D11BlendState* blend_state() { return p.blend_state; }
+  ::ID3D11RasterizerState* rasterizer_state() { return p.rasterizer_state; }
+  ::ID3D11SamplerState* sampler_state() { return p.sampler_state; }
+  ::ID3D11DepthStencilState* depth_stencil_state() { return p.depth_stencil_state; }
 } d3d;
 
 //////////////////////////////////////// MARK: dxgi
 
 inline class {
   struct pointers {
-    ::IDXGIFactory2* _factory{nullptr};
-    ::IDXGIDevice2* _device{nullptr};
+    ::IDXGIFactory2* factory{nullptr};
+    ::IDXGIDevice2* device{nullptr};
+    bool initialized{false};
 
     ~pointers() {
-      if (_device) _device->Release();
-      if (_factory) _factory->Release();
+      if (device) device->Release();
+      if (factory) factory->Release();
+      initialized = false;
     }
   } p{};
-  bool _initialized{false};
 
 public:
   std::expected<void, error_trace> initialize() {
-    if (_initialized) return {};
+    if (p.initialized) return {};
     if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
-    auto hr = ::CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void**>(&p._factory));
+    auto hr = ::CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void**>(&p.factory));
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDXGIFactory2 failed", int32_t(hr));
-    hr = d3d.device()->QueryInterface(__uuidof(IDXGIDevice2), reinterpret_cast<void**>(&p._device));
+    hr = d3d.device()->QueryInterface(__uuidof(IDXGIDevice2), reinterpret_cast<void**>(&p.device));
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDevice failed", int32_t(hr));
-    _initialized = true;
+    p.initialized = true;
     return {};
   }
 
   void release() {
-    if (p._device) std::exchange(p._device, nullptr)->Release();
-    if (p._factory) std::exchange(p._factory, nullptr)->Release();
-    _initialized = false;
+    if (p.device) std::exchange(p.device, nullptr)->Release();
+    if (p.factory) std::exchange(p.factory, nullptr)->Release();
+    p.initialized = false;
   }
 
-  ::IDXGIFactory2* factory() { return p._factory; }
-  ::IDXGIDevice2* device() { return p._device; }
+  ::IDXGIFactory2* factory() { return p.factory; }
+  ::IDXGIDevice2* device() { return p.device; }
 } dxgi;
 
 //////////////////////////////////////// MARK: coinit
 
 inline class {
-  bool _initialized{false};
+  struct pointers {
+    bool initialized{};
+
+    ~pointers() {
+      if (initialized) ::CoUninitialize();
+    }
+  } p{};
 
 public:
   std::expected<void, error_trace> initialize() {
-    if (_initialized) return {};
-    auto hr = ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CoInitializeEx failed", int32_t(hr));
-    _initialized = true;
+    if (p.initialized) return {};
+    if (auto hr = ::CoInitializeEx(nullptr, COINIT_MULTITHREADED); FAILED(hr))
+      return unexpected_error(errors::operation_failed, "CoInitializeEx failed", int32_t(hr));
+    p.initialized = true;
     return {};
   }
 
   void release() {
-    if (!_initialized) return;
-    ::CoUninitialize();
-    _initialized = false;
+    if (std::exchange(p.initialized, false)) ::CoUninitialize();
   }
 } coinit;
 
@@ -228,27 +234,36 @@ public:
 
 inline class {
   struct pointers {
-    ::ID2D1Factory1* _factory{nullptr};
-    ::ID2D1Device* _device{nullptr};
-    ::ID2D1DeviceContext* _context{nullptr};
-    ::ID2D1SolidColorBrush* _solid_brush{nullptr};
-    ::ID2D1StrokeStyle* _stroke_style{nullptr};
+    ::ID2D1Factory1* factory{};
+    ::ID2D1Device* device{};
+    ::ID2D1DeviceContext* context{};
+    ::ID2D1SolidColorBrush* solid_brush{};
+    ::ID2D1StrokeStyle* stroke_style{};
+    bool initialized{};
+
+    ~pointers() {
+      if (stroke_style) stroke_style->Release();
+      if (solid_brush) solid_brush->Release();
+      if (context) context->Release();
+      if (device) device->Release();
+      if (factory) factory->Release();
+      initialized = false;
+    }
   } p{};
-  bool _initialized{false};
 
 public:
   std::expected<void, error_trace> initialize() {
-    if (_initialized) return {};
+    if (p.initialized) return {};
     if (auto res = dxgi.initialize(); !res) return unexpected_error(res.error());
     if (auto res = coinit.initialize(); !res) return unexpected_error(res.error());
     auto hr = ::D2D1CreateFactory(
-      D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), reinterpret_cast<void**>(&p._factory));
+      D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), reinterpret_cast<void**>(&p.factory));
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "D2D1CreateFactory failed", int32_t(hr));
-    hr = p._factory->CreateDevice(dxgi.device(), &p._device);
+    hr = p.factory->CreateDevice(dxgi.device(), &p.device);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDevice failed", int32_t(hr));
-    hr = p._device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &p._context);
+    hr = p.device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &p.context);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDeviceContext failed", int32_t(hr));
-    hr = p._context->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &p._solid_brush);
+    hr = p.context->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &p.solid_brush);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSolidColorBrush failed", int32_t(hr));
     D2D1_STROKE_STYLE_PROPERTIES stroke_style_props{};
     stroke_style_props.startCap = D2D1_CAP_STYLE_ROUND;
@@ -256,122 +271,135 @@ public:
     stroke_style_props.dashCap = D2D1_CAP_STYLE_ROUND;
     stroke_style_props.lineJoin = D2D1_LINE_JOIN_ROUND;
     stroke_style_props.miterLimit = 10.0f;
-    hr = p._factory->CreateStrokeStyle(&stroke_style_props, nullptr, 0, &p._stroke_style);
+    hr = p.factory->CreateStrokeStyle(&stroke_style_props, nullptr, 0, &p.stroke_style);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateStrokeStyle failed", int32_t(hr));
-    _initialized = true;
+    p.initialized = true;
     return {};
   }
 
   void release() {
-    if (p._stroke_style) std::exchange(p._stroke_style, nullptr)->Release();
-    if (p._solid_brush) std::exchange(p._solid_brush, nullptr)->Release();
-    if (p._context) std::exchange(p._context, nullptr)->Release();
-    if (p._device) std::exchange(p._device, nullptr)->Release();
-    if (p._factory) std::exchange(p._factory, nullptr)->Release();
-    _initialized = false;
+    if (p.stroke_style) std::exchange(p.stroke_style, nullptr)->Release();
+    if (p.solid_brush) std::exchange(p.solid_brush, nullptr)->Release();
+    if (p.context) std::exchange(p.context, nullptr)->Release();
+    if (p.device) std::exchange(p.device, nullptr)->Release();
+    if (p.factory) std::exchange(p.factory, nullptr)->Release();
+    p.initialized = false;
   }
 
-  ::ID2D1Factory1* factory() { return p._factory; }
-  ::ID2D1Device* device() { return p._device; }
-  ::ID2D1DeviceContext* context() { return p._context; }
-  ::ID2D1SolidColorBrush* solid_brush() { return p._solid_brush; }
-  ::ID2D1StrokeStyle* stroke_style() { return p._stroke_style; }
+  ::ID2D1Factory1* factory() { return p.factory; }
+  ::ID2D1Device* device() { return p.device; }
+  ::ID2D1DeviceContext* context() { return p.context; }
+  ::ID2D1SolidColorBrush* solid_brush() { return p.solid_brush; }
+  ::ID2D1StrokeStyle* stroke_style() { return p.stroke_style; }
 } d2d;
 
 //////////////////////////////////////// MARK: dwrite
 
 inline class {
   struct pointers {
-    ::IDWriteFactory1* _factory{nullptr};
-    ::IDWriteTextFormat* _text_format{nullptr};
+    ::IDWriteFactory1* factory{};
+    ::IDWriteTextFormat* text_format{};
+    bool initialized{false};
+
+    ~pointers() {
+      if (text_format) text_format->Release();
+      if (factory) factory->Release();
+      initialized = false;
+    }
   } p{};
-  bool _initialized{false};
 
 public:
   std::expected<void, error_trace> initialize() {
-    if (_initialized) return {};
+    if (p.initialized) return {};
     if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
     auto hr = ::DWriteCreateFactory(
-      DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory1), reinterpret_cast<IUnknown**>(&p._factory));
+      DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory1), reinterpret_cast<IUnknown**>(&p.factory));
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "DWriteCreateFactory failed", int32_t(hr));
-    hr = p._factory->CreateTextFormat(L"", nullptr, DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
-      DWRITE_FONT_STRETCH_NORMAL, 16.0f, L"", &p._text_format);
+    hr = p.factory->CreateTextFormat(L"", nullptr, DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
+      DWRITE_FONT_STRETCH_NORMAL, 16.0f, L"", &p.text_format);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int32_t(hr));
-    _initialized = true;
+    if (!p.text_format) return unexpected_error(errors::operation_failed, "CreateTextFormat returned null");
+    p.initialized = true;
     return {};
   }
 
   void release() {
-    if (p._text_format) std::exchange(p._text_format, nullptr)->Release();
-    if (p._factory) std::exchange(p._factory, nullptr)->Release();
-    _initialized = false;
+    if (p.text_format) std::exchange(p.text_format, nullptr)->Release();
+    if (p.factory) std::exchange(p.factory, nullptr)->Release();
+    p.initialized = false;
   }
 
-  ::IDWriteFactory1* factory() { return p._factory; }
-  ::IDWriteTextFormat* text_format() { return p._text_format; }
+  ::IDWriteFactory1* factory() { return p.factory; }
+  ::IDWriteTextFormat* text_format() { return p.text_format; }
 } dwrite;
 
 ///////////////////////////////////////// MARK: wic
 
 inline class {
   struct pointers {
-    ::IWICImagingFactory2* _factory{nullptr};
+    ::IWICImagingFactory2* factory{};
+    bool initialized{};
+
+    ~pointers() {
+      if (factory) factory->Release();
+      initialized = false;
+    }
   } p{};
-  bool _initialized{false};
 
 public:
   std::expected<void, error_trace> initialize() {
-    if (_initialized) return {};
+    if (p.initialized) return {};
     if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-    auto hr = ::CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&p._factory));
+    auto hr = ::CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&p.factory));
     if (FAILED(hr))
       return unexpected_error(errors::operation_failed, "CoCreateInstance for WICImagingFactory2 failed", int32_t(hr));
-    _initialized = true;
+    p.initialized = true;
     return {};
   }
 
   void release() {
-    if (p._factory) std::exchange(p._factory, nullptr)->Release();
-    _initialized = false;
+    if (p.factory) std::exchange(p.factory, nullptr)->Release();
+    p.initialized = false;
   }
 
-  ::IWICImagingFactory2* factory() { return p._factory; }
+  ::IWICImagingFactory2* factory() { return p.factory; }
 } wic;
 
 //////////////////////////////////////// MARK: xaudio2
 
 inline class {
   struct pointers {
-    ::IXAudio2* _xaudio2{nullptr};
-  } p{};
-  ::IXAudio2MasteringVoice* _mastering_voice{nullptr};
-  bool _initialized{false};
+    ::IXAudio2* xaudio2{};
+    ::IXAudio2MasteringVoice* mastering_voice{};
+    bool initialized{};
 
-  bool _initialize_error(const char* msg) {
-    std::print("xaudio2::initialize: {}\n", msg);
-    return false;
-  }
+    ~pointers() {
+      if (mastering_voice) mastering_voice->DestroyVoice();
+      if (xaudio2) xaudio2->Release();
+      initialized = false;
+    }
+  } p{};
 
 public:
   std::expected<void, error_trace> initialize() {
-    if (_initialized) return {};
+    if (p.initialized) return {};
     if (auto res = coinit.initialize(); !res) return unexpected_error(res.error());
-    auto hr = ::XAudio2Create(&p._xaudio2, 0, XAUDIO2_DEFAULT_PROCESSOR);
+    auto hr = ::XAudio2Create(&p.xaudio2, 0, XAUDIO2_DEFAULT_PROCESSOR);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "XAudio2Create failed", int32_t(hr));
-    hr = p._xaudio2->CreateMasteringVoice(&_mastering_voice);
+    hr = p.xaudio2->CreateMasteringVoice(&p.mastering_voice);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateMasteringVoice failed", int32_t(hr));
-    _initialized = true;
+    p.initialized = true;
     return {};
   }
 
   void release() {
-    if (_mastering_voice) { std::exchange(_mastering_voice, nullptr)->DestroyVoice(); }
-    if (p._xaudio2) std::exchange(p._xaudio2, nullptr)->Release();
-    _initialized = false;
+    if (p.mastering_voice) std::exchange(p.mastering_voice, nullptr)->DestroyVoice();
+    if (p.xaudio2) std::exchange(p.xaudio2, nullptr)->Release();
+    p.initialized = false;
   }
 
-  ::IXAudio2* device() { return p._xaudio2; }
-  ::IXAudio2MasteringVoice* mastering_voice() { return _mastering_voice; }
+  ::IXAudio2* device() { return p.xaudio2; }
+  ::IXAudio2MasteringVoice* mastering_voice() { return p.mastering_voice; }
 } xaudio2;
 
 //////////////////////////////////////// MARK: drawing

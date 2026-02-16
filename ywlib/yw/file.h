@@ -1,5 +1,6 @@
 #pragma once
 #include "yw/core.h"
+#include "yw/error.h"
 
 #include <fcntl.h>
 
@@ -89,6 +90,7 @@ class file_handle {
 
   explicit file_handle(std::filesystem::path path, std::FILE* file, open_mode mode)
     : _path(std::move(path)), _file(file), _mode(mode) {}
+
   std::expected<void, error_trace> _seek(int64_t off, seek_whence w) const {
     if (!_file) return unexpected_error(errors::not_initialized, "file_handle: not initialized");
 #ifdef _WIN32
@@ -119,12 +121,11 @@ public:
 
   static std::expected<file_handle, error_trace> create(const std::filesystem::path& path, open_mode mode) {
 #ifdef _WIN32
-    if (auto fexp = sys::_open_win(path, mode); !fexp)
+    if (auto fexp = sys::_open_win(path, mode); !fexp) return unexpected_error(fexp.error());
 #else
-    if (auto fexp = internal::_open_posix(path, mode); !fexp)
+    if (auto fexp = internal::_open_posix(path, mode); !fexp) return unexpected_error(fexp.error());
 #endif
-      return unexpected_error(fexp.error());
-    else return file_handle(path, fexp.value(), mode);
+    else return file_handle(path, *fexp, mode);
   }
 
   const std::filesystem::path& path() const noexcept { return _path; }
@@ -157,8 +158,8 @@ public:
     if (auto cur = tell(); !cur) return unexpected_error(cur.error());
     else if (auto res = _seek(0, seek_whence::end); !res) return unexpected_error(res.error());
     else if (auto size = tell(); !size) return unexpected_error(size.error());
-    else if (auto res = _seek(cur.value(), seek_whence::begin); !res) return unexpected_error(res.error());
-    else return size.value();
+    else if (auto res = _seek(*cur, seek_whence::begin); !res) return unexpected_error(res.error());
+    else return *size;
   }
 
   std::expected<size_t, error_trace> read(void* dst, size_t bytes) {
@@ -242,11 +243,11 @@ public:
 #ifdef _WIN32
     if (const int fd = ::_fileno(_file); fd < 0)
       return unexpected_error(errors::operation_failed, "file_handle: fileno error");
-    else if (::_chsize_s(fd, static_cast<__int64>(cur.value())) != 0)
+    else if (::_chsize_s(fd, static_cast<__int64>(*cur)) != 0)
 #else
     if (const int fd = ::fileno(_file); fd < 0)
       return unexpected_error(errors::operation_failed, "file_handle: fileno error");
-    else if (::ftruncate(fd, static_cast<off_t>(cur.value())) != 0)
+    else if (::ftruncate(fd, static_cast<off_t>(*cur)) != 0)
 #endif
       return unexpected_error(errors::operation_failed, "file_handle: truncate error", errno);
     return {};
@@ -261,6 +262,6 @@ public:
 
 inline std::expected<file_handle, error_trace> open(const std::filesystem::path& path, open_mode mode) {
   if (auto res = file_handle::create(path, mode); !res) return unexpected_error(res.error());
-  else return std::move(res.value());
+  else return std::move(*res);
 }
 } // namespace yw

@@ -79,17 +79,17 @@ public:
     auto fh = yw::open(p, fh_mode);
     if (!fh) return unexpected_error(fh.error());
     if (fh_mode == open_mode::create_always || fh_mode == open_mode::create_new)
-      return handle(std::move(fh.value()), {}, {}, mode);
+      return handle(std::move(*fh), {}, {}, mode);
     uint64_t file_size{};
     if (auto res = fh->seek(0, seek_whence::end); !res) return unexpected_error(res.error());
     if (auto res = fh->tell(); !res) return unexpected_error(res.error());
-    else file_size = static_cast<uint64_t>(res.value());
-    if (fh_mode == open_mode::update_or_create && file_size == 0) return handle(std::move(fh.value()), {}, {}, mode);
+    else file_size = static_cast<uint64_t>(*res);
+    if (fh_mode == open_mode::update_or_create && file_size == 0) return handle(std::move(*fh), {}, {}, mode);
     /// \note need to check footer
     uint64_t footer_offset{};
     if (auto res = fh->seek(-8, seek_whence::end); !res) return unexpected_error(res.error());
     if (auto res = fh->read_trivial<uint64_t>(); !res) return unexpected_error(res.error());
-    else footer_offset = _to_le(res.value());
+    else footer_offset = _to_le(*res);
     if (footer_offset + sizeof(footer) + sizeof(uint64_t) > file_size)
       return unexpected_error(e, "archive: invalid footer offset", {}, file_size - 8);
     footer f;
@@ -101,7 +101,7 @@ public:
     const auto footer_size = sizeof(footer) + entry_count * sizeof(uint64_t) + sizeof(uint64_t);
     if (footer_offset + footer_size != file_size)
       return unexpected_error(e, "archive: invalid entry count", {}, footer_offset + 4);
-    if (entry_count == 0) return handle(std::move(fh.value()), {}, {0, footer_offset}, mode);
+    if (entry_count == 0) return handle(std::move(*fh), {}, {0, footer_offset}, mode);
     /// \note need to check entries
     std::vector<uint64_t> offsets(entry_count);
     if (auto res = fh->read_exact(offsets.data(), offsets.size() * sizeof(uint64_t)); !res)
@@ -131,13 +131,13 @@ public:
       if (auto res = fh->read_exact(entries[i].name.data(), name_length); !res) return unexpected_error(res.error());
       if (auto res = fh->seek(data_length, seek_whence::current); !res) return unexpected_error(res.error());
       if (auto res = fh->read_trivial<uint32_t>(); !res) return unexpected_error(res.error());
-      else entries[i].crc32 = _to_le(res.value());
+      else entries[i].crc32 = _to_le(*res);
       const bool is_last = (i == entry_count - 1);
       if (auto res = fh->tell(); !res) return unexpected_error(res.error());
-      else if (const auto cur = res.value(); (is_last && cur != footer_offset) || (!is_last && cur != offsets[i + 1]))
+      else if (const auto cur = *res; (is_last && cur != footer_offset) || (!is_last && cur != offsets[i + 1]))
         return unexpected_error(e, "archive: invalid entry size", {}, crc_offset);
     }
-    return handle(std::move(fh.value()), std::move(entries), {offsets[0], footer_offset}, mode);
+    return handle(std::move(*fh), std::move(entries), {offsets[0], footer_offset}, mode);
   }
 
   /// returns whether the archive is open
@@ -284,7 +284,7 @@ public:
 /// opens an archive file
 inline std::expected<handle, error_trace> open(const std::filesystem::path& path, open_mode mode) {
   if (auto res = handle::create(path, mode); !res) return unexpected_error(res.error());
-  else return std::move(res.value());
+  else return std::move(*res);
 }
 
 /// packs files in `src_path` into an archive file `dst_path`.
@@ -301,7 +301,7 @@ inline std::expected<void, error_trace> pack(const std::filesystem::path& src_pa
     uint64_t file_size{};
     if (auto res = fh->seek(0, seek_whence::end); !res) return unexpected_error(res.error());
     if (auto res = fh->tell(); !res) return unexpected_error(res.error());
-    else file_size = static_cast<uint64_t>(res.value());
+    else file_size = static_cast<uint64_t>(*res);
     if (auto res = fh->seek(0, seek_whence::begin); !res) return unexpected_error(res.error());
     std::vector<std::byte> data(file_size);
     if (auto res = fh->read_exact(data.data(), file_size); !res) return unexpected_error(res.error());
