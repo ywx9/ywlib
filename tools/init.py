@@ -15,20 +15,24 @@ from pathlib import Path
 
 def ensure_main_cpp(workspace: Path):
     main_cpp = workspace / "main.cpp"
-    if main_cpp.exists():
-        return
-
+    if main_cpp.exists(): return
     template = workspace / "tools" / "templates" / "main.cpp.in"
-    if not template.exists():
-        raise RuntimeError("main.cpp template not found")
-
+    if not template.exists(): raise RuntimeError("main.cpp template not found")
     print("[init_vscode] creating main.cpp from template")
     main_cpp.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
 
+def ensure_vscode_settings(workspace: Path):
+    settings = workspace / ".vscode" / "settings.json"
+    if settings.exists(): return None
+    template = workspace / "tools" / "templates" / "settings.json.in"
+    if not template.exists(): raise RuntimeError("settings.json template not found")
+    print("[init_vscode] creating .vscode/settings.json from template")
+    settings.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
+    return settings
+
 def which_or_error(name: str) -> str:
     p = shutil.which(name)
-    if not p:
-        raise RuntimeError(f"{name} not found in PATH")
+    if not p: raise RuntimeError(f"{name} not found in PATH")
     return p
 
 def pick_mingw_generator() -> str:
@@ -135,23 +139,8 @@ def main() -> int:
     # --------------------------------------------------------
     # VS Code settings (minimal)
     # --------------------------------------------------------
-    vscode.mkdir(exist_ok=True)
-
-    content = {
-        "files.associations": {
-            "ywlib": "cpp",
-            "ywxlib": "cpp",
-        },
-        "C_Cpp.default.compileCommands":
-            f"${{workspaceFolder}}/{args.build_dir}/compile_commands.json",
-    }
-
-    settings.write_text(
-        json.dumps(content, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-
-    print("[init_vscode] wrote:", settings)
+    settings = ensure_vscode_settings(root)
+    if settings: print("[init_vscode] wrote:", settings)
 
     cc = build / "compile_commands.json"
     if not cc.exists():

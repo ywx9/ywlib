@@ -1,0 +1,8 @@
+{
+  "files.associations": {
+    "ywlib": "cpp",
+    "ywxlib": "cpp"
+  },
+  "cmake.configureOnOpen": false,
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json"
+}

@@ -53,25 +53,23 @@ public:
 
   bool running() const noexcept { return _running; }
 
-  duration elapsed() const noexcept {
-    return _accum + (_running ? (clock::now() - _start) : duration::zero());
+  /// returns seconds elapsed since last lap or start
+  double elapsed() const noexcept {
+    return std::chrono::duration<double>(_accum + (_running ? (clock::now() - _start) : duration::zero())).count();
   }
 
-  duration lap() noexcept {
-    if (!_running) return duration::zero();
+  /// returns seconds elapsed since last lap or start, and restarts the timer
+  double lap() noexcept {
+    if (!_running) return 0.0;
     const auto now = clock::now();
     const auto d = now - _last;
     _last = now;
-    return d;
+    return std::chrono::duration<double>(d).count();
   }
 
+  /// returns elapsed time in specified duration type
   template<typename Dur> Dur elapsed_as() const noexcept {
-    return std::chrono::duration_cast<Dur>(elapsed());
+    return std::chrono::duration_cast<Dur>(std::chrono::duration<double>(elapsed()));
   }
-
-  double seconds() const noexcept { return std::chrono::duration<double>(elapsed()).count(); }
-  std::int64_t milliseconds() const noexcept { return elapsed_as<yw::milliseconds>().count(); }
-  std::int64_t microseconds() const noexcept { return elapsed_as<yw::microseconds>().count(); }
-  std::int64_t nanoseconds() const noexcept { return elapsed_as<yw::nanoseconds>().count(); }
 };
 } // namespace yw

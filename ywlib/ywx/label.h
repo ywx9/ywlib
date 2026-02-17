@@ -26,7 +26,7 @@ public:
 
 protected:
   slot* _label() const noexcept {
-    if (const auto w = _window()) return dynamic_cast<slot*>(w->controls.get(_control_id));
+    if (const auto w = _window()) return dynamic_cast<slot*>(w->controls.get(_id.control));
     else return nullptr;
   }
 

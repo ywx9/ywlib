@@ -121,7 +121,7 @@ public:
     frames.push_back(src);
   }
 
-  explicit operator bool() const noexcept { return error; }
+  explicit operator bool() const noexcept { return bool(error); }
 
   error_trace& push(const source& src = {}) & {
     frames.push_back(src);
