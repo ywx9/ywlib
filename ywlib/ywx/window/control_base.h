@@ -23,15 +23,16 @@ protected:
 
   template<typename Ctrl, derived_from<slot> Slot>
   static std::expected<Ctrl, error_trace> _add(window::slave& w, float2 Pos, float2 Size) {
-    const auto window_slot = w._window();
-    if (!window_slot) return unexpected_error(errors::invalid_argument, "invalid window");
-    auto control_slot = std::make_unique<Slot>();
-    control_slot->id.master = window_slot->id.master;
-    control_slot->id.slave = window_slot->id.slave;
-    control_slot->position = Pos;
-    control_slot->size = Size;
-    const auto cid = window_slot->controls.push(std::move(control_slot));
-    return Ctrl({window_slot->id.master, window_slot->id.slave, cid});
+    if (const auto window_slot = w._window()) {
+      window_slot->dirty = true;
+      auto control_slot = std::make_unique<Slot>();
+      control_slot->id.master = window_slot->id.master;
+      control_slot->id.slave = window_slot->id.slave;
+      control_slot->position = Pos;
+      control_slot->size = Size;
+      const auto cid = window_slot->controls.push(std::move(control_slot));
+      return Ctrl({window_slot->id.master, window_slot->id.slave, cid});
+    } else return unexpected_error(errors::invalid_argument, "invalid window");
   }
 
 public:
@@ -90,35 +91,67 @@ public:
   }
 
   void position(float2 p) noexcept {
-    if (const auto control_slot = _control()) control_slot->position = p;
+    if (const auto window_slot = _window())
+      if (const auto control_slot = _control()) {
+        window_slot->dirty = true;
+        control_slot->position = p;
+      }
   }
 
   void size(float2 s) noexcept {
-    if (const auto control_slot = _control()) control_slot->size = s;
+    if (const auto window_slot = _window())
+      if (const auto control_slot = _control()) {
+        window_slot->dirty = true;
+        control_slot->size = s;
+      }
   }
 
   void radius(float2 r) noexcept {
-    if (const auto control_slot = _control()) control_slot->radius = r;
+    if (const auto window_slot = _window())
+      if (const auto control_slot = _control()) {
+        window_slot->dirty = true;
+        control_slot->radius = r;
+      }
   }
 
   void background_color(const color& c) noexcept {
-    if (const auto control_slot = _control()) control_slot->background_color = c;
+    if (const auto window_slot = _window())
+      if (const auto control_slot = _control()) {
+        window_slot->dirty = true;
+        control_slot->background_color = c;
+      }
   }
 
   void border_color(const color& c) noexcept {
-    if (const auto control_slot = _control()) control_slot->border_color = c;
+    if (const auto window_slot = _window())
+      if (const auto control_slot = _control()) {
+        window_slot->dirty = true;
+        control_slot->border_color = c;
+      }
   }
 
   void border_width(float w) noexcept {
-    if (const auto control_slot = _control()) control_slot->border_width = w;
+    if (const auto window_slot = _window())
+      if (const auto control_slot = _control()) {
+        window_slot->dirty = true;
+        control_slot->border_width = w;
+      }
   }
 
   void visible(bool b) noexcept {
-    if (const auto control_slot = _control()) control_slot->visible = b;
+    if (const auto window_slot = _window())
+      if (const auto control_slot = _control()) {
+        window_slot->dirty = true;
+        control_slot->visible = b;
+      }
   }
 
   void enabled(bool e) noexcept {
-    if (const auto control_slot = _control()) control_slot->enabled = e;
+    if (const auto window_slot = _window())
+      if (const auto control_slot = _control()) {
+        window_slot->dirty = true;
+        control_slot->enabled = e;
+      }
   }
 
   static std::expected<base, error_trace> add(window::slave& w, float2 position, float2 size) {

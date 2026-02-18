@@ -9,16 +9,15 @@ protected:
 
 public:
   control_slotid id{};
-  uint64_t counter{};
 
   float2 position{};
   float2 size{};
   float2 radius{};
-  color background_color{};
-  color border_color{};
-  float border_width{};
-  bool visible{};
-  bool enabled{};
+  color background_color = colors::white;
+  color border_color = colors::black;
+  float border_width = 1.0f;
+  bool visible = true;
+  bool enabled = true;
 
   virtual ~control_slot() noexcept = default;
   control_slot() noexcept = default;
@@ -112,6 +111,8 @@ public:
 
   bool close_confirmation = false;
 
+  mutable bool dirty = true;
+
   slot() noexcept = default;
   slot(slot&&) noexcept = default;
   slot& operator=(slot&&) noexcept = default;
@@ -129,6 +130,17 @@ public:
     for (const auto& control_slot : controls)
       if (control_slot.hit_test(pt)) return &control_slot;
     return nullptr;
+  }
+
+  std::expected<void, error_trace> update() {
+    for (auto& slave_slot : slaves) slave_slot.update(); // サブウィンドウの描画は失敗しても扱わない。表示はされる。
+    if (!dirty) return {};
+    if (auto d = rendertarget.begin_draw())
+      for(auto& control : controls)
+        if (control.visible) control.draw(); // コントロール起因のエラーは扱わない。表示はされる。
+    else return unexpected_error(d.error().push());
+    dirty = false;
+    return {};
   }
 };
 

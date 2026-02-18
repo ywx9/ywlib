@@ -14,6 +14,7 @@ protected:
   slave(const slotid& id, bool show) noexcept {
     if (const auto window_slot = id.get_window()) {
       _id.master = id.master;
+      _id.slave = id.slave;
       window_slot->id.master = id.master;
       window_slot->id.slave = id.slave;
       window_slot->timer.start();
@@ -77,37 +78,33 @@ public:
   }
 
   void show(bool b = true) noexcept {
-    const auto hwnd = _hwnd();
-    if (b) ::ShowWindow(hwnd, SW_SHOW), ::SetForegroundWindow(hwnd), ::SetActiveWindow(hwnd);
-    else ::ShowWindow(hwnd, SW_HIDE);
+    if (const auto window_slot = _window()) {
+      window_slot->dirty = b;
+      if (const auto hwnd = window_slot->hwnd; !b) ::ShowWindow(hwnd, SW_HIDE);
+      else ::ShowWindow(hwnd, SW_SHOW), ::SetForegroundWindow(hwnd), ::SetActiveWindow(hwnd);
+    }
   }
 
-  void enable(bool b = true) noexcept {
-    const auto hwnd = _hwnd();
-    ::EnableWindow(hwnd, b ? TRUE : FALSE);
-  }
+  void enable(bool b = true) noexcept { ::EnableWindow(_hwnd(), b ? TRUE : FALSE); }
 
-  void position(int2 p) noexcept {
-    const auto hwnd = _hwnd();
-    ::SetWindowPos(hwnd, nullptr, p.x, p.y, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
-  }
+  void position(int2 p) noexcept { ::SetWindowPos(_hwnd(), nullptr, p.x, p.y, 0, 0, SWP_NOZORDER | SWP_NOSIZE); }
 
   void size(int2 s) noexcept {
-    const auto hwnd = _hwnd();
-    ::SetWindowPos(hwnd, nullptr, 0, 0, s.x, s.y, SWP_NOZORDER | SWP_NOMOVE);
+    if (const auto window_slot = _window()) {
+      window_slot->dirty = true;
+      ::SetWindowPos(window_slot->hwnd, nullptr, 0, 0, s.x, s.y, SWP_NOZORDER | SWP_NOMOVE);
+    }
   }
 
   void cursor(int2 c) noexcept {
-    const auto hwnd = _hwnd();
-    POINT pt{c.x, c.y};
-    ::ClientToScreen(hwnd, &pt);
-    ::SetCursorPos(pt.x, pt.y);
+    if (const auto hwnd = _hwnd()) {
+      POINT pt{c.x, c.y};
+      ::ClientToScreen(hwnd, &pt);
+      ::SetCursorPos(pt.x, pt.y);
+    }
   }
 
-  void title(null_terminated<wchar_t> t) noexcept {
-    const auto hwnd = _hwnd();
-    ::SetWindowTextW(hwnd, t.data());
-  }
+  void title(null_terminated<wchar_t> t) noexcept { ::SetWindowTextW(_hwnd(), t.data()); }
 
   double time() const noexcept {
     if (const auto w = _window()) return w->timer.elapsed();
@@ -115,21 +112,25 @@ public:
   }
 
   std::expected<drawing, error_trace> begin_draw(const source& src = {}) {
-    if (const auto w = _window()) return w->rendertarget.begin_draw(src);
-    else return unexpected_error(errors::not_initialized, "window not initialized");
+    if (const auto window_slot = _window()) {
+      window_slot->dirty = true;
+      return window_slot->rendertarget.begin_draw(src);
+    } else return unexpected_error(errors::not_initialized, "window not initialized");
   }
 
   std::expected<drawing, error_trace> begin_draw(color clear_color, const source& src = {}) {
-    if (const auto w = _window()) return w->rendertarget.begin_draw(clear_color, src);
-    else return unexpected_error(errors::not_initialized, "window not initialized");
+    if (const auto window_slot = _window()) {
+      window_slot->dirty = true;
+      return window_slot->rendertarget.begin_draw(clear_color, src);
+    } else return unexpected_error(errors::not_initialized, "window not initialized");
   }
 
   void screenshot(const std::filesystem::path& Png) const noexcept {
-    if (const auto w = _window()) w->rendertarget.save_as_png(Png);
+    if (const auto window_slot = _window()) window_slot->rendertarget.save_as_png(Png);
   }
 
   void close_confirmation(bool b = true) noexcept {
-    if (const auto w = _window()) w->close_confirmation = b;
+    if (const auto window_slot = _window()) window_slot->close_confirmation = b;
   }
 };
 }
