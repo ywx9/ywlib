@@ -21,19 +21,19 @@ protected:
   window::slot* _window() const noexcept { return _id.get_window(); }
   window::control_slot* _control() const noexcept { return _id.get_control(); }
 
-  template<typename Ctrl, derived_from<slot> Slot>
-  static std::expected<Ctrl, error_trace> _add(window::slave& w, float2 Pos, float2 Size) {
-    if (const auto window_slot = w._window()) {
-      window_slot->dirty = true;
-      auto control_slot = std::make_unique<Slot>();
-      control_slot->id.master = window_slot->id.master;
-      control_slot->id.slave = window_slot->id.slave;
-      control_slot->position = Pos;
-      control_slot->size = Size;
-      const auto cid = window_slot->controls.push(std::move(control_slot));
-      return Ctrl({window_slot->id.master, window_slot->id.slave, cid});
-    } else return unexpected_error(errors::invalid_argument, "invalid window");
-  }
+  // template<typename Ctrl, derived_from<slot> Slot>
+  // static std::expected<Ctrl, error_trace> _add(window::slave& w, float2 Pos, float2 Size) {
+  //   if (const auto window_slot = w._window()) {
+  //     window_slot->dirty = true;
+  //     auto control_slot = std::make_unique<Slot>();
+  //     control_slot->id.master = window_slot->id.master;
+  //     control_slot->id.slave = window_slot->id.slave;
+  //     control_slot->position = Pos;
+  //     control_slot->size = Size;
+  //     const auto cid = window_slot->controls.push(std::move(control_slot));
+  //     return Ctrl({window_slot->id.master, window_slot->id.slave, cid});
+  //   } else return unexpected_error(errors::invalid_argument, "invalid window");
+  // }
 
 public:
   base() noexcept = default;
@@ -154,9 +154,15 @@ public:
       }
   }
 
-  static std::expected<base, error_trace> add(window::slave& w, float2 position, float2 size) {
-    if (auto res = _add<base, slot>(w, position, size)) return std::move(*res);
-    else return unexpected_error(res.error().push());
+  static std::expected<base, error_trace> add(window::slave& w, float2 Pos, float2 Size) {
+    const auto window_slot = window::system.get_window(w);
+    if (!window_slot) return unexpected_error(errors::invalid_argument, "invalid window");
+    auto base_slot = std::make_unique<window::control_slot>(window_slot->id, Pos, Size);
+    const auto cid = window_slot->controls.push(std::move(base_slot));
+    const auto control_slot = window_slot->controls.get(cid);
+    if (!control_slot) return unexpected_error(errors::operation_failed, "failed to create control slot");
+    control_slot->id.control = cid;
+    return base({window_slot->id.master, window_slot->id.slave, cid});
   }
 };
 } // namespace yw::control

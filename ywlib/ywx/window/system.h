@@ -34,5 +34,7 @@ public:
     _initialized = true;
     return {};
   }
+
+  slot* get_window(const slave& w) const noexcept;
 } system{};
 } // namespace yw::window

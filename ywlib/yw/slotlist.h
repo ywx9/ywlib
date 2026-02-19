@@ -93,13 +93,7 @@ private:
 public:
   bool contains(const id& i) const noexcept { return i.index < _slots.size() && _slots[i.index].generation == i.generation; }
 
-  T* get(const id& i) noexcept {
-    if (i.index >= _slots.size()) return nullptr;
-    if (auto& s = _slots[i.index]; s.generation != i.generation) return nullptr;
-    else return s.pointer.get();
-  }
-
-  const T* get(const id& i) const noexcept {
+  T* get(const id& i) const noexcept {
     if (i.index >= _slots.size()) return nullptr;
     if (auto& s = _slots[i.index]; s.generation != i.generation) return nullptr;
     else return s.pointer.get();

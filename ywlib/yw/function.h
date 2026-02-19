@@ -109,5 +109,25 @@ public:
   explicit operator bool() const noexcept { return fp || _invoke; }
 
   void reset() noexcept { _reset(); }
+
+  class slot {
+    function* _dest = nullptr;
+    slot& operator=(const slot&) & = delete;
+  public:
+    explicit slot() noexcept = default;
+    slot(function& Dest) noexcept : _dest(&Dest) {}
+
+    void operator=(function func) && {
+      if (_dest) *_dest = std::move(func);
+    }
+
+    void operator=(const slot& func) && {
+      if (_dest && func._dest) *_dest = *func._dest;
+    }
+
+    void reset() && {
+      if (_dest) _dest->reset();
+    }
+  };
 };
 } // namespace yw

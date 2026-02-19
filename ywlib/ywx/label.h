@@ -15,22 +15,20 @@ public:
     std::wstring text{};
     yw::text_layout text_layout{};
 
-    std::expected<void, error_trace> init(float2 size) {
-      if (auto res = yw::text_layout::create(L"", dwrite.text_format(), size - padding * 2); !res)
-        return unexpected_error(res.error());
+    slot(const window::slotid& window_id, float2 Pos, float2 Size) : base::slot(window_id, Pos, Size) {
+      if (auto res = yw::text_layout::create(L"", dwrite.text_format(), Size - padding * 2); !res) return;
       else text_layout = std::move(*res);
       text_layout.text_alignment(DWRITE_TEXT_ALIGNMENT_CENTER);
       text_layout.paragraph_alignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-      return {};
     }
 
-    virtual std::expected<void, error_trace> draw() const {
+    virtual std::expected<void, error_trace> draw() const override {
       if (auto res = base::slot::draw(); !res) return unexpected_error(res.error());
       if (auto res = draw_text(position + padding, text_layout, text_color); !res) return unexpected_error(res.error());
       return {};
     }
 
-    virtual std::expected<bool, error_trace> proc(const MSG& msg) { return false; }
+    virtual std::expected<bool, error_trace> proc(UINT, WPARAM, LPARAM) override { return true; }
   };
 
 protected:
@@ -166,23 +164,14 @@ public:
   }
 
   static std::expected<label, error_trace> add(window::slave& w, float2 position, float2 size) {
-    if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
-    else if (auto ls = _add<label, slot>(w, position, size); !ls) return unexpected_error(ls.error());
-    else if (auto res = ls->init(size); !res) return unexpected_error(res.error());
-    else
-
-    {
-      if
-      auto& lbl = *res;
-      if (const auto ls = lbl._label()) {
-        if (auto res = yw::text_layout::create(L"", dwrite.text_format(), size); !res)
-          return unexpected_error(res.error());
-        else ls->text_layout = std::move(*res);
-        ls->text_layout.text_alignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-        ls->text_layout.paragraph_alignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        return std::move(lbl);
-      } else return unexpected_error(errors::operation_failed, "failed to get label slot");
-    } else return unexpected_error(res.error());
+    const auto window_slot = window::system.get_window(w);
+    if (!window_slot) return unexpected_error(errors::invalid_argument, "invalid window");
+    auto label_slot = std::make_unique<slot>(window_slot->id, position, size);
+    const auto cid = window_slot->controls.push(std::move(label_slot));
+    const auto control_slot = window_slot->controls.get(cid);
+    if (!control_slot) return unexpected_error(errors::operation_failed, "failed to create label slot");
+    control_slot->id.control = cid;
+    return label({window_slot->id.master, window_slot->id.slave, cid});
   }
 };
 } // namespace yw::control

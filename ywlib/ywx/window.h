@@ -5,6 +5,7 @@
 #include "ywx/window/control_base.h"
 #include "ywx/window/core.h"
 #include "ywx/window/master.h"
+#include "ywx/window/proc.h"
 #include "ywx/window/slave.h"
 #include "ywx/window/slot.h"
 #include "ywx/window/system.h"
@@ -74,43 +75,12 @@ inline std::expected<window::slave, error_trace> decltype(window::open)::subwind
 }
 
 //////////////////////////////////////// MARK: window/system.h
-
-inline LRESULT __stdcall decltype(window::system)::proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
-  auto self = reinterpret_cast<window::slot*>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-  if (!self) return ::DefWindowProcW(hwnd, msg, wparam, lparam);
-  switch (msg) {
-  case WM_ACTIVATE:
-    if (LOWORD(wparam) == WA_INACTIVE) window::system.focused_window = {};
-    break;
-  case WM_SETFOCUS: window::system.focused_window = self->id; break;
-  case WM_SIZE:
-    if (auto res = self->_resize_rendertarget(uint2(LOWORD(lparam), HIWORD(lparam))); !res)
-      window::system.last_error = std::move(res.error().push());
-    return 0;
-  case WM_CLOSE:
-    if (self->close_confirmation && ::MessageBoxW(hwnd, L"Close window?", L"Confirmation", MB_YESNO) == IDNO) return 0;
-    return ::DestroyWindow(hwnd), 0;
-  case WM_NCDESTROY:
-    if (self->id.slave.is_zero()) {
-      for (auto& slave_slot : self->slaves) {
-        ::SetWindowLongPtrW(slave_slot.hwnd, GWLP_USERDATA, 0);
-        ::DestroyWindow(slave_slot.hwnd);
-      }
-      self->slaves.clear();
-      window::system.windows.erase(self->id.master);
-      if (window::system.windows.empty()) { ::PostQuitMessage(0); }
-    } else if (const auto mw = window::system.windows.get(self->id.master)) {
-      mw->slaves.erase(self->id.slave);
-      ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-    }
-    break;
-  }
-  return ::DefWindowProcW(hwnd, msg, wparam, lparam);
+inline window::slot* decltype(window::system)::get_window(const window::slave& w) const noexcept {
+  if (const auto master_slot = windows.get(w._id.master); !master_slot) return nullptr;
+  else return w._id.slave.is_zero() ? master_slot : master_slot->slaves.get(w._id.slave);
 }
 
-} // namespace yw
-
-namespace yw {
+//////////////////////////////////////// MARK: mainloop
 
 inline bool mainloop() {
   static stopwatch frame_timer = [] {
@@ -146,4 +116,4 @@ inline bool mainloop() {
   }
   return !window::system.last_error;
 }
-} // namespace yw::window
+} // namespace yw

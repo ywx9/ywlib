@@ -1,9 +1,14 @@
 #pragma once
+#include "ywx/key.h"
 #include "ywx/window/system.h"
 
 namespace yw::window {
 
+//////////////////////////////////////// MARK: control_slot
+
 class control_slot {
+  control_slot(const control_slot&) = delete;
+  control_slot& operator=(const control_slot&) = delete;
 protected:
   slot* _window() const noexcept;
 
@@ -19,13 +24,18 @@ public:
   bool visible = true;
   bool enabled = true;
 
+  function<void, const control_slot&, bool> on_hover;
+
+  // control_slot() noexcept = default;
+
   virtual ~control_slot() noexcept = default;
-  control_slot() noexcept = default;
   control_slot(control_slot&&) noexcept = default;
   control_slot& operator=(control_slot&&) noexcept = default;
 
-  control_slot(const control_slot&) = delete;
-  control_slot& operator=(const control_slot&) = delete;
+  control_slot(const slotid& window_id, float2 Pos, float2 Size) : position(Pos), size(Size) {
+    id.master = window_id.master;
+    id.slave = window_id.slave;
+  }
 
   bool hit_test(float2 pt) const noexcept {
     return pt.x >= position.x && pt.x <= position.x + size.x && pt.y >= position.y && pt.y <= position.y + size.y;
@@ -39,8 +49,10 @@ public:
     return {};
   }
 
-  virtual std::expected<bool, error_trace> proc(const MSG& msg) { return false; }
+  virtual std::expected<bool, error_trace> proc(UINT, WPARAM, LPARAM) { return true; }
 };
+
+//////////////////////////////////////// MARK: slot
 
 class slot {
   using _window_open_struct = decltype(::yw::window::open);
@@ -107,9 +119,13 @@ public:
 
   slotlist<slot> slaves{};
   slotlist<control_slot> controls{};
+
+  slotlist<control_slot>::id hovered_control{};
   slotlist<control_slot>::id focused_control{};
 
   bool close_confirmation = false;
+
+  function<void, const slot&, key, bool /*shift*/, bool /*ctrl*/> on_key;
 
   mutable bool dirty = true;
 
@@ -143,6 +159,8 @@ public:
     return {};
   }
 };
+
+//////////////////////////////////////// MARK: control_slot::_window
 
 inline slot* control_slot::_window() const noexcept {
   if (const auto master_slot = system.windows.get(id.master); !master_slot) return nullptr;
