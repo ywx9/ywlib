@@ -4,36 +4,30 @@
 namespace yw::control {
 
 class base {
-  static uint64_t _get_counter() noexcept {
-    static uint64_t counter = 1;
-    return counter++;
-  }
-
 public:
   using slot = window::control_slot;
+  static constexpr auto kind = source().unique_id();
 
 protected:
   window::control_slotid _id;
-  uint64_t _counter{};
+  uint64_t _kind{};
 
-  base(window::control_slotid id) noexcept : _id(id), _counter(_get_counter()) {}
+  base(window::control_slotid i, uint64_t k) noexcept : _id(i), _kind(k) {}
 
   window::slot* _window() const noexcept { return _id.get_window(); }
   window::control_slot* _control() const noexcept { return _id.get_control(); }
 
-  // template<typename Ctrl, derived_from<slot> Slot>
-  // static std::expected<Ctrl, error_trace> _add(window::slave& w, float2 Pos, float2 Size) {
-  //   if (const auto window_slot = w._window()) {
-  //     window_slot->dirty = true;
-  //     auto control_slot = std::make_unique<Slot>();
-  //     control_slot->id.master = window_slot->id.master;
-  //     control_slot->id.slave = window_slot->id.slave;
-  //     control_slot->position = Pos;
-  //     control_slot->size = Size;
-  //     const auto cid = window_slot->controls.push(std::move(control_slot));
-  //     return Ctrl({window_slot->id.master, window_slot->id.slave, cid});
-  //   } else return unexpected_error(errors::invalid_argument, "invalid window");
-  // }
+  template<typename Ctrl> static std::expected<Ctrl, error_trace> add(window::slave& w, float2 position, float2 size) {
+    const auto window_slot = w._window();
+    if (!window_slot) return unexpected_error(errors::invalid_argument, "invalid window");
+    auto control_slot = std::make_unique<typename Ctrl::slot>(window_slot->id, position, size);
+    const auto cid = window_slot->controls.push(std::move(control_slot));
+    const auto control_slot_ptr = window_slot->controls.get(cid);
+    if (!control_slot_ptr) return unexpected_error(errors::operation_failed, "failed to create control slot");
+    control_slot_ptr->id.control = cid;
+    window_slot->dirty = true;
+    return Ctrl({window_slot->id.master, window_slot->id.slave, cid}, Ctrl::kind);
+  }
 
 public:
   base() noexcept = default;
@@ -47,8 +41,6 @@ public:
     const auto w = _window();
     return w && w->controls.contains(_id.control);
   }
-
-  uint64_t counter() const noexcept { return _counter; }
 
   float2 position() const noexcept {
     const auto control_slot = _control();
@@ -154,15 +146,21 @@ public:
       }
   }
 
+  auto on_hover() noexcept {
+    using func_slot = typename function<void, control::base&, hover_event>::slot;
+    if (const auto control_slot = _control()) return func_slot(control_slot->on_hover);
+    return func_slot();
+  }
+
+  template<derived_from<base> Ctrl> Ctrl* as() noexcept {
+    if (_kind != Ctrl::kind) return nullptr;
+    return dynamic_cast<Ctrl*>(this);
+  }
+
   static std::expected<base, error_trace> add(window::slave& w, float2 Pos, float2 Size) {
-    const auto window_slot = window::system.get_window(w);
-    if (!window_slot) return unexpected_error(errors::invalid_argument, "invalid window");
-    auto base_slot = std::make_unique<window::control_slot>(window_slot->id, Pos, Size);
-    const auto cid = window_slot->controls.push(std::move(base_slot));
-    const auto control_slot = window_slot->controls.get(cid);
-    if (!control_slot) return unexpected_error(errors::operation_failed, "failed to create control slot");
-    control_slot->id.control = cid;
-    return base({window_slot->id.master, window_slot->id.slave, cid});
+    return add<base>(w, Pos, Size);
   }
 };
+
+template<derived_from<base> T> inline constexpr auto kind = T::kind;
 } // namespace yw::control

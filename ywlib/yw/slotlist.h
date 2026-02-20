@@ -11,26 +11,28 @@ template<typename T, typename Del = std::default_delete<T>> class slotlist {
     friend constexpr bool operator==(const _id&, const _id&) noexcept = default;
   };
   static_assert(std::is_trivially_copyable_v<_id> && sizeof(_id) == 2 * sizeof(uint32_t));
+
 public:
-  struct id {
-    uint32_t index{}, generation{};
+  struct id : public _id {
     constexpr ~id() noexcept = default;
     constexpr id() noexcept = default;
     constexpr id(const id&) = default;
     constexpr id& operator=(const id&) = default;
-    constexpr id(uint32_t i, uint32_t g) noexcept : index(i), generation(g) {}
-    constexpr id(const _id& Id) noexcept : index(Id.index), generation(Id.generation) {}
-    constexpr operator _id() const noexcept { return _id{index, generation}; }
 
-    constexpr id(id&& Id) noexcept : index(std::exchange(Id.index, 0)), generation(std::exchange(Id.generation, 0)) {}
-    constexpr id& operator=(id&& Id) noexcept {
-      index = std::exchange(Id.index, 0);
-      generation = std::exchange(Id.generation, 0);
+    constexpr id(uint32_t index, uint32_t generation) noexcept : _id{index, generation} {}
+    constexpr id(id&& i) noexcept : _id(std::exchange(i.index, 0), std::exchange(i.generation, 0)) {}
+
+    constexpr id& operator=(id&& i) noexcept {
+      _id::index = std::exchange(i.index, 0);
+      _id::generation = std::exchange(i.generation, 0);
       return *this;
     }
 
+    /// \note generation of id in slotlist is always non-zero.
+
+    constexpr bool is_zero() const noexcept { return _id::generation == 0; }
+    constexpr operator bool() const noexcept { return _id::generation != 0; }
     friend constexpr bool operator==(const id& a, const id& b) noexcept = default;
-    constexpr bool is_zero() const noexcept { return (index | generation) == 0; }
   };
 
   struct slot {
@@ -39,7 +41,6 @@ public:
   };
 
 private:
-
   std::vector<slot> _slots;
   std::vector<_id> _list;
   uint32_t _free_head = uint32_t(-1);
@@ -51,21 +52,21 @@ private:
       _free_head = s.next_free;
       s.pointer = std::move(p);
       s.next_free = uint32_t(-1);
-      return id{i, s.generation};
+      return id(i, s.generation);
     } else {
       const auto i = uint32_t(_slots.size());
       _slots.push_back(slot{std::move(p), 1, uint32_t(-1)});
-      return id{i, 1};
+      return id(i, 1);
     }
   }
 
-  T* get(const _id& i) noexcept {
+  T* _get(const _id& i) noexcept {
     if (i.index >= _slots.size()) return nullptr;
     if (auto& s = _slots[i.index]; s.generation != i.generation) return nullptr;
     else return s.pointer.get();
   }
 
-  const T* get(const _id& i) const noexcept {
+  const T* _get(const _id& i) const noexcept {
     if (i.index >= _slots.size()) return nullptr;
     if (auto& s = _slots[i.index]; s.generation != i.generation) return nullptr;
     else return s.pointer.get();
@@ -91,13 +92,12 @@ private:
   }
 
 public:
-  bool contains(const id& i) const noexcept { return i.index < _slots.size() && _slots[i.index].generation == i.generation; }
-
-  T* get(const id& i) const noexcept {
-    if (i.index >= _slots.size()) return nullptr;
-    if (auto& s = _slots[i.index]; s.generation != i.generation) return nullptr;
-    else return s.pointer.get();
+  bool contains(const id& i) const noexcept {
+    return i.index < _slots.size() && _slots[i.index].generation == i.generation;
   }
+
+  T* get(const id& i) noexcept { return _get({i.index, i.generation}); }
+  const T* get(const id& i) const noexcept { return _get({i.index, i.generation}); }
 
   void erase(const id& i) {
     if (i.index >= _slots.size()) return;
@@ -152,6 +152,7 @@ public:
   class iterator {
     slotlist<T, Del>* _list;
     size_t _pos;
+
   public:
     using iterator_category = std::random_access_iterator_tag;
     using iterator_concept = std::random_access_iterator_tag;
@@ -163,12 +164,32 @@ public:
     T& operator*() const { return *(_list->_slots[_list->_list[_pos].index].pointer); }
     T* operator->() const { return _list->_slots[_list->_list[_pos].index].pointer.get(); }
     T& operator[](size_t i) const { return *(_list->_slots[_list->_list[_pos + i].index].pointer); }
-    auto& operator++() { ++_pos; return *this; }
-    auto operator++(int) { iterator temp = *this; ++_pos; return temp; }
-    auto& operator--() { --_pos; return *this; }
-    auto operator--(int) { iterator temp = *this; --_pos; return temp; }
-    auto& operator+=(difference_type n) { _pos += n; return *this; }
-    auto& operator-=(difference_type n) { _pos -= n; return *this; }
+    auto& operator++() {
+      ++_pos;
+      return *this;
+    }
+    auto operator++(int) {
+      iterator temp = *this;
+      ++_pos;
+      return temp;
+    }
+    auto& operator--() {
+      --_pos;
+      return *this;
+    }
+    auto operator--(int) {
+      iterator temp = *this;
+      --_pos;
+      return temp;
+    }
+    auto& operator+=(difference_type n) {
+      _pos += n;
+      return *this;
+    }
+    auto& operator-=(difference_type n) {
+      _pos -= n;
+      return *this;
+    }
     auto operator+(difference_type n) const { return iterator(_list, _pos + n); }
     auto operator-(difference_type n) const { return iterator(_list, _pos - n); }
     auto operator-(const iterator& i) const { return difference_type(_pos) - difference_type(i._pos); }
@@ -180,6 +201,7 @@ public:
   class const_iterator {
     const slotlist<T, Del>* _list;
     size_t _pos;
+
   public:
     using iterator_category = std::random_access_iterator_tag;
     using iterator_concept = std::random_access_iterator_tag;
@@ -191,12 +213,32 @@ public:
     const T& operator*() const { return *(_list->_slots[_list->_list[_pos].index].pointer); }
     const T* operator->() const { return _list->_slots[_list->_list[_pos].index].pointer.get(); }
     const T& operator[](difference_type n) const { return *(_list->_slots[_list->_list[_pos + n].index].pointer); }
-    auto& operator++() { ++_pos; return *this; }
-    auto operator++(int) { const_iterator temp = *this; ++_pos; return temp; }
-    auto& operator--() { --_pos; return *this; }
-    auto operator--(int) { const_iterator temp = *this; --_pos; return temp; }
-    auto& operator+=(difference_type n) { _pos += n; return *this; }
-    auto& operator-=(difference_type n) { _pos -= n; return *this; }
+    auto& operator++() {
+      ++_pos;
+      return *this;
+    }
+    auto operator++(int) {
+      const_iterator temp = *this;
+      ++_pos;
+      return temp;
+    }
+    auto& operator--() {
+      --_pos;
+      return *this;
+    }
+    auto operator--(int) {
+      const_iterator temp = *this;
+      --_pos;
+      return temp;
+    }
+    auto& operator+=(difference_type n) {
+      _pos += n;
+      return *this;
+    }
+    auto& operator-=(difference_type n) {
+      _pos -= n;
+      return *this;
+    }
     auto operator+(difference_type n) const { return const_iterator(_list, _pos + n); }
     auto operator-(difference_type n) const { return const_iterator(_list, _pos - n); }
     auto operator-(const const_iterator& i) const { return difference_type(_pos) - difference_type(i._pos); }

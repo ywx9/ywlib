@@ -31,12 +31,12 @@ public:
 
   // assigns a function pointer
   template<class F> //
-  requires is_pointer<remove_ref<F>> && is_function<remove_pointer<remove_ref<F>>> && invocable_r<R, F, As...>
+  requires is_pointer<remove_ref<F>> && is_function<remove_pointer<remove_ref<F>>> && invocable_r<F, R, As...>
   constexpr function(F f) noexcept : fp(f) {}
 
   // assigns a function object (SBO only, copyable)
   template<class F> //
-  requires invocable_r<R, const remove_cvref<F>&, As...> &&
+  requires invocable_r<const remove_cvref<F>&, R, As...> &&
            (!(is_pointer<remove_ref<F>> && is_function<remove_pointer<remove_ref<F>>>)) &&
            (sizeof(remove_cvref<F>) <= 32) && (alignof(remove_cvref<F>) <= alignof(std::max_align_t)) &&
            std::is_nothrow_move_constructible_v<remove_cvref<F>> && std::is_copy_constructible_v<remove_cvref<F>>

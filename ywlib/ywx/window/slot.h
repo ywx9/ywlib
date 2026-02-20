@@ -1,5 +1,6 @@
 #pragma once
 #include "ywx/key.h"
+#include "ywx/event.h"
 #include "ywx/window/system.h"
 
 namespace yw::window {
@@ -24,7 +25,7 @@ public:
   bool visible = true;
   bool enabled = true;
 
-  function<void, const control_slot&, bool> on_hover;
+  function<void, control::base&, hover_event> on_hover;
 
   // control_slot() noexcept = default;
 
@@ -123,6 +124,10 @@ public:
   slotlist<control_slot>::id hovered_control{};
   slotlist<control_slot>::id focused_control{};
 
+  uint32_t width{}, height{}; // raed only, updated on WM_SIZE
+  bool resizing = false;      // updated on WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE
+
+  color background_color = colors::white;
   bool close_confirmation = false;
 
   function<void, const slot&, key, bool /*shift*/, bool /*ctrl*/> on_key;

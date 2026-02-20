@@ -10,6 +10,7 @@ class label : public base {
 public:
   class slot : public base::slot {
   public:
+    static constexpr auto kind = source().unique_id();
     float2 padding{};
     color text_color = colors::black;
     std::wstring text{};
@@ -30,6 +31,8 @@ public:
 
     virtual std::expected<bool, error_trace> proc(UINT, WPARAM, LPARAM) override { return true; }
   };
+
+  static constexpr auto kind = slot::kind;
 
 protected:
   slot* _label(window::slot* window_slot) const noexcept {
@@ -164,14 +167,8 @@ public:
   }
 
   static std::expected<label, error_trace> add(window::slave& w, float2 position, float2 size) {
-    const auto window_slot = window::system.get_window(w);
-    if (!window_slot) return unexpected_error(errors::invalid_argument, "invalid window");
-    auto label_slot = std::make_unique<slot>(window_slot->id, position, size);
-    const auto cid = window_slot->controls.push(std::move(label_slot));
-    const auto control_slot = window_slot->controls.get(cid);
-    if (!control_slot) return unexpected_error(errors::operation_failed, "failed to create label slot");
-    control_slot->id.control = cid;
-    return label({window_slot->id.master, window_slot->id.slave, cid});
+    if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
+    return base::add<label>(w, position, size);
   }
 };
 } // namespace yw::control

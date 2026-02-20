@@ -3,6 +3,9 @@
 
 namespace yw {
 
+template<typename T> concept text_format_like = castable_to<T, IDWriteTextFormat*>;
+template<typename T> concept text_layout_like = castable_to<T, IDWriteTextLayout*>;
+
 namespace internal {
 
 /// \note requires text_format is initialized
@@ -34,8 +37,6 @@ inline bool set_paragraph_alignment(IDWriteTextFormat* tf, DWRITE_PARAGRAPH_ALIG
   }
 }
 } // namespace internal
-
-template<typename T> concept text_format_like = castable_to<T, IDWriteTextFormat*>;
 
 //////////////////////////////////////// MARK: text_format
 
@@ -166,8 +167,7 @@ public:
   }
 
   /// creates text layout from another text layout
-  template<castable_to<IDWriteTextLayout*> T>
-  static std::expected<text_layout, error_trace> create(stringable<wchar_t> auto&& text, T&& source) {
+  static std::expected<text_layout, error_trace> create(stringable<wchar_t> auto&& text, text_layout_like auto&& source) {
     if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
     auto sv = std::wstring_view(text);
     auto tf = static_cast<IDWriteTextFormat*>(static_cast<IDWriteTextLayout*>(source));

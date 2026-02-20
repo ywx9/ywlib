@@ -296,11 +296,11 @@ inline class {
   struct pointers {
     ::IDWriteFactory1* factory{};
     ::IDWriteTextFormat* text_format{};
-    bool initialized{false};
+    bool initialized = false;
 
     ~pointers() {
-      if (text_format) text_format->Release();
-      if (factory) factory->Release();
+      if (text_format) std::exchange(text_format, nullptr)->Release();
+      if (factory) std::exchange(factory, nullptr)->Release();
       initialized = false;
     }
   } p{};
@@ -309,9 +309,11 @@ public:
   std::expected<void, error_trace> initialize() {
     if (p.initialized) return {};
     if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
+    // Creates DirectWrite factory.
     auto hr = ::DWriteCreateFactory(
       DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory1), reinterpret_cast<IUnknown**>(&p.factory));
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "DWriteCreateFactory failed", int32_t(hr));
+    // Creates default text format.
     hr = p.factory->CreateTextFormat(L"", nullptr, DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
       DWRITE_FONT_STRETCH_NORMAL, 16.0f, L"", &p.text_format);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int32_t(hr));
@@ -338,7 +340,7 @@ inline class {
     bool initialized{};
 
     ~pointers() {
-      if (factory) factory->Release();
+      if (factory) std::exchange(factory, nullptr)->Release();
       initialized = false;
     }
   } p{};
@@ -371,8 +373,8 @@ inline class {
     bool initialized{};
 
     ~pointers() {
-      if (mastering_voice) mastering_voice->DestroyVoice();
-      if (xaudio2) xaudio2->Release();
+      if (mastering_voice) std::exchange(mastering_voice, nullptr)->DestroyVoice();
+      if (xaudio2) std::exchange(xaudio2, nullptr)->Release();
       initialized = false;
     }
   } p{};

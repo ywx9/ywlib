@@ -8,68 +8,83 @@ inline LRESULT __stdcall decltype(system)::proc(HWND hwnd, UINT msg, WPARAM wpar
   if (!self) return ::DefWindowProcW(hwnd, msg, wparam, lparam);
   switch (msg) {
 
-  /// \note MOUSEMOVE
-  /// 1. フォーカスされたコントロールがある場合、そのコントロールのprocを呼ぶ。
-  /// 2. 移動先のコントロールを調べ、hovered_controlと異なるなら処理する。
-  /// 3. 1の戻り値を返す
-  case WM_MOUSEMOVE:{
-    std::expected<bool, error_trace> result = true;
+  case WM_MOUSEMOVE: {
     if (self->focused_control) {
-      const auto control_slot = self->controls.get(self->focused_control);
-      if (control_slot) result = control_slot->proc(msg, wparam, lparam);
+      if (const auto control_slot = self->controls.get(self->focused_control)) {
+        if (auto res = control_slot->proc(msg, wparam, lparam); !res) {
+          window::system.last_error = std::move(res.error().push());
+          return 0;
+        }
+      }
     }
     const auto pt = float2(std::bit_cast<short2>(static_cast<uint32_t>(std::bit_cast<size_t>(lparam))));
     for (auto& control_slot : self->controls | std::views::reverse)
       if (control_slot.hit_test(pt)) {
         if (self->hovered_control != control_slot.id.control) {
           if (self->hovered_control) {
-            if (auto hovered_slot = self->controls.get(self->hovered_control))
-              if (hovered_slot->on_hover) hovered_slot->on_hover(*hovered_slot, false);
+            const auto hovered_slot = self->controls.get(self->hovered_control);
+            if (hovered_slot && hovered_slot->on_hover) hovered_slot->on_hover(*hovered_slot, false);
           }
           self->hovered_control = control_slot.id.control;
           if (control_slot.on_hover) control_slot.on_hover(control_slot, true);
         }
-        break;
+        return 0;
       }
-    return result;
-  }
-
-  /// \note KEYDOWN
-  /// 1. フォーカスされたコントロールがある場合、そのコントロールのprocを呼ぶ。
-  case WM_KEYDOWN: {
-    if (self->focused_control) {
-      const auto control_slot = self->controls.get(self->focused_control);
-      if (control_slot) return control_slot->proc(msg, wparam, lparam) ? 0 : ::DefWindowProcW(hwnd, msg, wparam, lparam);
+    if (self->hovered_control) {
+      if (auto hovered_slot = self->controls.get(self->hovered_control))
+        if (hovered_slot->on_hover) hovered_slot->on_hover(*hovered_slot, false);
+      self->hovered_control = {};
     }
-    break;
+    return 0;
   }
 
-  // MOUSE INPUT
-  case WM_LBUTTONDOWN:
+  case WM_LBUTTONDOWN: {
     ::SetCapture(hwnd);
     if (!self->focused_control.is_zero()) self->controls.get(self->focused_control)->proc(msg, wparam, lparam);
-    break;
-  case WM_LBUTTONUP:
+    return 0;
+  }
+
+  case WM_LBUTTONUP: {
     ::ReleaseCapture();
     if (!self->focused_control.is_zero()) self->controls.get(self->focused_control)->proc(msg, wparam, lparam);
-    break;
+    return 0;
+  }
 
-  // FOCUS
-  case WM_ACTIVATE:
+  case WM_ACTIVATE: {
     if (LOWORD(wparam) == WA_INACTIVE) window::system.focused_window = {};
-    break;
-  case WM_SETFOCUS: window::system.focused_window = self->id; break;
+    return 0;
+  }
 
-  // RESIZE
+  case WM_SETFOCUS: {
+    window::system.focused_window = self->id;
+    break;
+  }
+
+  ////////////////////////////////////// MARK: サイズ変更
+
+  case WM_ENTERSIZEMOVE:
+    self->resizing = true;
+    return 0;
+
   case WM_SIZE:
-    if (auto res = self->_resize_rendertarget(uint2(LOWORD(lparam), HIWORD(lparam))); !res)
+    self->width = LOWORD(lparam), self->height = HIWORD(lparam);
+    if (self->resizing) return 0;
+    if (auto res = self->_resize_rendertarget({self->width, self->height}); !res)
       window::system.last_error = std::move(res.error().push());
     return 0;
 
-  // CLOSE / DESTROY
+  case WM_EXITSIZEMOVE:
+    self->resizing = false;
+    if (auto res = self->_resize_rendertarget({self->width, self->height}); !res)
+      window::system.last_error = std::move(res.error().push());
+    return 0;
+
+  ////////////////////////////////////// MARK: ウィンドウ破棄
+
   case WM_CLOSE:
     if (self->close_confirmation && ::MessageBoxW(hwnd, L"Close window?", L"Confirmation", MB_YESNO) == IDNO) return 0;
     return ::DestroyWindow(hwnd), 0;
+
   case WM_NCDESTROY:
     if (self->id.slave.is_zero()) {
       for (auto& slave_slot : self->slaves) {
@@ -87,4 +102,4 @@ inline LRESULT __stdcall decltype(system)::proc(HWND hwnd, UINT msg, WPARAM wpar
   }
   return ::DefWindowProcW(hwnd, msg, wparam, lparam);
 }
-}
+} // namespace yw::window

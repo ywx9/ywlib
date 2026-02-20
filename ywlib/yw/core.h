@@ -106,9 +106,12 @@ template<typename T> concept unsigned_integral = integral<T> && !signed_integral
 template<typename T> concept floating = float_type<T>;
 template<typename T> concept arithmetic = integral<T> || float_type<T>;
 template<typename T> concept trivial = __is_trivially_copyable(T);
+template<typename T> concept is_enum = std::is_enum_v<T>;
 template<typename T> concept is_class = std::is_class_v<T>;
 template<typename T> concept is_union = std::is_union_v<T>;
 template<typename T> concept is_object = std::is_object_v<T>;
+
+template<typename T, typename... As> concept constructible = std::is_constructible_v<T, As...>;
 
 namespace _ {
 template<typename T, template<typename...> typename Tm> inline constexpr bool _specialization_of{0};
@@ -543,10 +546,27 @@ namespace yw {
 struct source {
   std::string_view file, func;
   uint32_t line, column;
-  source(const std::source_location& loc = std::source_location::current()) noexcept
+
+  constexpr source(const std::source_location& loc = std::source_location::current()) noexcept
     : file(loc.file_name()), func(loc.function_name()), line(loc.line()), column(loc.column()) {}
+
   friend constexpr bool operator==(const source& a, const source& b) noexcept {
     return a.file == b.file && a.func == b.func && a.line == b.line && a.column == b.column;
+  }
+
+  constexpr uint64_t unique_id() const noexcept {
+    constexpr uint64_t basis = 14695981039346656037ull;
+    constexpr uint64_t prime = 1099511628211ull;
+
+    auto hash = [](std::string_view s) {
+      uint64_t h = basis;
+      for (char c : s) { h ^= uint8_t(c), h *= prime; }
+      return h;
+    };
+    uint64_t h = basis;
+    auto mix = [&](uint64_t v) { h ^= v, h *= prime; };
+    mix(hash(file)), mix(hash(func)), mix(line), mix(column);
+    return h;
   }
 };
 } // namespace yw

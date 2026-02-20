@@ -3,7 +3,7 @@
 
 namespace yw {
 
-enum class key : std::uint_fast16_t {
+enum class key : std::uint8_t {
 
   // control keys
 
@@ -87,5 +87,33 @@ enum class key : std::uint_fast16_t {
   comma = 0xBC,
   period = 0xBE,
   slash = 0xBF,
+};
+
+//////////////////////////////////////// MARK: key_mod
+
+enum class key_mod : uint8_t {
+  shift = 0x01,
+  ctrl = 0x02,
+  alt = 0x04,
+  super = 0x08,
+};
+
+using key_mods = flags<key_mod>;
+
+//////////////////////////////////////// MARK: key_state
+
+enum class key_state : uint8_t {
+  up = 0,
+  down = 1,
+};
+
+//////////////////////////////////////// MARK: key_event
+
+struct key_event {
+  yw::key key{};
+  key_mods mods{};
+  key_state state{};
+  key_state prev_state{};
+  uint32_t repeat_count{};
 };
 }

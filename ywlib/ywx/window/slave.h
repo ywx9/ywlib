@@ -129,8 +129,14 @@ public:
     if (const auto window_slot = _window()) window_slot->rendertarget.save_as_png(Png);
   }
 
+  void background_color(const color& c) noexcept {
+    if (const auto window_slot = _window()) window_slot->background_color = c;
+  }
+
   void close_confirmation(bool b = true) noexcept {
     if (const auto window_slot = _window()) window_slot->close_confirmation = b;
   }
+
+  [[deprecated("Should not use easily")]] slot* get_slot() const noexcept { return _window(); }
 };
 }

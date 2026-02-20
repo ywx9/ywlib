@@ -35,6 +35,6 @@ public:
     return {};
   }
 
-  slot* get_window(const slave& w) const noexcept;
+  // slot* get_window(const slave& w) noexcept;
 } system{};
 } // namespace yw::window

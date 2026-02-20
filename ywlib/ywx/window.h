@@ -1,6 +1,6 @@
 #pragma once
 
-/// \note window関係の定義は依存関係が複雑なため、特別に別ヘッダに分けた
+/// \note window関係の定義は依存関係が複雑なため別フォルダに隔離した(ywxlibの自動生成から除外)。
 
 #include "ywx/window/control_base.h"
 #include "ywx/window/core.h"
@@ -13,8 +13,8 @@
 namespace yw {
 
 inline window::slot* window::slotid::get_window() const noexcept {
-  if (const auto ms = system.windows.get(master); !ms) return nullptr;
-  else return slave.is_zero() ? ms : ms->slaves.get(slave);
+  const auto ms = system.windows.get(master);
+  return !ms ? nullptr : slave.is_zero() ? ms : ms->slaves.get(slave);
 }
 
 inline window::control_slot* window::control_slotid::get_control() const noexcept {
@@ -74,15 +74,32 @@ inline std::expected<window::slave, error_trace> decltype(window::open)::subwind
   return window::slave({mw._id.master, slave_id}, Show);
 }
 
-//////////////////////////////////////// MARK: window/system.h
-inline window::slot* decltype(window::system)::get_window(const window::slave& w) const noexcept {
-  if (const auto master_slot = windows.get(w._id.master); !master_slot) return nullptr;
-  else return w._id.slave.is_zero() ? master_slot : master_slot->slaves.get(w._id.slave);
-}
+//////////////////////////////////////// MARK: mainloop result
+
+class mainloop_result {
+public:
+  enum class state {
+    running,
+    quit,
+    error
+  };
+
+private:
+  state _state = state::running;
+  bool  _skipped = false;
+
+public:
+  constexpr mainloop_result(state s, bool skipped = false) noexcept : _state(s), _skipped(skipped) {}
+  constexpr bool running() const noexcept { return _state == state::running; }
+  constexpr bool quit()    const noexcept { return _state == state::quit; }
+  constexpr bool error()   const noexcept { return _state == state::error; }
+  constexpr bool skipped() const noexcept { return _skipped; }
+  constexpr explicit operator bool() const noexcept { return running(); }
+};
 
 //////////////////////////////////////// MARK: mainloop
 
-inline bool mainloop() {
+inline mainloop_result mainloop() {
   static stopwatch frame_timer = [] {
     stopwatch t;
     t.start();
@@ -91,13 +108,13 @@ inline bool mainloop() {
   ++window::system.frame_count;
   uint32_t message_count = 0;
   for (MSG msg; ::PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);) {
-    if (msg.message == WM_QUIT) return false;
+    if (msg.message == WM_QUIT) return mainloop_result(mainloop_result::state::quit);
     ::TranslateMessage(&msg), ::DispatchMessageW(&msg);
-    if (window::system.last_error) return false;
+    if (window::system.last_error) return mainloop_result(mainloop_result::state::error);
     if (++message_count > window::system.max_messages_per_frame) break;
   }
   // 負荷軽減のため、前回の描画から十分な時間が経過していない場合は描画をスキップする。
-  if (frame_timer.elapsed() < 1.0 / window::system.max_frames_per_second) return true;
+  if (frame_timer.elapsed() < 1.0 / window::system.max_frames_per_second) return mainloop_result(mainloop_result::state::running, true);
   frame_timer.restart();
   // 各ウィンドウについてコントロールを描画して更新する。
   // 描画の失敗は扱わないが、error_traceのデストラクタによって自動でエラー出力される。
@@ -107,13 +124,27 @@ inline bool mainloop() {
         if (control.visible) control.draw();
     if (master_slot.swapchain) master_slot.swapchain->Present(0, 0);
     for (auto& slave_slot : master_slot.slaves) {
-      if (window::system.last_error) return false;
+      if (window::system.last_error) return mainloop_result(mainloop_result::state::error);
       if (auto d = slave_slot.rendertarget.begin_draw())
         for (auto& control : slave_slot.controls)
           if (control.visible) control.draw();
       if (slave_slot.swapchain) slave_slot.swapchain->Present(0, 0);
     }
   }
-  return !window::system.last_error;
+  // ウィンドウ背景を初期化する。
+  for (auto& master_slot : window::system.windows) {
+    if (auto d = master_slot.rendertarget.begin_draw(master_slot.background_color); !d) {
+      window::system.last_error = std::move(d.error().push());
+      return mainloop_result(mainloop_result::state::error);
+    }
+    for (auto& slave_slot : master_slot.slaves) {
+      if (window::system.last_error) return mainloop_result(mainloop_result::state::error);
+      if (auto d = slave_slot.rendertarget.begin_draw(slave_slot.background_color); !d) {
+        window::system.last_error = std::move(d.error().push());
+        return mainloop_result(mainloop_result::state::error);
+      }
+    }
+  }
+  return mainloop_result(mainloop_result::state::running);
 }
 } // namespace yw
