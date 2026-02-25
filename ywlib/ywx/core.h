@@ -13,11 +13,11 @@ namespace yw {
 
 //////////////////////////////////////// MARK: ok/yes
 
-inline bool ok(const null_terminated<wchar_t>& Text, const null_terminated<wchar_t>& Title = L"Confirmation") {
+inline bool ok(null_terminated<wchar_t> Text, null_terminated<wchar_t> Title = L"Confirmation") {
   return ::MessageBoxW(nullptr, Text.data(), Title.data(), MB_OK) == IDOK;
 }
 
-inline bool yes(const null_terminated<wchar_t>& Text, const null_terminated<wchar_t>& Title = L"Confirmation") {
+inline bool yes(null_terminated<wchar_t> Text, null_terminated<wchar_t> Title = L"Confirmation") {
   return ::MessageBoxW(nullptr, Text.data(), Title.data(), MB_YESNO) == IDYES;
 }
 
@@ -35,7 +35,7 @@ inline constexpr auto print_fallback = []<typename S, typename... Ts>(S&& fmt, T
 inline constexpr auto print_error_fallback = //
   []<stringable S>(S&& message, const error_trace& err, const source& src = {}) -> int {
   const auto s = format("{}\n  at {}\n{}", err, src, message);
-  print(s);
+  print.err(s);
   ok(s, L"Error");
   return err.error.system_code;
 };

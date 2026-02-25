@@ -3,36 +3,36 @@
 
 namespace yw {
 
+//////////////////////////////////////// MARK: slotid
+
+struct slotid {
+  uint32_t index{}, generation{};
+  constexpr operator bool() const noexcept { return generation != 0; }
+  friend constexpr bool operator==(const slotid& a, const slotid& b) noexcept = default;
+};
+
+static_assert(std::is_trivially_copyable_v<slotid>);
+static_assert(sizeof(slotid) == 2 * sizeof(uint32_t));
+
 //////////////////////////////////////// MARK: slotlist
 
 template<typename T, typename Del = std::default_delete<T>> class slotlist {
-  struct _id {
-    uint32_t index{}, generation{};
-    friend constexpr bool operator==(const _id&, const _id&) noexcept = default;
-  };
-  static_assert(std::is_trivially_copyable_v<_id> && sizeof(_id) == 2 * sizeof(uint32_t));
-
 public:
-  struct id : public _id {
+  struct id : public slotid {
     constexpr ~id() noexcept = default;
     constexpr id() noexcept = default;
     constexpr id(const id&) = default;
     constexpr id& operator=(const id&) = default;
 
-    constexpr id(uint32_t index, uint32_t generation) noexcept : _id{index, generation} {}
-    constexpr id(id&& i) noexcept : _id(std::exchange(i.index, 0), std::exchange(i.generation, 0)) {}
-
+    constexpr id(uint32_t index, uint32_t generation) noexcept : slotid{index, generation} {}
+    constexpr id(id&& i) noexcept : slotid(std::exchange(i.index, 0), std::exchange(i.generation, 0)) {}
     constexpr id& operator=(id&& i) noexcept {
-      _id::index = std::exchange(i.index, 0);
-      _id::generation = std::exchange(i.generation, 0);
+      slotid::index = std::exchange(i.index, 0);
+      slotid::generation = std::exchange(i.generation, 0);
       return *this;
     }
 
-    /// \note generation of id in slotlist is always non-zero.
-
-    constexpr bool is_zero() const noexcept { return _id::generation == 0; }
-    constexpr operator bool() const noexcept { return _id::generation != 0; }
-    friend constexpr bool operator==(const id& a, const id& b) noexcept = default;
+    using slotlist::id::operator bool;
   };
 
   struct slot {
@@ -42,7 +42,7 @@ public:
 
 private:
   std::vector<slot> _slots;
-  std::vector<_id> _list;
+  std::vector<slotid> _list;
   uint32_t _free_head = uint32_t(-1);
 
   id _push(std::unique_ptr<T, Del> p) {
@@ -58,18 +58,6 @@ private:
       _slots.push_back(slot{std::move(p), 1, uint32_t(-1)});
       return id(i, 1);
     }
-  }
-
-  T* _get(const _id& i) noexcept {
-    if (i.index >= _slots.size()) return nullptr;
-    if (auto& s = _slots[i.index]; s.generation != i.generation) return nullptr;
-    else return s.pointer.get();
-  }
-
-  const T* _get(const _id& i) const noexcept {
-    if (i.index >= _slots.size()) return nullptr;
-    if (auto& s = _slots[i.index]; s.generation != i.generation) return nullptr;
-    else return s.pointer.get();
   }
 
   void _erase(uint32_t index) {
@@ -92,14 +80,23 @@ private:
   }
 
 public:
-  bool contains(const id& i) const noexcept {
+  bool contains(const slotid& i) const noexcept {
     return i.index < _slots.size() && _slots[i.index].generation == i.generation;
   }
 
-  T* get(const id& i) noexcept { return _get({i.index, i.generation}); }
-  const T* get(const id& i) const noexcept { return _get({i.index, i.generation}); }
+  T* get(const slotid& i) noexcept {
+    if (i.index >= _slots.size()) return nullptr;
+    auto& s = _slots[i.index];
+    return s.generation == i.generation ? s.pointer.get() : nullptr;
+  }
 
-  void erase(const id& i) {
+  const T* get(const slotid& i) const noexcept {
+    if (i.index >= _slots.size()) return nullptr;
+    auto& s = _slots[i.index];
+    return s.generation == i.generation ? s.pointer.get() : nullptr;
+  }
+
+  void erase(const slotid& i) {
     if (i.index >= _slots.size()) return;
     if (auto& s = _slots[i.index]; s.generation == i.generation) {
       s.pointer.reset();
@@ -122,7 +119,7 @@ public:
     _free_head = uint32_t(-1);
   }
 
-  void set_order(const id& i, size_t pos) {
+  void set_order(const slotid& i, size_t pos) {
     if (i.index >= _slots.size()) return;
     if (auto& s = _slots[i.index]; s.generation != i.generation) return;
     if (auto it = std::ranges::find(_list, _id{i.index, i.generation}); it != _list.end()) {
@@ -131,7 +128,7 @@ public:
     }
   }
 
-  void bring_to_first(const id& i) {
+  void bring_to_first(const slotid& i) {
     if (i.index >= _slots.size()) return;
     if (auto& s = _slots[i.index]; s.generation != i.generation) return;
     if (auto it = std::ranges::find(_list, _id{i.index, i.generation}); it != _list.end()) {
@@ -140,7 +137,7 @@ public:
     }
   }
 
-  void bring_to_last(const id& i) {
+  void bring_to_last(const slotid& i) {
     if (i.index >= _slots.size()) return;
     if (auto& s = _slots[i.index]; s.generation != i.generation) return;
     if (auto it = std::ranges::find(_list, _id{i.index, i.generation}); it != _list.end()) {
@@ -253,7 +250,7 @@ public:
   auto end() const noexcept { return const_iterator(this, _list.size()); }
   auto size() const noexcept { return _list.size(); }
   auto empty() const noexcept { return _list.empty(); }
-  auto& operator[](size_t i) noexcept { return *get(_list[i]); }
-  auto& operator[](size_t i) const noexcept { return *get(_list[i]); }
+  auto& operator[](size_t i) { return *get(_list[i]); }
+  const auto& operator[](size_t i) const { return *get(_list[i]); }
 };
 } // namespace yw

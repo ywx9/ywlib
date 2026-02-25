@@ -111,6 +111,17 @@ template<typename T> concept is_class = std::is_class_v<T>;
 template<typename T> concept is_union = std::is_union_v<T>;
 template<typename T> concept is_object = std::is_object_v<T>;
 
+namespace _ { // clang-format off
+template<typename T> struct _member_traits { using class_type = void; using member_type = void; };
+template<typename C, typename M> struct _member_traits<M C::*> { using class_type = C; using member_type = M; };
+} // clang-format on
+
+template<typename T> using member_type = _::_member_traits<remove_cvref<T>>::member_type;
+template<typename T> using class_type = _::_member_traits<remove_cvref<T>>::class_type;
+template<typename T> concept is_member_object_pointer = std::is_member_object_pointer_v<T>;
+template<typename T> concept is_member_function_pointer = std::is_member_function_pointer_v<T>;
+template<typename T> concept is_member_pointer = is_member_object_pointer<T> || is_member_function_pointer<T>;
+
 template<typename T, typename... As> concept constructible = std::is_constructible_v<T, As...>;
 
 namespace _ {
