@@ -46,6 +46,34 @@ inline std::unexpected<error_trace> unexpected_win32_error(const char* msg, cons
   return unexpected_error(errors::operation_failed, msg, int32_t(::GetLastError()), {}, src);
 }
 
+//////////////////////////////////////// MARK: wclass
+
+inline class {
+  bool _initialized{};
+  HINSTANCE _hinstance{};
+  std::wstring _name{};
+
+public:
+  static LRESULT __stdcall proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+
+  std::expected<void, error_trace> initialize() {
+    if (_initialized) return {};
+    _hinstance = ::GetModuleHandleW(nullptr);
+    _name = L"ywlib_window_class";
+    WNDCLASSW wc{};
+    wc.lpfnWndProc = proc;
+    wc.hInstance = _hinstance;
+    wc.hCursor = ::LoadCursorW(nullptr, IDC_ARROW);
+    wc.lpszClassName = _name.data();
+    if (!::RegisterClassW(&wc)) return unexpected_win32_error("RegisterClassW failed");
+    _initialized = true;
+    return {};
+  }
+
+  HINSTANCE hinstance() const noexcept { return _hinstance; }
+  const std::wstring& name() const noexcept { return _name; }
+} wclass;
+
 //////////////////////////////////////// MARK: comptr
 
 template<typename Com> class comptr {

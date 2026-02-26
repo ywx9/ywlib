@@ -18,23 +18,6 @@ static_assert(sizeof(slotid) == 2 * sizeof(uint32_t));
 
 template<typename T, typename Del = std::default_delete<T>> class slotlist {
 public:
-  struct id : public slotid {
-    constexpr ~id() noexcept = default;
-    constexpr id() noexcept = default;
-    constexpr id(const id&) = default;
-    constexpr id& operator=(const id&) = default;
-
-    constexpr id(uint32_t index, uint32_t generation) noexcept : slotid{index, generation} {}
-    constexpr id(id&& i) noexcept : slotid(std::exchange(i.index, 0), std::exchange(i.generation, 0)) {}
-    constexpr id& operator=(id&& i) noexcept {
-      slotid::index = std::exchange(i.index, 0);
-      slotid::generation = std::exchange(i.generation, 0);
-      return *this;
-    }
-
-    using slotlist::id::operator bool;
-  };
-
   struct slot {
     std::unique_ptr<T, Del> pointer{};
     uint32_t generation = 1, next_free = uint32_t(-1);
@@ -45,37 +28,37 @@ private:
   std::vector<slotid> _list;
   uint32_t _free_head = uint32_t(-1);
 
-  id _push(std::unique_ptr<T, Del> p) {
+  slotid _push(std::unique_ptr<T, Del> p) {
     if (_free_head != uint32_t(-1)) {
       const auto i = _free_head;
       auto& s = _slots[i];
       _free_head = s.next_free;
       s.pointer = std::move(p);
       s.next_free = uint32_t(-1);
-      return id(i, s.generation);
+      return slotid{i, s.generation};
     } else {
       const auto i = uint32_t(_slots.size());
       _slots.push_back(slot{std::move(p), 1, uint32_t(-1)});
-      return id(i, 1);
+      return slotid{i, 1};
     }
   }
 
   void _erase(uint32_t index) {
     const auto p = _list.data();
     const auto n = _list.size();
-    if (index == 0) std::memmove(p, p + 1, (n - 1) * sizeof(_id));
-    else if (index < n - 1) std::memmove(p + index, p + index + 1, (n - index - 1) * sizeof(_id));
+    if (index == 0) std::memmove(p, p + 1, (n - 1) * sizeof(slotid));
+    else if (index < n - 1) std::memmove(p + index, p + index + 1, (n - index - 1) * sizeof(slotid));
     _list.pop_back();
   }
 
   void _insert(size_t from, size_t to) {
     const auto p = _list.data();
     if (from < to) {
-      std::memmove(p + from, p + from + 1, (to - from) * sizeof(_id));
-      std::memcpy(p + to, p + from, sizeof(_id));
+      std::memmove(p + from, p + from + 1, (to - from) * sizeof(slotid));
+      std::memcpy(p + to, p + from, sizeof(slotid));
     } else if (from > to) {
-      std::memmove(p + to + 1, p + to, (from - to) * sizeof(_id));
-      std::memcpy(p + to, p + from + 1, sizeof(_id));
+      std::memmove(p + to + 1, p + to, (from - to) * sizeof(slotid));
+      std::memcpy(p + to, p + from + 1, sizeof(slotid));
     }
   }
 
@@ -107,7 +90,7 @@ public:
     }
   }
 
-  id push(std::unique_ptr<T, Del> p) {
+  slotid push(std::unique_ptr<T, Del> p) {
     auto i = _push(std::move(p));
     _list.emplace_back(i.index, i.generation);
     return i;
@@ -122,7 +105,7 @@ public:
   void set_order(const slotid& i, size_t pos) {
     if (i.index >= _slots.size()) return;
     if (auto& s = _slots[i.index]; s.generation != i.generation) return;
-    if (auto it = std::ranges::find(_list, _id{i.index, i.generation}); it != _list.end()) {
+    if (auto it = std::ranges::find(_list, i); it != _list.end()) {
       size_t from = size_t(it - _list.begin());
       if (from != pos) _insert(from, pos);
     }
@@ -131,7 +114,7 @@ public:
   void bring_to_first(const slotid& i) {
     if (i.index >= _slots.size()) return;
     if (auto& s = _slots[i.index]; s.generation != i.generation) return;
-    if (auto it = std::ranges::find(_list, _id{i.index, i.generation}); it != _list.end()) {
+    if (auto it = std::ranges::find(_list, i); it != _list.end()) {
       size_t from = size_t(it - _list.begin());
       if (from != 0) _insert(from, 0);
     }
@@ -140,7 +123,7 @@ public:
   void bring_to_last(const slotid& i) {
     if (i.index >= _slots.size()) return;
     if (auto& s = _slots[i.index]; s.generation != i.generation) return;
-    if (auto it = std::ranges::find(_list, _id{i.index, i.generation}); it != _list.end()) {
+    if (auto it = std::ranges::find(_list, i); it != _list.end()) {
       size_t from = size_t(it - _list.begin());
       if (from != _list.size() - 1) _insert(from, _list.size() - 1);
     }
@@ -252,5 +235,21 @@ public:
   auto empty() const noexcept { return _list.empty(); }
   auto& operator[](size_t i) { return *get(_list[i]); }
   const auto& operator[](size_t i) const { return *get(_list[i]); }
+
+  iterator find(const slotid& i) noexcept {
+    if (i.index >= _slots.size()) return end();
+    if (_slots[i.index].generation != i.generation) return end();
+    for (size_t j = 0; j < _list.size(); ++j)
+      if (_list[j] == i) return iterator(this, j);
+    return end();
+  }
+
+  const_iterator find(const slotid& i) const noexcept {
+    if (i.index >= _slots.size()) return end();
+    if (_slots[i.index].generation != i.generation) return end();
+    for (size_t j = 0; j < _list.size(); ++j)
+      if (_list[j] == i) return const_iterator(this, j);
+    return end();
+  }
 };
 } // namespace yw
