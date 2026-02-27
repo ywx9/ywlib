@@ -4,14 +4,15 @@
 namespace yw {
 
 class part {
+  slotid _id{};
   part(const part&) = delete;
   part& operator=(const part&) = delete;
 public:
   class slot {
   public:
     slotid id{}, owner{};
-    float2 pos{}, size{};
-    color background_color = colors::white;
+    float2 size{};
+    color bg_color = colors::white;
     bool visible = true;
 
     virtual bool focusable() const noexcept { return false; }
@@ -22,63 +23,46 @@ public:
   virtual ~part() noexcept = default;
   part() noexcept = default;
 
-  part(part&& p) noexcept : id(std::exchange(p.id, {})) {}
-  part& operator=(part&& p) noexcept { return id = std::exchange(p.id, {}), *this; }
+  part(part&& p) noexcept : _id(std::exchange(p._id, {})) {}
+  part& operator=(part&& p) noexcept { return _id = std::exchange(p._id, {}), *this; }
 
+  const slotid& id() const noexcept { return _id; }
+  const auto& size() const { return get_member(&slot::size); }
+  const auto& bg_color() const { return get_member(&slot::bg_color); }
+  const auto& visible() const { return get_member(&slot::visible); }
 
 protected:
-  slotid id{};
-  part(slotid id) noexcept : id(id) {}
-  slot* _slot() const noexcept;
+  part(slotid id) noexcept : _id(id) {}
+  slot* get_slot() const noexcept;
 
-  template<typename Mp> const auto& _get(Mp mp) const {
-    if (const auto s = dynamic_cast<class_type<Mp>*>(_slot())) return s->*mp;
+  template<typename Mp> const auto& get_member(Mp mp) const {
+    if (const auto s = dynamic_cast<class_type<Mp>*>(get_slot())) return s->*mp;
     else throw std::runtime_error("unaccessible part");
   }
 
-  template<typename Mp, typename T> void _set(Mp mp, T&& value) const noexcept {
-    if (auto s = dynamic_cast<class_type<Mp>*>(_slot())) s->*mp = std::forward<T>(value);
+  template<typename Mp, typename T> void set_member(Mp mp, T&& value) const noexcept {
+    if (auto s = dynamic_cast<class_type<Mp>*>(get_slot())) s->*mp = std::forward<T>(value);
   }
 
-  template<typename P> static std::expected<P, error_trace> add(const slotid& Owner, float2 Pos, float2 Size);
+  template<typename P> static std::expected<P, error_trace> add(const slotid& Owner, float2 Size);
 };
 
 namespace system {
 slotlist<part::slot> parts;
 }
 
-inline part::slot* part::_slot() const noexcept {
-  if (const auto s = system::parts.get(id)) return s;
+inline part::slot* part::get_slot() const noexcept {
+  if (const auto s = system::parts.get(_id)) return s;
   else return nullptr;
 }
 
-template<typename P> std::expected<P, error_trace> part::add(const slotid& Owner, float2 Pos, float2 Size) {
-  auto s = std::make_unique<typename P::slot>(Owner, Pos, Size);
+template<typename P> std::expected<tuple<typename P::slot*, P>, error_trace> part::add(const slotid& Owner, float2 Size) {
+  auto s = std::make_unique<typename P::slot>();
+  s->owner = Owner;
+  s->size = Size;
   const auto id = system::parts.push(std::move(s));
   if (auto ps = system::parts.get(id)) {
     return P(ps->id = id);
   } else return unexpected_error(errors::operation_failed, "failed to add part");
 }
-
-class window : public part {
-public:
-  enum class style : uint32_t {
-    unknown,
-    regular = WS_OVERLAPPEDWINDOW,
-    fixed = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-    borderless = WS_POPUP
-  };
-
-  class slot : public part::slot {
-  public:
-    HWND hwnd{};
-    int4 margin{};
-    window::style style{};
-    bitmap rendertarget{};
-    comptr<IDXGISwapChain1> swapchain{};
-    stopwatch timer{};
-    slotlist<part::slot> parts;
-    slotid hovered_part{}, focused_part{};
-  };
-};
 }

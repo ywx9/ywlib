@@ -1,3 +1,124 @@
+#pragma once
+#include "ywx/part.h"
+
+namespace yw {
+
+class window : public part {
+public:
+  enum class style : uint32_t {
+    unknown,
+    regular = WS_OVERLAPPEDWINDOW,
+    fixed = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+    borderless = WS_POPUP
+  };
+
+  class slot : public part::slot {
+  public:
+    HWND hwnd{};
+    int2 pos{};
+    int4 margin{};
+    window::style style{};
+    std::wstring title{};
+    bitmap rendertarget{};
+    comptr<IDXGISwapChain1> swapchain{};
+    stopwatch timer{};
+    slotlist<part::slot> parts{};
+    slotid hovered_part{}, focused_part{};
+    bool enabled = true;
+    mutable bool dirty = true;
+  };
+
+  class master;
+  class slave;
+
+  template<stringable S> static std::expected<master, error_trace> open(int2, int2, S&&, style, bool);
+  template<stringable S> static std::expected<master, error_trace> open(int2, S&&, style, bool);
+
+  const auto& hwnd() const { return get_member(&slot::hwnd); }
+  const auto& pos() const { return get_member(&slot::pos); }
+  const auto& margin() const { return get_member(&slot::margin); }
+  const auto& title() const { return get_member(&slot::title); }
+  const auto& rendertarget() const { return get_member(&slot::rendertarget); }
+  const auto& timer() const { return get_member(&slot::timer); }
+  const auto& hovered_part() const { return get_member(&slot::hovered_part); }
+  const auto& focused_part() const { return get_member(&slot::focused_part); }
+  const auto& enabled() const { return get_member(&slot::enabled); }
+  const auto& dirty() const { return get_member(&slot::dirty); }
+
+  void size(int2 s) { ::SetWindowPos(hwnd(), nullptr, 0, 0, s.x, s.y, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE); }
+  void pos(int2 p) {
+    set_member(&slot::pos, p);
+    ::SetWindowPos(hwnd(), nullptr, p.x, p.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+  }
+  template<stringable S> void title(S&& s) { set_member(&slot::title, unicode<wchar_t>(static_cast<S&&>(s))); }
+
+protected:
+  using part::part;
+
+  slot* get_slot() const noexcept { return dynamic_cast<slot*>(part::get_slot()); }
+
+  std::expected<void, error_trace> _create(slot* ws, bool centering, bool show) {
+    if (auto res = wclass.initialize(); !res) return unexpected_error(res.error());
+    switch (ws->style) {
+    case style::regular:
+    case style::fixed:
+    case style::borderless: break;
+    default: return unexpected_error(errors::invalid_argument, "invalid window style");
+    }
+    ws->hwnd = CreateWindowExW(WS_EX_ACCEPTFILES, wclass.name().data(), ws->title.data(), DWORD(ws->style), 0, 0, 0, 0,
+      nullptr, nullptr, wclass.hinstance(), nullptr);
+    if (!ws->hwnd) return unexpected_win32_error("CreateWindowExW failed");
+    ::SetWindowLongPtrW(ws->hwnd, GWLP_USERDATA, std::bit_cast<LONG_PTR>(id()));
+    RECT cr{}, wr{};
+    if (!::GetClientRect(ws->hwnd, &cr)) return unexpected_win32_error("GetClientRect failed");
+    if (!::GetWindowRect(ws->hwnd, &wr)) return unexpected_win32_error("GetWindowRect failed");
+    const auto left = (wr.right - wr.left - cr.right) / 2;
+    const auto top = wr.bottom - wr.top - cr.bottom - left;
+    ws->margin = {left, top, left * 2, left + top};
+    if (centering) {
+      if (!::GetClientRect(::GetDesktopWindow(), &cr)) return unexpected_win32_error("GetClientRect failed");
+      ws->pos = {(cr.right - ws->size.x - ws->margin.z) / 2, (cr.bottom - ws->size.y - ws->margin.w) / 2};
+    }
+    if (!::SetWindowPos(ws->hwnd, nullptr, LONG(ws->pos.x), LONG(ws->pos.y), LONG(ws->size.x + ws->margin.z),
+          LONG(ws->size.y + ws->margin.w), SWP_NOZORDER | SWP_NOACTIVATE))
+      return unexpected_win32_error("SetWindowPos failed");
+    if (show) ::ShowWindow(ws->hwnd, SW_SHOW), ::SetForegroundWindow(ws->hwnd), ::SetActiveWindow(ws->hwnd);
+    return {};
+  }
+};
+
+//////////////////////////////////////// MARK: window::slave
+
+class window::slave : public window {
+protected:
+  using window::window;
+
+public:
+
+};
+
+//////////////////////////////////////// MARK: window::master
+
+class window::master : public window {
+protected:
+  using window::window;
+
+public:
+  template<stringable S> std::expected<slave, error_trace> open_subwindow(
+    int2 LocalPos, int2 Size, S&& Title, window::style Style = style::unknown, bool Show = true) {
+    if (auto res = add<slave>(id(), Size)) {
+      auto& sw = res.value();
+      const auto ss = sw.get_slot();
+      if (!ss) return unexpected_error(errors::operation_failed, "failed to add subwindow slot");
+      ss->title = unicode<wchar_t>(static_cast<S&&>(Title));
+      ss->style = Style;
+
+    } else return unexpected_error(res.error());
+  }
+};
+
+} // namespace yw
+
 // #pragma once
 // #include "ywx/bitmap.h"
 
@@ -273,8 +394,8 @@
 //     case window::style::borderless: break;
 //     default: return unexpected_error(errors::invalid_argument, "invalid window style");
 //     }
-//     hwnd = ::CreateWindowExW(WS_EX_ACCEPTFILES, system.name.data(), t, DWORD(s), 0, 0, 0, 0, 0, 0, system.hinstance, 0);
-//     if (!hwnd) return unexpected_win32_error("CreateWindowExW failed");
+//     hwnd = ::CreateWindowExW(WS_EX_ACCEPTFILES, system.name.data(), t, DWORD(s), 0, 0, 0, 0, 0, 0, system.hinstance,
+//     0); if (!hwnd) return unexpected_win32_error("CreateWindowExW failed");
 //     ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 //     RECT cr{}, wr{};
 //     if (!::GetClientRect(hwnd, &cr)) return unexpected_win32_error("GetClientRect failed");
@@ -305,8 +426,9 @@
 //       if (auto res = dxgi.initialize(); !res) return unexpected_error(res.error());
 //       auto desc = DXGI_SWAP_CHAIN_DESC1(size.x, size.y, bitmap::dxgiformat, false, DXGI_SAMPLE_DESC(1, 0), {}, 2);
 //       desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT, desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-//       auto hr = dxgi.factory()->CreateSwapChainForHwnd(d3d.device(), hwnd, &desc, nullptr, nullptr, &swapchain.get());
-//       if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSwapChainForHwnd failed", int32_t(hr));
+//       auto hr = dxgi.factory()->CreateSwapChainForHwnd(d3d.device(), hwnd, &desc, nullptr, nullptr,
+//       &swapchain.get()); if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSwapChainForHwnd
+//       failed", int32_t(hr));
 //     }
 //     if (auto res = bitmap::create(swapchain.get())) rendertarget = std::move(*res);
 //     else return unexpected_error(res.error());
@@ -554,15 +676,17 @@
 //   if (const auto hit = ws.hit_test(local_pos); !hit) {
 //     if (ws.hovered_control)
 //       if (auto hovered_cs = ws.controls.get(ws.hovered_control))
-//         if (hovered_cs->on_hover) hovered_cs->on_hover({new_pos, local_pos, delta, hover_event::type::leave, ctrl, shift, alt});
+//         if (hovered_cs->on_hover) hovered_cs->on_hover({new_pos, local_pos, delta, hover_event::type::leave, ctrl,
+//         shift, alt});
 //   }
 
 //   if (hit) {
-//     if (hit->id.control == ws.hovered_control) hit->hover({new_pos, local_pos, delta, hover_event::type::move, ctrl, shift, alt});
-//     else {
+//     if (hit->id.control == ws.hovered_control) hit->hover({new_pos, local_pos, delta, hover_event::type::move, ctrl,
+//     shift, alt}); else {
 //       if (ws.hovered_control)
 //         if (auto hovered_cs = ws.controls.get(ws.hovered_control))
-//           if (hovered_cs->on_hover) hovered_cs->on_hover({new_pos, local_pos, delta, hover_event::type::leave, ctrl, shift, alt});
+//           if (hovered_cs->on_hover) hovered_cs->on_hover({new_pos, local_pos, delta, hover_event::type::leave, ctrl,
+//           shift, alt});
 //       ws.hovered_control = hit->id.control;
 //       hit->hover({new_pos, local_pos, delta, hover_event::type::enter, ctrl, shift, alt});
 //     }
@@ -637,9 +761,8 @@
 // //////////////////////////////////////// MARK: implementation
 
 // inline std::expected<window::master, error_trace> decltype(window::open)::operator()(
-//   int2 Pos, int2 Size, null_terminated<wchar_t> Title, window::style Style = window::style::regular, bool show = true) {
-//   if (auto res = window::system.initialize(); !res) return unexpected_error(res.error());
-//   switch (Style) {
+//   int2 Pos, int2 Size, null_terminated<wchar_t> Title, window::style Style = window::style::regular, bool show =
+//   true) { if (auto res = window::system.initialize(); !res) return unexpected_error(res.error()); switch (Style) {
 //   case window::style::regular:
 //   case window::style::fixed:
 //   case window::style::borderless: break;
@@ -669,16 +792,11 @@
 // }
 
 // inline std::expected<window::slave, error_trace> decltype(window::open)::subwindow(
-//   master& Window, int2 Pos, int2 Size, null_terminated<wchar_t> Title, style Style = style::unknown, bool Show = true) {
-//   const auto mid = Window._id.master;
-//   const auto ms = window::system.windows.get(mid);
-//   if (!ms) return unexpected_error(errors::invalid_argument, "invalid master window");
-//   switch (Style) {
-//   case window::style::unknown: Style = ms->style; break;
-//   case window::style::regular:
-//   case window::style::fixed:
-//   case window::style::borderless: break;
-//   default: return unexpected_error(errors::invalid_argument, "invalid window style");
+//   master& Window, int2 Pos, int2 Size, null_terminated<wchar_t> Title, style Style = style::unknown, bool Show =
+//   true) { const auto mid = Window._id.master; const auto ms = window::system.windows.get(mid); if (!ms) return
+//   unexpected_error(errors::invalid_argument, "invalid master window"); switch (Style) { case window::style::unknown:
+//   Style = ms->style; break; case window::style::regular: case window::style::fixed: case window::style::borderless:
+//   break; default: return unexpected_error(errors::invalid_argument, "invalid window style");
 //   }
 //   auto ss = std::make_unique<window::slot>();
 //   if (auto res = ss->_create_window(Title.data(), Style); !res) return unexpected_error(res.error());
@@ -686,7 +804,6 @@
 //   const auto sid = ms->slaves.push(std::move(ss));
 //   return window::slave({mid, sid}, Show);
 // }
-
 
 // inline window::slot* control::base::_window() const noexcept {
 //   if (const auto ms = window::system.windows.get(_id.master); !ms) return nullptr;

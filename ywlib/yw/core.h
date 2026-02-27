@@ -122,8 +122,24 @@ template<typename T> concept is_member_object_pointer = std::is_member_object_po
 template<typename T> concept is_member_function_pointer = std::is_member_function_pointer_v<T>;
 template<typename T> concept is_member_pointer = is_member_object_pointer<T> || is_member_function_pointer<T>;
 
-template<typename T, typename... As> concept constructible = std::is_constructible_v<T, As...>;
+//////////////////////////////////////// MARK: construct
 
+template<typename T, typename... As> concept constructible = std::is_constructible_v<T, As...>;
+template<typename T, typename... As> concept nt_constructible =
+  constructible<T, As...> && std::is_nothrow_constructible_v<T, As...>;
+template<typename T>
+inline constexpr auto construct = []<typename... As>(As&&... as) noexcept(nt_constructible<T, As...>) -> T
+  requires constructible<T, As...> { return T{static_cast<As&&>(as)...}; };
+
+//////////////////////////////////////// MARK: assign
+
+template<typename T, typename U> concept assignable = std::is_assignable_v<T, U>;
+template<typename T, typename U> concept nt_assignable = assignable<T, U> && std::is_nothrow_assignable_v<T, U>;
+inline constexpr auto assign = []<typename T, typename U>(T&& t, U&& u) noexcept(nt_assignable<T, U>) -> void requires assignable<T, U> {
+  static_cast<T&&>(t) = static_cast<U&&>(u);
+};
+
+//////////////////////////////////////// MARK: specialization and variation
 namespace _ {
 template<typename T, template<typename...> typename Tm> inline constexpr bool _specialization_of{0};
 template<template<typename...> typename Tm, typename... Ts> inline constexpr bool _specialization_of<Tm<Ts...>, Tm>{1};
