@@ -479,5 +479,4 @@ public:
   static bool d3d_drawing() { return _rendertarget.index() == 2; }
   static bool not_drawing() { return _rendertarget.index() == 0; }
 };
-
 } // namespace yw

@@ -72,7 +72,7 @@ template<auto... Vs> struct sequence {
   template<size_t I, is_sequence Sq> requires(I <= sizeof...(Vs))
   using insert = typename fore<I>::template append<Sq>::template append<back<sizeof...(Vs) - I>>;
   template<template<auto...> typename Tm> using expand = Tm<Vs...>;
-  template<size_t I> requires(I < sizeof...(Vs)) constexpr const auto&& get() const noexcept { return mv(at<I>); }
+  template<size_t I> requires(I < sizeof...(Vs)) constexpr const auto&& get() const noexcept { return std::move(at<I>); }
 };
 
 //////////////////////////////////////// MARK: typepack
@@ -127,10 +127,10 @@ inline constexpr struct {
   }
 } apply;
 
-template<typename F, typename Tp> concept applyable = requires { apply(declval<F>(), declval<Tp>()); };
+template<typename F, typename Tp> concept applyable = requires { apply(std::declval<F>(), std::declval<Tp>()); };
 template<typename F, typename Tp> concept nt_applyable =
-  applyable<F, Tp> && noexcept(apply(declval<F>(), declval<Tp>()));
-template<typename F, typename Tp> using apply_result = decltype(apply(declval<F>(), declval<Tp>()));
+  applyable<F, Tp> && noexcept(apply(std::declval<F>(), std::declval<Tp>()));
+template<typename F, typename Tp> using apply_result = decltype(apply(std::declval<F>(), std::declval<Tp>()));
 
 //////////////////////////////////////// MARK: build
 
@@ -157,23 +157,23 @@ inline constexpr struct {
   }
   template<typename F, typename T, typename... Ts> requires((extent<T> == extent<Ts>) && ...)
   static constexpr void operator()(F&& f, T&& t, Ts&&... ts) noexcept(
-    noexcept(internal::operator()<0, extent<T>>(f, declval<T&&>(), declval<Ts&&>()...)))
-    requires requires { internal::operator()<0, extent<T>>(f, declval<T&&>(), declval<Ts&&>()...); } {
+    noexcept(internal::operator()<0, extent<T>>(f, std::declval<T&&>(), std::declval<Ts&&>()...)))
+    requires requires { internal::operator()<0, extent<T>>(f, std::declval<T&&>(), std::declval<Ts&&>()...); } {
     internal::operator()<0, extent<T>>(f, static_cast<T&&>(t), static_cast<Ts&&>(ts)...);
   }
 } vapply;
 
-template<typename F, typename... Ts> concept vapplyable = requires { vapply(declval<F>(), declval<Ts>()...); };
+template<typename F, typename... Ts> concept vapplyable =
+  requires { vapply(std::declval<F>(), std::declval<Ts>()...); };
 template<typename F, typename... Ts> concept nt_vapplyable =
-  vapplyable<F, Ts...> && noexcept(vapply(declval<F>(), declval<Ts>()...));
+  vapplyable<F, Ts...> && noexcept(vapply(std::declval<F>(), std::declval<Ts>()...));
 
 //////////////////////////////////////// MARK: vassign
 
 template<typename T, typename U> concept vassignable = vapplyable<decltype(assign), T, U>;
 template<typename T, typename U> concept nt_vassignable = nt_vapplyable<decltype(assign), T, U>;
-template<typename T, typename U> inline constexpr auto vassign = []<typename... Ts>(T&& t, U&& u) noexcept(nt_vassignable<T, U>) -> void requires vassignable<T, U> {
-  vapply(assign, static_cast<T&&>(t), static_cast<U&&>(u));
-};
+inline constexpr auto vassign = []<typename T, typename U>(T&& t, U&& u) noexcept(nt_vassignable<T, U>) -> void
+  requires vassignable<T, U> { vapply(assign, static_cast<T&&>(t), static_cast<U&&>(u)); };
 
 //////////////////////////////////////// MARK: tuple
 
@@ -186,11 +186,11 @@ template<typename U, typename V> struct _tuple_from_typepack<typepack<>, U, V> :
 template<typename... Ts, typename U, template<typename...> typename Tm, typename... Vs>
 struct _tuple_from_typepack<typepack<Ts...>, U, Tm<Vs...>> : std::type_identity<tuple<copy_cvref<U, Tm<Ts>>...>> {};
 template<typename... Ts, typename U, template<typename, auto...> typename Tm, typename V, auto... Vs>
-struct _tuple_from_typepack<typepack<Ts...>, U, Tm<V, Vs...>> :
-  std::type_identity<tuple<copy_cvref<U, Tm<Ts, Vs...>>...>> {};
-template<typename... Ts, typename U, typename V> struct _tuple_from_typepack<typepack<Ts...>, U, V> :
-  std::type_identity<tuple<copy_cvref<U, Ts>...>> {};
-}
+struct _tuple_from_typepack<typepack<Ts...>, U, Tm<V, Vs...>>
+  : std::type_identity<tuple<copy_cvref<U, Tm<Ts, Vs...>>...>> {};
+template<typename... Ts, typename U, typename V> struct _tuple_from_typepack<typepack<Ts...>, U, V>
+  : std::type_identity<tuple<copy_cvref<U, Ts>...>> {};
+} // namespace _
 
 template<typename... Ts> struct tuple : tuple_base<Ts...> {
   static constexpr size_t count{sizeof...(Ts)};
@@ -231,7 +231,7 @@ template<typename T1, typename T2, typename T3> struct tuple<T1, T2, T3> : tuple
   using tuple<T1, T2>::first;
   using tuple<T1, T2>::second;
   static constexpr size_t count = 3;
-  using third_type              = T3;
+  using third_type = T3;
   third_type third;
   template<size_t I> requires(I < 3) constexpr auto get() & noexcept -> select_type<I, T1, T2, T3>& {
     return select<I>(first, second, third);
@@ -262,7 +262,7 @@ template<typename T1, typename T2, typename T3> struct tuple<T1, T2, T3> : tuple
 template<typename T1, typename T2> struct tuple<T1, T2> : tuple<T1> {
   using tuple<T1>::first;
   static constexpr size_t count = 2;
-  using second_type             = T2;
+  using second_type = T2;
   second_type second;
   template<size_t I> requires(I < 2) constexpr auto get() & noexcept -> select_type<I, T1, T2>& {
     return select<I>(first, second);
@@ -317,14 +317,23 @@ template<typename T> struct tuple<T> {
 template<> struct tuple<> {
   static constexpr size_t count = 0;
   template<typename... Ts> static constexpr auto asref(Ts&&... Args) noexcept {
-    return tuple<Ts&&...>{fwd<Ts>(Args)...};
+    return tuple<Ts&&...>{static_cast<Ts&&>(Args)...};
   }
-  template<specialization_of<typepack> Tp, typename Qualifier = none>
-  using from_typepack = _::_tuple_from_typepack<Tp, Qualifier, remove_cvref<Qualifier>>::type;
+  template<specialization_of<typepack> Tp, typename Qualifier = none> using from_typepack =
+    _::_tuple_from_typepack<Tp, Qualifier, remove_cvref<Qualifier>>::type;
 };
 
 template<typename... Ts> tuple(Ts...) -> tuple<Ts...>;
 
+//////////////////////////////////////// MARK: tuple_for
+
+template<size_t End, size_t Start = 0> constexpr auto tuple_for(auto&& f) -> decltype(f(constant<size_t(0)>{})) {
+  static_assert(!is_reference<decltype(f(constant<size_t(0)>{}))>);
+  if constexpr (Start < End) {
+    if (auto res = f(constant<Start>{})) return std::move(*res);
+    else return tuple_for<End, Start + 1>(f);
+  } else return std::nullopt;
+};
 } // namespace yw
 
 //////////////////////////////////////// MARK: std

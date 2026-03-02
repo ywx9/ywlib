@@ -3,17 +3,6 @@
 
 namespace yw {
 
-//////////////////////////////////////// MARK: slotid
-
-struct slotid {
-  uint32_t index{}, generation{};
-  constexpr operator bool() const noexcept { return generation != 0; }
-  friend constexpr bool operator==(const slotid& a, const slotid& b) noexcept = default;
-};
-
-static_assert(std::is_trivially_copyable_v<slotid>);
-static_assert(sizeof(slotid) == 2 * sizeof(uint32_t));
-
 //////////////////////////////////////// MARK: slotlist
 
 template<typename T, typename Del = std::default_delete<T>> class slotlist {
@@ -22,6 +11,14 @@ public:
     std::unique_ptr<T, Del> pointer{};
     uint32_t generation = 1, next_free = uint32_t(-1);
   };
+
+  struct slotid {
+    uint32_t index{}, generation{};
+    constexpr operator bool() const noexcept { return generation != 0; }
+    friend constexpr bool operator==(const slotid& a, const slotid& b) noexcept = default;
+  };
+  static_assert(std::is_trivially_copyable_v<slotid>);
+  static_assert(sizeof(slotid) == 2 * sizeof(uint32_t));
 
 private:
   std::vector<slot> _slots;
@@ -52,14 +49,12 @@ private:
   }
 
   void _insert(size_t from, size_t to) {
+    if (from == to) return;
     const auto p = _list.data();
-    if (from < to) {
-      std::memmove(p + from, p + from + 1, (to - from) * sizeof(slotid));
-      std::memcpy(p + to, p + from, sizeof(slotid));
-    } else if (from > to) {
-      std::memmove(p + to + 1, p + to, (from - to) * sizeof(slotid));
-      std::memcpy(p + to, p + from + 1, sizeof(slotid));
-    }
+    const auto f = p[from];
+    if (from < to) std::memmove(p + from, p + from + 1, (to - from) * sizeof(slotid));
+    else std::memmove(p + to + 1, p + to, (from - to) * sizeof(slotid));
+    std::memcpy(p + to, &f, sizeof(slotid));
   }
 
 public:

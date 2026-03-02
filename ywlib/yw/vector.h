@@ -107,11 +107,15 @@ constexpr bool operator==(const vector<T, N>& a, const vector<U, N>& b) {
   return
     [&]<size_t... Is>(sequence<Is...>) -> bool { return ((get<Is>(a) == get<Is>(b)) && ...); }(seq);
 }
-template<typename T, std::three_way_comparable<T> U, size_t N>
-constexpr auto operator<=>(const vector<T, N>& a, const vector<U, N>& b) {
-  constexpr auto seq = make_sequence<0, N>{};
-  return
-    [&]<size_t... Is>(sequence<Is...>) -> auto { return ((get<Is>(a) <=> get<Is>(b)) | ...); }(seq);
+
+template<typename T, std::three_way_comparable_with<T> U, size_t N>
+constexpr std::partial_ordering operator<=>(const vector<T, N>& a, const vector<U, N>& b) {
+  auto res = tuple_for<N>([&]<size_t I>(constant<I>) -> std::optional<std::partial_ordering> {
+    if (auto cmp = get<I>(a) <=> get<I>(b); cmp != 0) return std::optional{cmp};
+    else return std::nullopt;
+  });
+  if (res) return *res;
+  else return std::partial_ordering::equivalent;
 }
 
 template<typename T, size_t N> constexpr vector<T, N> operator+(const vector<T, N>& a) {

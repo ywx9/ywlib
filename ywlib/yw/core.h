@@ -47,6 +47,12 @@ inline constexpr double ln2 = 0.69314718055994530942;
 inline constexpr double ln3 = 1.09861228866810969139;
 inline constexpr double ln5 = 1.60943791243410037460;
 
+template<typename... Ts> inline constexpr bool always_false = false;
+template<bool... Bs> inline constexpr size_t counts = (Bs + ...);
+template<bool... Bs> inline constexpr size_t inspects = false;
+template<bool B, bool... Bs> inline constexpr size_t inspects<B, Bs...> = B ? 0 : 1 + inspects<Bs...>;
+template<typename T, size_t N> constexpr size_t arraysize(const T (&)[N]) noexcept { return N; }
+
 using pass = std::identity;
 using equal = std::ranges::equal_to;
 using not_equal = std::ranges::not_equal_to;
@@ -135,9 +141,8 @@ inline constexpr auto construct = []<typename... As>(As&&... as) noexcept(nt_con
 
 template<typename T, typename U> concept assignable = std::is_assignable_v<T, U>;
 template<typename T, typename U> concept nt_assignable = assignable<T, U> && std::is_nothrow_assignable_v<T, U>;
-inline constexpr auto assign = []<typename T, typename U>(T&& t, U&& u) noexcept(nt_assignable<T, U>) -> void requires assignable<T, U> {
-  static_cast<T&&>(t) = static_cast<U&&>(u);
-};
+inline constexpr auto assign = []<typename T, typename U>(T&& t, U&& u) noexcept(nt_assignable<T, U>) -> void
+  requires assignable<T, U> { static_cast<T&&>(t) = static_cast<U&&>(u); };
 
 //////////////////////////////////////// MARK: specialization and variation
 namespace _ {
@@ -163,6 +168,8 @@ template<auto V, typename T = decltype(V)> requires convertible_to<decltype(V), 
   consteval type operator()() const noexcept { return value; }
 };
 
+//////////////////////////////////////// MARK: select
+
 namespace sys {
 template<size_t I, typename T, typename... Ts> constexpr decltype(auto) _select(T&& a, Ts&&... as) noexcept {
   if constexpr (I == 0) return static_cast<T&&>(a);
@@ -187,6 +194,23 @@ template<std::convertible_to<size_t> auto I, typename... Ts> using select_type =
 /// selects the value of the I-th argument from the given arguments.
 /// \note If I is a bool value, selects the first argument if I is true.
 template<std::convertible_to<size_t> auto I, auto... Vs> constexpr auto select_value = select<I>(Vs...);
+
+//////////////////////////////////////// MARK: add/copy_cvref
+
+template<typename T> using add_lvref = std::add_lvalue_reference_t<T>;
+template<typename T> using add_rvref = std::add_rvalue_reference_t<remove_ref<T>>;
+template<typename T> using add_fwref = std::add_rvalue_reference_t<T>;
+
+template<typename T, typename To> using copy_const = select_type<is_const<T>, const To, remove_const<To>>;
+template<typename T, typename To> using copy_volatile = select_type<is_volatile<T>, volatile To, remove_volatile<To>>;
+template<typename T, typename To> using copy_cv = copy_const<T, copy_volatile<T, To>>;
+template<typename T, typename To> using copy_ref =
+  select_type<inspects<is_lvref<T>, is_rvref<T>>, add_lvref<To>, add_rvref<To>, remove_ref<To>>;
+template<typename T, typename To> using copy_cvref = copy_ref<T, copy_cv<remove_ref<T>, remove_ref<To>>>;
+
+template<typename T> using add_const = copy_ref<T, const remove_ref<T>>;
+template<typename T> using add_volatile = copy_ref<T, volatile remove_ref<T>>;
+template<typename T> using add_cv = copy_ref<T, const volatile remove_ref<T>>;
 
 //////////////////////////////////////// MARK: none
 
@@ -276,16 +300,16 @@ template<std::ranges::range R> using sentinel_t = std::ranges::sentinel_t<R>;
 
 inline constexpr auto begin = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::begin(std::declval<R>())))
                                 requires requires { std::ranges::begin(std::declval<R>()); }
-{ return std::ranges::begin(fwd<R>(r)); };
+{ return std::ranges::begin(static_cast<R&&>(r)); };
 inline constexpr auto end = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::end(std::declval<R>())))
                               requires requires { std::ranges::end(std::declval<R>()); }
-{ return std::ranges::end(fwd<R>(r)); };
+{ return std::ranges::end(static_cast<R&&>(r)); };
 inline constexpr auto size = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::size(std::declval<R>())))
                                requires requires { std::ranges::size(std::declval<R>()); }
-{ return std::ranges::size(fwd<R>(r)); };
+{ return std::ranges::size(static_cast<R&&>(r)); };
 inline constexpr auto data = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::data(std::declval<R>())))
                                requires requires { std::ranges::data(std::declval<R>()); }
-{ return std::ranges::data(fwd<R>(r)); };
+{ return std::ranges::data(static_cast<R&&>(r)); };
 
 namespace sys {
 template<typename T, template<typename> typename> struct iter_type : std::type_identity<void> {};
