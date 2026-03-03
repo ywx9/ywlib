@@ -264,9 +264,11 @@ inline class {
     ::ID2D1DeviceContext* context{};
     ::ID2D1SolidColorBrush* solid_brush{};
     ::ID2D1StrokeStyle* stroke_style{};
+    ::ID2D1StrokeStyle* dashed_stroke_style{};
     bool initialized{};
 
     ~pointers() {
+      if (dashed_stroke_style) dashed_stroke_style->Release();
       if (stroke_style) stroke_style->Release();
       if (solid_brush) solid_brush->Release();
       if (context) context->Release();
@@ -298,11 +300,16 @@ public:
     stroke_style_props.miterLimit = 10.0f;
     hr = p.factory->CreateStrokeStyle(&stroke_style_props, nullptr, 0, &p.stroke_style);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateStrokeStyle failed", int32_t(hr));
+    stroke_style_props.dashStyle = D2D1_DASH_STYLE_DASH;
+    hr = p.factory->CreateStrokeStyle(&stroke_style_props, nullptr, 0, &p.dashed_stroke_style);
+    if (FAILED(hr))
+      return unexpected_error(errors::operation_failed, "CreateStrokeStyle (dashed) failed", int32_t(hr));
     p.initialized = true;
     return {};
   }
 
   void release() {
+    if (p.dashed_stroke_style) std::exchange(p.dashed_stroke_style, nullptr)->Release();
     if (p.stroke_style) std::exchange(p.stroke_style, nullptr)->Release();
     if (p.solid_brush) std::exchange(p.solid_brush, nullptr)->Release();
     if (p.context) std::exchange(p.context, nullptr)->Release();
@@ -316,6 +323,7 @@ public:
   ::ID2D1DeviceContext* context() { return p.context; }
   ::ID2D1SolidColorBrush* solid_brush() { return p.solid_brush; }
   ::ID2D1StrokeStyle* stroke_style() { return p.stroke_style; }
+  ::ID2D1StrokeStyle* dashed_stroke_style() { return p.dashed_stroke_style; }
 } d2d;
 
 //////////////////////////////////////// MARK: dwrite

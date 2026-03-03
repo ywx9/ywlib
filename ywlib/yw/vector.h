@@ -110,12 +110,9 @@ constexpr bool operator==(const vector<T, N>& a, const vector<U, N>& b) {
 
 template<typename T, std::three_way_comparable_with<T> U, size_t N>
 constexpr std::partial_ordering operator<=>(const vector<T, N>& a, const vector<U, N>& b) {
-  auto res = tuple_for<N>([&]<size_t I>(constant<I>) -> std::optional<std::partial_ordering> {
-    if (auto cmp = get<I>(a) <=> get<I>(b); cmp != 0) return std::optional{cmp};
-    else return std::nullopt;
-  });
-  if (res) return *res;
-  else return std::partial_ordering::equivalent;
+  for (size_t i = 0; i < N; ++i)
+    if (auto cmp = a[i] <=> b[i]; cmp != 0) return cmp;
+  return std::partial_ordering::equivalent;
 }
 
 template<typename T, size_t N> constexpr vector<T, N> operator+(const vector<T, N>& a) {

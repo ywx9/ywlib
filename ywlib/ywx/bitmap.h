@@ -75,6 +75,21 @@ public:
     return bitmap(std::move(bmp), size);
   }
 
+  static std::expected<bitmap, error_trace> create(const bitmap& source) {
+    if (!source) return unexpected_error(errors::invalid_argument, "source bitmap not initialized");
+    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
+    const auto size = source.size();
+    comptr<::ID2D1Bitmap1> bmp;
+    auto hr = d2d.context()->CreateBitmap(D2D1_SIZE_U{size.x, size.y}, nullptr, 0, &properties, &bmp.get());
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBitmap failed", int32_t(hr));
+    // Copy pixel data from source to new bitmap
+    D2D1_RECT_U rect{0, 0, size.x, size.y};
+    D2D1_POINT_2U pt{0, 0};
+    hr = bmp->CopyFromBitmap(&pt, source._bitmap.get(), &rect);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CopyFromBitmap failed", int32_t(hr));
+    return bitmap(std::move(bmp), size);
+  }
+
   uint2 size() const noexcept { return _size; }
 
   std::expected<drawing, error_trace> begin_draw(const source& src = {}) {
@@ -149,7 +164,7 @@ inline std::expected<void, error_trace> draw_bitmap(float2 pos, const bitmap& b,
 
 //////////////////////////////////////// MARK: draw line
 
-inline std::expected<void, error_trace> draw_line(float2 p0, float2 p1, const color& c, float1 width = 1.0f) {
+inline std::expected<void, error_trace> draw_line(float2 p0, float2 p1, const color& c = colors::black, float1 width = 1.0f) {
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
   d2d.context()->DrawLine({p0.x, p0.y}, {p1.x, p1.y}, d2d.solid_brush(), width.x, d2d.stroke_style());
@@ -163,15 +178,20 @@ inline std::expected<void, error_trace> draw_line(float2 p0, float2 p1, float1 w
 /////////////////////////////////////// MARK: draw/fill_rectangle
 
 inline std::expected<void, error_trace> draw_rectangle(
-  float2 pos, float2 size, const color& c, float1 border_width = 1.0f) {
+  float2 pos, float2 size, const color& c, float1 border_width, ID2D1StrokeStyle* stroke_style) {
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
   D2D1_RECT_F rect = D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y);
-  d2d.context()->DrawRectangle(&rect, d2d.solid_brush(), border_width.x, d2d.stroke_style());
+  d2d.context()->DrawRectangle(&rect, d2d.solid_brush(), border_width.x, stroke_style);
   return {};
 }
 
-inline std::expected<void, error_trace> draw_rectangle(float2 pos, float2 size, float1 border_width = 1.0f) {
+inline std::expected<void, error_trace> draw_rectangle(
+  float2 pos, float2 size, const color& c = colors::black, float1 border_width = 1.0f) {
+  return draw_rectangle(pos, size, c, border_width, d2d.stroke_style());
+}
+
+inline std::expected<void, error_trace> draw_rectangle(float2 pos, float2 size, float1 border_width) {
   return draw_rectangle(pos, size, colors::black, border_width);
 }
 
@@ -188,16 +208,21 @@ inline std::expected<void, error_trace> fill_rectangle(float2 pos, float2 size, 
 //////////////////////////////////// MARK: draw/fill_round_rectangle
 
 inline std::expected<void, error_trace> draw_round_rectangle(
-  float2 pos, float2 size, float2 radius, const color& c, float1 border_width = 1.0f) {
+  float2 pos, float2 size, float2 radius, const color& c, float1 border_width, ID2D1StrokeStyle* stroke_style) {
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
   D2D1_ROUNDED_RECT r{D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
-  d2d.context()->DrawRoundedRectangle(&r, d2d.solid_brush(), border_width.x, d2d.stroke_style());
+  d2d.context()->DrawRoundedRectangle(&r, d2d.solid_brush(), border_width.x, stroke_style);
   return {};
 }
 
 inline std::expected<void, error_trace> draw_round_rectangle(
-  float2 pos, float2 size, float2 radius, float1 border_width = 1.0f) {
+  float2 pos, float2 size, float2 radius, const color& c = colors::black, float1 border_width = 1.0f) {
+  return draw_round_rectangle(pos, size, radius, c, border_width, d2d.stroke_style());
+}
+
+inline std::expected<void, error_trace> draw_round_rectangle(
+  float2 pos, float2 size, float2 radius, float1 border_width) {
   return draw_round_rectangle(pos, size, radius, colors::black, border_width);
 }
 
@@ -213,7 +238,7 @@ inline std::expected<void, error_trace> fill_round_rectangle(
 //////////////////////////////////////// MARK: draw/fill_ellipse
 
 inline std::expected<void, error_trace> draw_ellipse(
-  float2 center, float2 radius, const color& c, float1 border_width = 1.0f) {
+  float2 center, float2 radius, const color& c = colors::black, float1 border_width = 1.0f) {
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
   D2D1_ELLIPSE ellipse = D2D1::Ellipse({center.x, center.y}, radius.x, radius.y);
@@ -221,7 +246,7 @@ inline std::expected<void, error_trace> draw_ellipse(
   return {};
 }
 
-inline std::expected<void, error_trace> draw_ellipse(float2 center, float2 radius, float1 border_width = 1.0f) {
+inline std::expected<void, error_trace> draw_ellipse(float2 center, float2 radius, float1 border_width) {
   return draw_ellipse(center, radius, colors::black, border_width);
 }
 

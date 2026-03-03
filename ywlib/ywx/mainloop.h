@@ -12,7 +12,7 @@ public:
 private:
   uint64_t _frame_count = 0;
   state _state = state::running;
-  bool _updating = false;
+  bool _updating = true;
   stopwatch _timer;
 
 public:
@@ -31,7 +31,8 @@ public:
   /// runs the mainloop
   bool operator()() {
     if (_updating) {
-      for (auto& w_slot : system::windows) w_slot.draw();
+      for (const auto& w_id : system::main_windows)
+        if (const auto w_slot_p = system::windows.get(w_id)) w_slot_p->draw();
       _timer.restart();
     }
     ++_frame_count;
@@ -55,9 +56,20 @@ public:
 //////////////////////////////////////// MARK: wclass::proc
 
 inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-  const auto w_slot_id = std::bit_cast<typename slotlist<window_slot>::slotid>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+  const auto w_slot_id = std::bit_cast<typename slotset<window_slot>::slotid>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
   auto w_slot_p = system::windows.get(w_slot_id);
   if (!w_slot_p) return ::DefWindowProcW(hwnd, msg, wp, lp);
+  const auto change_focus = [&](decltype(w_slot_p->focused_ui) new_id) {
+    if (w_slot_p->focused_ui == new_id) return;
+    if (w_slot_p->focused_ui)
+      if (const auto s = system::uis.get(w_slot_p->focused_ui))
+        s->focus_changed(false);
+    w_slot_p->focused_ui = new_id;
+    if (new_id)
+      if (const auto s = system::uis.get(new_id))
+        s->focus_changed(true);
+    w_slot_p->dirty = true;
+  };
   switch (msg) {
   /// MARK:
   case WM_MOUSEMOVE: {
@@ -66,8 +78,13 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
       if (const auto fui_slot_p = system::uis.get(w_slot_p->focused_ui))
         if (auto res = fui_slot_p->proc(WM_MOUSEMOVE, wp, lp); !res)
           mainloop.last_error = std::move(unexpected_error(res.error()).error());
+    // WM_MOUSELEAVEを受け取るために登録。
+    TRACKMOUSEEVENT tme{sizeof(TRACKMOUSEEVENT), TME_LEAVE, hwnd, 0};
+    ::TrackMouseEvent(&tme);
     // カーソル直下のコントロールを探してhovered_controlを更新。
     const auto pt = float2(std::bit_cast<short2>(static_cast<uint32_t>(lp & 0xFFFFFFFF)));
+    // システムカーソル位置（スクリーン座標）を更新。
+    { POINT sp{(LONG)pt.x, (LONG)pt.y}; ::ClientToScreen(hwnd, &sp); system::cursor_pos = {sp.x, sp.y}; }
     for (auto ui_slot_id : w_slot_p->uis | std::views::reverse)
       if (const auto ui_slot_p = system::uis.get(ui_slot_id))
         if (ui_slot_p->visible && ui_slot_p->hit_test(pt)) {
@@ -78,6 +95,7 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
             }
             w_slot_p->hovered_ui = ui_slot_p->id;
             if (ui_slot_p->on_hover) ui_slot_p->on_hover(true);
+            w_slot_p->dirty = true;
           }
           return 0;
         }
@@ -86,16 +104,96 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
       if (auto ui_slot_p = system::uis.get(w_slot_p->hovered_ui))
         if (ui_slot_p->on_hover) ui_slot_p->on_hover(false);
       w_slot_p->hovered_ui = {};
+      w_slot_p->dirty = true;
+    }
+    return 0;
+  }
+  case WM_MOUSELEAVE: {
+    { POINT sp; ::GetCursorPos(&sp); system::cursor_pos = {sp.x, sp.y}; }
+    if (w_slot_p->hovered_ui) {
+      if (const auto ui_slot_p = system::uis.get(w_slot_p->hovered_ui))
+        if (ui_slot_p->on_hover) ui_slot_p->on_hover(false);
+      w_slot_p->hovered_ui = {};
+      w_slot_p->dirty = true;
     }
     return 0;
   }
 
+  case WM_KEYDOWN: {
+    if (wp == VK_TAB) {
+      const bool shift = (::GetKeyState(VK_SHIFT) & 0x8000) != 0;
+      const auto& uis = w_slot_p->uis;
+      const int n = static_cast<int>(uis.size());
+      const int total = n + 1; // indices 0..n-1 are uis, n means "window focus"
+      // find current position in total space
+      int cur = n; // default: window has focus
+      if (w_slot_p->focused_ui) {
+        for (int i = 0; i < n; ++i) {
+          if (uis[i] == w_slot_p->focused_ui) { cur = i; break; }
+        }
+      }
+      // advance one step at a time, skipping non-(focusable && visible)
+      for (int step = 1; step <= total; ++step) {
+        const int next = ((cur + (shift ? -step : step)) % total + total) % total;
+        if (next == n) {
+          // focus goes to window
+          change_focus({});
+          break;
+        }
+        if (const auto ui_slot_p = system::uis.get(uis[next]))
+          if (ui_slot_p->focusable() && ui_slot_p->visible) {
+            change_focus(uis[next]);
+            break;
+          }
+      }
+      return 0;
+    }
+    // TAB以外のキーをfocused_uiに転送。
+    if (w_slot_p->focused_ui)
+      if (const auto ui_slot_p = system::uis.get(w_slot_p->focused_ui))
+        if (auto res = ui_slot_p->proc(WM_KEYDOWN, wp, lp); !res)
+          mainloop.last_error = std::move(unexpected_error(res.error()).error());
+    break;
+  }
+  case WM_KEYUP: {
+    if (w_slot_p->focused_ui)
+      if (const auto ui_slot_p = system::uis.get(w_slot_p->focused_ui))
+        if (auto res = ui_slot_p->proc(WM_KEYUP, wp, lp); !res)
+          mainloop.last_error = std::move(unexpected_error(res.error()).error());
+    break;
+  }
+
+  case WM_LBUTTONDOWN: {
+    if (w_slot_p->hovered_ui) {
+      if (const auto ui_slot_p = system::uis.get(w_slot_p->hovered_ui)) {
+        if (ui_slot_p->enabled) {
+          if (ui_slot_p->focusable()) change_focus(w_slot_p->hovered_ui);
+          if (auto res = ui_slot_p->proc(WM_LBUTTONDOWN, wp, lp); !res)
+            mainloop.last_error = std::move(unexpected_error(res.error()).error());
+          ::SetCapture(hwnd);
+        }
+      }
+    } else {
+      change_focus({});
+    }
+    return 0;
+  }
+  case WM_LBUTTONUP: {
+    ::ReleaseCapture();
+    if (w_slot_p->focused_ui) {
+      if (const auto ui_slot_p = system::uis.get(w_slot_p->focused_ui))
+        if (auto res = ui_slot_p->proc(WM_LBUTTONUP, wp, lp); !res)
+          mainloop.last_error = std::move(unexpected_error(res.error()).error());
+    }
+    return 0;
+  }
 
   case WM_SIZE:
     w_slot_p->size.x = LOWORD(lp), w_slot_p->size.y = HIWORD(lp);
     if (w_slot_p->resizing) return 0;
     if (auto res = w_slot_p->_resize_rendertarget({w_slot_p->size.x, w_slot_p->size.y}); !res)
       mainloop.last_error = std::move(res.error().push());
+    else w_slot_p->dirty = true;
     return 0;
   case WM_ENTERSIZEMOVE:
     w_slot_p->resizing = true;
@@ -104,6 +202,7 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     w_slot_p->resizing = false;
     if (auto res = w_slot_p->_resize_rendertarget({w_slot_p->size.x, w_slot_p->size.y}); !res)
       mainloop.last_error = std::move(res.error().push());
+    else w_slot_p->dirty = true;
     return 0;
 
   case WM_CLOSE:
@@ -112,21 +211,35 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     return 0;
   case WM_NCDESTROY:
     if (w_slot_p->master_id) {
+      // Delete all UIs belonging to this sub window
+      for (auto ui_id : w_slot_p->uis) {
+        system::uis.erase(ui_id);
+      }
       if (const auto mw_slot_p = system::windows.get(w_slot_p->master_id))
         mw_slot_p->subs.erase(std::ranges::find(mw_slot_p->subs, w_slot_p->id));
       system::windows.erase(w_slot_p->id);
       ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
     } else {
+      // Delete all UIs belonging to this master window
+      for (auto ui_id : w_slot_p->uis) {
+        system::uis.erase(ui_id);
+      }
       for (auto sw_slot_id : w_slot_p->subs) {
         if (const auto sw_slot_p = system::windows.get(sw_slot_id)) {
+          // Delete all UIs belonging to sub windows
+          for (auto ui_id : sw_slot_p->uis) {
+            system::uis.erase(ui_id);
+          }
           ::SetWindowLongPtrW(sw_slot_p->hwnd, GWLP_USERDATA, 0);
           ::DestroyWindow(sw_slot_p->hwnd);
           system::windows.erase(sw_slot_id);
         }
       }
-      system::windows.erase(w_slot_p->id);
+      const auto id = w_slot_p->id;
+      system::windows.erase(id);
+      std::erase(system::main_windows, id);
       ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-      if (system::windows.empty()) { ::PostQuitMessage(0); }
+      if (system::main_windows.empty()) { ::PostQuitMessage(0); }
     }
     break;
   }

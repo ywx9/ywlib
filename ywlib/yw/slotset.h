@@ -3,9 +3,9 @@
 
 namespace yw {
 
-//////////////////////////////////////// MARK: slotlist
+//////////////////////////////////////// MARK: slotset
 
-template<typename T, typename Del = std::default_delete<T>> class slotlist {
+template<typename T, typename Del = std::default_delete<T>> class slotset {
 public:
   struct slot {
     std::unique_ptr<T, Del> pointer{};
@@ -15,17 +15,48 @@ public:
   struct slotid {
     uint32_t index{}, generation{};
     constexpr operator bool() const noexcept { return generation != 0; }
-    friend constexpr bool operator==(const slotid& a, const slotid& b) noexcept = default;
+    friend constexpr bool operator==(const slotid a, const slotid b) noexcept = default;
   };
   static_assert(std::is_trivially_copyable_v<slotid>);
   static_assert(sizeof(slotid) == 2 * sizeof(uint32_t));
 
 private:
   std::vector<slot> _slots;
-  std::vector<slotid> _list;
   uint32_t _free_head = uint32_t(-1);
 
-  slotid _push(std::unique_ptr<T, Del> p) {
+public:
+  /// checks if the slotid is valid (i.e., the slot exists and has not been erased)
+  bool contains(const slotid i) const noexcept {
+    return i.index < _slots.size() && _slots[i.index].generation == i.generation;
+  }
+
+  /// returns a pointer to the slot if the slotid is valid, or nullptr otherwise
+  T* get(const slotid i) noexcept {
+    if (i.index >= _slots.size()) return nullptr;
+    auto& s = _slots[i.index];
+    return s.generation == i.generation ? s.pointer.get() : nullptr;
+  }
+
+  /// returns a const pointer to the slot if the slotid is valid, or nullptr otherwise
+  const T* get(const slotid i) const noexcept {
+    if (i.index >= _slots.size()) return nullptr;
+    auto& s = _slots[i.index];
+    return s.generation == i.generation ? s.pointer.get() : nullptr;
+  }
+
+  /// erases the slot with the given slotid if it is valid
+  void erase(const slotid i) {
+    if (i.index >= _slots.size()) return;
+    if (auto& s = _slots[i.index]; s.generation == i.generation) {
+      s.pointer.reset();
+      s.generation++;
+      s.next_free = _free_head;
+      _free_head = i.index;
+    }
+  }
+
+  /// creates a new slot with the given pointer and returns its slotid
+  slotid add(std::unique_ptr<T, Del> p) {
     if (_free_head != uint32_t(-1)) {
       const auto i = _free_head;
       auto& s = _slots[i];
@@ -40,13 +71,18 @@ private:
     }
   }
 
-  void _erase(uint32_t index) {
-    const auto p = _list.data();
-    const auto n = _list.size();
-    if (index == 0) std::memmove(p, p + 1, (n - 1) * sizeof(slotid));
-    else if (index < n - 1) std::memmove(p + index, p + index + 1, (n - index - 1) * sizeof(slotid));
-    _list.pop_back();
+  /// clears all slots
+  void clear() {
+    _slots.clear();
+    _free_head = uint32_t(-1);
   }
+};
+
+//////////////////////////////////////// MARK: slotlist
+
+template<typename T, typename Del = std::default_delete<T>> class slotlist {
+  slotset<T, Del> _set;
+  std::vector<typename slotset<T, Del>::slotid> _list;
 
   void _insert(size_t from, size_t to) {
     if (from == to) return;
@@ -58,46 +94,29 @@ private:
   }
 
 public:
-  bool contains(const slotid& i) const noexcept {
-    return i.index < _slots.size() && _slots[i.index].generation == i.generation;
-  }
+  using slotid = typename slotset<T, Del>::slotid;
 
-  T* get(const slotid& i) noexcept {
-    if (i.index >= _slots.size()) return nullptr;
-    auto& s = _slots[i.index];
-    return s.generation == i.generation ? s.pointer.get() : nullptr;
-  }
+  bool contains(const slotid i) const noexcept { return _set.contains(i); }
+  T* get(const slotid i) noexcept { return _set.get(i); }
+  const T* get(const slotid i) const noexcept { return _set.get(i); }
 
-  const T* get(const slotid& i) const noexcept {
-    if (i.index >= _slots.size()) return nullptr;
-    auto& s = _slots[i.index];
-    return s.generation == i.generation ? s.pointer.get() : nullptr;
-  }
-
-  void erase(const slotid& i) {
-    if (i.index >= _slots.size()) return;
-    if (auto& s = _slots[i.index]; s.generation == i.generation) {
-      s.pointer.reset();
-      s.generation++;
-      s.next_free = _free_head;
-      _free_head = i.index;
-      _erase(i.index);
-    }
+  void erase(const slotid i) {
+    _set.erase(i);
+    if (auto it = std::ranges::find(_list, i); it != _list.end()) _list.erase(it);
   }
 
   slotid push(std::unique_ptr<T, Del> p) {
-    auto i = _push(std::move(p));
-    _list.emplace_back(i.index, i.generation);
-    return i;
+    const auto id = _set.add(std::move(p));
+    _list.push_back(id);
+    return id;
   }
 
   void clear() {
-    _slots.clear();
+    _set.clear();
     _list.clear();
-    _free_head = uint32_t(-1);
   }
 
-  void set_order(const slotid& i, size_t pos) {
+  void set_order(const slotid i, size_t pos) {
     if (i.index >= _slots.size()) return;
     if (auto& s = _slots[i.index]; s.generation != i.generation) return;
     if (auto it = std::ranges::find(_list, i); it != _list.end()) {
@@ -106,7 +125,7 @@ public:
     }
   }
 
-  void bring_to_first(const slotid& i) {
+  void bring_to_first(const slotid i) {
     if (i.index >= _slots.size()) return;
     if (auto& s = _slots[i.index]; s.generation != i.generation) return;
     if (auto it = std::ranges::find(_list, i); it != _list.end()) {
@@ -115,7 +134,7 @@ public:
     }
   }
 
-  void bring_to_last(const slotid& i) {
+  void bring_to_last(const slotid i) {
     if (i.index >= _slots.size()) return;
     if (auto& s = _slots[i.index]; s.generation != i.generation) return;
     if (auto it = std::ranges::find(_list, i); it != _list.end()) {
@@ -231,7 +250,7 @@ public:
   auto& operator[](size_t i) { return *get(_list[i]); }
   const auto& operator[](size_t i) const { return *get(_list[i]); }
 
-  iterator find(const slotid& i) noexcept {
+  iterator find(const slotid i) noexcept {
     if (i.index >= _slots.size()) return end();
     if (_slots[i.index].generation != i.generation) return end();
     for (size_t j = 0; j < _list.size(); ++j)
@@ -239,7 +258,7 @@ public:
     return end();
   }
 
-  const_iterator find(const slotid& i) const noexcept {
+  const_iterator find(const slotid i) const noexcept {
     if (i.index >= _slots.size()) return end();
     if (_slots[i.index].generation != i.generation) return end();
     for (size_t j = 0; j < _list.size(); ++j)

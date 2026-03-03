@@ -324,16 +324,6 @@ template<> struct tuple<> {
 };
 
 template<typename... Ts> tuple(Ts...) -> tuple<Ts...>;
-
-//////////////////////////////////////// MARK: tuple_for
-
-template<size_t End, size_t Start = 0> constexpr auto tuple_for(auto&& f) -> decltype(f(constant<size_t(0)>{})) {
-  static_assert(!is_reference<decltype(f(constant<size_t(0)>{}))>);
-  if constexpr (Start < End) {
-    if (auto res = f(constant<Start>{})) return std::move(*res);
-    else return tuple_for<End, Start + 1>(f);
-  } else return std::nullopt;
-};
 } // namespace yw
 
 //////////////////////////////////////// MARK: std
