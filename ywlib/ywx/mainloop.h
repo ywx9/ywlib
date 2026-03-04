@@ -31,7 +31,7 @@ public:
   /// runs the mainloop
   bool operator()() {
     if (_updating) {
-      for (const auto& w_id : system::main_windows)
+      for (const auto& w_id : system::master_windows)
         if (const auto w_slot_p = system::windows.get(w_id)) w_slot_p->draw();
       _timer.restart();
     }
@@ -62,12 +62,10 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
   const auto change_focus = [&](decltype(w_slot_p->focused_ui) new_id) {
     if (w_slot_p->focused_ui == new_id) return;
     if (w_slot_p->focused_ui)
-      if (const auto s = system::uis.get(w_slot_p->focused_ui))
-        s->focus_changed(false);
+      if (const auto s = system::uis.get(w_slot_p->focused_ui)) s->proc(WM_KILLFOCUS, 0, 0);
     w_slot_p->focused_ui = new_id;
     if (new_id)
-      if (const auto s = system::uis.get(new_id))
-        s->focus_changed(true);
+      if (const auto s = system::uis.get(new_id)) s->proc(WM_SETFOCUS, 0, 0);
     w_slot_p->dirty = true;
   };
   switch (msg) {
@@ -91,10 +89,10 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
           if (w_slot_p->hovered_ui != ui_slot_p->id) {
             if (w_slot_p->hovered_ui) {
               const auto hovered_slot = system::uis.get(w_slot_p->hovered_ui);
-              if (hovered_slot && hovered_slot->on_hover) hovered_slot->on_hover(false);
+              if (hovered_slot) hovered_slot->proc(WM_MOUSELEAVE, (wp & 0xffff) | 0x20000, lp);
             }
             w_slot_p->hovered_ui = ui_slot_p->id;
-            if (ui_slot_p->on_hover) ui_slot_p->on_hover(true);
+            ui_slot_p->proc(WM_MOUSEMOVE, (wp & 0xffff) | 0x10000, lp);
             w_slot_p->dirty = true;
           }
           return 0;
@@ -102,7 +100,7 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     // コントロールが見つからない場合
     if (w_slot_p->hovered_ui) {
       if (auto ui_slot_p = system::uis.get(w_slot_p->hovered_ui))
-        if (ui_slot_p->on_hover) ui_slot_p->on_hover(false);
+        ui_slot_p->proc(WM_MOUSELEAVE, (wp & 0xffff) | 0x20000, lp);
       w_slot_p->hovered_ui = {};
       w_slot_p->dirty = true;
     }
@@ -112,7 +110,7 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     { POINT sp; ::GetCursorPos(&sp); system::cursor_pos = {sp.x, sp.y}; }
     if (w_slot_p->hovered_ui) {
       if (const auto ui_slot_p = system::uis.get(w_slot_p->hovered_ui))
-        if (ui_slot_p->on_hover) ui_slot_p->on_hover(false);
+        ui_slot_p->proc(WM_MOUSELEAVE, (wp & 0xffff) | 0x20000, lp);
       w_slot_p->hovered_ui = {};
       w_slot_p->dirty = true;
     }
@@ -124,8 +122,7 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
       const bool shift = (::GetKeyState(VK_SHIFT) & 0x8000) != 0;
       const auto& uis = w_slot_p->uis;
       const int n = static_cast<int>(uis.size());
-      const int total = n + 1; // indices 0..n-1 are uis, n means "window focus"
-      // find current position in total space
+      const int total = n + 1; // indices 0..n-1 are uis, n means "window focus" find current position in total space
       int cur = n; // default: window has focus
       if (w_slot_p->focused_ui) {
         for (int i = 0; i < n; ++i) {
@@ -237,9 +234,9 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
       }
       const auto id = w_slot_p->id;
       system::windows.erase(id);
-      std::erase(system::main_windows, id);
+      std::erase(system::master_windows, id);
       ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-      if (system::main_windows.empty()) { ::PostQuitMessage(0); }
+      if (system::master_windows.empty()) { ::PostQuitMessage(0); }
     }
     break;
   }

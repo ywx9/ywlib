@@ -3,7 +3,7 @@
 
 namespace yw::ui {
 
-//////////////////////////////////////// MARK: ui::focusable_base
+//////////////////////////////////////// MARK: ui::focusable
 
 class focusable_base : public base {
 public:
