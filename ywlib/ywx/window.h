@@ -1,5 +1,6 @@
 #pragma once
 #include "ywx/bitmap.h"
+#include "ywx/event.h"
 
 namespace yw {
 
@@ -19,14 +20,18 @@ public:
     float2 size{};
     bool visible = true;
     bool enabled = true;
-    virtual bool hoverable() const noexcept { return false; }
-    virtual bool focusable() const noexcept { return false; }
     virtual bool hit_test(float2 pt) const noexcept {
       return pt.x >= pos.x && pt.x <= pos.x + size.x && pt.y >= pos.y && pt.y <= pos.y + size.y;
     }
-    virtual std::expected<void, error_trace> proc(UINT, WPARAM, LPARAM) { return {}; }
     virtual void draw() const {}
     virtual void draw_focus() const {}
+
+    virtual void button_event(const event::button& e) {}
+    virtual void key_event(const event::key& e) {}
+    virtual void move_event(const event::move& e) {}
+    virtual void hover_event(const event::hover& e) {}
+    /// \note Returning false means the control cannot receive focus.
+    virtual bool focus_event(bool focused) { return false; }
   };
 
 protected:
@@ -42,11 +47,8 @@ protected:
     else throw std::runtime_error("invalid member access");
   }
 
-  bool hover_message_enter(WPARAM wp) const noexcept { return (wp & 0x10000) == 0x10000; }
-  bool hover_message_leave(WPARAM wp) const noexcept { return (wp & 0x20000) == 0x20000; }
-
-  template<typename Ui>
-  static std::expected<tuple<Ui, typename Ui::slot*>, error_trace> add(window& w, float2 Pos, float2 Size);
+  template<typename Ui, included_in<window, none> Window>
+  static std::expected<tuple<Ui, typename Ui::slot*>, error_trace> add(Window& w, float2 Pos, float2 Size);
 
 public:
   ~base() noexcept { _clear(); }
@@ -74,7 +76,10 @@ public:
   void visible(bool value) { _set(&slot::visible, value); }
   void enabled(bool value) { _set(&slot::enabled, value); }
 
-  static std::expected<base, error_trace> add(window& w, float2 Pos, float2 Size) {
+  bool hit_test(float2 pt) const noexcept { return _ui_slot() ? _ui_slot()->hit_test(pt) : false; }
+
+  template<included_in<window&, none> Window>
+  static std::expected<base, error_trace> add(Window&& w, float2 Pos, float2 Size) {
     if (auto res = add<base>(w, Pos, Size)) return std::move(yw::get<0>(*res));
     else return unexpected_error(res.error());
   }
@@ -91,9 +96,8 @@ public:
     color border_color = colors::black;
     float border_width = 1.0f;
 
-    function<void, bool> on_hover;
-
-    virtual bool hoverable() const noexcept override { return true; }
+    function<void, event::move> on_move;
+    function<void, event::hover> on_hover;
 
     virtual void draw() const override {
       fill_round_rectangle(pos, size, radius, bg_color);
@@ -106,6 +110,14 @@ public:
       const auto focus_size = size + margin * 2.0f;
       const auto focus_radius = radius + margin;
       draw_round_rectangle(focus_pos, focus_size, focus_radius, border_color, 1.0f, d2d.dashed_stroke_style());
+    }
+
+    virtual void move_event(const event::move& e) override {
+      if (on_move) on_move(e);
+    }
+
+    virtual void hover_event(const event::hover& e) override {
+      if (on_hover) on_hover(e);
     }
   };
 
@@ -120,13 +132,18 @@ public:
   const auto& bg_color() const { return unsafe_get(&slot::bg_color); }
   const auto& border_color() const { return unsafe_get(&slot::border_color); }
   const auto& border_width() const { return unsafe_get(&slot::border_width); }
+  const auto& on_move() const { return unsafe_get(&slot::on_move); }
+  const auto& on_hover() const { return unsafe_get(&slot::on_hover); }
 
   void radius(float2 value) { _set(&slot::radius, value); }
   void bg_color(const color& value) { _set(&slot::bg_color, value); }
   void border_color(const color& value) { _set(&slot::border_color, value); }
   void border_width(float value) { _set(&slot::border_width, value); }
+  void on_move(function<void, event::move> f) { _set(&slot::on_move, std::move(f)); }
+  void on_hover(function<void, event::hover> f) { _set(&slot::on_hover, std::move(f)); }
 
-  static std::expected<frame, error_trace> add(window& w, float2 Pos, float2 Size) {
+  template<included_in<window&, none> Window>
+  static std::expected<frame, error_trace> add(Window&& w, float2 Pos, float2 Size) {
     if (auto res = base::add<frame>(w, Pos, Size)) return std::move(yw::get<0>(*res));
     else return unexpected_error(res.error());
   }
@@ -179,6 +196,8 @@ public:
   const bool& visible() const;
   const bool& enabled() const;
   const color& bg_color() const;
+  const function<bool>& on_close() const;
+  const function<void, event::key>& on_key() const;
   int2 cursor_pos() const;
 
   void pos(int2 value);
@@ -187,6 +206,8 @@ public:
   void visible(bool value);
   void enabled(bool value);
   void bg_color(const color& value);
+  void on_close(function<bool> f);
+  void on_key(function<void, event::key> f);
 
   std::expected<drawing, error_trace> begin_draw();
   std::expected<drawing, error_trace> begin_draw(const color& clear_color);
@@ -261,8 +282,8 @@ public:
   color bg_color = colors::white;
   bool _user_began_draw = false;
 
-  /// on_close should return true to allow closing the window, or false to cancel it.
   function<bool> on_close;
+  function<void, event::key> on_key;
 
   std::expected<void, error_trace> _resize_rendertarget(uint2 size) {
     if (swapchain) {
@@ -335,18 +356,20 @@ inline bool base::focused() const noexcept {
   return false;
 }
 
-template<typename Ui>
-std::expected<tuple<Ui, typename Ui::slot*>, error_trace> base::add(window& w, float2 Pos, float2 Size) {
-  const auto w_slot_p = system::windows.get(w.id());
-  if (!w_slot_p) return unexpected_error(errors::invalid_operation, "window slot not found");
+template<typename Ui, included_in<window, none> Window>
+std::expected<tuple<Ui, typename Ui::slot*>, error_trace> base::add(Window& w, float2 Pos, float2 Size) {
   const auto ui_slot_id = system::uis.add(std::make_unique<typename Ui::slot>());
   auto ui_slot_p = dynamic_cast<typename Ui::slot*>(system::uis.get(ui_slot_id));
   if (!ui_slot_p) return unexpected_error(errors::operation_failed, "ui slot creation failed");
   ui_slot_p->id = ui_slot_id;
-  ui_slot_p->window_id = w_slot_p->id;
   ui_slot_p->pos = Pos;
   ui_slot_p->size = Size;
-  w_slot_p->uis.push_back(ui_slot_id);
+  if constexpr (same_as<Window, window>) {
+    if (const auto w_slot_p = system::windows.get(w.id())) {
+      ui_slot_p->window_id = w_slot_p->id;
+      w_slot_p->uis.push_back(ui_slot_id);
+    } else return unexpected_error(errors::invalid_operation, "window slot not found");
+  }
   return tuple{Ui(ui_slot_id), ui_slot_p};
 }
 } // namespace ui
@@ -364,6 +387,9 @@ inline const stopwatch& window::timer() const { return unsafe_get(&window_slot::
 inline const bool& window::visible() const { return unsafe_get(&window_slot::visible); }
 inline const bool& window::enabled() const { return unsafe_get(&window_slot::enabled); }
 inline const color& window::bg_color() const { return unsafe_get(&window_slot::bg_color); }
+inline const function<bool>& window::on_close() const { return unsafe_get(&window_slot::on_close); }
+inline const function<void, event::key>& window::on_key() const { return unsafe_get(&window_slot::on_key); }
+
 inline int2 window::cursor_pos() const {
   if (const auto w_slot_p = _window_slot())
     return system::cursor_pos - w_slot_p->pos - int2{w_slot_p->margin.x, w_slot_p->margin.y};
@@ -376,6 +402,7 @@ inline void window::pos(int2 value) {
     ::SetWindowPos(w_slot_p->hwnd, nullptr, value.x, value.y, 0, 0, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSIZE);
   }
 }
+
 inline void window::size(uint2 value) {
   if (const auto w_slot_p = _window_slot()) {
     w_slot_p->dirty = true;
@@ -384,6 +411,7 @@ inline void window::size(uint2 value) {
       LONG(value.y + w_slot_p->margin.w), SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
   }
 }
+
 template<stringable S> void window::title(S&& s) {
   if (const auto w_slot_p = _window_slot()) {
     w_slot_p->dirty = true;
@@ -391,6 +419,7 @@ template<stringable S> void window::title(S&& s) {
     ::SetWindowTextW(w_slot_p->hwnd, w_slot_p->title.data());
   }
 }
+
 inline void window::visible(bool value) {
   if (const auto w_slot_p = _window_slot()) {
     w_slot_p->dirty = true;
@@ -402,6 +431,7 @@ inline void window::visible(bool value) {
     } else ::ShowWindow(w_slot_p->hwnd, SW_HIDE);
   }
 }
+
 inline void window::enabled(bool value) {
   if (const auto w_slot_p = _window_slot()) {
     w_slot_p->dirty = true;
@@ -409,11 +439,20 @@ inline void window::enabled(bool value) {
     ::EnableWindow(w_slot_p->hwnd, value);
   }
 }
+
 inline void window::bg_color(const color& value) {
   if (const auto w_slot_p = _window_slot()) {
     w_slot_p->dirty = true;
     w_slot_p->bg_color = value;
   }
+}
+
+inline void window::on_close(function<bool> f) {
+  if (const auto w_slot_p = _window_slot()) w_slot_p->on_close = std::move(f);
+}
+
+inline void window::on_key(function<void, event::key> f) {
+  if (const auto w_slot_p = _window_slot()) w_slot_p->on_key = std::move(f);
 }
 
 template<stringable S>

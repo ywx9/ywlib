@@ -79,14 +79,14 @@ public:
   }
 
   /// adds a text UI to the specified window and returns its handle
-  template<stringable S> static std::expected<text, error_trace> add(window& w, float2 pos, float2 size, S&& Text, float2 Padding = {}) {
+  template<included_in<window&, none> Window, stringable S> static std::expected<text, error_trace> add(Window&& w, float2 pos, float2 size, S&& Text, float2 Padding = {}) {
     if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
     if (auto res = base::add<text>(w, pos, size)) {
       auto slot_p = res->second;
       slot_p->text = unicode<wchar_t>(static_cast<S&&>(Text));
       slot_p->padding = Padding;
-      const auto layout_size = float2(yw::max(size.x - Padding.x * 2.0f, 0.0f), yw::max(size.y - Padding.y * 2.0f, 0.0f));
-      if (auto tl = text_layout::create(slot_p->text, dwrite.text_format(), layout_size)) slot_p->layout = std::move(*tl);
+      const auto sz = float2(yw::max(size.x - Padding.x * 2.0f, 0.0f), yw::max(size.y - Padding.y * 2.0f, 0.0f));
+      if (auto tl = text_layout::create(slot_p->text, dwrite.text_format(), sz)) slot_p->layout = std::move(*tl);
       else return unexpected_error(tl.error());
       return text{std::move(res->first)};
     } else return unexpected_error(res.error());

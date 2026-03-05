@@ -128,6 +128,16 @@ template<typename T> concept is_member_object_pointer = std::is_member_object_po
 template<typename T> concept is_member_function_pointer = std::is_member_function_pointer_v<T>;
 template<typename T> concept is_member_pointer = is_member_object_pointer<T> || is_member_function_pointer<T>;
 
+//////////////////////////////////////// MARK: narrow_cast
+
+inline constexpr auto uint_cast = []<arithmetic T>(T value) noexcept {
+  if constexpr (sizeof(T) == 1) return std::bit_cast<uint8_t>(value);
+  else if constexpr (sizeof(T) == 2) return std::bit_cast<uint16_t>(value);
+  else if constexpr (sizeof(T) == 4) return std::bit_cast<uint32_t>(value);
+  else if constexpr (sizeof(T) == 8) return std::bit_cast<uint64_t>(value);
+  else static_assert(always_false<T>, "unsupported type for uint_cast");
+};
+
 //////////////////////////////////////// MARK: construct
 
 template<typename T, typename... As> concept constructible = std::is_constructible_v<T, As...>;

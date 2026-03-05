@@ -29,11 +29,11 @@ public:
     if (const auto s = slot_address()) s->text.paragraph_alignment(align);
   }
 
-  template<stringable S> static std::expected<label, error_trace> add(
-    window& w, float2 Pos, float2 Size, S&& Text, float2 Padding = {}) {
+  template<included_in<window&, none> Window, stringable S> static std::expected<label, error_trace> add(
+    Window&& w, float2 Pos, float2 Size, S&& Text, float2 Padding = {}) {
     if (auto res = base::add<label>(w, Pos, Size)) {
       const auto slot_p = res->second;
-      if (auto text_res = ui::text::add(w, Pos, Size, static_cast<S&&>(Text), Padding)) {
+      if (auto text_res = ui::text::add(none{}, Pos, Size, static_cast<S&&>(Text), Padding)) {
         slot_p->text = std::move(*text_res);
         return label{std::move(res->first)};
       } else return unexpected_error(text_res.error());
