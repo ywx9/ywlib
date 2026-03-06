@@ -12,7 +12,7 @@ public:
     ui::text text;
     virtual void draw() const override {
       frame::slot::draw();
-      if (auto text_slot_p = text.slot_address()) text_slot_p->draw();
+      if (auto text_slot_p = text.slot_adress(&text)) text_slot_p->draw();
     }
   };
 

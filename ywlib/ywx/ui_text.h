@@ -25,7 +25,6 @@ public:
 
 public:
   using base::operator bool;
-  slot* slot_address() const noexcept { return dynamic_cast<slot*>(system::uis.get(_id)); }
 
   const auto& padding() const { return unsafe_get(&slot::padding); }
   const auto& text_color() const { return unsafe_get(&slot::text_color); }
@@ -37,7 +36,7 @@ public:
 
   /// sets padding and updates text layouts
   void padding(float2 value) {
-    if (const auto s = slot_address())
+    if (const auto s = slot_adress(this))
       if (auto tl = text_layout::create(s->text, s->layout, s->size - value * 2.0f)) {
         s->padding = value;
         s->layout = std::move(*tl);
@@ -47,7 +46,7 @@ public:
 
   /// sets text and updates text layout
   template<stringable S> void operator()(S&& Text) {
-    if (const auto s = slot_address())
+    if (const auto s = slot_adress(this))
       if (auto tl = text_layout::create(Text, s->layout, s->size - s->padding * 2.0f)) {
         s->text = unicode<wchar_t>(static_cast<S&&>(Text));
         s->layout = std::move(*tl);
@@ -57,21 +56,21 @@ public:
 
   /// sets text alignment without rebuilding the layout
   void text_alignment(DWRITE_TEXT_ALIGNMENT align) {
-    if (const auto s = slot_address())
+    if (const auto s = slot_adress(this))
       if (s->layout.text_alignment(align))
         if (const auto w = system::windows.get(s->window_id)) w->dirty = true;
   }
 
   /// sets paragraph alignment without rebuilding the layout
   void paragraph_alignment(DWRITE_PARAGRAPH_ALIGNMENT align) {
-    if (const auto s = slot_address())
+    if (const auto s = slot_adress(this))
       if (s->layout.paragraph_alignment(align))
         if (const auto w = system::windows.get(s->window_id)) w->dirty = true;
   }
 
   /// sets text format and updates text layout
   void text_format(text_format_like auto&& tf) {
-    if (const auto s = slot_address())
+    if (const auto s = slot_adress(this))
       if (auto tl = text_layout::create(s->text, tf, s->size - s->padding * 2.0f)) {
         s->layout = std::move(*tl);
         if (const auto w = system::windows.get(s->window_id)) w->dirty = true;

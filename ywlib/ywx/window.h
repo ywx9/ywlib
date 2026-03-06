@@ -4,6 +4,14 @@
 
 namespace yw {
 
+enum class mouse_button : uint8_t {
+  left = 1 << 0,
+  right = 1 << 1,
+  middle = 1 << 2,
+  x1 = 1 << 3,
+  x2 = 1 << 4,
+};
+
 //////////////////////////////////////// MARK: ui::base
 
 class window;
@@ -20,21 +28,29 @@ public:
     float2 size{};
     bool visible = true;
     bool enabled = true;
+    bool focusable = false;
+
+    flags<mouse_button> button_state{};
+
+    bool is_visible() const noexcept { return visible; }
+    bool is_enabled() const noexcept { return visible && enabled; }
+    bool is_focusable() const noexcept { return visible && enabled && focusable; }
+
     virtual bool hit_test(float2 pt) const noexcept {
       return pt.x >= pos.x && pt.x <= pos.x + size.x && pt.y >= pos.y && pt.y <= pos.y + size.y;
     }
     virtual void draw() const {}
     virtual void draw_focus() const {}
 
-    virtual void button_event(const event::button& e) {}
-    virtual void key_event(const event::key& e) {}
-    virtual void move_event(const event::move& e) {}
-    virtual void hover_event(const event::hover& e) {}
-    /// \note Returning false means the control cannot receive focus.
-    virtual bool focus_event(bool focused) { return false; }
+    virtual void button_event(event::button e) {}
+    virtual void key_event(event::key e) {}
+    virtual void move_event(event::move e) {}
+    virtual void hover_event(event::hover e) {}
+    virtual bool focus_event(bool focused) { return focusable; }
+    virtual void click_event(event::button e) {}
   };
 
-protected:
+  protected:
   slotset<slot>::slotid _id;
   base(slotset<slot>::slotid id) : _id(id) {}
   window_slot* _window_slot() const noexcept;
@@ -42,8 +58,8 @@ protected:
   void _clear() noexcept;
   template<typename Mp, typename T> void _set(Mp mp, T&& value);
 
-  template<typename Mp> const auto& unsafe_get(Mp mp) const {
-    if (const auto s = dynamic_cast<const class_type<Mp>*>(_ui_slot())) return s->*mp;
+  template<typename Mp> decltype(auto) unsafe_get(Mp mp) const {
+    if (const auto s = dynamic_cast<const class_type<Mp>*>(_ui_slot())) return std::invoke(mp, s);
     else throw std::runtime_error("invalid member access");
   }
 
@@ -56,25 +72,53 @@ public:
   base(const base&) = delete;
   base& operator=(const base&) = delete;
   base(base&& other) noexcept : _id(std::exchange(other._id, {})) {}
+
   base& operator=(base&& other) noexcept {
     if (this == &other) return *this;
     _clear();
     _id = std::exchange(other._id, {});
     return *this;
   }
+
   explicit operator bool() const noexcept;
   const auto& id() const noexcept { return _id; }
-  const auto& pos() const { return unsafe_get(&slot::pos); }
-  const auto& size() const { return unsafe_get(&slot::size); }
-  const auto& visible() const { return unsafe_get(&slot::visible); }
-  const auto& enabled() const { return unsafe_get(&slot::enabled); }
+  template<typename Ui> typename Ui::slot* slot_adress(const Ui* self) const noexcept {
+    if (!self || self->id() != _id) return nullptr;
+    return dynamic_cast<typename Ui::slot*>(_ui_slot());
+  }
   float2 cursor_pos() const noexcept;
   bool focused() const noexcept;
+  bool hovered() const noexcept;
 
+  const auto& pos() const { return unsafe_get(&slot::pos); }
   void pos(float2 value) { _set(&slot::pos, value); }
+
+  const auto& size() const { return unsafe_get(&slot::size); }
   void size(float2 value) { _set(&slot::size, value); }
+
+  bool visible() const { return unsafe_get(&slot::visible); }
   void visible(bool value) { _set(&slot::visible, value); }
-  void enabled(bool value) { _set(&slot::enabled, value); }
+
+  /// `enability == visible && enabled`. Enabled but not-focusable control can only receive mouse events.
+  bool enabled() const { return unsafe_get(&slot::is_enabled); }
+  /// makes the control visible and enabled if `value` is true, otherwise makes it disabled.
+  void enabled(bool value) noexcept {
+    if (const auto s = _ui_slot()) {
+      s->visible |= value;
+      s->enabled = value;
+    }
+  }
+
+  /// `focusability == visible && enabled && focusable`. Focusable control can receive keyboard events during its focus.
+  bool focusable() const { return unsafe_get(&slot::is_focusable); }
+  /// makes the control visible, enabled, and focusable if `value` is true, otherwise makes it not focusable.
+  void focusable(bool value) noexcept {
+    if (const auto s = _ui_slot()) {
+      s->visible |= value;
+      s->enabled |= value;
+      s->focusable = value;
+    }
+  }
 
   bool hit_test(float2 pt) const noexcept { return _ui_slot() ? _ui_slot()->hit_test(pt) : false; }
 
@@ -96,8 +140,12 @@ public:
     color border_color = colors::black;
     float border_width = 1.0f;
 
-    function<void, event::move> on_move;
+    function<void, event::button> on_button;
     function<void, event::hover> on_hover;
+    function<void, event::move> on_move;
+    function<void, event::key> on_key;
+    function<void, bool> on_focus;
+    function<void, event::button> on_click;
 
     virtual void draw() const override {
       fill_round_rectangle(pos, size, radius, bg_color);
@@ -112,12 +160,29 @@ public:
       draw_round_rectangle(focus_pos, focus_size, focus_radius, border_color, 1.0f, d2d.dashed_stroke_style());
     }
 
-    virtual void move_event(const event::move& e) override {
-      if (on_move) on_move(e);
+    virtual void button_event(event::button e) override {
+      if (is_enabled() && on_button) on_button(e);
     }
 
-    virtual void hover_event(const event::hover& e) override {
-      if (on_hover) on_hover(e);
+    virtual void hover_event(event::hover e) override {
+      if (is_enabled() && on_hover) on_hover(e);
+    }
+
+    virtual void move_event(event::move e) override {
+      if (is_focusable() && on_move) on_move(e);
+    }
+
+    virtual void key_event(event::key e) override {
+      if (is_focusable() && on_key) on_key(e);
+    }
+
+    virtual bool focus_event(bool focused) override {
+      if (is_focusable() && on_focus) on_focus(focused);
+      return is_focusable();
+    }
+
+    virtual void click_event(event::button e) {
+      if (is_enabled() && on_click) on_click(e);
     }
   };
 
@@ -132,15 +197,23 @@ public:
   const auto& bg_color() const { return unsafe_get(&slot::bg_color); }
   const auto& border_color() const { return unsafe_get(&slot::border_color); }
   const auto& border_width() const { return unsafe_get(&slot::border_width); }
-  const auto& on_move() const { return unsafe_get(&slot::on_move); }
+  const auto& on_button() const { return unsafe_get(&slot::on_button); }
   const auto& on_hover() const { return unsafe_get(&slot::on_hover); }
+  const auto& on_move() const { return unsafe_get(&slot::on_move); }
+  const auto& on_key() const { return unsafe_get(&slot::on_key); }
+  const auto& on_focus() const { return unsafe_get(&slot::on_focus); }
+  const auto& on_click() const { return unsafe_get(&slot::on_click); }
 
   void radius(float2 value) { _set(&slot::radius, value); }
   void bg_color(const color& value) { _set(&slot::bg_color, value); }
   void border_color(const color& value) { _set(&slot::border_color, value); }
   void border_width(float value) { _set(&slot::border_width, value); }
-  void on_move(function<void, event::move> f) { _set(&slot::on_move, std::move(f)); }
+  void on_button(function<void, event::button> f) { _set(&slot::on_button, std::move(f)); }
   void on_hover(function<void, event::hover> f) { _set(&slot::on_hover, std::move(f)); }
+  void on_move(function<void, event::move> f) { _set(&slot::on_move, std::move(f)); }
+  void on_key(function<void, event::key> f) { _set(&slot::on_key, std::move(f)); }
+  void on_focus(function<void, bool> f) { _set(&slot::on_focus, std::move(f)); }
+  void on_click(function<void, event::button> f) { _set(&slot::on_click, std::move(f)); }
 
   template<included_in<window&, none> Window>
   static std::expected<frame, error_trace> add(Window&& w, float2 Pos, float2 Size) {
@@ -282,6 +355,10 @@ public:
   color bg_color = colors::white;
   bool _user_began_draw = false;
 
+  slotset<ui::base::slot>::slotid captured_ui{};
+  key captured_key{};
+  int capture_count{};
+
   function<bool> on_close;
   function<void, event::key> on_key;
 
@@ -318,6 +395,13 @@ public:
     for (const auto sub_slot_id : subs)
       if (const auto sub_slot_p = system::windows.get(sub_slot_id)) sub_slot_p->draw();
   }
+
+  ui::base::slot* ui_hit_test(float2 pt) const {
+    for (auto ui_slot_id : uis | std::views::reverse)
+      if (const auto ui_slot_p = system::uis.get(ui_slot_id))
+        if (ui_slot_p->visible && ui_slot_p->hit_test(pt)) return ui_slot_p;
+    return nullptr;
+  }
 };
 
 ///////////////////////////////////////// MARK: ui implementation
@@ -353,6 +437,12 @@ inline float2 base::cursor_pos() const noexcept {
 inline bool base::focused() const noexcept {
   if (const auto s = _ui_slot())
     if (const auto w = system::windows.get(s->window_id)) return w->focused_ui == _id;
+  return false;
+}
+
+inline bool base::hovered() const noexcept {
+  if (const auto s = _ui_slot())
+    if (const auto w = system::windows.get(s->window_id)) return w->hovered_ui == _id;
   return false;
 }
 

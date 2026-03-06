@@ -104,12 +104,15 @@ inline void wm_keydown_tab(window_slot& w_slot, WPARAM wp, LPARAM lp) {
         cur = static_cast<int>(i);
         break;
       }
-    if (const auto fui_slot_p = system::uis.get(w_slot.focused_ui)) fui_slot_p->focus_event(false);
+    if (const auto fui_slot_p = system::uis.get(w_slot.focused_ui)) {
+      fui_slot_p->focus_event(false);
+      fui_slot_p->button_state.clear();
+    }
   }
   if (shift) {
     while (--cur >= 0)
       if (const auto ui_slot_p = system::uis.get(uis[cur]))
-        if (ui_slot_p->visible && ui_slot_p->enabled && ui_slot_p->focus_event(true)) {
+        if (ui_slot_p->focus_event(true)) {
           w_slot.focused_ui = uis[cur];
           return;
         }
@@ -118,7 +121,7 @@ inline void wm_keydown_tab(window_slot& w_slot, WPARAM wp, LPARAM lp) {
     const int n = static_cast<int>(uis.size());
     while (++cur < n)
       if (const auto ui_slot_p = system::uis.get(uis[cur]))
-        if (ui_slot_p->visible && ui_slot_p->enabled && ui_slot_p->focus_event(true)) {
+        if (ui_slot_p->focus_event(true)) {
           w_slot.focused_ui = uis[cur];
           return;
         }
@@ -126,116 +129,154 @@ inline void wm_keydown_tab(window_slot& w_slot, WPARAM wp, LPARAM lp) {
   }
 }
 
-inline int set_capture_count = 0;
-
 inline void wm_lbuttondown(window_slot& w_slot, WPARAM wp, LPARAM lp) {
-  if (set_capture_count++ == 0) ::SetCapture(w_slot.hwnd);
-  const auto pt = float2(std::bit_cast<short2>(uint32_t(uint_cast(lp))));
-  if (const auto fui_slot_p = system::uis.get(w_slot.focused_ui)) {
-    if (fui_slot_p->visible && fui_slot_p->enabled && fui_slot_p->hit_test(pt)) {
-      fui_slot_p->button_event(event::button(key::lbutton, true, wp, lp));
+  if (w_slot.capture_count++ == 0) ::SetCapture(w_slot.hwnd);
+  w_slot.captured_key = key::lbutton;
+  w_slot.dirty = true;
+  // priority: focused_ui > hovered_ui > others
+  if (const auto p = system::uis.get(w_slot.focused_ui)) {
+    if (w_slot.focused_ui == w_slot.hovered_ui) { // inside focused_ui, so send event to it
+      w_slot.captured_ui = p->id;
+      p->button_event(event::button(key::lbutton, true, wp, lp));
       return;
-    } else {
-      fui_slot_p->focus_event(false);
-      w_slot.dirty = true;
+    } else { // outside of focused_ui, so unfocus it
+      w_slot.focused_ui = {};
+      p->focus_event(false);
+      p->button_state.clear();
     }
   }
-  if (const auto p = system::uis.get(w_slot.hovered_ui); p && p->visible && p->enabled) {
+  // send event to hovered_ui and focus it, if exists
+  if (const auto p = system::uis.get(w_slot.hovered_ui)) {
+    w_slot.captured_ui = p->id;
     p->button_event(event::button(key::lbutton, true, wp, lp));
     if (p->focus_event(true)) w_slot.focused_ui = p->id;
     else w_slot.focused_ui = {};
-    w_slot.dirty = true;
-  }
+  } else w_slot.captured_ui = {}, w_slot.focused_ui = {};
 }
 
 inline void wm_lbuttonup(window_slot& w_slot, WPARAM wp, LPARAM lp) {
-  if (--set_capture_count == 0) ::ReleaseCapture();
-  const auto pt = float2(std::bit_cast<short2>(uint32_t(uint_cast(lp))));
-  if (const auto p = system::uis.get(w_slot.focused_ui); p && p->visible && p->enabled)
+  w_slot.capture_count = yw::max(0, w_slot.capture_count - 1);
+  if (w_slot.capture_count == 0) ::ReleaseCapture();
+  if (const auto p = system::uis.get(w_slot.captured_ui); p && w_slot.captured_key == key::lbutton) {
     p->button_event(event::button(key::lbutton, false, wp, lp));
+    if (w_slot.captured_ui == w_slot.hovered_ui)
+      p->click_event(event::button(key::lbutton, false, wp, lp));
+  }
+  w_slot.captured_ui = {};
+  w_slot.captured_key = {};
+  w_slot.dirty = true;
 }
 
 inline void wm_rbuttondown(window_slot& w_slot, WPARAM wp, LPARAM lp) {
-  if (set_capture_count++ == 0) ::SetCapture(w_slot.hwnd);
-  const auto pt = float2(std::bit_cast<short2>(uint32_t(uint_cast(lp))));
-  if (const auto fui_slot_p = system::uis.get(w_slot.focused_ui)) {
-    if (fui_slot_p->visible && fui_slot_p->enabled && fui_slot_p->hit_test(pt)) {
-      fui_slot_p->button_event(event::button(key::rbutton, true, wp, lp));
+  if (w_slot.capture_count++ == 0) ::SetCapture(w_slot.hwnd);
+  w_slot.captured_key = key::rbutton;
+  w_slot.dirty = true;
+  if (const auto p = system::uis.get(w_slot.focused_ui)) {
+    if (w_slot.focused_ui == w_slot.hovered_ui) {
+      w_slot.captured_ui = p->id;
+      p->button_event(event::button(key::rbutton, true, wp, lp));
       return;
     } else {
-      fui_slot_p->focus_event(false);
-      w_slot.dirty = true;
+      w_slot.focused_ui = {};
+      p->focus_event(false);
+      p->button_state.clear();
     }
   }
-  if (const auto p = system::uis.get(w_slot.hovered_ui); p && p->visible && p->enabled) {
+  if (const auto p = system::uis.get(w_slot.hovered_ui)) {
+    w_slot.captured_ui = p->id;
     p->button_event(event::button(key::rbutton, true, wp, lp));
     if (p->focus_event(true)) w_slot.focused_ui = p->id;
     else w_slot.focused_ui = {};
-    w_slot.dirty = true;
-  }
+  } else w_slot.captured_ui = {}, w_slot.focused_ui = {};
 }
 
 inline void wm_rbuttonup(window_slot& w_slot, WPARAM wp, LPARAM lp) {
-  if (--set_capture_count == 0) ::ReleaseCapture();
-  const auto pt = float2(std::bit_cast<short2>(uint32_t(uint_cast(lp))));
-  if (const auto p = system::uis.get(w_slot.focused_ui); p && p->visible && p->enabled)
+  w_slot.capture_count = yw::max(0, w_slot.capture_count - 1);
+  if (w_slot.capture_count == 0) ::ReleaseCapture();
+  if (const auto p = system::uis.get(w_slot.captured_ui); p && w_slot.captured_key == key::rbutton) {
     p->button_event(event::button(key::rbutton, false, wp, lp));
+    if (w_slot.captured_ui == w_slot.hovered_ui)
+      p->click_event(event::button(key::rbutton, false, wp, lp));
+  }
+  w_slot.captured_ui = {};
+  w_slot.captured_key = {};
+  w_slot.dirty = true;
 }
 
 inline void wm_mbuttondown(window_slot& w_slot, WPARAM wp, LPARAM lp) {
-  if (set_capture_count++ == 0) ::SetCapture(w_slot.hwnd);
-  const auto pt = float2(std::bit_cast<short2>(uint32_t(uint_cast(lp))));
-  if (const auto fui_slot_p = system::uis.get(w_slot.focused_ui)) {
-    if (fui_slot_p->visible && fui_slot_p->enabled && fui_slot_p->hit_test(pt)) {
-      fui_slot_p->button_event(event::button(key::mbutton, true, wp, lp));
+  if (w_slot.capture_count++ == 0) ::SetCapture(w_slot.hwnd);
+  w_slot.captured_key = key::mbutton;
+  w_slot.dirty = true;
+  if (const auto p = system::uis.get(w_slot.focused_ui)) {
+    if (w_slot.focused_ui == w_slot.hovered_ui) {
+      w_slot.captured_ui = p->id;
+      p->button_event(event::button(key::mbutton, true, wp, lp));
       return;
     } else {
-      fui_slot_p->focus_event(false);
-      w_slot.dirty = true;
+      w_slot.focused_ui = {};
+      p->focus_event(false);
+      p->button_state.clear();
     }
   }
-  if (const auto p = system::uis.get(w_slot.hovered_ui); p && p->visible && p->enabled) {
+  if (const auto p = system::uis.get(w_slot.hovered_ui)) {
+    w_slot.captured_ui = p->id;
     p->button_event(event::button(key::mbutton, true, wp, lp));
     if (p->focus_event(true)) w_slot.focused_ui = p->id;
     else w_slot.focused_ui = {};
-    w_slot.dirty = true;
-  }
+  } else w_slot.captured_ui = {}, w_slot.focused_ui = {};
 }
 
 inline void wm_mbuttonup(window_slot& w_slot, WPARAM wp, LPARAM lp) {
-  if (--set_capture_count == 0) ::ReleaseCapture();
-  const auto pt = float2(std::bit_cast<short2>(uint32_t(uint_cast(lp))));
-  if (const auto p = system::uis.get(w_slot.focused_ui); p && p->visible && p->enabled)
+  w_slot.capture_count = yw::max(0, w_slot.capture_count - 1);
+  if (w_slot.capture_count == 0) ::ReleaseCapture();
+  if (const auto p = system::uis.get(w_slot.captured_ui); p && w_slot.captured_key == key::mbutton) {
     p->button_event(event::button(key::mbutton, false, wp, lp));
+    if (w_slot.captured_ui == w_slot.hovered_ui)
+      p->click_event(event::button(key::mbutton, false, wp, lp));
+  }
+  w_slot.captured_ui = {};
+  w_slot.captured_key = {};
+  w_slot.dirty = true;
 }
 
 inline void wm_xbuttondown(window_slot& w_slot, WPARAM wp, LPARAM lp) {
-  if (set_capture_count++ == 0) ::SetCapture(w_slot.hwnd);
-  const auto pt = float2(std::bit_cast<short2>(uint32_t(uint_cast(lp))));
-  const auto code = (wp & MK_XBUTTON1) != 0 ? key::xbutton1 : key::xbutton2;
-  if (const auto fui_slot_p = system::uis.get(w_slot.focused_ui)) {
-    if (fui_slot_p->visible && fui_slot_p->enabled && fui_slot_p->hit_test(pt)) {
-      fui_slot_p->button_event(event::button(code, true, wp, lp));
+  const bool x1 = HIWORD(wp) == XBUTTON1;
+  const auto code = x1 ? key::xbutton1 : key::xbutton2;
+  if (w_slot.capture_count++ == 0) ::SetCapture(w_slot.hwnd);
+  w_slot.captured_key = code;
+  w_slot.dirty = true;
+  if (const auto p = system::uis.get(w_slot.focused_ui)) {
+    if (w_slot.focused_ui == w_slot.hovered_ui) {
+      w_slot.captured_ui = p->id;
+      p->button_event(event::button(code, true, wp, lp));
       return;
     } else {
-      fui_slot_p->focus_event(false);
-      w_slot.dirty = true;
+      w_slot.focused_ui = {};
+      p->focus_event(false);
+      p->button_state.clear();
     }
   }
-  if (const auto p = system::uis.get(w_slot.hovered_ui); p && p->visible && p->enabled) {
+  if (const auto p = system::uis.get(w_slot.hovered_ui)) {
+    w_slot.captured_ui = p->id;
     p->button_event(event::button(code, true, wp, lp));
     if (p->focus_event(true)) w_slot.focused_ui = p->id;
     else w_slot.focused_ui = {};
-    w_slot.dirty = true;
-  }
+  } else w_slot.captured_ui = {}, w_slot.focused_ui = {};
 }
 
 inline void wm_xbuttonup(window_slot& w_slot, WPARAM wp, LPARAM lp) {
-  if (--set_capture_count == 0) ::ReleaseCapture();
-  const auto pt = float2(std::bit_cast<short2>(uint32_t(uint_cast(lp))));
-  const auto code = (wp & MK_XBUTTON1) != 0 ? key::xbutton1 : key::xbutton2;
-  if (const auto p = system::uis.get(w_slot.focused_ui); p && p->visible && p->enabled)
+  const bool x1 = HIWORD(wp) == XBUTTON1;
+  const auto code = x1 ? key::xbutton1 : key::xbutton2;
+  w_slot.capture_count = yw::max(0, w_slot.capture_count - 1);
+  if (w_slot.capture_count == 0) ::ReleaseCapture();
+  if (const auto p = system::uis.get(w_slot.captured_ui); p && w_slot.captured_key == code) {
     p->button_event(event::button(code, false, wp, lp));
+    if (w_slot.captured_ui == w_slot.hovered_ui)
+      p->click_event(event::button(code, false, wp, lp));
+  }
+  w_slot.captured_ui = {};
+  w_slot.captured_key = {};
+  w_slot.dirty = true;
 }
 } // namespace internal
 
@@ -247,53 +288,35 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
   if (!w_slot_p) return ::DefWindowProcW(hwnd, msg, wp, lp);
 
   switch (msg) {
-  case WM_MOUSEMOVE:
-    internal::wm_mousemove(*w_slot_p, wp, lp);
-    return 0;
-
-  case WM_MOUSELEAVE:
-    internal::wm_mouseleave(*w_slot_p, wp, lp);
-    return 0;
+  case WM_MOUSEMOVE: internal::wm_mousemove(*w_slot_p, wp, lp); return 0;
+  case WM_MOUSELEAVE: internal::wm_mouseleave(*w_slot_p, wp, lp); return 0;
 
   case WM_KEYDOWN:
     if (wp == VK_TAB) internal::wm_keydown_tab(*w_slot_p, wp, lp);
     else if (const auto p = system::uis.get(w_slot_p->focused_ui)) p->key_event(event::key(true, wp, lp));
     return 0;
-
   case WM_KEYUP:
     if (const auto p = system::uis.get(w_slot_p->focused_ui)) p->key_event(event::key(false, wp, lp));
     return 0;
 
-  case WM_LBUTTONDOWN:
-    internal::wm_lbuttondown(*w_slot_p, wp, lp);
-    return 0;
+  case WM_LBUTTONDOWN: internal::wm_lbuttondown(*w_slot_p, wp, lp); return 0;
+  case WM_LBUTTONUP: internal::wm_lbuttonup(*w_slot_p, wp, lp); return 0;
 
-  case WM_LBUTTONUP:
-    internal::wm_lbuttonup(*w_slot_p, wp, lp);
-    return 0;
+  case WM_RBUTTONDOWN: internal::wm_rbuttondown(*w_slot_p, wp, lp); return 0;
+  case WM_RBUTTONUP: internal::wm_rbuttonup(*w_slot_p, wp, lp); return 0;
 
-  case WM_RBUTTONDOWN:
-    internal::wm_rbuttondown(*w_slot_p, wp, lp);
-    return 0;
+  case WM_MBUTTONDOWN: internal::wm_mbuttondown(*w_slot_p, wp, lp); return 0;
+  case WM_MBUTTONUP: internal::wm_mbuttonup(*w_slot_p, wp, lp); return 0;
 
-  case WM_RBUTTONUP:
-    internal::wm_rbuttonup(*w_slot_p, wp, lp);
-    return 0;
+  case WM_XBUTTONDOWN: internal::wm_xbuttondown(*w_slot_p, wp, lp); return 0;
+  case WM_XBUTTONUP: internal::wm_xbuttonup(*w_slot_p, wp, lp); return 0;
 
-  case WM_MBUTTONDOWN:
-    internal::wm_mbuttondown(*w_slot_p, wp, lp);
-    return 0;
-
-  case WM_MBUTTONUP:
-    internal::wm_mbuttonup(*w_slot_p, wp, lp);
-    return 0;
-
-  case WM_XBUTTONDOWN:
-    internal::wm_xbuttondown(*w_slot_p, wp, lp);
-    return 0;
-
-  case WM_XBUTTONUP:
-    internal::wm_xbuttonup(*w_slot_p, wp, lp);
+  case WM_KILLFOCUS:
+    if (const auto p = system::uis.get(w_slot_p->captured_ui)) p->button_state.clear();
+    w_slot_p->captured_ui = {};
+    w_slot_p->captured_key = {};
+    w_slot_p->capture_count = 0;
+    ::ReleaseCapture();
     return 0;
 
   case WM_SIZE:
@@ -305,9 +328,7 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     else w_slot_p->dirty = true;
     return 0;
 
-  case WM_ENTERSIZEMOVE:
-    w_slot_p->resizing = true;
-    return 0;
+  case WM_ENTERSIZEMOVE: w_slot_p->resizing = true; return 0;
 
   case WM_EXITSIZEMOVE:
     w_slot_p->resizing = false;
@@ -351,54 +372,4 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
   }
   return ::DefWindowProcW(hwnd, msg, wp, lp);
 }
-
-// inline mainloop_result mainloop() {
-//   static stopwatch frame_timer = [] {
-//     stopwatch t;
-//     t.start();
-//     return t;
-//   }();
-//   ++window::system.frame_count;
-//   uint32_t message_count = 0;
-//   for (MSG msg; ::PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);) {
-//     if (msg.message == WM_QUIT) return mainloop_result(mainloop_result::state::quit);
-//     ::TranslateMessage(&msg), ::DispatchMessageW(&msg);
-//     if (window::system.last_error) return mainloop_result(mainloop_result::state::error);
-//     if (++message_count > window::system.max_messages_per_frame) break;
-//   }
-//   // 負荷軽減のため、前回の描画から十分な時間が経過していない場合は描画をスキップする。
-//   if (frame_timer.elapsed() < 1.0 / window::system.max_frames_per_second)
-//     return mainloop_result(mainloop_result::state::running, true);
-//   frame_timer.restart();
-//   // 各ウィンドウについてコントロールを描画して更新する。
-//   // 描画の失敗は扱わないが、error_traceのデストラクタによって自動でエラー出力される。
-//   for (auto& master_slot : window::system.windows) {
-//     if (auto d = master_slot.rendertarget.begin_draw())
-//       for (auto& control : master_slot.controls)
-//         if (control.visible) control.draw();
-//     if (master_slot.swapchain) master_slot.swapchain->Present(0, 0);
-//     for (auto& slave_slot : master_slot.slaves) {
-//       if (window::system.last_error) return mainloop_result(mainloop_result::state::error);
-//       if (auto d = slave_slot.rendertarget.begin_draw())
-//         for (auto& control : slave_slot.controls)
-//           if (control.visible) control.draw();
-//       if (slave_slot.swapchain) slave_slot.swapchain->Present(0, 0);
-//     }
-//   }
-//   // ウィンドウ背景を初期化する。
-//   for (auto& master_slot : window::system.windows) {
-//     if (auto d = master_slot.rendertarget.begin_draw(master_slot.background_color); !d) {
-//       window::system.last_error = std::move(d.error().push());
-//       return mainloop_result(mainloop_result::state::error);
-//     }
-//     for (auto& slave_slot : master_slot.slaves) {
-//       if (window::system.last_error) return mainloop_result(mainloop_result::state::error);
-//       if (auto d = slave_slot.rendertarget.begin_draw(slave_slot.background_color); !d) {
-//         window::system.last_error = std::move(d.error().push());
-//         return mainloop_result(mainloop_result::state::error);
-//       }
-//     }
-//   }
-//   return mainloop_result(mainloop_result::state::running);
-// }
 } // namespace yw

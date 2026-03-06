@@ -1,187 +1,98 @@
-// #pragma once
-// #include "ywx/focusable_base.h"
-// #include "ywx/icon.h"
-// #include "ywx/label.h"
-// #include "ywx/svgpath.h"
+#pragma once
+#include "ywx/ui_icon.h"
+#include "ywx/ui_text.h"
 
-// namespace yw::ui {
+namespace yw::ui {
 
-// //////////////////////////////////////// MARK: ui::checkbox
+//////////////////////////////////////// MARK: ui::checkbox
 
-// class checkbox : public focusable_base {
-// public:
-//   class slot : public focusable_base::slot {
-//   public:
-//     bool checked = false;
-//     icon box_icon{};
-//     icon mark_icon{};
-//     label label_slot{};
-//     float2 margin{4.0f, 4.0f};
-//     float2 icon_size{16.0f, 16.0f};
-//     color icon_color = colors::black;
-//     function<void, bool> on_toggle;
+class checkbox : public frame {
+public:
+  class slot : public frame::slot {
+  public:
+    inline static svgpath default_unchecked_icon{};
+    inline static svgpath default_checked_icon{};
 
-//     virtual std::expected<void, error_trace> proc(UINT msg, WPARAM wp, LPARAM lp) override {
-//       switch (msg) {
-//       case WM_LBUTTONDOWN:
-//         return {};
-//       case WM_LBUTTONUP: {
-//         const auto pt = float2(std::bit_cast<short2>(static_cast<uint32_t>(lp & 0xFFFFFFFF)));
-//         if (hit_test(pt)) {
-//           checked = !checked;
-//           if (on_toggle) on_toggle(checked);
-//           if (const auto w = system::windows.get(window_id)) w->dirty = true;
-//         }
-//         return {};
-//       }
-//       case WM_KEYDOWN:
-//         if ((wp == VK_SPACE || wp == VK_RETURN)) return {};
-//         break;
-//       case WM_KEYUP:
-//         if ((wp == VK_SPACE || wp == VK_RETURN)) {
-//           checked = !checked;
-//           if (on_toggle) on_toggle(checked);
-//           if (const auto w = system::windows.get(window_id)) w->dirty = true;
-//         }
-//         break;
-//       }
-//       return {};
-//     }
+    ui::icon unchecked_icon;
+    ui::icon checked_icon;
+    ui::text text;
+    bool checked = false;
 
-//     virtual void draw() const override {
-//       // Draw background and border
-//       base::slot::draw();
+    slot() { focusable = true; }
 
-//       // Draw box icon (centered vertically)
-//       {
-//         const auto icon_pos = pos + float2{4.0f, (size.y - icon_size.y) / 2.0f};
-//         auto* box_icon_slot = const_cast<icon::slot*>(
-//           dynamic_cast<const icon::slot*>(box_icon._ui_slot())
-//         );
-//         if (box_icon_slot) {
-//           auto saved_pos = box_icon_slot->pos;
-//           auto saved_size = box_icon_slot->size;
-//           box_icon_slot->pos = icon_pos;
-//           box_icon_slot->size = icon_size;
-//           box_icon_slot->draw();
-//           box_icon_slot->pos = saved_pos;
-//           box_icon_slot->size = saved_size;
-//         }
-//       }
+    virtual void draw() const override {
+      frame::slot::draw();
+      if (auto icon_slot_p = unchecked_icon.slot_adress(&unchecked_icon)) icon_slot_p->draw();
+      if (checked)
+        if (auto icon_slot_p = checked_icon.slot_adress(&checked_icon)) icon_slot_p->draw();
+      if (auto text_slot_p = text.slot_adress(&text)) text_slot_p->draw();
+    }
 
-//       // Draw mark icon if checked
-//       if (checked) {
-//         const auto icon_pos = pos + float2{4.0f, (size.y - icon_size.y) / 2.0f};
-//         auto* mark_icon_slot = const_cast<icon::slot*>(
-//           dynamic_cast<const icon::slot*>(mark_icon._ui_slot())
-//         );
-//         if (mark_icon_slot) {
-//           auto saved_pos = mark_icon_slot->pos;
-//           auto saved_size = mark_icon_slot->size;
-//           mark_icon_slot->pos = icon_pos;
-//           mark_icon_slot->size = icon_size;
-//           mark_icon_slot->draw();
-//           mark_icon_slot->pos = saved_pos;
-//           mark_icon_slot->size = saved_size;
-//         }
-//       }
+    virtual void click_event(event::button e) override {
+      if (is_enabled() && e.code == key::lbutton) checked = !checked;
+      frame::slot::click_event(e);
+    }
+  };
 
-//       // Draw label text
-//       {
-//         const auto text_pos = pos + float2{4.0f + icon_size.x + 4.0f, 0};
-//         const auto text_size = size - float2{4.0f + icon_size.x + 4.0f + 4.0f, 0};
-//         auto* label_slot = const_cast<label::slot*>(
-//           dynamic_cast<const label::slot*>(label_text._ui_slot())
-//         );
-//         if (label_slot) {
-//           auto saved_pos = label_slot->pos;
-//           auto saved_size = label_slot->size;
-//           label_slot->pos = text_pos;
-//           label_slot->size = text_size;
-//           label_slot->draw();
-//           label_slot->pos = saved_pos;
-//           label_slot->size = saved_size;
-//         }
-//       }
-//     }
-//   };
+public:
+  using base::operator bool;
+  slot* slot_address() const noexcept { return dynamic_cast<slot*>(system::uis.get(_id)); }
 
-// private:
-//   static inline svgpath default_box_icon{};
-//   static inline svgpath default_mark_icon{};
-//   static inline bool icons_initialized = false;
+  const auto& unchecked_icon() const { return unsafe_get(&slot::unchecked_icon); }
+  const auto& checked_icon() const { return unsafe_get(&slot::checked_icon); }
+  const auto& text() const { return unsafe_get(&slot::text); }
+  bool checked() const { return unsafe_get(&slot::checked); }
 
-//   static std::expected<void, error_trace> initialize_default_icons() {
-//     if (icons_initialized) return {};
+  void checked(bool value) { _set(&slot::checked, value); }
 
-//     // Box icon (empty box) - 12x12 size
-//     if (auto res = svgpath::create({12.0f, 12.0f}, "M2 2 L14 2 L14 14 L2 14 Z")) {
-//       default_box_icon = std::move(*res);
-//     } else {
-//       return unexpected_error(res.error());
-//     }
+  void text_alignment(DWRITE_TEXT_ALIGNMENT align) {
+    if (const auto s = slot_address()) s->text.text_alignment(align);
+  }
+  void paragraph_alignment(DWRITE_PARAGRAPH_ALIGNMENT align) {
+    if (const auto s = slot_address()) s->text.paragraph_alignment(align);
+  }
 
-//     // Mark icon (checkmark) - 12x12 size to match box
-//     if (auto res = svgpath::create({12.0f, 12.0f}, "M3 8 L6 11 L13 4")) {
-//       default_mark_icon = std::move(*res);
-//     } else {
-//       return unexpected_error(res.error());
-//     }
+  template<included_in<window&, none> Window, stringable S> static std::expected<checkbox, error_trace> add(
+    Window&& w, float2 Pos, float2 Size, S&& Text, float2 IconSize = {18, 18}, float2 Padding = {4, 4}) {
+    if (auto res = base::add<checkbox>(w, Pos, Size)) {
+      const auto slot_p = res->second;
+      // Initialize default icons on first create
+      if (!slot::default_unchecked_icon) {
+        auto unchecked_svg = svgpath::create(
+          {16, 16}, "M 4 1 L 12 1 Q 15 1 15 4 L 15 12 Q 15 15 12 15 L 4 15 Q 1 15 1 12 L 1 4 Q 1 1 4 1 Z");
+        if (unchecked_svg) slot::default_unchecked_icon = std::move(*unchecked_svg);
+      }
+      if (!slot::default_checked_icon) {
+        auto checked_svg = svgpath::create({16, 16}, "M 4 1 L 12 1 Q 15 1 15 4 L 15 12 Q 15 15 12 15 L 4 15 Q 1 15 1 "
+                                                     "12 L 1 4 Q 1 1 4 1 Z M 4 8 L 7 11 L 12 5 L 11 4 L 7 9 L 5 7 Z");
+        if (checked_svg) slot::default_checked_icon = std::move(*checked_svg);
+      }
 
-//     icons_initialized = true;
-//     return {};
-//   }
+      // Center icon and text vertically
+      const auto icon_y = Pos.y + (Size.y - IconSize.y) * 0.5f;
+      const auto icon_pos = float2(Pos.x + Padding.x, icon_y);
+      auto unchecked_icon_res = ui::icon::add(none{}, icon_pos, IconSize);
+      if (!unchecked_icon_res) return unexpected_error(unchecked_icon_res.error());
+      slot_p->unchecked_icon = std::move(*unchecked_icon_res);
+      if (auto res = svgpath::create(slot::default_unchecked_icon); !res) return unexpected_error(res.error());
+      else slot_p->unchecked_icon.image(std::move(*res));
 
-// protected:
-//   slot* _checkbox_slot() const noexcept { return dynamic_cast<slot*>(_ui_slot()); }
+      auto checked_icon_res = ui::icon::add(none{}, icon_pos, IconSize);
+      if (!checked_icon_res) return unexpected_error(checked_icon_res.error());
+      slot_p->checked_icon = std::move(*checked_icon_res);
+      if (auto res = svgpath::create(slot::default_checked_icon); !res) return unexpected_error(res.error());
+      else slot_p->checked_icon.image(std::move(*res));
 
-//   template<typename Mp, typename T> void _checkbox_set(Mp mp, T&& value) {
-//     if (const auto s = _checkbox_slot()) {
-//       s->*mp = static_cast<T&&>(value);
-//       if (const auto w = system::windows.get(s->window_id)) w->dirty = true;
-//     }
-//   }
+      const auto text_pos = float2(icon_pos.x + IconSize.x + Padding.x, Pos.y);
+      const auto text_size = float2(std::max(0.0f, Size.x - (IconSize.x + Padding.x * 2.0f)), Size.y);
+      auto text_res = ui::text::add(none{}, text_pos, text_size, static_cast<S&&>(Text), {});
+      if (!text_res) return unexpected_error(text_res.error());
+      slot_p->text = std::move(*text_res);
+      slot_p->text.paragraph_alignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 
-//   template<typename Mp> const auto* _checkbox_get(Mp mp) const {
-//     if (const auto s = _checkbox_slot()) return &(s->*mp);
-//     else return static_cast<const remove_cvref<decltype(s->*mp)>*>(nullptr);
-//   }
+      return checkbox{std::move(res->first)};
+    } else return unexpected_error(res.error());
+  }
+};
 
-// public:
-//   using focusable_base::focusable_base;
-
-//   const auto& checked() const { return *_checkbox_get(&slot::checked); }
-//   const auto& icon_size() const { return *_checkbox_get(&slot::icon_size); }
-//   const auto& icon_color() const { return *_checkbox_get(&slot::icon_color); }
-//   const auto& on_toggle() const { return *_checkbox_get(&slot::on_toggle); }
-
-//   void checked(bool value) { _checkbox_set(&slot::checked, value); }
-//   void icon_size(float2 value) { _checkbox_set(&slot::icon_size, value); }
-//   void icon_color(const color& value) { _checkbox_set(&slot::icon_color, value); }
-//   void on_toggle(function<void, bool> f) { _checkbox_set(&slot::on_toggle, std::move(f)); }
-
-//   static std::expected<checkbox, error_trace> add(window& w, float2 Pos, float2 Size, stringable<wchar_t> auto&& label_text = L"") {
-//     if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
-//     if (auto res = initialize_default_icons(); !res) return unexpected_error(res.error());
-
-//     if (auto result = _add<checkbox>(w, Pos, Size); result) {
-//       if (const auto slot = result->_checkbox_slot()) {
-//         // Set up box icon
-//         slot->box_icon.image(default_box_icon);
-//         slot->box_icon.image_color(colors::black);
-
-//         // Set up mark icon
-//         slot->mark_icon.image(default_mark_icon);
-//         slot->mark_icon.image_color(colors::black);
-
-//         // Set up label
-//         slot->label_text.text(std::wstring_view(label_text));
-//       }
-//       return result;
-//     } else {
-//       return unexpected_error(result.error());
-//     }
-//   }
-// };
-
-// } // namespace yw::ui
+} // namespace yw::ui

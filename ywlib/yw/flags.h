@@ -42,6 +42,8 @@ template<is_enum E> struct alignas(E) flags {
 
   constexpr explicit operator bool() const noexcept { return value != E(); }
   friend constexpr bool operator==(flags a, flags b) noexcept = default;
+  friend constexpr bool operator==(flags a, E b) noexcept { return a == flags(b); }
+  friend constexpr bool operator==(E a, flags b) noexcept { return flags(a) == b; }
 
   constexpr bool contains(flags other) const noexcept { return (std::to_underlying(value) & std::to_underlying(other.value)) == std::to_underlying(other.value); }
   constexpr bool none() const noexcept { return to_underlying() == 0; }
@@ -58,5 +60,7 @@ template<is_enum E> struct alignas(E) flags {
   constexpr flags& set(E e) noexcept   { return (*this |= e); }
   constexpr flags& reset(E e) noexcept { return (*this &= ~flags{e}); }
   constexpr flags& flip(E e) noexcept  { return (*this ^= e); }
+
+  constexpr void clear() noexcept { value = E(); }
 };
 }
