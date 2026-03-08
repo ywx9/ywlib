@@ -404,7 +404,7 @@ public:
   }
 };
 
-///////////////////////////////////////// MARK: ui implementation
+///////////////////////////////////////// MARK: ui impl
 
 namespace ui {
 inline void base::_clear() noexcept {
@@ -464,7 +464,7 @@ std::expected<tuple<Ui, typename Ui::slot*>, error_trace> base::add(Window& w, f
 }
 } // namespace ui
 
-//////////////////////////////////////// MARK: window implementation
+//////////////////////////////////////// MARK: window impl
 
 inline window_slot* window::_window_slot() const noexcept { return system::windows.get(_id); }
 

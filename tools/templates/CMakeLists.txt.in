@@ -18,6 +18,7 @@ else()
   add_executable(${YOUR_APP_NAME} main.cpp)
 endif()
 
+target_compile_definitions(${YOUR_APP_NAME} PRIVATE YWLIB_COMPILE)
 target_compile_features(${YOUR_APP_NAME} PRIVATE cxx_std_23)
 target_include_directories(${YOUR_APP_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ywlib")
 
