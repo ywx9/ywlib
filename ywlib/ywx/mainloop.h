@@ -72,8 +72,7 @@ inline void wm_mousemove(window_slot& w_slot, WPARAM wp, LPARAM lp) {
             hui_slot_p->hover_event(event::hover((wp & 0xff) | 0x200, lp)); // leave
         w_slot.hovered_ui = ui_slot_p->id;
         ui_slot_p->hover_event(event::hover((wp & 0xff) | 0x100, lp)); // enter
-      }
-      ui_slot_p->move_event(event::move((wp & 0xff) | 0x400, lp)); // move
+      } else ui_slot_p->hover_event(event::hover((wp & 0xff) | 0x400, lp)); // move
       return;
     }
   }
@@ -87,6 +86,7 @@ inline void wm_mousemove(window_slot& w_slot, WPARAM wp, LPARAM lp) {
 inline void wm_mouseleave(window_slot& w_slot, WPARAM wp, LPARAM lp) {
   ::GetCursorPos(reinterpret_cast<POINT*>(&system::cursor_pos));
   if (w_slot.hovered_ui) {
+    print(source());
     if (auto ui_slot_p = system::uis.get(w_slot.hovered_ui))
       ui_slot_p->hover_event(event::hover((wp & 0xff) | 0x200, lp)); // leave
     w_slot.hovered_ui = {};
@@ -104,10 +104,7 @@ inline void wm_keydown_tab(window_slot& w_slot, WPARAM wp, LPARAM lp) {
         cur = static_cast<int>(i);
         break;
       }
-    if (const auto fui_slot_p = system::uis.get(w_slot.focused_ui)) {
-      fui_slot_p->focus_event(false);
-      fui_slot_p->button_state.clear();
-    }
+    if (const auto fui_slot_p = system::uis.get(w_slot.focused_ui)) fui_slot_p->focus_event(false);
   }
   if (shift) {
     while (--cur >= 0)
@@ -142,7 +139,6 @@ inline void wm_lbuttondown(window_slot& w_slot, WPARAM wp, LPARAM lp) {
     } else { // outside of focused_ui, so unfocus it
       w_slot.focused_ui = {};
       p->focus_event(false);
-      p->button_state.clear();
     }
   }
   // send event to hovered_ui and focus it, if exists
@@ -179,7 +175,6 @@ inline void wm_rbuttondown(window_slot& w_slot, WPARAM wp, LPARAM lp) {
     } else {
       w_slot.focused_ui = {};
       p->focus_event(false);
-      p->button_state.clear();
     }
   }
   if (const auto p = system::uis.get(w_slot.hovered_ui)) {
@@ -215,7 +210,6 @@ inline void wm_mbuttondown(window_slot& w_slot, WPARAM wp, LPARAM lp) {
     } else {
       w_slot.focused_ui = {};
       p->focus_event(false);
-      p->button_state.clear();
     }
   }
   if (const auto p = system::uis.get(w_slot.hovered_ui)) {
@@ -253,7 +247,6 @@ inline void wm_xbuttondown(window_slot& w_slot, WPARAM wp, LPARAM lp) {
     } else {
       w_slot.focused_ui = {};
       p->focus_event(false);
-      p->button_state.clear();
     }
   }
   if (const auto p = system::uis.get(w_slot.hovered_ui)) {
@@ -312,7 +305,6 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
   case WM_XBUTTONUP: internal::wm_xbuttonup(*w_slot_p, wp, lp); return 0;
 
   case WM_KILLFOCUS:
-    if (const auto p = system::uis.get(w_slot_p->captured_ui)) p->button_state.clear();
     w_slot_p->captured_ui = {};
     w_slot_p->captured_key = {};
     w_slot_p->capture_count = 0;

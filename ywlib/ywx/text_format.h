@@ -179,6 +179,29 @@ public:
     return std::move(tl);
   }
 
+  /// creates text layout easily
+  static std::expected<text_layout, error_trace> create(stringable<wchar_t> auto&& text) {
+    if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
+    auto sv = std::wstring_view(text);
+    comptr<IDWriteTextLayout> tl;
+    const float lv = 1e6f;
+    auto hr = dwrite.factory()->CreateTextLayout(sv.data(), UINT(sv.size()), dwrite.text_format(), lv, lv, &tl.get());
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", int32_t(hr));
+    DWRITE_TEXT_METRICS metrics{};
+    if (auto hr = tl->GetMetrics(&metrics); FAILED(hr))
+      return unexpected_error(errors::operation_failed, "GetMetrics failed", int32_t(hr));
+    return create(text, tl.get(), float2(metrics.width, metrics.height));
+  }
+
+  /// creates text layout from another text format and adjusts the layout size to fit the text
+  static std::expected<text_layout, error_trace> create(stringable<wchar_t> auto&& text, text_format_like auto&& source, is_none auto) {
+    if (auto tl = create(text, source, float2(1e6f, 1e6f)); tl) {
+      if (auto res = tl->metrics_size()) {
+        return create(text, source, *res);
+      } else return unexpected_error(res.error());
+    } else return unexpected_error(tl.error());
+  }
+
   /// returns position and size `{left, top, width, height}` of the character at the specified text position
   std::expected<float4, error_trace> hit_test(uint1 text_position, bool is_trailing = false) const {
     if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
@@ -249,6 +272,25 @@ public:
     if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
     if (internal::set_paragraph_alignment(_text_layout.get(), align)) return {};
     else return unexpected_error(errors::invalid_argument, "invalid paragraph alignment value");
+  }
+
+  std::expected<float2, error_trace> metrics_size() const {
+    if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
+    DWRITE_TEXT_METRICS metrics{};
+    if (auto hr = _text_layout->GetMetrics(&metrics); FAILED(hr))
+      return unexpected_error(errors::operation_failed, "GetMetrics failed", int32_t(hr));
+    return float2(metrics.width, metrics.height);
+  }
+
+  std::expected<void, error_trace> adjust_size() {
+    if (!_text_layout) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
+    _text_layout->SetMaxWidth(1e6f);
+    _text_layout->SetMaxHeight(1e6f);
+    if (auto size = metrics_size()) {
+      _text_layout->SetMaxWidth(size->x);
+      _text_layout->SetMaxHeight(size->y);
+      return {};
+    } else return unexpected_error(size.error());
   }
 };
 

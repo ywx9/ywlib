@@ -1,5 +1,6 @@
 #pragma once
 #include "ywx/ui_text.h"
+#include "ywx/ui_frame.h"
 
 namespace yw::ui {
 

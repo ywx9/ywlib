@@ -381,6 +381,8 @@ template<std::regular T> struct vector<T, 3> {
   }
 
   constexpr vector operator()() const noexcept { return *this; }
+
+  constexpr vector<T, 2> xy() const noexcept { return {x, y}; }
 };
 
 //////////////////////////////////////// MARK: VECTOR4
@@ -465,6 +467,9 @@ template<std::regular T> struct vector<T, 4> {
   }
 
   constexpr vector operator()() const noexcept { return *this; }
+
+  constexpr vector<T, 3> xyz() const noexcept { return {x, y, z}; }
+  constexpr vector<T, 2> xy() const noexcept { return {x, y}; }
 };
 } // namespace yw
 

@@ -46,6 +46,16 @@ inline std::unexpected<error_trace> unexpected_win32_error(const char* msg, cons
   return unexpected_error(errors::operation_failed, msg, int32_t(::GetLastError()), {}, src);
 }
 
+//////////////////////////////////////// MARK: desktop_client_size
+
+inline uint2 desktop_client_size() {
+  static const uint2 _size = [] {
+    if (RECT r; !::GetClientRect(::GetDesktopWindow(), &r)) return uint2();
+    else return uint2(r.right, r.bottom);
+  }();
+  return _size;
+}
+
 //////////////////////////////////////// MARK: wclass
 
 inline class {

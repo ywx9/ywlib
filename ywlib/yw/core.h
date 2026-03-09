@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <compare>
 #include <concepts>
 #include <cstring>
@@ -389,6 +390,18 @@ constexpr auto vtos = [](arithmetic auto value) -> std::string {
   else temp.clear();
   return temp;
 };
+
+namespace internal {
+inline constexpr char utos_table_upper[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+inline constexpr char utos_table_lower[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+template<unsigned Width, unsigned Base = 10, bool Upper = false, char_type C = char>
+requires(Base >= 2 && Base <= 36) constexpr C* utos(C* dest, uint64_t u) {
+  C* p       = dest + Width;
+  auto table = Upper ? utos_table_upper : utos_table_lower;
+  while (p != dest) *(--p) = static_cast<C>(table[u % Base]), u /= Base;
+  return dest + Width;
+}
+}
 
 //////////////////////////////////////// MARK: GET
 

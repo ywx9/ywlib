@@ -1,6 +1,7 @@
 #pragma once
 #include "ywx/ui_icon.h"
 #include "ywx/ui_text.h"
+#include "ywx/ui_frame.h"
 
 namespace yw::ui {
 
@@ -59,12 +60,11 @@ public:
       // Initialize default icons on first create
       if (!slot::default_unchecked_icon) {
         auto unchecked_svg = svgpath::create(
-          {16, 16}, "M 4 1 L 12 1 Q 15 1 15 4 L 15 12 Q 15 15 12 15 L 4 15 Q 1 15 1 12 L 1 4 Q 1 1 4 1 Z");
+          {16, 16}, "M 3 0.5 L 13 0.5 Q 15.5 0.5 15.5 3 L 15.5 13 Q 15.5 15.5 13 15.5 L 3 15.5 Q 0.5 15.5 0.5 13 L 0.5 3 Q 0.5 0.5 3 0.5 Z M 3 0.5 L 13 0.5 Q 15.5 0.5 15.5 3 L 15.5 13 Q 15.5 15.5 13 15.5 L 3 15.5 Q 0.5 15.5 0.5 13 L 0.5 3 Q 0.5 0.5 3 0.5 Z");
         if (unchecked_svg) slot::default_unchecked_icon = std::move(*unchecked_svg);
       }
       if (!slot::default_checked_icon) {
-        auto checked_svg = svgpath::create({16, 16}, "M 4 1 L 12 1 Q 15 1 15 4 L 15 12 Q 15 15 12 15 L 4 15 Q 1 15 1 "
-                                                     "12 L 1 4 Q 1 1 4 1 Z M 4 8 L 7 11 L 12 5 L 11 4 L 7 9 L 5 7 Z");
+        auto checked_svg = svgpath::create({16, 16}, "M 4 8 L 7 11 L 12 5 L 11 4 L 7 9 L 5 7 Z");
         if (checked_svg) slot::default_checked_icon = std::move(*checked_svg);
       }
 
