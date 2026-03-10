@@ -1,94 +1,102 @@
 #pragma once
-#include "ywx/ui_icon.h"
-#include "ywx/ui_text.h"
-#include "ywx/ui_frame.h"
+#include "ywx/ui_base.h"
+#include "ywx/ui_part_icon.h"
+#include "ywx/ui_part_label.h"
 
 namespace yw::ui {
 
-//////////////////////////////////////// MARK: ui::checkbox
-
-class checkbox : public frame {
+class checkbox : public base {
 public:
-  class slot : public frame::slot {
+  class slot : public base::slot {
   public:
-    inline static svgpath default_unchecked_icon{};
-    inline static svgpath default_checked_icon{};
+    inline static svgpath default_box_icon{};
+    inline static svgpath default_mark_icon{};
 
-    ui::icon unchecked_icon;
-    ui::icon checked_icon;
-    ui::text text;
+    part::icon box_icon;
+    part::icon mark_icon;
+    part::label text;
     bool checked = false;
 
     slot() { focusable = true; }
 
-    virtual void draw() const override {
-      frame::slot::draw();
-      if (auto icon_slot_p = unchecked_icon.slot_adress(&unchecked_icon)) icon_slot_p->draw();
+    virtual std::expected<void, error_trace> draw() const override {
+      if (auto res = base::slot::draw(); !res) return unexpected_error(res.error());
+      if (auto res = box_icon.draw(pos); !res) return unexpected_error(res.error());
       if (checked)
-        if (auto icon_slot_p = checked_icon.slot_adress(&checked_icon)) icon_slot_p->draw();
-      if (auto text_slot_p = text.slot_adress(&text)) text_slot_p->draw();
+        if (auto res = mark_icon.draw(pos); !res) return unexpected_error(res.error());
+      if (auto res = text.draw({pos.x + box_icon.size.x, pos.y}); !res) return unexpected_error(res.error());
+      return {};
     }
 
     virtual void click_event(event::button e) override {
-      if (is_enabled() && e.code == key::lbutton) checked = !checked;
-      frame::slot::click_event(e);
+      if (enabled && e.code == key::lbutton) checked = !checked;
+      base::slot::click_event(e);
     }
   };
 
 public:
   using base::operator bool;
-  slot* slot_address() const noexcept { return dynamic_cast<slot*>(system::uis.get(_id)); }
 
-  const auto& unchecked_icon() const { return unsafe_get(&slot::unchecked_icon); }
-  const auto& checked_icon() const { return unsafe_get(&slot::checked_icon); }
+  auto& box_icon() { return unsafe_get(&slot::box_icon); }
+  const auto& box_icon() const { return unsafe_get(&slot::box_icon); }
+
+  auto& mark_icon() { return unsafe_get(&slot::mark_icon); }
+  const auto& mark_icon() const { return unsafe_get(&slot::mark_icon); }
+
+  auto& text() { return unsafe_get(&slot::text); }
   const auto& text() const { return unsafe_get(&slot::text); }
+
   bool checked() const { return unsafe_get(&slot::checked); }
+  void checked(bool value) { unsafe_get(&slot::checked) = value; }
 
-  void checked(bool value) { _set(&slot::checked, value); }
-
-  void text_alignment(DWRITE_TEXT_ALIGNMENT align) {
-    if (const auto s = slot_address()) s->text.text_alignment(align);
+  void size(float2 Size) {
+    if (auto s = slot_address(this)) {
+      Size.x = yw::max(Size.x, s->box_icon.size.x);
+      s->size = Size;
+      s->text.size(float2(Size.x - s->box_icon.size.x, Size.y));
+    }
   }
-  void paragraph_alignment(DWRITE_PARAGRAPH_ALIGNMENT align) {
-    if (const auto s = slot_address()) s->text.paragraph_alignment(align);
+
+  void icon_size(float1 Size) {
+    if (auto s = slot_address(this)) {
+      s->box_icon.size = float2(Size.x, s->size.y);
+      s->mark_icon.size = float2(Size.x, s->size.y);
+      s->text.size(float2(s->size.x - Size.x, s->size.y));
+    }
   }
 
-  template<included_in<window&, none> Window, stringable S> static std::expected<checkbox, error_trace> add(
-    Window&& w, float2 Pos, float2 Size, S&& Text, float2 IconSize = {18, 18}, float2 Padding = {4, 4}) {
+  template<included_in<window&, none> Window>
+  static std::expected<checkbox, error_trace> add(Window&& w, float2 Pos, float2 Size, float1 IconSize = 20.0f) {
+    Size.x = yw::max(Size.x, IconSize.x * 2.0f);
     if (auto res = base::add<checkbox>(w, Pos, Size)) {
+      if (!slot::default_box_icon) {
+        auto unchecked_svg = svgpath::create({16, 16}, "M 3 0.5 L 13 0.5 Q 15.5 0.5 15.5 3 L 15.5 13 Q 15.5 15.5 13 15.5 L 3 15.5 Q 0.5 15.5 0.5 13 L 0.5 3 Q 0.5 0.5 3 0.5 Z M 3 0.5 L 13 0.5 Q 15.5 0.5 15.5 3 L 15.5 13 Q 15.5 15.5 13 15.5 L 3 15.5 Q 0.5 15.5 0.5 13 L 0.5 3 Q 0.5 0.5 3 0.5 Z");
+        if (unchecked_svg) slot::default_box_icon = std::move(*unchecked_svg);
+      }
+      if (!slot::default_mark_icon) {
+        auto checked_svg = svgpath::create({16, 16}, "M 8 4.5 A 3.5 3.5 0 1 1 7.999 4.5 Z");
+        if (checked_svg) slot::default_mark_icon = std::move(*checked_svg);
+      }
       const auto slot_p = res->second;
-      // Initialize default icons on first create
-      if (!slot::default_unchecked_icon) {
-        auto unchecked_svg = svgpath::create(
-          {16, 16}, "M 3 0.5 L 13 0.5 Q 15.5 0.5 15.5 3 L 15.5 13 Q 15.5 15.5 13 15.5 L 3 15.5 Q 0.5 15.5 0.5 13 L 0.5 3 Q 0.5 0.5 3 0.5 Z M 3 0.5 L 13 0.5 Q 15.5 0.5 15.5 3 L 15.5 13 Q 15.5 15.5 13 15.5 L 3 15.5 Q 0.5 15.5 0.5 13 L 0.5 3 Q 0.5 0.5 3 0.5 Z");
-        if (unchecked_svg) slot::default_unchecked_icon = std::move(*unchecked_svg);
-      }
-      if (!slot::default_checked_icon) {
-        auto checked_svg = svgpath::create({16, 16}, "M 4 8 L 7 11 L 12 5 L 11 4 L 7 9 L 5 7 Z");
-        if (checked_svg) slot::default_checked_icon = std::move(*checked_svg);
-      }
 
-      // Center icon and text vertically
-      const auto icon_y = Pos.y + (Size.y - IconSize.y) * 0.5f;
-      const auto icon_pos = float2(Pos.x + Padding.x, icon_y);
-      auto unchecked_icon_res = ui::icon::add(none{}, icon_pos, IconSize);
-      if (!unchecked_icon_res) return unexpected_error(unchecked_icon_res.error());
-      slot_p->unchecked_icon = std::move(*unchecked_icon_res);
-      if (auto res = svgpath::create(slot::default_unchecked_icon); !res) return unexpected_error(res.error());
-      else slot_p->unchecked_icon.image(std::move(*res));
+      slot_p->box_icon.size = float2(IconSize.x, Size.y);
+      if (auto res = svgpath::create(slot::default_box_icon)) slot_p->box_icon.image = std::move(*res);
+      else return unexpected_error(res.error());
+      slot_p->box_icon.padding = float2(2.0f, 2.0f);
+      slot_p->box_icon.fill_color = colors::white;
+      slot_p->box_icon.border_color = colors::black;
 
-      auto checked_icon_res = ui::icon::add(none{}, icon_pos, IconSize);
-      if (!checked_icon_res) return unexpected_error(checked_icon_res.error());
-      slot_p->checked_icon = std::move(*checked_icon_res);
-      if (auto res = svgpath::create(slot::default_checked_icon); !res) return unexpected_error(res.error());
-      else slot_p->checked_icon.image(std::move(*res));
+      slot_p->mark_icon.size = float2(IconSize.x, Size.y);
+      if (auto res = svgpath::create(slot::default_mark_icon)) slot_p->mark_icon.image = std::move(*res);
+      else return unexpected_error(res.error());
+      slot_p->mark_icon.padding = float2(2.0f, 2.0f);
+      slot_p->mark_icon.fill_color = colors::black;
+      slot_p->mark_icon.border_color = colors::transparent;
 
-      const auto text_pos = float2(icon_pos.x + IconSize.x + Padding.x, Pos.y);
-      const auto text_size = float2(std::max(0.0f, Size.x - (IconSize.x + Padding.x * 2.0f)), Size.y);
-      auto text_res = ui::text::add(none{}, text_pos, text_size, static_cast<S&&>(Text), {});
-      if (!text_res) return unexpected_error(text_res.error());
-      slot_p->text = std::move(*text_res);
-      slot_p->text.paragraph_alignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+      slot_p->text.size({Size.x - IconSize.x, Size.y});
+      slot_p->text.format(dwrite.text_format());
+      slot_p->text.layout().text_alignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+      slot_p->text.layout().paragraph_alignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 
       return checkbox{std::move(res->first)};
     } else return unexpected_error(res.error());

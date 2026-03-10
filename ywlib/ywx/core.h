@@ -119,12 +119,12 @@ public:
 
 inline class {
   struct pointers {
-    ::ID3D11Device* device{};
-    ::ID3D11DeviceContext* context{};
-    ::ID3D11BlendState* blend_state{};
-    ::ID3D11RasterizerState* rasterizer_state{};
-    ::ID3D11SamplerState* sampler_state{};
-    ::ID3D11DepthStencilState* depth_stencil_state{};
+    ID3D11Device* device{};
+    ID3D11DeviceContext* context{};
+    ID3D11BlendState* blend_state{};
+    ID3D11RasterizerState* rasterizer_state{};
+    ID3D11SamplerState* sampler_state{};
+    ID3D11DepthStencilState* depth_stencil_state{};
     bool initialized{};
 
     ~pointers() {
@@ -195,20 +195,20 @@ public:
     p.initialized = false;
   }
 
-  ::ID3D11Device* device() { return p.device; }
-  ::ID3D11DeviceContext* context() { return p.context; }
-  ::ID3D11BlendState* blend_state() { return p.blend_state; }
-  ::ID3D11RasterizerState* rasterizer_state() { return p.rasterizer_state; }
-  ::ID3D11SamplerState* sampler_state() { return p.sampler_state; }
-  ::ID3D11DepthStencilState* depth_stencil_state() { return p.depth_stencil_state; }
+  ID3D11Device* device() { return p.device; }
+  ID3D11DeviceContext* context() { return p.context; }
+  ID3D11BlendState* blend_state() { return p.blend_state; }
+  ID3D11RasterizerState* rasterizer_state() { return p.rasterizer_state; }
+  ID3D11SamplerState* sampler_state() { return p.sampler_state; }
+  ID3D11DepthStencilState* depth_stencil_state() { return p.depth_stencil_state; }
 } d3d;
 
 //////////////////////////////////////// MARK: dxgi
 
 inline class {
   struct pointers {
-    ::IDXGIFactory2* factory{nullptr};
-    ::IDXGIDevice2* device{nullptr};
+    IDXGIFactory2* factory{nullptr};
+    IDXGIDevice2* device{nullptr};
     bool initialized{false};
 
     ~pointers() {
@@ -236,8 +236,8 @@ public:
     p.initialized = false;
   }
 
-  ::IDXGIFactory2* factory() { return p.factory; }
-  ::IDXGIDevice2* device() { return p.device; }
+  IDXGIFactory2* factory() { return p.factory; }
+  IDXGIDevice2* device() { return p.device; }
 } dxgi;
 
 //////////////////////////////////////// MARK: coinit
@@ -269,18 +269,12 @@ public:
 
 inline class {
   struct pointers {
-    ::ID2D1Factory1* factory{};
-    ::ID2D1Device* device{};
-    ::ID2D1DeviceContext* context{};
-    ::ID2D1SolidColorBrush* solid_brush{};
-    ::ID2D1StrokeStyle* stroke_style{};
-    ::ID2D1StrokeStyle* dashed_stroke_style{};
+    ID2D1Factory1* factory{};
+    ID2D1Device* device{};
+    ID2D1DeviceContext* context{};
     bool initialized{};
 
     ~pointers() {
-      if (dashed_stroke_style) dashed_stroke_style->Release();
-      if (stroke_style) stroke_style->Release();
-      if (solid_brush) solid_brush->Release();
       if (context) context->Release();
       if (device) device->Release();
       if (factory) factory->Release();
@@ -300,48 +294,28 @@ public:
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDevice failed", int32_t(hr));
     hr = p.device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &p.context);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDeviceContext failed", int32_t(hr));
-    hr = p.context->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &p.solid_brush);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSolidColorBrush failed", int32_t(hr));
-    D2D1_STROKE_STYLE_PROPERTIES stroke_style_props{};
-    stroke_style_props.startCap = D2D1_CAP_STYLE_ROUND;
-    stroke_style_props.endCap = D2D1_CAP_STYLE_ROUND;
-    stroke_style_props.dashCap = D2D1_CAP_STYLE_ROUND;
-    stroke_style_props.lineJoin = D2D1_LINE_JOIN_ROUND;
-    stroke_style_props.miterLimit = 10.0f;
-    hr = p.factory->CreateStrokeStyle(&stroke_style_props, nullptr, 0, &p.stroke_style);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateStrokeStyle failed", int32_t(hr));
-    stroke_style_props.dashStyle = D2D1_DASH_STYLE_DASH;
-    hr = p.factory->CreateStrokeStyle(&stroke_style_props, nullptr, 0, &p.dashed_stroke_style);
-    if (FAILED(hr))
-      return unexpected_error(errors::operation_failed, "CreateStrokeStyle (dashed) failed", int32_t(hr));
     p.initialized = true;
     return {};
   }
 
   void release() {
-    if (p.dashed_stroke_style) std::exchange(p.dashed_stroke_style, nullptr)->Release();
-    if (p.stroke_style) std::exchange(p.stroke_style, nullptr)->Release();
-    if (p.solid_brush) std::exchange(p.solid_brush, nullptr)->Release();
     if (p.context) std::exchange(p.context, nullptr)->Release();
     if (p.device) std::exchange(p.device, nullptr)->Release();
     if (p.factory) std::exchange(p.factory, nullptr)->Release();
     p.initialized = false;
   }
 
-  ::ID2D1Factory1* factory() { return p.factory; }
-  ::ID2D1Device* device() { return p.device; }
-  ::ID2D1DeviceContext* context() { return p.context; }
-  ::ID2D1SolidColorBrush* solid_brush() { return p.solid_brush; }
-  ::ID2D1StrokeStyle* stroke_style() { return p.stroke_style; }
-  ::ID2D1StrokeStyle* dashed_stroke_style() { return p.dashed_stroke_style; }
+  ID2D1Factory1* factory() { return p.factory; }
+  ID2D1Device* device() { return p.device; }
+  ID2D1DeviceContext* context() { return p.context; }
 } d2d;
 
 //////////////////////////////////////// MARK: dwrite
 
 inline class {
   struct pointers {
-    ::IDWriteFactory1* factory{};
-    ::IDWriteTextFormat* text_format{};
+    IDWriteFactory1* factory{};
+    IDWriteTextFormat* text_format{};
     bool initialized = false;
 
     ~pointers() {
@@ -374,8 +348,12 @@ public:
     p.initialized = false;
   }
 
-  ::IDWriteFactory1* factory() { return p.factory; }
-  ::IDWriteTextFormat* text_format() { return p.text_format; }
+  IDWriteFactory1* factory() { return p.factory; }
+
+  IDWriteTextFormat* text_format() {
+    if (!initialize()) return nullptr;
+    return p.text_format;
+  }
 } dwrite;
 
 ///////////////////////////////////////// MARK: wic
@@ -446,55 +424,4 @@ public:
   ::IXAudio2* device() { return p.xaudio2; }
   ::IXAudio2MasteringVoice* mastering_voice() { return p.mastering_voice; }
 } xaudio2;
-
-//////////////////////////////////////// MARK: drawing
-
-class drawing {
-  inline static std::variant<std::monostate, ID2D1Image*, ID3D11RenderTargetView*> _rendertarget{};
-  source _source;
-  bool _active = false;
-  drawing(const source& src) : _source(src), _active(true) {}
-  drawing(const drawing&) = delete;
-  drawing& operator=(const drawing&) = delete;
-  drawing& operator=(drawing&&) = delete;
-
-public:
-  ~drawing() {
-    if (!_active) return;
-    _active = false;
-    if (d2d_drawing()) {
-      if (auto hr = d2d.context()->EndDraw(); FAILED(hr))
-        print_fallback("drawing failed (code={}) that starts at {}", hr, _source);
-      d2d.context()->SetTarget(nullptr);
-    } else if (d3d_drawing()) {
-      // nothing to do yet
-    }
-    _rendertarget = std::monostate{};
-  }
-
-  drawing(drawing&& other) : _source(other._source), _active(std::exchange(other._active, false)) {}
-
-  static std::expected<drawing, error_trace> create(ID2D1Image* rendertarget, const source& src) {
-    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-    if (_rendertarget.index() != 0) {
-      if (d2d_drawing()) return unexpected_error(errors::invalid_operation, "another d2d rendertarget already set");
-      else return unexpected_error(errors::invalid_operation, "d3d rendertarget already set");
-    } else if (rendertarget == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
-    _rendertarget = rendertarget;
-    d2d.context()->SetTarget(rendertarget);
-    d2d.context()->BeginDraw();
-    return drawing{src};
-  }
-  static std::expected<drawing, error_trace> create(ID3D11RenderTargetView* rendertarget, const source& src) {
-    if (_rendertarget.index() != 0) return unexpected_error(errors::invalid_operation, "rendertarget already set");
-    if (rendertarget == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
-    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
-    // nothing to do yet
-    return drawing{src};
-  }
-
-  static bool d2d_drawing() { return _rendertarget.index() == 1; }
-  static bool d3d_drawing() { return _rendertarget.index() == 2; }
-  static bool not_drawing() { return _rendertarget.index() == 0; }
-};
 } // namespace yw

@@ -1,6 +1,5 @@
 #pragma once
-
-#include "ywx/core.h"
+#include "ywx/drawing.h"
 
 namespace yw {
 
@@ -461,37 +460,42 @@ public:
 //////////////////////////////////////// MARK: draw_svgpath
 
 inline std::expected<void, error_trace> draw_svgpath(
-  float2 pos, float2 size, const svgpath& path, const color& c = colors::black, float1 border_width = 1.0f) {
+  float2 pos, float2 size, const svgpath& path, float1 border_width = 1.0f) {
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   if (!path) return {};
   const float2 scale = size / path.size();
-  comptr<ID2D1TransformedGeometry> transformed;
+  comptr<ID2D1TransformedGeometry> tg;
   D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Scale(scale.x, scale.y) * D2D1::Matrix3x2F::Translation(pos.x, pos.y);
-  if (FAILED(d2d.factory()->CreateTransformedGeometry(path.get(), &matrix, &transformed.get())))
+  if (FAILED(d2d.factory()->CreateTransformedGeometry(path.get(), &matrix, &tg.get())))
     return unexpected_error(errors::invalid_operation, "failed to create transformed geometry");
-  d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
-  d2d.context()->DrawGeometry(transformed.get(), d2d.solid_brush(), border_width.x, d2d.stroke_style());
+  d2d.context()->DrawGeometry(tg.get(), brush.brush(), border_width.x, brush.stroke());
   return {};
 }
 
-inline std::expected<void, error_trace> draw_svgpath(
-  float2 pos, float2 size, const svgpath& path, float1 border_width) {
-  return draw_svgpath(pos, size, path, colors::black, border_width);
+inline std::expected<void, error_trace> draw_dashed_svgpath(
+  float2 pos, float2 size, const svgpath& path, float1 border_width = 1.0f) {
+  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
+  if (!path) return {};
+  const float2 scale = size / path.size();
+  comptr<ID2D1TransformedGeometry> tg;
+  D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Scale(scale.x, scale.y) * D2D1::Matrix3x2F::Translation(pos.x, pos.y);
+  if (FAILED(d2d.factory()->CreateTransformedGeometry(path.get(), &matrix, &tg.get())))
+    return unexpected_error(errors::invalid_operation, "failed to create transformed geometry");
+  d2d.context()->DrawGeometry(tg.get(), brush.brush(), border_width.x, brush.dashed_stroke());
+  return {};
 }
 
 //////////////////////////////////////// MARK: fill_svgpath
 
-inline std::expected<void, error_trace> fill_svgpath(
-  float2 pos, float2 size, const svgpath& path, const color& c = colors::black) {
+inline std::expected<void, error_trace> fill_svgpath(float2 pos, float2 size, const svgpath& path) {
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   if (!path) return {};
   const float2 scale = size / path.size();
-  comptr<ID2D1TransformedGeometry> transformed;
+  comptr<ID2D1TransformedGeometry> tg;
   D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Scale(scale.x, scale.y) * D2D1::Matrix3x2F::Translation(pos.x, pos.y);
-  if (FAILED(d2d.factory()->CreateTransformedGeometry(path.get(), &matrix, &transformed.get())))
+  if (FAILED(d2d.factory()->CreateTransformedGeometry(path.get(), &matrix, &tg.get())))
     return unexpected_error(errors::invalid_operation, "failed to create transformed geometry");
-  d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
-  d2d.context()->FillGeometry(transformed.get(), d2d.solid_brush());
+  d2d.context()->FillGeometry(tg.get(), brush.brush());
   return {};
 }
 } // namespace yw

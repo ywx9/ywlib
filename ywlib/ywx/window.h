@@ -1,131 +1,12 @@
 #pragma once
-#include "ywx/tooltip.h"
 #include "ywx/event.h"
+#include "ywx/tooltip.h"
+#include "ywx/ui_base.h"
 
 namespace yw {
 
-class window;
-class window_slot;
-
 namespace system {
 inline int2 cursor_pos;
-}
-
-//////////////////////////////////////// MARK: ui::base
-
-namespace ui {
-class base {
-public:
-  class slot {
-  public:
-    slotset<slot>::slotid id;
-    slotset<window_slot>::slotid window_id;
-    float2 pos{};
-    float2 size{};
-    bool visible = true;
-    bool enabled = true;
-    bool focusable = false;
-
-    bool is_visible() const noexcept { return visible; }
-    bool is_enabled() const noexcept { return visible && enabled; }
-    bool is_focusable() const noexcept { return visible && enabled && focusable; }
-
-    virtual bool hit_test(float2 pt) const noexcept {
-      return pt.x >= pos.x && pt.x < pos.x + size.x && pt.y >= pos.y && pt.y < pos.y + size.y;
-    }
-    virtual void draw() const {}
-    virtual void draw_focus() const {}
-
-    virtual void button_event(event::button e) {}
-    virtual void key_event(event::key e) {}
-    virtual void char_event(wchar_t c) {}
-    virtual void move_event(event::move e) {}
-    virtual void hover_event(event::hover e) {}
-    virtual bool focus_event(bool focused) { return focusable; }
-    virtual void click_event(event::button e) {}
-  };
-
-protected:
-  slotset<slot>::slotid _id;
-  base(slotset<slot>::slotid id) : _id(id) {}
-  window_slot* _window_slot() const noexcept;
-  slot* _ui_slot() const noexcept;
-  void _clear() noexcept;
-  template<typename Mp, typename T> void _set(Mp mp, T&& value);
-
-  template<typename Mp> decltype(auto) unsafe_get(Mp mp) const {
-    if (const auto s = dynamic_cast<const class_type<Mp>*>(_ui_slot())) return std::invoke(mp, s);
-    else throw std::runtime_error("invalid member access");
-  }
-
-  template<typename Ui, included_in<window, none> Window>
-  static std::expected<tuple<Ui, typename Ui::slot*>, error_trace> add(Window& w, float2 Pos, float2 Size);
-
-public:
-  ~base() noexcept { _clear(); }
-  base() noexcept = default;
-  base(const base&) = delete;
-  base& operator=(const base&) = delete;
-  base(base&& other) noexcept : _id(std::exchange(other._id, {})) {}
-
-  base& operator=(base&& other) noexcept {
-    if (this == &other) return *this;
-    _clear();
-    _id = std::exchange(other._id, {});
-    return *this;
-  }
-
-  explicit operator bool() const noexcept;
-  const auto& id() const noexcept { return _id; }
-  template<typename Ui> typename Ui::slot* slot_adress(const Ui* self) const noexcept {
-    if (!self || self->id() != _id) return nullptr;
-    return dynamic_cast<typename Ui::slot*>(_ui_slot());
-  }
-  float2 cursor_pos() const noexcept;
-  bool focused() const noexcept;
-  bool hovered() const noexcept;
-
-  const auto& pos() const { return unsafe_get(&slot::pos); }
-  void pos(float2 value) { _set(&slot::pos, value); }
-
-  const auto& size() const { return unsafe_get(&slot::size); }
-  void size(float2 value) { _set(&slot::size, value); }
-
-  bool visible() const { return unsafe_get(&slot::visible); }
-  void visible(bool value) { _set(&slot::visible, value); }
-
-  /// `enability == visible && enabled`. Enabled but not-focusable control can only receive mouse events.
-  bool enabled() const { return unsafe_get(&slot::is_enabled); }
-  /// makes the control visible and enabled if `value` is true, otherwise makes it disabled.
-  void enabled(bool value) noexcept {
-    if (const auto s = _ui_slot()) {
-      s->visible |= value;
-      s->enabled = value;
-    }
-  }
-
-  /// `focusability == visible && enabled && focusable`. Focusable control can receive keyboard events during its focus.
-  bool focusable() const { return unsafe_get(&slot::is_focusable); }
-  /// makes the control visible, enabled, and focusable if `value` is true, otherwise makes it not focusable.
-  void focusable(bool value) noexcept {
-    if (const auto s = _ui_slot()) {
-      s->visible |= value;
-      s->enabled |= value;
-      s->focusable = value;
-    }
-  }
-
-  bool hit_test(float2 pt) const noexcept { return _ui_slot() ? _ui_slot()->hit_test(pt) : false; }
-
-  template<included_in<window&, none> Window>
-  static std::expected<base, error_trace> add(Window&& w, float2 Pos, float2 Size) {
-    if (auto res = add<base>(w, Pos, Size)) return std::move(yw::get<0>(*res));
-    else return unexpected_error(res.error());
-  }
-};
-} // namespace ui
-
-namespace system {
 inline slotset<ui::base::slot> uis;
 inline slotset<window_slot> windows;
 inline std::vector<slotset<window_slot>::slotid> master_windows;
@@ -137,11 +18,19 @@ class window final {
 protected:
   slotset<window_slot>::slotid _id;
   window(slotset<window_slot>::slotid id) : _id(id) {}
-  window_slot* _window_slot() const noexcept;
-  template<typename Mp, typename T> void _set(Mp mp, T&& value);
+
+  window_slot* _window_slot_address() const noexcept {
+    if (const auto s = system::windows.get(_id)) return s;
+    else return nullptr;
+  }
+
+  template<typename Mp> auto& unsafe_get(Mp mp) {
+    if (const auto s = system::windows.get(_id)) return s->*mp;
+    else throw std::runtime_error("invalid member access");
+  }
 
   template<typename Mp> const auto& unsafe_get(Mp mp) const {
-    if (const auto w = _window_slot()) return w->*mp;
+    if (const auto s = system::windows.get(_id)) return s->*mp;
     else throw std::runtime_error("invalid member access");
   }
 
@@ -153,15 +42,28 @@ public:
     borderless = WS_POPUP
   };
 
-  template<stringable S>
-  static std::expected<window, error_trace> open(int2, uint2, S&&, style = style::regular, bool = true);
-  template<stringable S>
-  static std::expected<window, error_trace> open(uint2, S&&, style = style::regular, bool = true);
+  template<stringable S> static std::expected<window, error_trace> open(
+    int2 Pos, uint2 Size, S&& Title, style Style = style::regular, bool Show = true);
 
+  template<stringable S>
+  static std::expected<window, error_trace> open(uint2 Size, S&& Title, style Style = style::regular, bool Show = true);
+
+  ~window() noexcept { close(); }
   explicit window() noexcept = default;
+  window(const window&) = delete;
+  window& operator=(const window&) = delete;
+  window(window&& other) noexcept : _id(std::exchange(other._id, {})) {}
+  window& operator=(window&& other) noexcept {
+    if (this != &other) {
+      close();
+      _id = std::exchange(other._id, {});
+    }
+    return *this;
+  }
   explicit operator bool() const noexcept { return system::windows.contains(_id); }
 
   const auto& id() const noexcept { return _id; }
+
   const HWND& hwnd() const;
   const int2& pos() const;
   const uint2& size() const;
@@ -173,6 +75,7 @@ public:
   const color& bg_color() const;
   const function<bool>& on_close() const;
   const function<void, event::key>& on_key() const;
+
   int2 cursor_pos() const;
 
   void pos(int2 value);
@@ -186,6 +89,8 @@ public:
 
   std::expected<drawing, error_trace> begin_draw();
   std::expected<drawing, error_trace> begin_draw(const color& clear_color);
+
+  void close() noexcept;
 
   /// opens a subwindow which is closed when the master window is closed.
   /// \param LocalPos position relative to the master window's position.
@@ -235,8 +140,9 @@ class window_slot final {
   }
 
 public:
-  typename slotset<window_slot>::slotid id{};
-  typename slotset<window_slot>::slotid master_id{};
+  slotset<window_slot>::slotid id{};
+  slotset<window_slot>::slotid master_id{};
+
   HWND hwnd{};
   int2 pos{};
   uint2 size{};
@@ -246,8 +152,8 @@ public:
   bitmap rendertarget{};
   comptr<IDXGISwapChain1> swapchain{};
   stopwatch timer{};
-  std::vector<typename slotset<ui::base::slot>::slotid> uis{};
-  std::vector<typename slotset<window_slot>::slotid> subs{};
+  std::vector<slotset<ui::base::slot>::slotid> uis{};
+  std::vector<slotset<window_slot>::slotid> subs{};
   slotset<ui::base::slot>::slotid focused_ui{};
   slotset<ui::base::slot>::slotid hovered_ui{};
   bool visible = true;
@@ -304,52 +210,45 @@ public:
         if (ui_slot_p->visible && ui_slot_p->hit_test(pt)) return ui_slot_p;
     return nullptr;
   }
+
+  void close() noexcept {
+    try {
+      for (const auto sub_slot_id : subs)
+        if (const auto sub_slot_p = system::windows.get(sub_slot_id)) sub_slot_p->close();
+      ::DestroyWindow(hwnd);
+      system::windows.erase(id);
+    } catch (...) {} // noexcept
+  }
 };
 
-///////////////////////////////////////// MARK: ui impl
+///////////////////////////////////////// MARK: ui::base
 
-namespace ui {
-inline void base::_clear() noexcept {
-  if (auto w_slot_p = _window_slot())
+void ui::base::slot::hover_event(event::hover e) {
+  if (enabled && on_hover) on_hover(e);
+  if (tooltip.empty()) return;
+  if (e.move()) {
+    if (const auto w = system::windows.get(window_id)) system::tooltip.show(pos + w->pos() + w->margin.xy(), size);
+  } else if (e.enter()) {
+    if (const auto w = system::windows.get(window_id))
+      system::tooltip.show(pos + w->pos() + w->margin.xy(), size, tooltip);
+  } else if (e.leave()) system::tooltip.hide();
+}
+
+inline ui::base::slot* ui::base::_base_slot_address() const noexcept { return system::uis.get(_id); }
+
+inline window_slot* ui::base::_window_slot_address() const noexcept {
+  if (const auto ui_slot_p = system::uis.get(_id)) return system::windows.get(ui_slot_p->window_id);
+  else return nullptr;
+}
+
+inline void ui::base::_clear() {
+  if (auto w_slot_p = _window_slot_address())
     if (const auto fr = std::ranges::find(w_slot_p->uis, _id); fr != w_slot_p->uis.end()) w_slot_p->uis.erase(fr);
   system::uis.erase(_id);
 }
 
-inline base::slot* base::_ui_slot() const noexcept { return system::uis.get(_id); }
-
-inline window_slot* base::_window_slot() const noexcept {
-  if (const auto ui_slot_p = _ui_slot(); !ui_slot_p) return nullptr;
-  else return system::windows.get(ui_slot_p->window_id);
-}
-
-template<typename Mp, typename T> void base::_set(Mp mp, T&& value) {
-  if (const auto ui_slot_p = dynamic_cast<class_type<Mp>*>(_ui_slot())) {
-    ui_slot_p->*mp = static_cast<T&&>(value);
-    if (const auto w_slot_p = system::windows.get(ui_slot_p->window_id)) w_slot_p->dirty = true;
-  }
-}
-
-inline float2 base::cursor_pos() const noexcept {
-  if (const auto s = _ui_slot())
-    if (const auto w = system::windows.get(s->window_id))
-      return float2(system::cursor_pos - w->pos - int2{w->margin.x, w->margin.y}) - s->pos;
-  return {};
-}
-
-inline bool base::focused() const noexcept {
-  if (const auto s = _ui_slot())
-    if (const auto w = system::windows.get(s->window_id)) return w->focused_ui == _id;
-  return false;
-}
-
-inline bool base::hovered() const noexcept {
-  if (const auto s = _ui_slot())
-    if (const auto w = system::windows.get(s->window_id)) return w->hovered_ui == _id;
-  return false;
-}
-
 template<typename Ui, included_in<window, none> Window>
-std::expected<tuple<Ui, typename Ui::slot*>, error_trace> base::add(Window& w, float2 Pos, float2 Size) {
+std::expected<tuple<Ui, typename Ui::slot*>, error_trace> ui::base::add(Window& w, float2 Pos, float2 Size) {
   const auto ui_slot_id = system::uis.add(std::make_unique<typename Ui::slot>());
   auto ui_slot_p = dynamic_cast<typename Ui::slot*>(system::uis.get(ui_slot_id));
   if (!ui_slot_p) return unexpected_error(errors::operation_failed, "ui slot creation failed");
@@ -364,88 +263,10 @@ std::expected<tuple<Ui, typename Ui::slot*>, error_trace> base::add(Window& w, f
   }
   return tuple{Ui(ui_slot_id), ui_slot_p};
 }
-} // namespace ui
 
-//////////////////////////////////////// MARK: window impl
+inline ui::base::operator bool() const noexcept { return system::uis.contains(_id); }
 
-inline window_slot* window::_window_slot() const noexcept { return system::windows.get(_id); }
-
-inline const HWND& window::hwnd() const { return unsafe_get(&window_slot::hwnd); }
-inline const int2& window::pos() const { return unsafe_get(&window_slot::pos); }
-inline const uint2& window::size() const { return unsafe_get(&window_slot::size); }
-inline const uint4& window::margin() const { return unsafe_get(&window_slot::margin); }
-inline const std::wstring& window::title() const { return unsafe_get(&window_slot::title); }
-inline const stopwatch& window::timer() const { return unsafe_get(&window_slot::timer); }
-inline const bool& window::visible() const { return unsafe_get(&window_slot::visible); }
-inline const bool& window::enabled() const { return unsafe_get(&window_slot::enabled); }
-inline const color& window::bg_color() const { return unsafe_get(&window_slot::bg_color); }
-inline const function<bool>& window::on_close() const { return unsafe_get(&window_slot::on_close); }
-inline const function<void, event::key>& window::on_key() const { return unsafe_get(&window_slot::on_key); }
-
-inline int2 window::cursor_pos() const {
-  if (const auto w_slot_p = _window_slot())
-    return system::cursor_pos - w_slot_p->pos - int2{w_slot_p->margin.x, w_slot_p->margin.y};
-  return {};
-}
-
-inline void window::pos(int2 value) {
-  if (const auto w_slot_p = _window_slot()) {
-    w_slot_p->pos = value;
-    ::SetWindowPos(w_slot_p->hwnd, nullptr, value.x, value.y, 0, 0, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSIZE);
-  }
-}
-
-inline void window::size(uint2 value) {
-  if (const auto w_slot_p = _window_slot()) {
-    w_slot_p->dirty = true;
-    w_slot_p->size = value;
-    ::SetWindowPos(w_slot_p->hwnd, nullptr, 0, 0, LONG(value.x + w_slot_p->margin.z),
-      LONG(value.y + w_slot_p->margin.w), SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
-  }
-}
-
-template<stringable S> void window::title(S&& s) {
-  if (const auto w_slot_p = _window_slot()) {
-    w_slot_p->dirty = true;
-    w_slot_p->title = unicode<wchar_t>(static_cast<S&&>(s));
-    ::SetWindowTextW(w_slot_p->hwnd, w_slot_p->title.data());
-  }
-}
-
-inline void window::visible(bool value) {
-  if (const auto w_slot_p = _window_slot()) {
-    w_slot_p->dirty = true;
-    w_slot_p->visible = value;
-    if (value) {
-      ::ShowWindow(w_slot_p->hwnd, SW_SHOW);
-      ::SetForegroundWindow(w_slot_p->hwnd);
-      ::SetActiveWindow(w_slot_p->hwnd);
-    } else ::ShowWindow(w_slot_p->hwnd, SW_HIDE);
-  }
-}
-
-inline void window::enabled(bool value) {
-  if (const auto w_slot_p = _window_slot()) {
-    w_slot_p->dirty = true;
-    w_slot_p->enabled = value;
-    ::EnableWindow(w_slot_p->hwnd, value);
-  }
-}
-
-inline void window::bg_color(const color& value) {
-  if (const auto w_slot_p = _window_slot()) {
-    w_slot_p->dirty = true;
-    w_slot_p->bg_color = value;
-  }
-}
-
-inline void window::on_close(function<bool> f) {
-  if (const auto w_slot_p = _window_slot()) w_slot_p->on_close = std::move(f);
-}
-
-inline void window::on_key(function<void, event::key> f) {
-  if (const auto w_slot_p = _window_slot()) w_slot_p->on_key = std::move(f);
-}
+//////////////////////////////////////// MARK: window
 
 template<stringable S>
 std::expected<window, error_trace> window::open(int2 Pos, uint2 Size, S&& Title, style Style, bool Show) {
@@ -483,10 +304,116 @@ template<stringable S> std::expected<window, error_trace> window::open(uint2 Siz
   return window(w_slot_id);
 }
 
+inline const HWND& window::hwnd() const { return unsafe_get(&window_slot::hwnd); }
+inline const int2& window::pos() const { return unsafe_get(&window_slot::pos); }
+inline const uint2& window::size() const { return unsafe_get(&window_slot::size); }
+inline const uint4& window::margin() const { return unsafe_get(&window_slot::margin); }
+inline const std::wstring& window::title() const { return unsafe_get(&window_slot::title); }
+inline const stopwatch& window::timer() const { return unsafe_get(&window_slot::timer); }
+inline const bool& window::visible() const { return unsafe_get(&window_slot::visible); }
+inline const bool& window::enabled() const { return unsafe_get(&window_slot::enabled); }
+inline const color& window::bg_color() const { return unsafe_get(&window_slot::bg_color); }
+inline const function<bool>& window::on_close() const { return unsafe_get(&window_slot::on_close); }
+inline const function<void, event::key>& window::on_key() const { return unsafe_get(&window_slot::on_key); }
+
+inline int2 window::cursor_pos() const {
+  if (const auto w_slot_p = _window_slot_address())
+    return system::cursor_pos - w_slot_p->pos - int2{w_slot_p->margin.x, w_slot_p->margin.y};
+  return {};
+}
+
+inline void window::pos(int2 value) {
+  if (const auto w_slot_p = _window_slot_address()) {
+    w_slot_p->pos = value;
+    ::SetWindowPos(w_slot_p->hwnd, nullptr, value.x, value.y, 0, 0, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSIZE);
+  }
+}
+
+inline void window::size(uint2 value) {
+  if (const auto w_slot_p = _window_slot_address()) {
+    w_slot_p->dirty = true;
+    w_slot_p->size = value;
+    ::SetWindowPos(w_slot_p->hwnd, nullptr, 0, 0, LONG(value.x + w_slot_p->margin.z),
+      LONG(value.y + w_slot_p->margin.w), SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
+  }
+}
+
+template<stringable S> void window::title(S&& s) {
+  if (const auto w_slot_p = _window_slot_address()) {
+    w_slot_p->dirty = true;
+    w_slot_p->title = unicode<wchar_t>(static_cast<S&&>(s));
+    ::SetWindowTextW(w_slot_p->hwnd, w_slot_p->title.data());
+  }
+}
+
+inline void window::visible(bool value) {
+  if (const auto w_slot_p = _window_slot_address()) {
+    w_slot_p->dirty = true;
+    w_slot_p->visible = value;
+    if (value) {
+      ::ShowWindow(w_slot_p->hwnd, SW_SHOW);
+      ::SetForegroundWindow(w_slot_p->hwnd);
+      ::SetActiveWindow(w_slot_p->hwnd);
+    } else ::ShowWindow(w_slot_p->hwnd, SW_HIDE);
+  }
+}
+
+inline void window::enabled(bool value) {
+  if (const auto w_slot_p = _window_slot_address()) {
+    w_slot_p->dirty = true;
+    w_slot_p->enabled = value;
+    ::EnableWindow(w_slot_p->hwnd, value);
+  }
+}
+
+inline void window::bg_color(const color& value) {
+  if (const auto w_slot_p = _window_slot_address()) {
+    w_slot_p->dirty = true;
+    w_slot_p->bg_color = value;
+  }
+}
+
+inline void window::on_close(function<bool> f) {
+  if (const auto w_slot_p = _window_slot_address()) w_slot_p->on_close = std::move(f);
+}
+
+inline void window::on_key(function<void, event::key> f) {
+  if (const auto w_slot_p = _window_slot_address()) w_slot_p->on_key = std::move(f);
+}
+
+inline std::expected<drawing, error_trace> window::begin_draw() {
+  if (const auto w_slot_p = _window_slot_address()) {
+    w_slot_p->dirty = true;
+    w_slot_p->_user_began_draw = true;
+    if (auto d = w_slot_p->rendertarget.begin_draw(w_slot_p->bg_color)) return std::move(d);
+    else return unexpected_error(d.error());
+  } else return unexpected_error(errors::invalid_operation, "window slot not found");
+}
+
+inline std::expected<drawing, error_trace> window::begin_draw(const color& clear_color) {
+  if (const auto w_slot_p = _window_slot_address()) {
+    w_slot_p->dirty = true;
+    w_slot_p->_user_began_draw = true;
+    if (auto d = w_slot_p->rendertarget.begin_draw(clear_color)) return std::move(d);
+    else return unexpected_error(d.error());
+  } else return unexpected_error(errors::invalid_operation, "window slot not found");
+}
+
+inline void window::close() noexcept {
+  try {
+    if (const auto w_slot_p = _window_slot_address()) {
+      for (const auto sub_slot_id : w_slot_p->subs)
+        if (const auto sub_slot_p = system::windows.get(sub_slot_id)) sub_slot_p->close();
+      ::DestroyWindow(w_slot_p->hwnd);
+      system::windows.erase(w_slot_p->id);
+    }
+  } catch (...) {} // noexcept
+}
+
 template<stringable S> std::expected<window, error_trace> window::open_subwindow(
   int2 LocalPos, uint2 Size, S&& Title, window::style Style, bool Show) {
   if (auto res = wclass.initialize(); !res) return unexpected_error(res.error());
-  auto w_slot_p = _window_slot();
+  auto w_slot_p = _window_slot_address();
   if (!w_slot_p) return unexpected_error(errors::invalid_operation, "parent window slot not found");
   const auto sub_slot_id = system::windows.add(std::make_unique<window_slot>());
   auto sub_slot_p = system::windows.get(sub_slot_id);
@@ -503,23 +430,5 @@ template<stringable S> std::expected<window, error_trace> window::open_subwindow
   }
   w_slot_p->subs.push_back(sub_slot_id);
   return window(sub_slot_id);
-}
-
-inline std::expected<drawing, error_trace> window::begin_draw() {
-  if (const auto w_slot_p = _window_slot()) {
-    w_slot_p->dirty = true;
-    w_slot_p->_user_began_draw = true;
-    if (auto d = w_slot_p->rendertarget.begin_draw(w_slot_p->bg_color)) return std::move(d);
-    else return unexpected_error(d.error());
-  } else return unexpected_error(errors::invalid_operation, "window slot not found");
-}
-
-inline std::expected<drawing, error_trace> window::begin_draw(const color& clear_color) {
-  if (const auto w_slot_p = _window_slot()) {
-    w_slot_p->dirty = true;
-    w_slot_p->_user_began_draw = true;
-    if (auto d = w_slot_p->rendertarget.begin_draw(clear_color)) return std::move(d);
-    else return unexpected_error(d.error());
-  } else return unexpected_error(errors::invalid_operation, "window slot not found");
 }
 } // namespace yw

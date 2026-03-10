@@ -86,7 +86,6 @@ inline void wm_mousemove(window_slot& w_slot, WPARAM wp, LPARAM lp) {
 inline void wm_mouseleave(window_slot& w_slot, WPARAM wp, LPARAM lp) {
   ::GetCursorPos(reinterpret_cast<POINT*>(&system::cursor_pos));
   if (w_slot.hovered_ui) {
-    print(source());
     if (auto ui_slot_p = system::uis.get(w_slot.hovered_ui))
       ui_slot_p->hover_event(event::hover((wp & 0xff) | 0x200, lp)); // leave
     w_slot.hovered_ui = {};
@@ -292,6 +291,10 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     if (const auto p = system::uis.get(w_slot_p->focused_ui)) p->key_event(event::key(false, wp, lp));
     return 0;
 
+  case WM_CHAR:
+    if (const auto p = system::uis.get(w_slot_p->focused_ui)) p->char_event(static_cast<wchar_t>(wp));
+    return 0;
+
   case WM_LBUTTONDOWN: internal::wm_lbuttondown(*w_slot_p, wp, lp); return 0;
   case WM_LBUTTONUP: internal::wm_lbuttonup(*w_slot_p, wp, lp); return 0;
 
@@ -318,6 +321,10 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     if (auto res = w_slot_p->_resize_rendertarget({w_slot_p->size.x, w_slot_p->size.y}); !res)
       mainloop.last_error = std::move(res.error().push());
     else w_slot_p->dirty = true;
+    return 0;
+
+  case WM_MOVE:
+    w_slot_p->pos = int2(static_cast<int16_t>(LOWORD(lp)), static_cast<int16_t>(HIWORD(lp))) - w_slot_p->margin.xy();
     return 0;
 
   case WM_ENTERSIZEMOVE: w_slot_p->resizing = true; return 0;

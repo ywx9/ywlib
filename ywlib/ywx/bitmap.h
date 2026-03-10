@@ -1,10 +1,7 @@
 #pragma once
-
-#include "ywx/core.h"
+#include "ywx/drawing.h"
 
 namespace yw {
-
-//////////////////////////////////////// MARK: bitmap
 
 class bitmap {
 public:
@@ -159,102 +156,6 @@ inline std::expected<void, error_trace> draw_bitmap(float2 pos, const bitmap& b,
   if (!b) return {};
   D2D1_RECT_F rect = D2D1::RectF(pos.x, pos.y, pos.x + b.size().x, pos.y + b.size().y);
   d2d.context()->DrawBitmap((ID2D1Bitmap1*)b, &rect, opacity.x);
-  return {};
-}
-
-//////////////////////////////////////// MARK: draw line
-
-inline std::expected<void, error_trace> draw_line(float2 p0, float2 p1, const color& c = colors::black, float1 width = 1.0f) {
-  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
-  d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
-  d2d.context()->DrawLine({p0.x, p0.y}, {p1.x, p1.y}, d2d.solid_brush(), width.x, d2d.stroke_style());
-  return {};
-}
-
-inline std::expected<void, error_trace> draw_line(float2 p0, float2 p1, float1 width = 1.0f) {
-  return draw_line(p0, p1, colors::black, width);
-}
-
-/////////////////////////////////////// MARK: draw/fill_rectangle
-
-inline std::expected<void, error_trace> draw_rectangle(
-  float2 pos, float2 size, const color& c, float1 border_width, ID2D1StrokeStyle* stroke_style) {
-  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
-  d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
-  D2D1_RECT_F rect = D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y);
-  d2d.context()->DrawRectangle(&rect, d2d.solid_brush(), border_width.x, stroke_style);
-  return {};
-}
-
-inline std::expected<void, error_trace> draw_rectangle(
-  float2 pos, float2 size, const color& c = colors::black, float1 border_width = 1.0f) {
-  return draw_rectangle(pos, size, c, border_width, d2d.stroke_style());
-}
-
-inline std::expected<void, error_trace> draw_rectangle(float2 pos, float2 size, float1 border_width) {
-  return draw_rectangle(pos, size, colors::black, border_width);
-}
-
-inline std::expected<void, error_trace> fill_rectangle(float2 pos, float2 size, const color& c = colors::black) {
-  if (!drawing::d2d_drawing()) {
-    if (drawing::d3d_drawing()) return unexpected_error(errors::invalid_operation, "in d3d rendering");
-    else return unexpected_error(errors::invalid_operation, "drawing not begun");
-  }
-  d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
-  d2d.context()->FillRectangle({pos.x, pos.y, pos.x + size.x, pos.y + size.y}, d2d.solid_brush());
-  return {};
-}
-
-//////////////////////////////////// MARK: draw/fill_round_rectangle
-
-inline std::expected<void, error_trace> draw_round_rectangle(
-  float2 pos, float2 size, float2 radius, const color& c, float1 border_width, ID2D1StrokeStyle* stroke_style) {
-  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
-  d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
-  D2D1_ROUNDED_RECT r{D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
-  d2d.context()->DrawRoundedRectangle(&r, d2d.solid_brush(), border_width.x, stroke_style);
-  return {};
-}
-
-inline std::expected<void, error_trace> draw_round_rectangle(
-  float2 pos, float2 size, float2 radius, const color& c = colors::black, float1 border_width = 1.0f) {
-  return draw_round_rectangle(pos, size, radius, c, border_width, d2d.stroke_style());
-}
-
-inline std::expected<void, error_trace> draw_round_rectangle(
-  float2 pos, float2 size, float2 radius, float1 border_width) {
-  return draw_round_rectangle(pos, size, radius, colors::black, border_width);
-}
-
-inline std::expected<void, error_trace> fill_round_rectangle(
-  float2 pos, float2 size, float2 radius, const color& c = colors::black) {
-  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
-  d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
-  D2D1_ROUNDED_RECT r{D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
-  d2d.context()->FillRoundedRectangle(&r, d2d.solid_brush());
-  return {};
-}
-
-//////////////////////////////////////// MARK: draw/fill_ellipse
-
-inline std::expected<void, error_trace> draw_ellipse(
-  float2 center, float2 radius, const color& c = colors::black, float1 border_width = 1.0f) {
-  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
-  d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
-  D2D1_ELLIPSE ellipse = D2D1::Ellipse({center.x, center.y}, radius.x, radius.y);
-  d2d.context()->DrawEllipse(&ellipse, d2d.solid_brush(), border_width.x, d2d.stroke_style());
-  return {};
-}
-
-inline std::expected<void, error_trace> draw_ellipse(float2 center, float2 radius, float1 border_width) {
-  return draw_ellipse(center, radius, colors::black, border_width);
-}
-
-inline std::expected<void, error_trace> fill_ellipse(float2 center, float2 radius, const color& c = colors::black) {
-  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
-  d2d.solid_brush()->SetColor((const D2D1_COLOR_F*)&c);
-  D2D1_ELLIPSE ellipse = D2D1::Ellipse(D2D1::Point2F(center.x, center.y), radius.x, radius.y);
-  d2d.context()->FillEllipse(&ellipse, d2d.solid_brush());
   return {};
 }
 } // namespace yw
