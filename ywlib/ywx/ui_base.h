@@ -4,7 +4,7 @@
 namespace yw {
 class window;
 class window_slot;
-}
+} // namespace yw
 
 namespace yw::ui {
 
@@ -27,7 +27,7 @@ public:
 
     bool visible = true;
     bool enabled = true;
-    bool focusable = true;
+    bool focusable = false;
 
     function<void, event::button> on_button;
     function<void, event::hover> on_hover;
@@ -81,6 +81,8 @@ public:
     }
 
     virtual void char_event(wchar_t ch) {}
+
+    void make_window_dirty() const noexcept;
   };
 
 protected:
@@ -95,6 +97,20 @@ protected:
   template<typename Mp> auto& unsafe_get(Mp mp) const {
     if (const auto s = dynamic_cast<class_type<Mp>*>(_base_slot_address())) return s->*mp;
     else throw std::runtime_error("invalid member access");
+  }
+
+  template<typename Mp> member_type<Mp>* safe_get(Mp mp) const noexcept {
+    if (const auto s = dynamic_cast<class_type<Mp>*>(_base_slot_address())) {
+      s->make_window_dirty();
+      return &(s->*mp);
+    } else return nullptr;
+  }
+
+  template<typename Mp, typename T> void safe_set(Mp mp, T&& value) const noexcept {
+    if (const auto s = dynamic_cast<class_type<Mp>*>(_base_slot_address())) {
+      s->*mp = static_cast<T&&>(value);
+      s->make_window_dirty();
+    }
   }
 
   template<typename Ui, included_in<window, none> Window>
@@ -135,19 +151,21 @@ public:
   const auto& on_focus() const { return unsafe_get(&slot::on_focus); }
   const auto& on_click() const { return unsafe_get(&slot::on_click); }
 
-  void pos(float2 value) { unsafe_get(&slot::pos) = value; }
-  void size(float2 value) { unsafe_get(&slot::size) = value; }
-  void radius(float2 value) { unsafe_get(&slot::radius) = value; }
-  void bg_color(const color& value) { unsafe_get(&slot::bg_color) = value; }
-  void border_color(const color& value) { unsafe_get(&slot::border_color) = value; }
-  void border_width(float value) { unsafe_get(&slot::border_width) = value; }
-  template<stringable S> void tooltip(S&& s) { unsafe_get(&slot::tooltip) = unicode<wchar_t>(static_cast<S&&>(s)); }
-  void on_button(function<void, event::button> f) { unsafe_get(&slot::on_button) = std::move(f); }
-  void on_hover(function<void, event::hover> f) { unsafe_get(&slot::on_hover) = std::move(f); }
-  void on_move(function<void, event::move> f) { unsafe_get(&slot::on_move) = std::move(f); }
-  void on_key(function<void, event::key> f) { unsafe_get(&slot::on_key) = std::move(f); }
-  void on_focus(function<void, bool> f) { unsafe_get(&slot::on_focus) = std::move(f); }
-  void on_click(function<void, event::button> f) { unsafe_get(&slot::on_click) = std::move(f); }
+  void pos(float2 value) { safe_set(&slot::pos, value); }
+  void size(float2 value) { safe_set(&slot::size, value); }
+  void radius(float2 value) { safe_set(&slot::radius, value); }
+  void bg_color(const color& value) { safe_set(&slot::bg_color, value); }
+  void border_color(const color& value) { safe_set(&slot::border_color, value); }
+  void border_width(float value) { safe_set(&slot::border_width, value); }
+  template<stringable S> void tooltip(S&& s) { safe_set(&slot::tooltip, unicode<wchar_t>(static_cast<S&&>(s))); }
+  void on_button(function<void, event::button> f) { safe_set(&slot::on_button, std::move(f)); }
+  void on_hover(function<void, event::hover> f) { safe_set(&slot::on_hover, std::move(f)); }
+  void on_move(function<void, event::move> f) { safe_set(&slot::on_move, std::move(f)); }
+  void on_key(function<void, event::key> f) { safe_set(&slot::on_key, std::move(f)); }
+  void on_focus(function<void, bool> f) { safe_set(&slot::on_focus, std::move(f)); }
+  void on_click(function<void, event::button> f) { safe_set(&slot::on_click, std::move(f)); }
+
+  void make_window_dirty() const noexcept;
 
   template<included_in<window&, none> Window>
   static std::expected<base, error_trace> add(Window&& w, float2 Pos, float2 Size) {

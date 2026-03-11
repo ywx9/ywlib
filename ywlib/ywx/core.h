@@ -43,7 +43,7 @@ inline constexpr auto print_error_fallback = //
 //////////////////////////////////////// MARK: unexpected_win32_error
 
 inline std::unexpected<error_trace> unexpected_win32_error(const char* msg, const source& src = {}) {
-  return unexpected_error(errors::operation_failed, msg, int32_t(::GetLastError()), {}, src);
+  return unexpected_error(errors::operation_failed, msg, int32_t(::GetLastError()), uint64_t(-1), src);
 }
 
 //////////////////////////////////////// MARK: desktop_client_size
@@ -337,7 +337,8 @@ public:
     hr = p.factory->CreateTextFormat(L"", nullptr, DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
       DWRITE_FONT_STRETCH_NORMAL, 16.0f, L"", &p.text_format);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int32_t(hr));
-    if (!p.text_format) return unexpected_error(errors::operation_failed, "CreateTextFormat returned null");
+    p.text_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+    p.text_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     p.initialized = true;
     return {};
   }

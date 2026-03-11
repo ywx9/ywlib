@@ -162,6 +162,23 @@ public:
       return {};
     } else return unexpected_error(size.error());
   }
+
+  std::expected<std::vector<float4>, error_trace> hit_test_range(uint2 Range, float2 Origin = {}) const {
+    /// \note This function ignores maxBidiReorderingDepth.
+    if (!_p) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
+    if (Range.y <= Range.x) return std::vector<float4>{}; // empty range
+    const auto length = Range.y - Range.x;
+    uint32_t actual_count = 0;
+    auto hr = _p->HitTestTextRange(Range.x, length, Origin.x, Origin.y, nullptr, 0, &actual_count);
+    if (hr != E_NOT_SUFFICIENT_BUFFER) return unexpected_error(errors::operation_failed, "HitTestTextRange failed", int32_t(hr));
+    std::vector<DWRITE_HIT_TEST_METRICS> metrics(actual_count);
+    hr = _p->HitTestTextRange(Range.x, length, Origin.x, Origin.y, metrics.data(), actual_count, &actual_count);
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "HitTestTextRange failed", int32_t(hr));
+    std::vector<float4> rects;
+    rects.reserve(actual_count);
+    for (const auto& m : metrics) rects.emplace_back(m.left, m.top, m.width, m.height);
+    return rects;
+  }
 };
 
 //////////////////////////////////////// MARK: draw_text

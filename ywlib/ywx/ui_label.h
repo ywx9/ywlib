@@ -26,7 +26,7 @@ public:
     if (auto s = slot_address(this)) s->size = Size, s->text.size(Size);
   }
 
-  auto& text() { return unsafe_get(&slot::text); }
+  auto* edit_text() noexcept { return safe_get(&slot::text); }
   const auto& text() const { return unsafe_get(&slot::text); }
 
   template<included_in<window&, none> Window>
@@ -34,6 +34,7 @@ public:
     if (auto res = base::add<label>(w, Pos, Size)) {
       const auto slot_p = res->second;
       slot_p->text.size(Size);
+      slot_p->make_window_dirty();
       return label{std::move(res->first)};
     } else return unexpected_error(res.error());
   }

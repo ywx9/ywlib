@@ -24,14 +24,16 @@ public:
 public:
   using base::operator bool;
 
-  auto& text() { return unsafe_get(&slot::text); }
+  auto* edit_text() noexcept { return safe_get(&slot::text); }
   const auto& text() const { return unsafe_get(&slot::text); }
 
-  template<included_in<window&, none> Window, stringable S> static std::expected<button, error_trace> add(
-    Window&& w, float2 Pos, float2 Size) {
+  template<included_in<window&, none> Window>
+  static std::expected<button, error_trace> add(Window&& w, float2 Pos, float2 Size) {
     if (auto res = base::add<button>(w, Pos, Size)) {
       const auto slot_p = res->second;
       slot_p->text.size(Size);
+      slot_p->radius = {8.0f, 8.0f};
+      slot_p->make_window_dirty();
       return button{std::move(res->first)};
     } else return unexpected_error(res.error());
   }

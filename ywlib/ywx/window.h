@@ -92,6 +92,9 @@ public:
 
   void close() noexcept;
 
+  std::expected<void, error_trace> screenshot(const std::filesystem::path& PngFileName) const;
+  bitmap screenshot() const;
+
   /// opens a subwindow which is closed when the master window is closed.
   /// \param LocalPos position relative to the master window's position.
   ///                 `{w.size().x, 0}` places it to the right of the master if they have the same style.
@@ -117,8 +120,9 @@ class window_slot final {
     case window::style::borderless: break;
     default: return unexpected_error(errors::invalid_argument, "invalid window style");
     }
-    hwnd = CreateWindowExW(ExStyle, wclass.name().data(), title.data(), DWORD(style), 0, 0, 0, 0, nullptr, nullptr,
-      wclass.hinstance(), nullptr);
+    hwnd = CreateWindowExW(
+      ExStyle, wclass.name().data(), title.data(), DWORD(style), 0, 0, 0, 0, nullptr, nullptr, wclass.hinstance(),
+      nullptr);
     if (!hwnd) return unexpected_win32_error("CreateWindowExW failed");
     ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, std::bit_cast<LONG_PTR>(id));
     RECT cr{}, wr{};
@@ -223,7 +227,7 @@ public:
 
 ///////////////////////////////////////// MARK: ui::base
 
-void ui::base::slot::hover_event(event::hover e) {
+inline void ui::base::slot::hover_event(event::hover e) {
   if (enabled && on_hover) on_hover(e);
   if (tooltip.empty()) return;
   if (e.move()) {
@@ -232,6 +236,10 @@ void ui::base::slot::hover_event(event::hover e) {
     if (const auto w = system::windows.get(window_id))
       system::tooltip.show(pos + w->pos() + w->margin.xy(), size, tooltip);
   } else if (e.leave()) system::tooltip.hide();
+}
+
+inline void ui::base::slot::make_window_dirty() const noexcept {
+  if (const auto w = system::windows.get(window_id)) w->dirty = true;
 }
 
 inline ui::base::slot* ui::base::_base_slot_address() const noexcept { return system::uis.get(_id); }
@@ -265,6 +273,10 @@ std::expected<tuple<Ui, typename Ui::slot*>, error_trace> ui::base::add(Window& 
 }
 
 inline ui::base::operator bool() const noexcept { return system::uis.contains(_id); }
+
+inline void ui::base::make_window_dirty() const noexcept {
+  if (const auto s = system::uis.get(_id)) s->make_window_dirty();
+}
 
 //////////////////////////////////////// MARK: window
 
@@ -333,8 +345,9 @@ inline void window::size(uint2 value) {
   if (const auto w_slot_p = _window_slot_address()) {
     w_slot_p->dirty = true;
     w_slot_p->size = value;
-    ::SetWindowPos(w_slot_p->hwnd, nullptr, 0, 0, LONG(value.x + w_slot_p->margin.z),
-      LONG(value.y + w_slot_p->margin.w), SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
+    ::SetWindowPos(
+      w_slot_p->hwnd, nullptr, 0, 0, LONG(value.x + w_slot_p->margin.z), LONG(value.y + w_slot_p->margin.w),
+      SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
   }
 }
 
@@ -408,6 +421,20 @@ inline void window::close() noexcept {
       system::windows.erase(w_slot_p->id);
     }
   } catch (...) {} // noexcept
+}
+
+inline std::expected<void, error_trace> window::screenshot(const std::filesystem::path& PngFileName) const {
+  if (const auto w = system::windows.get(_id)) {
+    if (auto res = w->rendertarget.save_as_png(PngFileName)) return {};
+    else return unexpected_error(res.error());
+  } else return unexpected_error(errors::invalid_operation, "invalid window");
+}
+
+inline bitmap window::screenshot() const {
+  if (const auto w = system::windows.get(_id)) {
+    if (auto res = bitmap::create(w->rendertarget)) return std::move(*res);
+    else return {};
+  } else return {};
 }
 
 template<stringable S> std::expected<window, error_trace> window::open_subwindow(
