@@ -21,13 +21,10 @@ template<std::regular T, size_t N> struct vector {
     (noexcept(static_cast<T>(std::declval<Us>())) && ...))
     : _vals{static_cast<T>(static_cast<Us&&>(as))...} {}
 
-  template<tuple_like Tp>
-  requires(lt(extent<Tp>, N) && !castable_to<Tp, T> && !same_as<remove_cvref<Tp>, vector>)
+  template<tuple_like Tp> requires(lt(extent<Tp>, N) && !castable_to<Tp, T> && !same_as<remove_cvref<Tp>, vector>)
   constexpr vector(Tp&& tp) {
     constexpr auto seq = make_sequence<0, extent<Tp>>{};
-    [&]<size_t... Is>(sequence<Is...>) {
-      ((_vals[Is] = T(yw::get<Is>(static_cast<Tp&&>(tp)))), ...);
-    }(seq);
+    [&]<size_t... Is>(sequence<Is...>) { ((_vals[Is] = T(yw::get<Is>(static_cast<Tp&&>(tp)))), ...); }(seq);
   }
 
   static constexpr bool empty() noexcept { return N == 0; }
@@ -48,26 +45,12 @@ template<std::regular T, size_t N> struct vector {
   constexpr auto& back() noexcept { return _vals[N - 1]; }
   constexpr const auto& back() const noexcept { return _vals[N - 1]; }
   constexpr auto& operator[](integral auto i) noexcept { return _vals[size_t((i % N) + N) % N]; }
-  constexpr const auto& operator[](integral auto i) const noexcept {
-    return _vals[size_t((i % N) + N) % N];
-  }
+  constexpr const auto& operator[](integral auto i) const noexcept { return _vals[size_t((i % N) + N) % N]; }
 
-  template<size_t I> requires(I < N)
-  constexpr auto& get() & {
-    return _vals[I];
-  }
-  template<size_t I> requires(I < N)
-  constexpr const auto& get() const& {
-    return _vals[I];
-  }
-  template<size_t I> requires(I < N)
-  constexpr auto&& get() && {
-    return std::move(_vals[I]);
-  }
-  template<size_t I> requires(I < N)
-  constexpr const auto&& get() const&& {
-    return std::move(_vals[I]);
-  }
+  template<size_t I> requires(I < N) constexpr auto& get() & { return _vals[I]; }
+  template<size_t I> requires(I < N) constexpr const auto& get() const& { return _vals[I]; }
+  template<size_t I> requires(I < N) constexpr auto&& get() && { return std::move(_vals[I]); }
+  template<size_t I> requires(I < N) constexpr const auto&& get() const&& { return std::move(_vals[I]); }
 
   constexpr vector operator()() const noexcept { return *this; }
 };
@@ -104,8 +87,7 @@ using double4 = vector4<double>;
 template<typename T, std::equality_comparable_with<T> U, size_t N>
 constexpr bool operator==(const vector<T, N>& a, const vector<U, N>& b) {
   constexpr auto seq = make_sequence<0, N>{};
-  return
-    [&]<size_t... Is>(sequence<Is...>) -> bool { return ((get<Is>(a) == get<Is>(b)) && ...); }(seq);
+  return [&]<size_t... Is>(sequence<Is...>) -> bool { return ((get<Is>(a) == get<Is>(b)) && ...); }(seq);
 }
 
 template<typename T, std::three_way_comparable_with<T> U, size_t N>
@@ -115,14 +97,17 @@ constexpr std::partial_ordering operator<=>(const vector<T, N>& a, const vector<
   return std::partial_ordering::equivalent;
 }
 
-template<typename T, size_t N> constexpr vector<T, N> operator+(const vector<T, N>& a) {
-  return a;
-}
+//////////////////////////////////////// MARK: unary plus
+
+template<typename T, size_t N> constexpr vector<T, N> operator+(const vector<T, N>& a) { return a; }
+
+//////////////////////////////////////// MARK: unary minus
+
 template<typename T, size_t N> constexpr vector<T, N> operator-(const vector<T, N>& a) {
-  return [&]<size_t... Is>(sequence<Is...>) -> vector<T, N> {
-    return {(-get<Is>(a))...};
-  }(make_sequence<0, N>{});
+  return [&]<size_t... Is>(sequence<Is...>) -> vector<T, N> { return {(-get<Is>(a))...}; }(make_sequence<0, N>{});
 }
+
+//////////////////////////////////////// MARK: binary plus
 
 template<typename T, typename U, size_t N>
 constexpr vector<decltype(T{} + U{}), N> operator+(const vector<T, N>& a, const vector<U, N>& b) {
@@ -130,18 +115,41 @@ constexpr vector<decltype(T{} + U{}), N> operator+(const vector<T, N>& a, const 
     return {(get<Is>(a) + get<Is>(b))...};
   }(make_sequence<0, N>{});
 }
+
+//////////////////////////////////////// MARK: binary minus
+
 template<typename T, typename U, size_t N>
 constexpr vector<decltype(T{} - U{}), N> operator-(const vector<T, N>& a, const vector<U, N>& b) {
   return [&]<size_t... Is>(sequence<Is...>) -> vector<decltype(T{} - U{}), N> {
     return {(get<Is>(a) - get<Is>(b))...};
   }(make_sequence<0, N>{});
 }
+
+//////////////////////////////////////// MARK: multiplication
+
 template<typename T, typename U, size_t N>
 constexpr vector<decltype(T{} * U{}), N> operator*(const vector<T, N>& a, const vector<U, N>& b) {
   return [&]<size_t... Is>(sequence<Is...>) -> vector<decltype(T{} * U{}), N> {
     return {(get<Is>(a) * get<Is>(b))...};
   }(make_sequence<0, N>{});
 }
+
+template<typename T, typename U, size_t N>
+constexpr vector<decltype(T{} * U{}), N> operator*(const vector<T, N>& a, const U & b) {
+  using RT = decltype(T{} * U{});
+  const auto bb = static_cast<RT>(b);
+  return [&]<size_t... Is>(sequence<Is...>) -> vector<RT, N> { return {(get<Is>(a) * bb)...}; }(make_sequence<0, N>{});
+}
+
+template<typename T, typename U, size_t N>
+constexpr vector<decltype(U{} * T{}), N> operator*(const U & a, const vector<T, N>& b) {
+  using RT = decltype(U{} * T{});
+  const auto aa = static_cast<RT>(a);
+  return [&]<size_t... Is>(sequence<Is...>) -> vector<RT, N> { return {(aa * get<Is>(b))...}; }(make_sequence<0, N>{});
+}
+
+//////////////////////////////////////// MARK: division
+
 template<typename T, typename U, size_t N>
 constexpr vector<decltype(T{} / U{}), N> operator/(const vector<T, N>& a, const vector<U, N>& b) {
   return [&]<size_t... Is>(sequence<Is...>) -> vector<decltype(T{} / U{}), N> {
@@ -150,41 +158,50 @@ constexpr vector<decltype(T{} / U{}), N> operator/(const vector<T, N>& a, const 
 }
 
 template<typename T, typename U, size_t N>
-constexpr vector<decltype(T{} * U{}), N> operator*(const vector<T, N>& a, const U & b) {
-  using RT = decltype(T{} * U{});
-  const auto bb = static_cast<RT>(b);
-  return [&]<size_t... Is>(sequence<Is...>) -> vector<RT, N> {
-    return {(get<Is>(a) * bb)...};
-  }(make_sequence<0, N>{});
-}
-template<typename T, typename U, size_t N>
 constexpr vector<decltype(T{} / U{}), N> operator/(const vector<T, N>& a, const U & b) {
   using RT = decltype(T{} / U{});
   const auto bb = static_cast<RT>(b);
-  return [&]<size_t... Is>(sequence<Is...>) -> vector<RT, N> {
-    return {(get<Is>(a) / bb)...};
-  }(make_sequence<0, N>{});
-}
-template<typename T, typename U, size_t N>
-constexpr vector<decltype(U{} * T{}), N> operator*(const U & a, const vector<T, N>& b) {
-  using RT = decltype(U{} * T{});
-  const auto aa = static_cast<RT>(a);
-  return [&]<size_t... Is>(sequence<Is...>) -> vector<RT, N> {
-    return {(aa * get<Is>(b))...};
-  }(make_sequence<0, N>{});
+  return [&]<size_t... Is>(sequence<Is...>) -> vector<RT, N> { return {(get<Is>(a) / bb)...}; }(make_sequence<0, N>{});
 }
 
-template<typename T, typename U, size_t N> constexpr auto mul(const vector<T, N>& a, const U& b) {
-  return a * b;
+//////////////////////////////////////// MARK: plus assign
+
+template<typename T, typename U, size_t N> requires requires { T() + U(); }
+constexpr vector<T, N>& operator+=(vector<T, N>& a, const vector<U, N>& b) {
+  [&]<size_t... Is>(sequence<Is...>) { ((get<Is>(a) += get<Is>(b)), ...); }(make_sequence<0, N>{});
+  return a;
 }
-template<typename T, typename U, size_t N> constexpr auto mul(const U& a, const vector<T, N>& b) {
-  return a * b;
+
+//////////////////////////////////////// MARK: minus assign
+
+template<typename T, typename U, size_t N> requires requires { T() - U(); }
+constexpr vector<T, N>& operator-=(vector<T, N>& a, const vector<U, N>& b) {
+  [&]<size_t... Is>(sequence<Is...>) { ((get<Is>(a) -= get<Is>(b)), ...); }(make_sequence<0, N>{});
+  return a;
 }
-template<typename T, typename U, size_t N>
-constexpr auto mul(const vector<T, N>& a, const vector<U, N>& b) {
-  return [&]<size_t... Is>(sequence<Is...>) {
-    return ((get<Is>(a) * get<Is>(b)) + ...);
-  }(make_sequence<0, N>{});
+
+//////////////////////////////////////// MARK: multiplication assign
+
+template<typename T, typename U, size_t N> requires requires { T() * U(); }
+constexpr vector<T, N>& operator*=(vector<T, N>& a, const vector<U, N>& b) {
+  [&]<size_t... Is>(sequence<Is...>) { ((get<Is>(a) *= get<Is>(b)), ...); }(make_sequence<0, N>{});
+  return a;
+}
+
+//////////////////////////////////////// MARK: division assign
+
+template<typename T, typename U, size_t N> requires requires { T() / U(); }
+constexpr vector<T, N>& operator/=(vector<T, N>& a, const vector<U, N>& b) {
+  [&]<size_t... Is>(sequence<Is...>) { ((get<Is>(a) /= get<Is>(b)), ...); }(make_sequence<0, N>{});
+  return a;
+}
+
+//////////////////////////////////////// MARK: vector operations
+
+template<typename T, typename U, size_t N> constexpr auto mul(const vector<T, N>& a, const U& b) { return a * b; }
+template<typename T, typename U, size_t N> constexpr auto mul(const U& a, const vector<T, N>& b) { return a * b; }
+template<typename T, typename U, size_t N> constexpr auto mul(const vector<T, N>& a, const vector<U, N>& b) {
+  return [&]<size_t... Is>(sequence<Is...>) { return ((get<Is>(a) * get<Is>(b)) + ...); }(make_sequence<0, N>{});
 }
 
 template<typename T, size_t M, typename U, size_t N>
@@ -210,8 +227,7 @@ template<std::regular T> struct vector<T, 1> {
 
   constexpr vector() noexcept = default;
 
-  template<castable_to<T> Xt> constexpr vector(Xt&& X) noexcept(nt_castable_to<Xt, T>)
-    : x(T(static_cast<Xt&&>(X))) {}
+  template<castable_to<T> Xt> constexpr vector(Xt&& X) noexcept(nt_castable_to<Xt, T>) : x(T(static_cast<Xt&&>(X))) {}
 
   template<tuple_like<1> Tp> requires(!castable_to<Tp, T> && !same_as<remove_cvref<Tp>, vector>)
   constexpr vector(Tp&& tp) noexcept : x(T(yw::get<0>(static_cast<Tp&&>(tp)))) {}
@@ -233,22 +249,10 @@ template<std::regular T> struct vector<T, 1> {
   constexpr T& operator[](integral auto) noexcept { return x; }
   constexpr const T& operator[](integral auto) const noexcept { return x; }
 
-  template<size_t I> requires(I == 0)
-  constexpr T& get() & noexcept {
-    return x;
-  }
-  template<size_t I> requires(I == 0)
-  constexpr T&& get() && noexcept {
-    return std::move(x);
-  }
-  template<size_t I> requires(I == 0)
-  constexpr const T& get() const& noexcept {
-    return x;
-  }
-  template<size_t I> requires(I == 0)
-  constexpr const T&& get() const&& noexcept {
-    return std::move(x);
-  }
+  template<size_t I> requires(I == 0) constexpr T& get() & noexcept { return x; }
+  template<size_t I> requires(I == 0) constexpr T&& get() && noexcept { return std::move(x); }
+  template<size_t I> requires(I == 0) constexpr const T& get() const& noexcept { return x; }
+  template<size_t I> requires(I == 0) constexpr const T&& get() const&& noexcept { return std::move(x); }
 
   constexpr vector operator()() const noexcept { return *this; }
 };
@@ -272,8 +276,7 @@ template<std::regular T> struct vector<T, 2> {
   constexpr vector(Tp&& tp) : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y() {}
 
   template<tuple_like<2> Tp> requires(!castable_to<Tp, T> && !same_as<remove_cvref<Tp>, vector>)
-  constexpr vector(Tp&& tp)
-    : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))) {}
+  constexpr vector(Tp&& tp) : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))) {}
 
   constexpr bool empty() const noexcept { return false; }
   constexpr size_t size() const noexcept { return 2; }
@@ -320,17 +323,15 @@ template<std::regular T> struct vector<T, 3> {
 
   constexpr vector() noexcept = default;
 
-  template<castable_to<T> Xt, castable_to<T> Yt, castable_to<T> Zt>
-  constexpr vector(Xt&& X, Yt&& Y, Zt&& Z) noexcept(nt_castable_to<Xt, T> &&
-                                                    nt_castable_to<Yt, T> && nt_castable_to<Zt, T>)
+  template<castable_to<T> Xt, castable_to<T> Yt, castable_to<T> Zt> constexpr vector(Xt&& X, Yt&& Y, Zt&& Z) noexcept(
+    nt_castable_to<Xt, T> && nt_castable_to<Yt, T> && nt_castable_to<Zt, T>)
     : x(T(static_cast<Xt&&>(X))), y(T(static_cast<Yt&&>(Y))), z(T(static_cast<Zt&&>(Z))) {}
 
   template<tuple_like<1> Tp> requires(!castable_to<Tp, T>)
   constexpr vector(Tp&& tp) : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(), z() {}
 
   template<tuple_like<2> Tp> requires(!castable_to<Tp, T>)
-  constexpr vector(Tp&& tp)
-    : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))), z() {}
+  constexpr vector(Tp&& tp) : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))), z() {}
 
   template<tuple_like<3> Tp> requires(!castable_to<Tp, T> && !same_as<remove_cvref<Tp>, vector>)
   constexpr vector(Tp&& tp)
@@ -363,20 +364,10 @@ template<std::regular T> struct vector<T, 3> {
     return ii == 0 ? x : (ii == 1 ? y : z);
   }
 
-  template<size_t I> requires(I < 3)
-  constexpr T& get() & noexcept {
-    return select<I>(x, y, z);
-  }
-  template<size_t I> requires(I < 3)
-  constexpr T&& get() && noexcept {
-    return std::move(select<I>(x, y, z));
-  }
-  template<size_t I> requires(I < 3)
-  constexpr const T& get() const& noexcept {
-    return select<I>(x, y, z);
-  }
-  template<size_t I> requires(I < 3)
-  constexpr const T&& get() const&& noexcept {
+  template<size_t I> requires(I < 3) constexpr T& get() & noexcept { return select<I>(x, y, z); }
+  template<size_t I> requires(I < 3) constexpr T&& get() && noexcept { return std::move(select<I>(x, y, z)); }
+  template<size_t I> requires(I < 3) constexpr const T& get() const& noexcept { return select<I>(x, y, z); }
+  template<size_t I> requires(I < 3) constexpr const T&& get() const&& noexcept {
     return std::move(select<I>(x, y, z));
   }
 
@@ -400,21 +391,17 @@ template<std::regular T> struct vector<T, 4> {
     : x(T(static_cast<Xt&&>(X))), y(), z(), w() {}
 
   template<castable_to<T> Xt, castable_to<T> Yt, castable_to<T> Zt, castable_to<T> Wt>
-  constexpr vector(Xt&& X, Yt&& Y, Zt&& Z,
-                   Wt&& W) noexcept(nt_castable_to<Xt, T> && nt_castable_to<Yt, T> &&
-                                    nt_castable_to<Zt, T> && nt_castable_to<Wt, T>)
-    : x(T(static_cast<Xt&&>(X))), y(T(static_cast<Yt&&>(Y))), z(T(static_cast<Zt&&>(Z))),
-      w(T(static_cast<Wt&&>(W))) {}
+  constexpr vector(Xt&& X, Yt&& Y, Zt&& Z, Wt&& W) noexcept(
+    nt_castable_to<Xt, T> && nt_castable_to<Yt, T> && nt_castable_to<Zt, T> && nt_castable_to<Wt, T>)
+    : x(T(static_cast<Xt&&>(X))), y(T(static_cast<Yt&&>(Y))), z(T(static_cast<Zt&&>(Z))), w(T(static_cast<Wt&&>(W))) {}
 
   template<tuple_like<1> Tp> requires(!castable_to<Tp, T>)
   constexpr vector(Tp&& tp) : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(), z(), w() {}
 
-  template<tuple_like<2> Tp> requires(!castable_to<Tp, T>)
-  constexpr vector(Tp&& tp)
+  template<tuple_like<2> Tp> requires(!castable_to<Tp, T>) constexpr vector(Tp&& tp)
     : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))), z(), w() {}
 
-  template<tuple_like<3> Tp> requires(!castable_to<Tp, T>)
-  constexpr vector(Tp&& tp)
+  template<tuple_like<3> Tp> requires(!castable_to<Tp, T>) constexpr vector(Tp&& tp)
     : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))),
       z(T(yw::get<2>(static_cast<Tp&&>(tp)))), w() {}
 
@@ -449,20 +436,10 @@ template<std::regular T> struct vector<T, 4> {
     return ii == 0 ? x : (ii == 1 ? y : (ii == 2 ? z : w));
   }
 
-  template<size_t I> requires(I < 4)
-  constexpr T& get() & noexcept {
-    return select<I>(x, y, z, w);
-  }
-  template<size_t I> requires(I < 4)
-  constexpr T&& get() && noexcept {
-    return std::move(select<I>(x, y, z, w));
-  }
-  template<size_t I> requires(I < 4)
-  constexpr const T& get() const& noexcept {
-    return select<I>(x, y, z, w);
-  }
-  template<size_t I> requires(I < 4)
-  constexpr const T&& get() const&& noexcept {
+  template<size_t I> requires(I < 4) constexpr T& get() & noexcept { return select<I>(x, y, z, w); }
+  template<size_t I> requires(I < 4) constexpr T&& get() && noexcept { return std::move(select<I>(x, y, z, w)); }
+  template<size_t I> requires(I < 4) constexpr const T& get() const& noexcept { return select<I>(x, y, z, w); }
+  template<size_t I> requires(I < 4) constexpr const T&& get() const&& noexcept {
     return std::move(select<I>(x, y, z, w));
   }
 
@@ -470,6 +447,7 @@ template<std::regular T> struct vector<T, 4> {
 
   constexpr vector<T, 3> xyz() const noexcept { return {x, y, z}; }
   constexpr vector<T, 2> xy() const noexcept { return {x, y}; }
+  constexpr vector<T, 2> zw() const noexcept { return {z, w}; }
 };
 } // namespace yw
 

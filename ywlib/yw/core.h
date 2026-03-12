@@ -37,6 +37,7 @@ using ssize_t = std::make_signed_t<size_t>;
 
 inline constexpr size_t npos = static_cast<size_t>(-1);
 inline constexpr auto unordered = std::partial_ordering::unordered;
+inline constexpr double nan = std::numeric_limits<double>::quiet_NaN();
 inline constexpr double inf = std::numeric_limits<double>::infinity();
 inline constexpr double pi = 3.14159265358979323846;
 inline constexpr double pi2 = 6.28318530717958647692;
