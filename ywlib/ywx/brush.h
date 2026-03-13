@@ -49,27 +49,17 @@ public:
     p.solid_brush->SetColor(reinterpret_cast<const D2D1_COLOR_F*>(&c));
   }
 
-  float opacity() {
-    if (!initialize()) return 1.0f;
-    return p.solid_brush->GetOpacity();
-  }
-
-  void opacity(float1 opacity) {
-    if (!initialize()) return;
-    p.solid_brush->SetOpacity(opacity.x);
-  }
-
-  ID2D1SolidColorBrush* brush() {
+  ID2D1SolidColorBrush* d2d_brush() {
     if (!initialize()) return nullptr;
     return p.solid_brush;
   }
 
-  ID2D1StrokeStyle* stroke() {
+  ID2D1StrokeStyle* d2d_stroke() {
     if (!initialize()) return nullptr;
     return p.stroke_style;
   }
 
-  ID2D1StrokeStyle* dashed_stroke() {
+  ID2D1StrokeStyle* d2d_dashed_stroke() {
     if (!initialize()) return nullptr;
     return p.dashed_stroke_style;
   }

@@ -58,7 +58,7 @@ public:
   }
 
   /// erases the slot with the given slotid if it is valid
-  void erase(const slotid i) {
+  void erase(const slotid i) noexcept {
     if (i.index >= _slots.size()) return;
     if (auto& s = _slots[i.index]; s.generation == i.generation) {
       s.pointer.reset();
@@ -69,19 +69,21 @@ public:
   }
 
   /// creates a new slot with the given pointer and returns its slotid
-  slotid add(std::unique_ptr<T> p) {
-    if (_free_head != uint32_t(-1)) {
-      const auto i = _free_head;
-      auto& s = _slots[i];
-      _free_head = s.next_free;
-      s.pointer = std::move(p);
-      s.next_free = uint32_t(-1);
-      return slotid{i, s.generation};
-    } else {
-      const auto i = uint32_t(_slots.size());
-      _slots.push_back(slot{std::move(p), 1, uint32_t(-1)});
-      return slotid{i, 1};
-    }
+  slotid add(std::unique_ptr<T> p) noexcept {
+    try {
+      if (_free_head != uint32_t(-1)) {
+        const auto i = _free_head;
+        auto& s = _slots[i];
+        _free_head = s.next_free;
+        s.pointer = std::move(p);
+        s.next_free = uint32_t(-1);
+        return slotid{i, s.generation};
+      } else {
+        const auto i = uint32_t(_slots.size());
+        _slots.push_back(slot{std::move(p), 1, uint32_t(-1)});
+        return slotid{i, 1};
+      }
+    } catch (...) { return {}; }
   }
 
   /// clears all slots

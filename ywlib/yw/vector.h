@@ -410,6 +410,11 @@ template<std::regular T> struct vector<T, 4> {
     : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))),
       z(T(yw::get<2>(static_cast<Tp&&>(tp)))), w(T(yw::get<3>(static_cast<Tp&&>(tp)))) {}
 
+  template<tuple_like<2> Tp1, tuple_like<2> Tp2> requires(!castable_to<Tp1, T> && !castable_to<Tp2, T>)
+  constexpr vector(Tp1&& tp1, Tp2&& tp2)
+    : x(T(yw::get<0>(static_cast<Tp1&&>(tp1)))), y(T(yw::get<1>(static_cast<Tp1&&>(tp1)))),
+      z(T(yw::get<0>(static_cast<Tp2&&>(tp2)))), w(T(yw::get<1>(static_cast<Tp2&&>(tp2)))) {}
+
   constexpr bool empty() const noexcept { return false; }
   constexpr size_t size() const noexcept { return count; }
 

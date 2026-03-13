@@ -3,48 +3,120 @@
 
 namespace yw::ui {
 
-enum class alignment { center, leading, trailing };
-
-inline constexpr float unconstrained = std::numeric_limits<float>::quiet_NaN();
+inline constexpr float unconstrained = 0.0f;
 
 class control {
 public:
+  class slot;
+  using slotid = slotset<slot>::slotid;
+
+  template<typename Slot> static Slot* _slot_address(const slotid& id) noexcept;
+  template<typename Slot> static slotid _create_slot();
+
   class slot {
   public:
-    slotset<slot>::slotid id{};
-    slotset<slot>::slotid parent{};
-    slotset<slot>::slotid window{};
-    float width{unconstrained};
-    float height{unconstrained};
+    slotid id{}, layout_id{};
+    union {
+      float2 size{unconstrained, unconstrained};
+      struct {
+        float width, height;
+      };
+    };
+    mutable float4 last_rect{};
     float4 margin{5.0f, 5.0f, 5.0f, 5.0f};
-    ui::alignment alignment{alignment::center};
-    bool visible = true;
-    bool enabled = true;
+    bool visible = true, enabled = true;
+    mutable bool dirty = true;
 
-    /// returns the minimum size and the number of flexible controls.
-    virtual tuple<float2, uint2> minimum_size() const noexcept {
-      float2 size = {std::isnan(width) ? 0.0f : width, std::isnan(height) ? 0.0f : height};
-      return {size + margin.xy() + margin.zw(), {std::isnan(width), std::isnan(height)}};
+    virtual ~slot() noexcept {
+      if (const auto lsp = _slot_address<slot>(layout_id)) lsp->detach(id);
     }
 
-    /// erases the child control with the given slotid if it has.
-    virtual void erase_child(const slotset<slot>::slotid& child_id) noexcept {}
+    /// returns the minimum size and the number of unconstrained dimensions.
+    virtual tuple<float2, uint2> minimum_size() const noexcept {
+      return {size + margin.xy() + margin.zw(), uint2(size.x == 0.0f, size.y == 0.0f)};
+    }
 
-    /// adds a child control with the given slotid if it can.
-    virtual bool add_child(const slotset<slot>::slotid& child_id) noexcept { return false; }
+    /// attaches a child control with the given slotid. Returns false if the control cannot be attached.
+    virtual bool attach(const slotid& child_id) noexcept { return false; }
 
-    /// sets the dirty flag of the window containing this control.
-    virtual void make_dirty() noexcept;
+    /// detaches the child control with the given slotid.
+    virtual void detach(const slotid& child_id) noexcept {}
 
-    virtual void draw(float2 Pos, float2 Size) const {};
+    /// need to be called when the control needs to be redrawn.
+    virtual void make_dirty() noexcept {
+      dirty = true;
+      if (const auto lsp = _slot_address<slot>(layout_id)) lsp->make_dirty();
+    }
+
+    /// need to be called when the layout needs to be updated.
+    virtual void make_mess() noexcept {
+      if (const auto lsp = _slot_address<slot>(layout_id)) lsp->make_mess();
+    }
+
+    /// checks if the given position is within the control's bounds.
+    virtual slotid hit_test(float2 Pt) const noexcept { return {}; }
+
+    /// draws the control at the given position with the given size.
+    virtual void draw(float2 Pos, float2) const { last_rect = float4(Pos, Pos); };
+    virtual void draw_focus() const {}
+
+    virtual void button_event(event::button e) {}
+    virtual void hover_event(event::hover e) {}
+    virtual void move_event(event::move e) {}
+    virtual void key_event(event::key e) {}
+    virtual void char_event(wchar_t c) {}
+    virtual bool focus_event(bool) { return false; }
+    virtual void click_event(event::button e) {}
   };
 
 protected:
-  template<typename CtrlSlot> static slotset<slot>::slotid create(control& Layout) noexcept;
+  template<typename Slot> static slotid create(control& Layout) {
+    if (const auto l_slot_p = _slot_address<slot>(Layout._id)) {
+      const auto id = _create_slot<Slot>();
+      if (l_slot_p->attach(id)) {
+        if (auto slot_p = _slot_address<Slot>(id)) {
+          slot_p->id = id;
+          slot_p->layout_id = Layout._id;
+          return id;
+        } else unexpected_error(errors::operation_failed, "Failed to access the created slot.");
+      } else unexpected_error(errors::operation_failed, "Failed to attach the slot to the layout.");
+    } else unexpected_error(errors::operation_failed, "Failed to access the layout's slot.");
+    unexpected_error(errors::operation_failed, "Failed to create slot.");
+    return {};
+  }
 
-  slotset<slot>::slotid _id{};
+  slotid _id{};
+  control(slotid Id) : _id(Id) {}
 
-  control(slotset<slot>::slotid Id) : _id(Id) {}
+  template<typename Mp> member_type<Mp>* safe_get(Mp Member) const noexcept {
+    const auto s = _slot_address<class_type<Mp>>(this);
+    return s ? &s->*Member : nullptr;
+  }
+
+  template<typename Mp> member_type<Mp>& unsafe_get(Mp Member) const {
+    const auto s = _slot_address<class_type<Mp>>(this);
+    if (s) return s->*Member;
+    else throw std::logic_error("Invalid member access");
+  }
+
+  template<typename Mp, typename T> void safe_set(Mp Member, T&& Value) const noexcept {
+    if (auto s = _slot_address<class_type<Mp>>(this)) {
+      s->*Member = std::forward<T>(Value);
+      s->make_dirty();
+    }
+  }
+
+  template<typename Mp, typename T> void safe_set_size(Mp Member, T&& Value) const noexcept {
+    if (auto s = _slot_address<class_type<Mp>>(this)) {
+      s->*Member = std::forward<T>(Value);
+      s->make_dirty();
+      s->make_mess();
+    }
+  }
+
+public:
+  virtual ~control() noexcept { destroy(); }
+  control() noexcept = default;
 
   control(const control&) = delete;
   control& operator=(const control&) = delete;
@@ -58,45 +130,20 @@ protected:
     return *this;
   }
 
-  /// \note `c` must not be null.
-  template<typename Ctrl> static Ctrl::slot* slot_address(const Ctrl* c) noexcept;
-
-  template<typename Mop> member_type<Mop>* safe_get(Mop Member) const noexcept {
-    const auto s = dynamic_cast<class_type<Mop>*>(slot_address(this));
-    return s ? &s->*Member : nullptr;
-  }
-
-  template<typename Mop> member_type<Mop>& unsafe_get(Mop Member) const noexcept {
-    const auto s = dynamic_cast<class_type<Mop>*>(slot_address(this));
-    if (s) return s->*Member;
-    else throw std::logic_error("Invalid member access");
-  }
-
-  template<typename Mop, typename T> void safe_set(Mop Member, T&& Value) const noexcept {
-    if (auto s = dynamic_cast<class_type<Mop>*>(slot_address(this))) {
-      s->*Member = std::forward<T>(Value);
-      s->make_dirty();
-    }
-  }
-
-public:
-  virtual ~control() noexcept;
-  control() noexcept = default;
-
   explicit operator bool() const noexcept;
-  const slotset<slot>::slotid& id() const noexcept { return _id; }
+  const slotid& id() const noexcept { return _id; }
 
-  const slotset<slot>::slotid& parent() const { return unsafe_get(&slot::parent); }
-  const slotset<slot>::slotid& window() const { return unsafe_get(&slot::window); }
+  const float2& size() const { return unsafe_get(&slot::size); }
+  void size(float2 value) { safe_set_size(&slot::size, value); }
 
   const float& width() const { return unsafe_get(&slot::width); }
-  void width(float value) { safe_set(&slot::width, value); }
+  void width(float value) { safe_set_size(&slot::width, value); }
 
   const float& height() const { return unsafe_get(&slot::height); }
-  void height(float value) { safe_set(&slot::height, value); }
+  void height(float value) { safe_set_size(&slot::height, value); }
 
   const float4& margin() const { return unsafe_get(&slot::margin); }
-  void margin(std::optional<float4> value) { safe_set(&slot::margin, value); }
+  void margin(const float4 value) { safe_set(&slot::margin, value); }
 
   const bool& visible() const { return unsafe_get(&slot::visible); }
   void visible(bool value) { safe_set(&slot::visible, value); }
@@ -106,47 +153,23 @@ public:
 
   void destroy() noexcept;
 };
+} // namespace yw::ui
 
-//////////////////////////////////////// MARK: system::controls
+namespace yw {
 
 namespace system {
-inline slotset<control::slot> controls;
+inline slotset<ui::control::slot> controls;
 }
 
-//////////////////////////////////////// MARK: implementation
-
-void control::slot::make_dirty() noexcept {
-  if (auto c = system::controls.get(parent)) c->make_dirty();
+template<typename Slot> Slot* ui::control::_slot_address(const slotid& id) noexcept {
+  return dynamic_cast<Slot*>(system::controls.get(id));
 }
 
-template<typename Ctrl> slotset<control::slot>::slotid
-control::create(control& Layout) noexcept {
-  if (const auto parent = system::controls.get(Layout.id())) {
-    const auto id = system::controls.add(std::make_unique<Ctrl::slot>());
-    if (Layout.add_child(id)) {
-      if (auto child = system::controls.get(id)) {
-        child->parent = Layout.id();
-        child->window = parent->window;
-        return id;
-      }
-    }
-    system::controls.erase(id);
-  }
-  return {};
+template<typename Slot> ui::control::slotid ui::control::_create_slot() {
+  return system::controls.add(std::make_unique<Slot>());
 }
 
-template<typename Ctrl> Ctrl::slot* control::slot_address(const Ctrl* c) noexcept {
-  return dynamic_cast<Ctrl::slot*>(system::controls.get(c->_id));
-}
+inline explicit ui::control::operator bool() const noexcept { return system::controls.contains(_id); }
 
-inline control::~control() noexcept { destroy(); }
-
-inline control::operator bool() const noexcept { return system::controls.contains(_id); }
-
-void control::destroy() noexcept {
-  if (const auto s = system::controls.get(_id)) {
-    system::controls.erase(_id);
-    if (const auto ps = system::controls.get(s->parent)) ps->erase_child(_id);
-  }
-}
-} // namespace yw::ui
+inline void ui::control::destroy() noexcept { system::controls.erase(std::exchange(_id, {})); }
+} // namespace yw
