@@ -130,7 +130,7 @@ std::expected<void, error_trace> draw_text(float2 pos, float2 size, stringable<w
   const auto sv = std::wstring_view(text);
   const auto tf = static_cast<IDWriteTextFormat*>(text_format);
   d2d.context()->DrawTextW(sv.data(), static_cast<UINT>(sv.size()), tf,
-    D2D1_RECT_F(pos.x, pos.y, pos.x + size.x, pos.y + size.y), brush.brush());
+    D2D1_RECT_F(pos.x, pos.y, pos.x + size.x, pos.y + size.y), brush.d2d_brush());
   return {};
 }
 } // namespace yw

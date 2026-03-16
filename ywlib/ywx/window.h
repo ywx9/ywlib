@@ -1,5 +1,5 @@
 #pragma once
-#include "ywx/ui_control.h"
+#include "ywx/control.h"
 
 namespace yw {
 
@@ -16,6 +16,40 @@ public:
   };
 
   class slot {
+    std::expected<void, error_trace> _create_window() {
+      if (auto res = wclass.initialize(); !res) return unexpected_error(res.error());
+      if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
+      switch (style) {
+      case style::regular:
+      case style::fixed:
+      case style::borderless: break;
+      default: return unexpected_error(errors::invalid_argument, "Invalid window style.");
+      }
+      hwnd = CreateWindowExW(
+        WS_EX_ACCEPTFILES, wclass.name().c_str(), title.c_str(), DWORD(style), 0, 0, 0, 0, nullptr, nullptr,
+        wclass.hinstance(), nullptr);
+      if (!hwnd) return unexpected_win32_error("CreateWindowExW failed");
+      ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, std::bit_cast<LONG_PTR>(id));
+      return {};
+    }
+
+    std::expected<void, error_trace> _calculate_margin() {
+      RECT cr{}, wr{};
+      if (!::GetClientRect(hwnd, &cr)) return unexpected_win32_error("GetClientRect failed");
+      if (!::GetWindowRect(hwnd, &wr)) return unexpected_win32_error("GetWindowRect failed");
+      const auto left = (wr.right - wr.left - cr.right) / 2;
+      const auto top = wr.bottom - wr.top - cr.bottom - left;
+      margin = int4(left, top, left, left);
+      return {};
+    }
+
+    std::expected<void, error_trace> _set_position() {
+      const auto sz = int2(size) + margin.xy() + margin.zw();
+      if (!::SetWindowPos(hwnd, nullptr, pos.x, pos.y, sz.x, sz.y, SWP_NOZORDER))
+        return unexpected_win32_error("SetWindowPos failed");
+      return {};
+    }
+
   public:
     slotid id{};
 
@@ -29,10 +63,10 @@ public:
     comptr<IDXGISwapChain1> swapchain{};
     stopwatch timer{};
     color bg_color = colors::white;
-    ui::control::slotid layout{};
-    ui::control::slotid focused_ui{};
-    ui::control::slotid hovered_ui{};
-    ui::control::slotid captured_ui{};
+    std::vector<control::slotid> controls;
+    control::slotid focused_control{};
+    control::slotid hovered_control{};
+    control::slotid captured_control{};
     bool visible = true;
     bool enabled = true;
     bool dirty = true;
@@ -49,8 +83,90 @@ public:
     ~slot() noexcept {
       try {
         ::DestroyWindow(hwnd);
-        system::controls.erase(layout);
+        for (const auto& cid : controls) system::controls.erase(cid);
       } catch (...) {} // noexcept destructor
+    }
+
+    std::expected<void, error_trace> initialize(slotid Id, std::optional<int2> Pos, uint2 Size, window::style Style) {
+      id = Id, style = Style, size = Size;
+      if (auto res = _create_window(); !res) return res;
+      if (auto res = _calculate_margin(); !res) return res;
+      if (!Pos) {
+        const auto sz = int2(Size) + margin.xy() + margin.zw();
+        const auto dcs = int2(desktop_client_size());
+        pos = (dcs - sz) / 2;
+      } else pos = *Pos;
+      if (auto res = _set_position(); !res) return res;
+      return {};
+    }
+
+    tuple<float2, uint2> minimum_size() const noexcept {
+      tuple<float2, uint2> result{};
+      for (const auto& cid : controls)
+        if (const auto csp = system::controls.get(cid)) {
+          const auto [ms, uc] = csp->minimum_size();
+          result.first.x = yw::max(result.first.x, ms.x);
+          result.first.y += yw::max(ms.y, 0.0f);
+          result.second.x |= uc.x;
+          result.second.y += uc.y;
+        }
+      return result;
+    }
+
+    std::expected<void, error_trace> draw() {
+      if (!(rendertarget)) return {};
+      if (auto d = manual_draw ? rendertarget.begin_draw() : rendertarget.begin_draw(bg_color)) {
+        if (messy) {
+          const auto [min_size, unconstrained] = minimum_size();
+          const auto extra_size = float2(size) - min_size;
+          float offset_y = 0.0f;
+          if (unconstrained.y == 0) {
+            for (const auto& cid : controls)
+              if (const auto csp = system::controls.get(cid); csp && csp->visible) {
+                const auto [ms, _] = csp->minimum_size();
+                const auto control_size = float2(size.x, ms.y);
+                csp->draw({0, offset_y}, control_size);
+                offset_y += ms.y;
+              }
+          } else {
+            const auto extra_per_ucc = yw::max(extra_size.y / unconstrained.y, 0.0f);
+            for (const auto& cid : controls)
+              if (const auto csp = system::controls.get(cid); csp && csp->visible) {
+                const auto [ms, ucc] = csp->minimum_size();
+                const auto control_size = float2(size.x, ms.y + ucc.y * extra_per_ucc);
+                csp->draw({0, offset_y}, control_size);
+                offset_y += control_size.y;
+              }
+          }
+          messy = dirty = false;
+        } else if (dirty) {
+          for (const auto& cid : controls)
+            if (const auto csp = system::controls.get(cid); csp && csp->visible)
+              csp->draw(csp->last_rect.xy(), csp->last_rect.zw() - csp->last_rect.xy());
+          dirty = false;
+        } else return {};
+      } else return unexpected_error(d.error());
+      swapchain->Present(0, 0);
+      return {};
+    }
+
+    std::expected<void, error_trace> resize_rendertarget(uint2 sz) {
+      if (sz.x <= 0 || sz.y <= 0) return {};
+      if (swapchain) {
+        rendertarget = {}; // releases the back buffer.
+        auto hr = swapchain->ResizeBuffers(0, sz.x, sz.y, DXGI_FORMAT_UNKNOWN, 0);
+        if (FAILED(hr)) return unexpected_win32_error("ResizeBuffers failed");
+      } else {
+        if (auto res = dxgi.initialize(); !res) return unexpected_error(res.error());
+        auto desc = DXGI_SWAP_CHAIN_DESC1(sz.x, sz.y, bitmap::dxgiformat, false, DXGI_SAMPLE_DESC(1, 0), {}, 2);
+        desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT, desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        auto hr = dxgi.factory()->CreateSwapChainForHwnd(d3d.device(), hwnd, &desc, nullptr, nullptr, &swapchain.get());
+        if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSwapChainForHwnd failed", int32_t(hr));
+      }
+      if (auto res = bitmap::create(swapchain.get())) rendertarget = std::move(*res);
+      else return unexpected_error(res.error());
+      messy = true;
+      return {};
     }
   };
 
@@ -79,6 +195,9 @@ public:
     _id = std::exchange(other._id, {});
     return *this;
   }
+
+  /// \param Pos If not specified, the window will be centered on the screen.
+  window(std::optional<int2> Pos, uint2 Size, style Style = style::regular, bool Show = true);
 
   explicit operator bool() const noexcept;
   const slotid& id() const noexcept { return _id; }
@@ -146,36 +265,47 @@ public:
     } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
   }
 
-  std::expected<void, error_trace> destroy() noexcept;
-
   std::expected<drawing, error_trace> begin_draw() {
     if (const auto wsp = _slot_address()) {
       wsp->messy = true;
-      if (wsp->manual_draw) {
-        if (auto d = wsp->rendertarget.begin_draw()) return std::move(d);
-        else return unexpected_error(d.error());
-      } else if (auto d = wsp->rendertarget.begin_draw(wsp->bg_color)) return std::move(d);
+      wsp->manual_draw = true;
+      if (auto d = wsp->rendertarget.begin_draw(wsp->bg_color)) return std::move(d);
       else return unexpected_error(d.error());
     } else return unexpected_error(errors::invalid_operation, "window slot not found");
   }
+
+  void destroy() noexcept;
 };
 
 namespace system {
 inline slotset<window::slot> windows{};
+inline std::vector<window::slotid> primal_windows{};
+inline int2 cursor_pos{};
 }
 
-inline window::slot* window::_slot_address() const noexcept {
-  return system::windows.get(_id);
-}
+inline window::slot* window::_slot_address() const noexcept { return system::windows.get(_id); }
 
-inline explicit window::operator bool() const noexcept {
-  return system::windows.contains(_id);
-}
+inline window::operator bool() const noexcept { return system::windows.contains(_id); }
 
-inline std::expected<void, error_trace> window::destroy() noexcept {
+inline void window::destroy() noexcept {
   if (const auto wsp = _slot_address()) {
     system::windows.erase(wsp->id);
-    return {};
-  } else return unexpected_error(errors::invalid_operation, "window slot not found");
+    std::erase(system::primal_windows, wsp->id);
+  }
+}
+
+inline window::window(std::optional<int2> Pos, uint2 Size, style Style, bool Show) {
+  _id = system::windows.add(std::make_unique<slot>());
+  const auto slot_p = system::windows.get(_id);
+  if (!slot_p) throw std::runtime_error("failed to create window slot");
+  if (auto res = slot_p->initialize(_id, Pos, Size, Style); !res) {
+    system::windows.erase(_id);
+    throw unexpected_error(res.error());
+  }
+  system::primal_windows.push_back(_id);
+  if (!Show) return;
+  ::ShowWindow(slot_p->hwnd, SW_SHOW);
+  ::SetForegroundWindow(slot_p->hwnd);
+  ::SetActiveWindow(slot_p->hwnd);
 }
 } // namespace yw

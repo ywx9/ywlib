@@ -468,7 +468,7 @@ inline std::expected<void, error_trace> draw_svgpath(
   D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Scale(scale.x, scale.y) * D2D1::Matrix3x2F::Translation(pos.x, pos.y);
   if (FAILED(d2d.factory()->CreateTransformedGeometry(path.get(), &matrix, &tg.get())))
     return unexpected_error(errors::invalid_operation, "failed to create transformed geometry");
-  d2d.context()->DrawGeometry(tg.get(), brush.brush(), border_width.x, brush.stroke());
+  d2d.context()->DrawGeometry(tg.get(), brush.d2d_brush(), border_width.x, brush.d2d_stroke());
   return {};
 }
 
@@ -481,7 +481,7 @@ inline std::expected<void, error_trace> draw_dashed_svgpath(
   D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Scale(scale.x, scale.y) * D2D1::Matrix3x2F::Translation(pos.x, pos.y);
   if (FAILED(d2d.factory()->CreateTransformedGeometry(path.get(), &matrix, &tg.get())))
     return unexpected_error(errors::invalid_operation, "failed to create transformed geometry");
-  d2d.context()->DrawGeometry(tg.get(), brush.brush(), border_width.x, brush.dashed_stroke());
+  d2d.context()->DrawGeometry(tg.get(), brush.d2d_brush(), border_width.x, brush.d2d_dashed_stroke());
   return {};
 }
 
@@ -495,7 +495,7 @@ inline std::expected<void, error_trace> fill_svgpath(float2 pos, float2 size, co
   D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Scale(scale.x, scale.y) * D2D1::Matrix3x2F::Translation(pos.x, pos.y);
   if (FAILED(d2d.factory()->CreateTransformedGeometry(path.get(), &matrix, &tg.get())))
     return unexpected_error(errors::invalid_operation, "failed to create transformed geometry");
-  d2d.context()->FillGeometry(tg.get(), brush.brush());
+  d2d.context()->FillGeometry(tg.get(), brush.d2d_brush());
   return {};
 }
 } // namespace yw

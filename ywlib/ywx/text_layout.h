@@ -187,7 +187,7 @@ template<text_layout_like TL> std::expected<void, error_trace> draw_text(float2 
   if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   const auto tl = static_cast<IDWriteTextLayout*>(text_layout);
-  d2d.context()->DrawTextLayout(D2D1_POINT_2F{pos.x, pos.y}, tl, brush.brush());
+  d2d.context()->DrawTextLayout(D2D1_POINT_2F{pos.x, pos.y}, tl, brush.d2d_brush());
   return {};
 }
 } // namespace yw

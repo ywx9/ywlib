@@ -1,9 +1,12 @@
 #pragma once
 #include "ywx/core.h"
+#include "ywx/event.h"
 
-namespace yw::ui {
+namespace yw {
 
-inline constexpr float unconstrained = 0.0f;
+namespace ui {
+inline constexpr float unconstrained = -1.0f;
+}
 
 class control {
 public:
@@ -17,7 +20,7 @@ public:
   public:
     slotid id{}, layout_id{};
     union {
-      float2 size{unconstrained, unconstrained};
+      float2 size{ui::unconstrained, ui::unconstrained};
       struct {
         float width, height;
       };
@@ -25,7 +28,6 @@ public:
     mutable float4 last_rect{};
     float4 margin{5.0f, 5.0f, 5.0f, 5.0f};
     bool visible = true, enabled = true;
-    mutable bool dirty = true;
 
     virtual ~slot() noexcept {
       if (const auto lsp = _slot_address<slot>(layout_id)) lsp->detach(id);
@@ -33,18 +35,22 @@ public:
 
     /// returns the minimum size and the number of unconstrained dimensions.
     virtual tuple<float2, uint2> minimum_size() const noexcept {
-      return {size + margin.xy() + margin.zw(), uint2(size.x == 0.0f, size.y == 0.0f)};
+      tuple<float2, uint2> result{};
+      result.first.x = yw::max(size.x, 0.0f) + margin.x + margin.z;
+      result.first.y = yw::max(size.y, 0.0f) + margin.y + margin.w;
+      result.second.x = size.x < 0.0f;
+      result.second.y = size.y < 0.0f;
+      return result;
     }
 
     /// attaches a child control with the given slotid. Returns false if the control cannot be attached.
-    virtual bool attach(const slotid& child_id) noexcept { return false; }
+    virtual bool attach(const slotid& child_id) { return false; }
 
     /// detaches the child control with the given slotid.
-    virtual void detach(const slotid& child_id) noexcept {}
+    virtual void detach(const slotid& child_id) {}
 
     /// need to be called when the control needs to be redrawn.
     virtual void make_dirty() noexcept {
-      dirty = true;
       if (const auto lsp = _slot_address<slot>(layout_id)) lsp->make_dirty();
     }
 
@@ -89,25 +95,25 @@ protected:
   control(slotid Id) : _id(Id) {}
 
   template<typename Mp> member_type<Mp>* safe_get(Mp Member) const noexcept {
-    const auto s = _slot_address<class_type<Mp>>(this);
+    const auto s = _slot_address<class_type<Mp>>(_id);
     return s ? &s->*Member : nullptr;
   }
 
   template<typename Mp> member_type<Mp>& unsafe_get(Mp Member) const {
-    const auto s = _slot_address<class_type<Mp>>(this);
+    const auto s = _slot_address<class_type<Mp>>(_id);
     if (s) return s->*Member;
     else throw std::logic_error("Invalid member access");
   }
 
   template<typename Mp, typename T> void safe_set(Mp Member, T&& Value) const noexcept {
-    if (auto s = _slot_address<class_type<Mp>>(this)) {
+    if (auto s = _slot_address<class_type<Mp>>(_id)) {
       s->*Member = std::forward<T>(Value);
       s->make_dirty();
     }
   }
 
   template<typename Mp, typename T> void safe_set_size(Mp Member, T&& Value) const noexcept {
-    if (auto s = _slot_address<class_type<Mp>>(this)) {
+    if (auto s = _slot_address<class_type<Mp>>(_id)) {
       s->*Member = std::forward<T>(Value);
       s->make_dirty();
       s->make_mess();
@@ -153,23 +159,19 @@ public:
 
   void destroy() noexcept;
 };
-} // namespace yw::ui
-
-namespace yw {
 
 namespace system {
-inline slotset<ui::control::slot> controls;
+inline slotset<control::slot> controls;
 }
 
-template<typename Slot> Slot* ui::control::_slot_address(const slotid& id) noexcept {
+template<typename Slot> Slot* control::_slot_address(const slotid& id) noexcept {
   return dynamic_cast<Slot*>(system::controls.get(id));
 }
 
-template<typename Slot> ui::control::slotid ui::control::_create_slot() {
+template<typename Slot> control::slotid control::_create_slot() {
   return system::controls.add(std::make_unique<Slot>());
 }
 
-inline explicit ui::control::operator bool() const noexcept { return system::controls.contains(_id); }
-
-inline void ui::control::destroy() noexcept { system::controls.erase(std::exchange(_id, {})); }
+inline control::operator bool() const noexcept { return system::controls.contains(_id); }
+inline void control::destroy() noexcept { system::controls.erase(std::exchange(_id, {})); }
 } // namespace yw
