@@ -342,7 +342,7 @@ namespace std {
 template<typename C> struct formatter<yw::rgba, C> {
   formatter<int, C> fmt{};
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::rgba& col, auto& ctx) {
+  auto format(const yw::rgba& col, auto& ctx) const {
     auto out = ctx.out();
     *out++ = '(', out = fmt.format(col.r, ctx);
     *out++ = ',', out = fmt.format(col.g, ctx);
@@ -355,7 +355,7 @@ template<typename C> struct formatter<yw::rgba, C> {
 template<typename C> struct formatter<yw::bgra, C> {
   formatter<int, C> fmt{};
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::bgra& col, auto& ctx) {
+  auto format(const yw::bgra& col, auto& ctx) const {
     auto out = ctx.out();
     *out++ = '(', out = fmt.format(col.b, ctx);
     *out++ = ',', out = fmt.format(col.g, ctx);
@@ -368,7 +368,7 @@ template<typename C> struct formatter<yw::bgra, C> {
 template<typename C> struct formatter<yw::color, C> {
   formatter<float, C> fmt{};
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::color& col, auto& ctx) {
+  auto format(const yw::color& col, auto& ctx) const {
     auto out = ctx.out();
     *out++ = '(', out = fmt.format(col.r, ctx);
     *out++ = ',', out = fmt.format(col.g, ctx);
@@ -381,7 +381,7 @@ template<typename C> struct formatter<yw::color, C> {
 template<typename C> struct formatter<yw::oklab, C> {
   std::formatter<float, C> fmt{};
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::oklab& Lab, auto& ctx) {
+  auto format(const yw::oklab& Lab, auto& ctx) const {
     auto out = ctx.out();
     *out++ = '(', out = fmt.format(Lab.l, ctx);
     *out++ = ',', out = fmt.format(Lab.a, ctx);
@@ -394,7 +394,7 @@ template<typename C> struct formatter<yw::oklab, C> {
 template<typename C> struct formatter<yw::oklch, C> {
   std::formatter<float, C> fmt{};
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::oklch& Lch, auto& ctx) {
+  auto format(const yw::oklch& Lch, auto& ctx) const {
     auto out = ctx.out();
     *out++ = '(', out = fmt.format(Lch.l, ctx);
     *out++ = ',', out = fmt.format(Lch.c, ctx);

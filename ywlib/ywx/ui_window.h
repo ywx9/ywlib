@@ -1,13 +1,10 @@
 #pragma once
-#include "ywx/control.h"
+#include "ywx/ui_control.h"
 
-namespace yw {
+namespace yw::ui {
 
-class window final {
+class window : public unknown {
 public:
-  class slot;
-  using slotid = slotset<slot>::slotid;
-
   enum class style : uint32_t {
     unknown,
     regular = WS_OVERLAPPEDWINDOW,
@@ -15,7 +12,7 @@ public:
     borderless = WS_POPUP
   };
 
-  class slot {
+  class slot : public unknown::slot {
     std::expected<void, error_trace> _create_window() {
       if (auto res = wclass.initialize(); !res) return unexpected_error(res.error());
       if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
@@ -51,26 +48,24 @@ public:
     }
 
   public:
-    slotid id{};
-
     HWND hwnd{};
     int2 pos{};
     uint2 size{};
     int4 margin{};
     window::style style{};
     std::wstring title{};
-    bitmap rendertarget{};
+    mutable bitmap rendertarget{};
     comptr<IDXGISwapChain1> swapchain{};
     stopwatch timer{};
     color bg_color = colors::white;
-    std::vector<control::slotid> controls;
-    control::slotid focused_control{};
-    control::slotid hovered_control{};
-    control::slotid captured_control{};
+    slotid layout_id{};
+    slotid focused_control{};
+    slotid hovered_control{};
+    slotid captured_control{};
     bool visible = true;
     bool enabled = true;
-    bool dirty = true;
-    bool messy = true;
+    mutable bool dirty = true;
+    mutable bool messy = true;
     bool resizing = false;
     bool manual_draw = false;
 
@@ -80,74 +75,34 @@ public:
     function<bool> on_close;
     function<void, event::key> on_key;
 
-    ~slot() noexcept {
+    virtual ~slot() noexcept override {
       try {
         ::DestroyWindow(hwnd);
-        for (const auto& cid : controls) system::controls.erase(cid);
       } catch (...) {} // noexcept destructor
     }
 
     std::expected<void, error_trace> initialize(slotid Id, std::optional<int2> Pos, uint2 Size, window::style Style) {
       id = Id, style = Style, size = Size;
-      if (auto res = _create_window(); !res) return res;
-      if (auto res = _calculate_margin(); !res) return res;
+      if (auto res = _create_window(); !res) return unexpected_error(res.error());
+      if (auto res = _calculate_margin(); !res) return unexpected_error(res.error());
       if (!Pos) {
         const auto sz = int2(Size) + margin.xy() + margin.zw();
-        const auto dcs = int2(desktop_client_size());
-        pos = (dcs - sz) / 2;
+        pos = (int2(desktop_client_size()) - sz) / 2;
       } else pos = *Pos;
-      if (auto res = _set_position(); !res) return res;
+      if (auto res = _set_position(); !res) return unexpected_error(res.error());
       return {};
     }
 
-    tuple<float2, uint2> minimum_size() const noexcept {
-      tuple<float2, uint2> result{};
-      for (const auto& cid : controls)
-        if (const auto csp = system::controls.get(cid)) {
-          const auto [ms, uc] = csp->minimum_size();
-          result.first.x = yw::max(result.first.x, ms.x);
-          result.first.y += yw::max(ms.y, 0.0f);
-          result.second.x |= uc.x;
-          result.second.y += uc.y;
-        }
-      return result;
-    }
-
-    std::expected<void, error_trace> draw() {
-      if (!(rendertarget)) return {};
+    virtual void draw() const override {
       if (auto d = manual_draw ? rendertarget.begin_draw() : rendertarget.begin_draw(bg_color)) {
-        if (messy) {
-          const auto [min_size, unconstrained] = minimum_size();
-          const auto extra_size = float2(size) - min_size;
-          float offset_y = 0.0f;
-          if (unconstrained.y == 0) {
-            for (const auto& cid : controls)
-              if (const auto csp = system::controls.get(cid); csp && csp->visible) {
-                const auto [ms, _] = csp->minimum_size();
-                const auto control_size = float2(size.x, ms.y);
-                csp->draw({0, offset_y}, control_size);
-                offset_y += ms.y;
-              }
-          } else {
-            const auto extra_per_ucc = yw::max(extra_size.y / unconstrained.y, 0.0f);
-            for (const auto& cid : controls)
-              if (const auto csp = system::controls.get(cid); csp && csp->visible) {
-                const auto [ms, ucc] = csp->minimum_size();
-                const auto control_size = float2(size.x, ms.y + ucc.y * extra_per_ucc);
-                csp->draw({0, offset_y}, control_size);
-                offset_y += control_size.y;
-              }
-          }
-          messy = dirty = false;
-        } else if (dirty) {
-          for (const auto& cid : controls)
-            if (const auto csp = system::controls.get(cid); csp && csp->visible)
-              csp->draw(csp->last_rect.xy(), csp->last_rect.zw() - csp->last_rect.xy());
-          dirty = false;
-        } else return {};
-      } else return unexpected_error(d.error());
+        if (const auto lsp = system::uis.get(layout_id)) {
+          if (messy) lsp->draw({}, float2(size));
+          else if (dirty) lsp->draw();
+        }
+      } else throw unexpected_error(d.error());
       swapchain->Present(0, 0);
-      return {};
+      messy = dirty = false;
+      return;
     }
 
     std::expected<void, error_trace> resize_rendertarget(uint2 sz) {
@@ -168,36 +123,36 @@ public:
       messy = true;
       return {};
     }
+
+    virtual bool attach(const slotid& child_id) {
+      if (const auto lsp = system::uis.get(layout_id)) return lsp->attach(child_id);
+      return false;
+    }
+
+    virtual void detach(const slotid& child_id) {
+      if (const auto lsp = system::uis.get(layout_id)) lsp->detach(child_id);
+    }
   };
 
-private:
-  slotid _id;
-  window(slotid Id) : _id(Id) {}
-
-  slot* _slot_address() const noexcept;
-
-  template<typename Mp> auto& unsafe_get(Mp mp) const {
-    if (const auto s = _slot_address()) return s->*mp;
-    else throw std::runtime_error("invalid member access");
-  }
-
 public:
-  ~window() noexcept { destroy(); }
+  virtual ~window() noexcept override { destroy(); }
   explicit window() noexcept = default;
 
-  window(const window&) = delete;
-  window& operator=(const window&) = delete;
-
-  window(window&& other) noexcept : _id(std::exchange(other._id, {})) {}
-  window& operator=(window&& other) noexcept {
-    if (this == &other) return *this;
-    destroy();
-    _id = std::exchange(other._id, {});
-    return *this;
-  }
-
   /// \param Pos If not specified, the window will be centered on the screen.
-  window(std::optional<int2> Pos, uint2 Size, style Style = style::regular, bool Show = true);
+  window(std::optional<int2> Pos, uint2 Size, style Style = style::regular, bool Show = true) {
+    _id = system::uis.add(std::make_unique<slot>());
+    const auto wsp = system::slot_address<window>(_id);
+    if (!wsp) throw std::runtime_error("failed to create window slot");
+    if (auto res = wsp->initialize(_id, Pos, Size, Style); !res) {
+      system::uis.erase(_id);
+      throw unexpected_error(res.error());
+    }
+    system::primal_windows.push_back(_id);
+    if (!Show) return;
+    ::ShowWindow(wsp->hwnd, SW_SHOW);
+    ::SetForegroundWindow(wsp->hwnd);
+    ::SetActiveWindow(wsp->hwnd);
+  }
 
   explicit operator bool() const noexcept;
   const slotid& id() const noexcept { return _id; }
@@ -207,105 +162,103 @@ public:
 
   const int2& pos() const { return unsafe_get(&slot::pos); }
   std::expected<void, error_trace> pos(int2 Pos) const {
-    if (auto s = _slot_address()) {
-      s->pos = Pos;
-      ::SetWindowPos(s->hwnd, nullptr, Pos.x, Pos.y, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
+    if (auto wsp = system::slot_address<window>(_id)) {
+      wsp->pos = Pos;
+      ::SetWindowPos(wsp->hwnd, nullptr, Pos.x, Pos.y, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
       return {};
     } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
   }
 
   const uint2& size() const { return unsafe_get(&slot::size); }
   std::expected<void, error_trace> size(uint2 Size) const {
-    if (auto s = _slot_address()) {
-      s->messy = true; // layout can be changed
-      s->size = Size;
-      const auto sz = int2(Size) + s->margin.xy() + s->margin.zw();
-      ::SetWindowPos(s->hwnd, nullptr, 0, 0, sz.x, sz.y, SWP_NOZORDER | SWP_NOMOVE);
+    if (auto wsp = system::slot_address<window>(_id)) {
+      wsp->size = Size;
+      const auto sz = int2(Size) + wsp->margin.xy() + wsp->margin.zw();
+      ::SetWindowPos(wsp->hwnd, nullptr, 0, 0, sz.x, sz.y, SWP_NOZORDER | SWP_NOMOVE);
       return {};
     } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
   }
 
   const std::wstring& title() const { return unsafe_get(&slot::title); }
   template<stringable S> std::expected<void, error_trace> title(S&& Title) const {
-    if (auto s = _slot_address()) {
-      s->title = unicode<wchar_t>(static_cast<S&&>(Title));
-      ::SetWindowTextW(s->hwnd, s->title.c_str());
+    if (auto wsp = system::slot_address<window>(_id)) {
+      wsp->title = unicode<wchar_t>(static_cast<S&&>(Title));
+      ::SetWindowTextW(wsp->hwnd, wsp->title.c_str());
       return {};
     } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
   }
 
   const color& bg_color() const { return unsafe_get(&slot::bg_color); }
   std::expected<void, error_trace> bg_color(color BgColor) const {
-    if (auto s = _slot_address()) {
-      s->messy = true; // needs redraw
-      s->bg_color = BgColor;
-      s->dirty = true;
+    if (auto wsp = system::slot_address<window>(_id)) {
+      wsp->bg_color = BgColor;
+      wsp->dirty = true;
       return {};
     } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
   }
 
   const bool& visible() const { return unsafe_get(&slot::visible); }
   std::expected<void, error_trace> visible(bool Visible) const {
-    if (auto s = _slot_address()) {
-      s->messy = Visible; // needs redraw when becoming visible
-      s->visible = Visible;
-      ::ShowWindow(s->hwnd, Visible ? SW_SHOW : SW_HIDE);
+    if (auto wsp = system::slot_address<window>(_id)) {
+      if (wsp->visible != Visible) {
+        if (Visible) {
+          wsp->dirty = true;
+          wsp->visible = true;
+          ::ShowWindow(wsp->hwnd, SW_SHOW);
+        } else {
+          wsp->visible = false;
+          ::ShowWindow(wsp->hwnd, SW_HIDE);
+        }
+      }
       return {};
     } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
   }
 
   const bool& enabled() const { return unsafe_get(&slot::enabled); }
   std::expected<void, error_trace> enabled(bool Enabled) const {
-    if (auto s = _slot_address()) {
-      s->enabled = Enabled;
-      if (Enabled) s->timer.start();
-      else s->timer.stop();
-      ::EnableWindow(s->hwnd, Enabled);
+    if (auto wsp = system::slot_address<window>(_id)) {
+      if (Enabled) {
+        wsp->enabled = true;
+        wsp->timer.start();
+        ::EnableWindow(wsp->hwnd, true);
+      } else {
+        wsp->enabled = false;
+        wsp->timer.stop();
+        ::EnableWindow(wsp->hwnd, false);
+      }
+      return {};
+    } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
+  }
+
+  const auto& on_close() const { return unsafe_get(&slot::on_close); }
+  std::expected<void, error_trace> on_close(std::function<bool()> OnClose) const {
+    if (auto wsp = system::slot_address<window>(_id)) {
+      wsp->on_close = std::move(OnClose);
       return {};
     } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
   }
 
   std::expected<drawing, error_trace> begin_draw() {
-    if (const auto wsp = _slot_address()) {
-      wsp->messy = true;
+    if (const auto wsp = system::slot_address<window>(_id)) {
+      wsp->dirty = true;
       wsp->manual_draw = true;
       if (auto d = wsp->rendertarget.begin_draw(wsp->bg_color)) return std::move(d);
       else return unexpected_error(d.error());
     } else return unexpected_error(errors::invalid_operation, "window slot not found");
   }
 
-  void destroy() noexcept;
+  virtual void destroy() noexcept override { system::uis.erase(_id); }
+
+  void screenshot(const std::filesystem::path& PngPath) {
+    if (const auto wsp = system::slot_address<window>(_id)) wsp->rendertarget.save_as_png(PngPath);
+  }
 };
 
-namespace system {
-inline slotset<window::slot> windows{};
-inline std::vector<window::slotid> primal_windows{};
-inline int2 cursor_pos{};
+inline void control::slot::make_dirty() noexcept {
+  if (const auto wsp = system::slot_address<window>(window_id)) wsp->dirty = true;
 }
 
-inline window::slot* window::_slot_address() const noexcept { return system::windows.get(_id); }
-
-inline window::operator bool() const noexcept { return system::windows.contains(_id); }
-
-inline void window::destroy() noexcept {
-  if (const auto wsp = _slot_address()) {
-    system::windows.erase(wsp->id);
-    std::erase(system::primal_windows, wsp->id);
-  }
+inline void control::slot::make_messy() noexcept {
+  if (const auto wsp = system::slot_address<window>(window_id)) wsp->messy = true;
 }
-
-inline window::window(std::optional<int2> Pos, uint2 Size, style Style, bool Show) {
-  _id = system::windows.add(std::make_unique<slot>());
-  const auto slot_p = system::windows.get(_id);
-  if (!slot_p) throw std::runtime_error("failed to create window slot");
-  if (auto res = slot_p->initialize(_id, Pos, Size, Style); !res) {
-    system::windows.erase(_id);
-    throw unexpected_error(res.error());
-  }
-  system::primal_windows.push_back(_id);
-  if (!Show) return;
-  ::ShowWindow(slot_p->hwnd, SW_SHOW);
-  ::SetForegroundWindow(slot_p->hwnd);
-  ::SetActiveWindow(slot_p->hwnd);
 }
-} // namespace yw
