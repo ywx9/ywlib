@@ -8,23 +8,34 @@ public:
   class slot : public plain::slot {
   protected:
     template<bool Vertical> void draw_layout(float2 Pos, float2 Size) const {
-      const auto [min_size, unconstrained] = minimum_size();
-      const auto extra_size = Size - min_size;
+      float min_primary = 0.0f;
+      uint32_t ucc = 0;
+      for (const auto& cid : controls)
+        if (const auto csp = system::slot_address<control>(cid); csp && csp->visible) {
+          const auto [ms, uc] = csp->require_size();
+          min_primary += yw::max(yw::get<Vertical>(ms), 0.0f);
+          ucc += yw::get<Vertical>(uc);
+        }
       float offset = 0.0f;
-      const auto ucc = yw::get<Vertical>(unconstrained);
       if (ucc == 0) {
         for (const auto& cid : controls)
           if (const auto csp = system::slot_address<control>(cid); csp && csp->visible) {
-            const auto [ms, _] = csp->minimum_size();
-            if constexpr (Vertical) csp->draw({Pos.x, Pos.y + offset}, float2(Size.x, ms.y));
-            else csp->draw({Pos.x + offset, Pos.y}, float2(ms.x, Size.y));
-            offset += yw::get<Vertical>(ms);
+            const auto [ms, _] = csp->require_size();
+            if constexpr (Vertical) {
+              const auto control_size = float2(Size.x, ms.y);
+              csp->draw({Pos.x, Pos.y + offset}, control_size);
+              offset += yw::max(control_size.y, 0.0f);
+            } else {
+              const auto control_size = float2(ms.x, Size.y);
+              csp->draw({Pos.x + offset, Pos.y}, control_size);
+              offset += yw::max(control_size.x, 0.0f);
+            }
           }
       } else {
-        const auto extra_per_ucc = yw::max(yw::get<Vertical>(extra_size) / float(ucc), 0.0f);
+        const auto extra_per_ucc = yw::max((yw::get<Vertical>(Size) - min_primary) / float(ucc), 0.0f);
         for (const auto& cid : controls)
           if (const auto csp = system::slot_address<control>(cid); csp && csp->visible) {
-            const auto [ms, ucc] = csp->minimum_size();
+            const auto [ms, ucc] = csp->require_size();
             if constexpr (Vertical) {
               const auto control_size = float2(Size.x, ms.y + ucc.y * extra_per_ucc);
               csp->draw({Pos.x, Pos.y + offset}, control_size);
@@ -38,6 +49,23 @@ public:
       }
     }
 
+    template<bool Vertical> tuple<float2, uint2> require_size() const noexcept {
+      tuple<float2, uint2> result{};
+      for (const auto& cid : controls)
+        if (const auto csp = system::slot_address<control>(cid)) {
+          const auto [ms, uc] = csp->require_size();
+          yw::get<!Vertical>(result.first) = yw::max(yw::get<!Vertical>(result.first), yw::get<!Vertical>(ms));
+          yw::get<Vertical>(result.first) += yw::max(yw::get<Vertical>(ms), 0.0f);
+          yw::get<!Vertical>(result.second) |= bool(yw::get<!Vertical>(uc));
+          yw::get<Vertical>(result.second) += yw::get<Vertical>(uc);
+        }
+      result.first.x = yw::max(result.first.x, size.x) + margin.x + margin.z;
+      result.first.y = yw::max(result.first.y, size.y) + margin.y + margin.w;
+      if (size.x >= 0.0f) result.second.x = 0;
+      if (size.y >= 0.0f) result.second.y = 0;
+      return result;
+    }
+
   public:
     std::vector<slotid> controls{};
 
@@ -47,18 +75,7 @@ public:
       for (auto cid : controls) system::uis.erase(cid);
     }
 
-    virtual tuple<float2, uint2> minimum_size() const noexcept override {
-      tuple<float2, uint2> result{};
-      for (const auto& cid : controls)
-        if (const auto csp = system::slot_address<control>(cid)) {
-          const auto [ms, uc] = csp->minimum_size();
-          result.first.x = yw::max(result.first.x, ms.x);
-          result.first.y += yw::max(ms.y, 0.0f);
-          result.second.x |= uc.x;
-          result.second.y += uc.y;
-        }
-      return result;
-    }
+    virtual tuple<float2, uint2> require_size() const noexcept override { return require_size<true>(); }
 
     virtual bool attach(const ui::slotid& ChildId) override {
       controls.push_back(ChildId);
@@ -118,18 +135,7 @@ class horizontal_layout : public layout {
 public:
   class slot : public layout::slot {
   public:
-    virtual tuple<float2, uint2> minimum_size() const noexcept override {
-      tuple<float2, uint2> result{};
-      for (const auto& cid : controls)
-        if (const auto csp = system::slot_address<control>(cid)) {
-          const auto [ms, uc] = csp->minimum_size();
-          result.first.x += yw::max(ms.x, 0.0f);
-          result.first.y = yw::max(result.first.y, ms.y);
-          result.second.x += uc.x;
-          result.second.y |= uc.y;
-        }
-      return result;
-    }
+    virtual tuple<float2, uint2> require_size() const noexcept override { return layout::slot::require_size<false>(); }
 
     virtual void draw(float2 Pos, float2 Size) const override {
       update_last_rect(Pos, Size);

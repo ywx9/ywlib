@@ -26,19 +26,15 @@ public:
   class slot : public unknown::slot {
   protected:
     void update_last_rect(float2 Pos, float2 Size) const {
-      yw::print("update_last_rect: Pos={}, Size={}, margin={}", Pos, Size, margin);
       Pos += margin.xy();
       Size -= margin.xy() + margin.zw();
-      yw::print("  after margin: Pos={}, Size={}", Pos, Size);
       if (Size.x <= 0.0f || Size.y <= 0.0f) {
-        last_rect = float4(Pos, Pos);
-        yw::print("  Size<=0, last_rect={}", last_rect);
+        last_rect = float4(Pos.x, Pos.y, Pos.x + yw::max(Size.x, 0.0f), Pos.y + yw::max(Size.y, 0.0f));
         return;
       }
       if (size.x >= 0.0f) Size.x = yw::min(Size.x, size.x);
       if (size.y >= 0.0f) Size.y = yw::min(Size.y, size.y);
       last_rect = float4(Pos, Pos + Size);
-      yw::print("  final last_rect={}", last_rect);
     }
   public:
     slotid layout_id{}, window_id{};
@@ -48,6 +44,7 @@ public:
         float width, height;
       };
     };
+    float2 minimum_size{10.0f, 10.0f};
     mutable float4 last_rect{}; // excluding margins
     float4 margin{5.0f, 5.0f, 5.0f, 5.0f};
     bool visible = true, enabled = true, dying = false;
@@ -57,10 +54,10 @@ public:
     }
 
     /// returns the minimum size and the number of unconstrained dimensions.
-    virtual tuple<float2, uint2> minimum_size() const noexcept {
+    virtual tuple<float2, uint2> require_size() const noexcept {
       tuple<float2, uint2> result{};
-      result.first.x = yw::max(size.x, 0.0f) + margin.x + margin.z;
-      result.first.y = yw::max(size.y, 0.0f) + margin.y + margin.w;
+      result.first.x = yw::max(size.x, minimum_size.x) + margin.x + margin.z;
+      result.first.y = yw::max(size.y, minimum_size.y) + margin.y + margin.w;
       result.second.x = size.x < 0.0f;
       result.second.y = size.y < 0.0f;
       return result;
@@ -83,6 +80,7 @@ public:
     virtual void button_event(event::button e) {}
     virtual void hover_event(event::hover e) {}
     virtual void move_event(event::move e) {}
+    virtual void drag_event(event::drag e) {}
     virtual void key_event(event::key e) {}
     virtual void char_event(wchar_t c) {}
     virtual bool focus_event(bool) { return false; }
@@ -101,6 +99,9 @@ public:
 
   const float& height() const { return unsafe_get(&slot::height); }
   void height(float value) { safe_set_size(&slot::height, value); }
+
+  const float2& minimum_size() const { return unsafe_get(&slot::minimum_size); }
+  void minimum_size(float2 value) { safe_set_size(&slot::minimum_size, value); }
 
   const float4& margin() const { return unsafe_get(&slot::margin); }
   void margin(const float4 value) { safe_set_size(&slot::margin, value); }

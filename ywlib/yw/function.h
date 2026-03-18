@@ -39,12 +39,13 @@ public:
   requires invocable_r<const remove_cvref<F>&, R, As...> &&
            (!(is_pointer<remove_ref<F>> && is_function<remove_pointer<remove_ref<F>>>)) &&
            (sizeof(remove_cvref<F>) <= 32) && (alignof(remove_cvref<F>) <= alignof(std::max_align_t)) &&
-           std::is_nothrow_move_constructible_v<remove_cvref<F>> && std::is_copy_constructible_v<remove_cvref<F>>
+           std::is_nothrow_move_constructible_v<remove_cvref<F>> && std::is_copy_constructible_v<remove_cvref<F>> &&
+           different_from<remove_cvref<F>, function>
   function(F&& f) noexcept {
     using G = remove_cvref<F>;
-    new (_storage) G(std::forward<F>(f));
+    new (_storage) G(static_cast<F&&>(f));
     _invoke = [](const void* src, As&&... args) -> R {
-      return (*static_cast<const G*>(src))(std::forward<As>(args)...);
+      return (*static_cast<const G*>(src))(static_cast<As&&>(args)...);
     };
     _destroy = [](void* src) { static_cast<G*>(src)->~G(); };
     _move = [](void* dst, void* src) {

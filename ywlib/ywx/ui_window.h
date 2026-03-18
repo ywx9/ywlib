@@ -90,18 +90,24 @@ public:
         pos = (int2(desktop_client_size()) - sz) / 2;
       } else pos = *Pos;
       if (auto res = _set_position(); !res) return unexpected_error(res.error());
+      timer.restart();
       return {};
     }
 
     virtual void draw() const override {
+      const auto lsp = system::slot_address<ui::control>(layout_id);
+      if (!lsp) return;
+      const auto [rs, _] = lsp->require_size();
+      if (size.x < rs.x || size.y < rs.y) {
+        const auto sz = int2(yw::max(size.x, rs.x), yw::max(size.y, rs.y)) + margin.xy() + margin.zw();
+        ::SetWindowPos(hwnd, nullptr, 0, 0, sz.x, sz.y, SWP_NOZORDER | SWP_NOMOVE);
+      }
       if (auto d = manual_draw ? rendertarget.begin_draw() : rendertarget.begin_draw(bg_color)) {
         if (const auto lsp = system::uis.get(layout_id)) {
           if (messy) lsp->draw({}, float2(size));
           else if (dirty) lsp->draw();
         }
       } else throw unexpected_error(d.error());
-      swapchain->Present(0, 0);
-      messy = dirty = false;
       return;
     }
 
@@ -114,12 +120,13 @@ public:
       } else {
         if (auto res = dxgi.initialize(); !res) return unexpected_error(res.error());
         auto desc = DXGI_SWAP_CHAIN_DESC1(sz.x, sz.y, bitmap::dxgiformat, false, DXGI_SAMPLE_DESC(1, 0), {}, 2);
-        desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT, desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT, desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
         auto hr = dxgi.factory()->CreateSwapChainForHwnd(d3d.device(), hwnd, &desc, nullptr, nullptr, &swapchain.get());
         if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSwapChainForHwnd failed", int32_t(hr));
       }
       if (auto res = bitmap::create(swapchain.get())) rendertarget = std::move(*res);
       else return unexpected_error(res.error());
+      size = sz;
       messy = true;
       return {};
     }
@@ -231,7 +238,7 @@ public:
   }
 
   const auto& on_close() const { return unsafe_get(&slot::on_close); }
-  std::expected<void, error_trace> on_close(std::function<bool()> OnClose) const {
+  std::expected<void, error_trace> on_close(function<bool> OnClose) const {
     if (auto wsp = system::slot_address<window>(_id)) {
       wsp->on_close = std::move(OnClose);
       return {};

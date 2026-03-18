@@ -10,7 +10,6 @@ public:
   class slot : public control::slot {
   protected:
     void draw_plain(float2 Pos, float2 Size) const {
-      yw::print("draw_plain called: Pos={}, Size={}, bg_color={}", Pos, Size, bg_color);
       brush.color(bg_color);
       fill_round_rectangle(Pos, Size, radius);
       brush.color(border_color);
@@ -23,20 +22,24 @@ public:
     color border_color = colors::transparent;
     float1 border_width = 1.0f;
 
+    function<void, event::hover> on_hover;
+
     virtual slotid hit_test(float2 Pt) const noexcept override {
       if (!visible || Pt.x < last_rect.x || Pt.y < last_rect.y || Pt.x > last_rect.z || Pt.y > last_rect.w) return {};
       return id;
     }
 
     virtual void draw(float2 Pos, float2 Size) const override {
-      yw::print("plain::draw(float2, float2) called: Pos={}, Size={}", Pos, Size);
       update_last_rect(Pos, Size);
       draw_plain(last_rect.xy(), last_rect.zw() - last_rect.xy());
     }
 
     virtual void draw() const override {
-      yw::print("plain::draw() called: last_rect={}", last_rect);
       draw_plain(last_rect.xy(), last_rect.zw() - last_rect.xy());
+    }
+
+    virtual void hover_event(event::hover Event) override {
+      if (on_hover) on_hover(Event);
     }
   };
 
