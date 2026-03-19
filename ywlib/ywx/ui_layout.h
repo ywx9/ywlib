@@ -79,6 +79,10 @@ public:
 
     virtual bool attach(const ui::slotid& ChildId) override {
       controls.push_back(ChildId);
+      if (const auto csp = system::slot_address<control>(ChildId)) {
+        csp->layout_id = id;
+        csp->window_id = window_id;
+      }
       make_messy();
       return true;
     }
@@ -117,6 +121,7 @@ public:
     const auto cid = system::uis.add(std::make_unique<slot>());
     const auto csp = system::slot_address<layout>(cid);
     if (!csp) throw unexpected_error(errors::operation_failed, "Failed to create layout slot");
+    csp->id = cid;
     const auto lid = Layout.id();
     const auto lsp = system::uis.get(lid);
     if (!lsp) throw unexpected_error(errors::operation_failed, "Failed to get parent layout slot");
@@ -151,6 +156,7 @@ public:
     const auto cid = system::uis.add(std::make_unique<slot>());
     const auto csp = system::slot_address<horizontal_layout>(cid);
     if (!csp) throw unexpected_error(errors::operation_failed, "Failed to create horizontal layout slot");
+    csp->id = cid;
     const auto lid = Layout.id();
     const auto lsp = system::uis.get(lid);
     if (!lsp) throw unexpected_error(errors::operation_failed, "Failed to get parent layout slot");

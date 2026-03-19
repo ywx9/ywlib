@@ -67,10 +67,17 @@ public:
     mutable bool dirty = true;
     mutable bool messy = true;
     bool resizing = false;
+    bool tracking = false;
     bool manual_draw = false;
 
     key captured_key{};
     int capture_count{};
+
+    struct {
+      float offset = 2.5f;
+      float width = 0.5f;
+      yw::color color = colors::blue;
+    } focus_ring;
 
     function<bool> on_close;
     function<void, event::key> on_key;
@@ -138,6 +145,12 @@ public:
 
     virtual void detach(const slotid& child_id) {
       if (const auto lsp = system::uis.get(layout_id)) lsp->detach(child_id);
+    }
+
+    short2 cursor_pos() const noexcept {
+      RECT r;
+      ::GetWindowRect(hwnd, &r);
+      return short2(r.left + margin.x, r.top + margin.y);
     }
   };
 

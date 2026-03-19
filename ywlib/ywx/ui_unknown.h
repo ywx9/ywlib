@@ -42,6 +42,8 @@ inline constexpr float unconstrained = -1.0f;
 } // namespace ui
 
 namespace system {
+short2 cursor_pos{};
+short2 cursor_delta{};
 inline slotset<ui::unknown::slot> uis{};
 inline std::vector<ui::slotid> primal_windows{};
 template<typename Ui> typename Ui::slot* slot_address(ui::slotid id) noexcept {

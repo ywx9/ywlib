@@ -87,6 +87,7 @@ public:
     const auto cid = system::uis.add(std::make_unique<slot>());
     const auto csp = system::slot_address<label>(cid);
     if (!csp) throw unexpected_error(errors::operation_failed, "Failed to create label slot");
+    csp->id = cid;
     const auto lid = Layout.id();
     const auto lsp = system::uis.get(lid);
     if (!lsp) throw unexpected_error(errors::operation_failed, "Failed to get parent layout slot");

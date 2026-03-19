@@ -77,14 +77,15 @@ public:
     virtual void draw() const {}
     virtual void draw_focus() const {}
 
-    virtual void button_event(event::button e) {}
-    virtual void hover_event(event::hover e) {}
-    virtual void move_event(event::move e) {}
-    virtual void drag_event(event::drag e) {}
-    virtual void key_event(event::key e) {}
     virtual void char_event(wchar_t c) {}
-    virtual bool focus_event(bool) { return false; }
     virtual void click_event(event::button e) {}
+    virtual void button_event(event::button e) {}
+    virtual void drag_event(event::drag e) {}
+    virtual bool focus_event(bool) { return false; }
+    virtual void hover_event(event::hover e) {}
+    virtual void key_event(event::key e) {}
+    virtual void move_event(event::move e) {}
+    virtual void wheel_event(event::wheel e) {}
   };
 
   ~control() noexcept { destroy(); }
