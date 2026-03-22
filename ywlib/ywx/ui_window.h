@@ -114,6 +114,14 @@ public:
           if (messy) lsp->draw({}, float2(size));
           else if (dirty) lsp->draw();
         }
+        if (const auto fcsp = system::slot_address<ui::control>(focused_control)) {
+          const auto off = float2::fill(focus_ring.offset);
+          brush.color(focus_ring.color);
+          const auto sz = (fcsp->last_rect.zw() - fcsp->last_rect.xy()) + off * 2;
+          const auto pos = fcsp->last_rect.xy() - off;
+          const auto radius = fcsp->get_radius() + off;
+          draw_round_rectangle(pos, sz, radius, focus_ring.width);
+        }
       } else throw unexpected_error(d.error());
       return;
     }
@@ -138,12 +146,12 @@ public:
       return {};
     }
 
-    virtual bool attach(const slotid& child_id) {
+    virtual bool attach(slotid child_id) override {
       if (const auto lsp = system::uis.get(layout_id)) return lsp->attach(child_id);
       return false;
     }
 
-    virtual void detach(const slotid& child_id) {
+    virtual void detach(slotid child_id) override {
       if (const auto lsp = system::uis.get(layout_id)) lsp->detach(child_id);
     }
 

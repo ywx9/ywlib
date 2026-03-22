@@ -83,18 +83,8 @@ public:
 
   label() noexcept = default;
 
-  label(unknown& Layout) {
-    const auto cid = system::uis.add(std::make_unique<slot>());
-    const auto csp = system::slot_address<label>(cid);
-    if (!csp) throw unexpected_error(errors::operation_failed, "Failed to create label slot");
-    csp->id = cid;
-    const auto lid = Layout.id();
-    const auto lsp = system::uis.get(lid);
-    if (!lsp) throw unexpected_error(errors::operation_failed, "Failed to get parent layout slot");
-    if (!lsp->attach(cid)) {
-      system::uis.erase(cid);
-      throw unexpected_error(errors::operation_failed, "Failed to attach label slot to parent");
-    } else _id = cid;
+  label(derived_from<unknown> auto& Layout) {
+    if (auto res = create_control<label>(Layout)) _id = *res;
   }
 
   using plain::operator bool;

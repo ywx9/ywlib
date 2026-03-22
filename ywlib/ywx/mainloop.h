@@ -162,10 +162,18 @@ inline void wm_keydown_tab(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
     return;
   }
   const bool shift = (::GetKeyState(VK_SHIFT) & 0x8000) != 0;
-  int cur = shift ? static_cast<int>(lsp->controls.size()) : -1;
+  // 現在フォーカスされているコントロールのインデックスを見つける
+  int cur = -1;
+  for (int i = 0; i < static_cast<int>(lsp->controls.size()); ++i) {
+    if (lsp->controls[i] == ws.focused_control) {
+      cur = i;
+      break;
+    }
+  }
   ws.dirty = true;
   if (const auto fcsp = system::slot_address<ui::control>(ws.focused_control)) fcsp->focus_event(false);
   if (shift) {
+    if (cur < 0) cur = static_cast<int>(lsp->controls.size());
     while (--cur >= 0)
       if (const auto ui_slot_p = system::slot_address<ui::control>(lsp->controls[cur]))
         if (ui_slot_p->focus_event(true)) {

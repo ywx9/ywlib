@@ -25,5 +25,11 @@ public:
 
   const auto& on_move() const { return unsafe_get(&slot::on_move); }
   void on_move(function<void, event::move> value) { safe_set(&slot::on_move, std::move(value)); }
+
+  frame() noexcept = default;
+
+  frame(derived_from<unknown> auto& Layout) {
+    if (auto res = create_control<frame>(Layout)) _id = *res;
+  }
 };
 }

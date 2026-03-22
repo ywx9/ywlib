@@ -13,8 +13,8 @@ public:
     virtual ~slot() noexcept {}
     virtual void draw(float2, float2) const {}
     virtual void draw() const {}
-    virtual bool attach(const slotset<slot>::slotid& child_id) { return false; }
-    virtual void detach(const slotset<slot>::slotid& child_id) {}
+    virtual bool attach(slotset<slot>::slotid child_id) { return false; }
+    virtual void detach(slotset<slot>::slotid child_id) {}
   };
 
 protected:

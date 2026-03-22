@@ -77,9 +77,10 @@ public:
 
     virtual tuple<float2, uint2> require_size() const noexcept override { return require_size<true>(); }
 
-    virtual bool attach(const ui::slotid& ChildId) override {
+    virtual bool attach(ui::slotid ChildId) override {
       controls.push_back(ChildId);
       if (const auto csp = system::slot_address<control>(ChildId)) {
+        csp->id = ChildId;
         csp->layout_id = id;
         csp->window_id = window_id;
       }
@@ -87,7 +88,7 @@ public:
       return true;
     }
 
-    virtual void detach(const ui::slotid& ChildId) override {
+    virtual void detach(ui::slotid ChildId) override {
       std::erase(controls, ChildId);
       make_messy();
     }
@@ -117,18 +118,8 @@ public:
 
   layout() noexcept = default;
 
-  layout(unknown& Layout) {
-    const auto cid = system::uis.add(std::make_unique<slot>());
-    const auto csp = system::slot_address<layout>(cid);
-    if (!csp) throw unexpected_error(errors::operation_failed, "Failed to create layout slot");
-    csp->id = cid;
-    const auto lid = Layout.id();
-    const auto lsp = system::uis.get(lid);
-    if (!lsp) throw unexpected_error(errors::operation_failed, "Failed to get parent layout slot");
-    if (!lsp->attach(cid)) {
-      system::uis.erase(cid);
-      throw unexpected_error(errors::operation_failed, "Failed to attach layout slot to parent");
-    } else _id = cid;
+  layout(derived_from<unknown> auto& Layout) {
+    if (auto res = create_control<layout>(Layout)) _id = *res;
   }
 
   using plain::operator bool;
@@ -152,18 +143,8 @@ public:
 
   horizontal_layout() noexcept = default;
 
-  horizontal_layout(unknown& Layout) {
-    const auto cid = system::uis.add(std::make_unique<slot>());
-    const auto csp = system::slot_address<horizontal_layout>(cid);
-    if (!csp) throw unexpected_error(errors::operation_failed, "Failed to create horizontal layout slot");
-    csp->id = cid;
-    const auto lid = Layout.id();
-    const auto lsp = system::uis.get(lid);
-    if (!lsp) throw unexpected_error(errors::operation_failed, "Failed to get parent layout slot");
-    if (!lsp->attach(cid)) {
-      system::uis.erase(cid);
-      throw unexpected_error(errors::operation_failed, "Failed to attach horizontal layout slot to parent");
-    } else _id = cid;
+  horizontal_layout(derived_from<unknown> auto& Layout) {
+    if (auto res = create_control<horizontal_layout>(Layout)) _id = *res;
   }
 
   using layout::operator bool;

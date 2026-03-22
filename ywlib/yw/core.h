@@ -132,7 +132,7 @@ template<typename T> concept is_member_pointer = is_member_object_pointer<T> || 
 
 //////////////////////////////////////// MARK: narrow_cast
 
-inline constexpr auto uint_cast = []<arithmetic T>(T value) noexcept {
+inline constexpr auto uint_cast = []<typename T>(T value) noexcept requires arithmetic<T> || is_enum<T> {
   if constexpr (sizeof(T) == 1) return std::bit_cast<uint8_t>(value);
   else if constexpr (sizeof(T) == 2) return std::bit_cast<uint16_t>(value);
   else if constexpr (sizeof(T) == 4) return std::bit_cast<uint32_t>(value);

@@ -22,6 +22,19 @@ protected:
     }
   }
 
+  template<derived_from<control> Ctrl> static std::expected<slotid, error_trace> create_control(derived_from<unknown> auto& Layout) {
+    const auto lid = Layout.id();
+    const auto lsp = system::slot_address<unknown::slot>(lid);
+    if (!lsp) return unexpected_error(errors::operation_failed, "Failed to access layout slot");
+    const auto cid = system::uis.add(std::make_unique<typename Ctrl::slot>());
+    const auto csp = system::slot_address<Ctrl>(cid);
+    if (!csp) return unexpected_error(errors::operation_failed, "Failed to create control slot");
+    if (!lsp->attach(cid)) {
+      system::uis.erase(cid);
+      return unexpected_error(errors::operation_failed, "Failed to attach control slot to layout");
+    } else return cid;
+  }
+
 public:
   class slot : public unknown::slot {
   protected:
@@ -63,19 +76,12 @@ public:
       return result;
     }
 
-    /// need to be called when the control needs to be redrawn.
     virtual void make_dirty() noexcept;
-
-    /// need to be called when the layout needs to be updated.
     virtual void make_messy() noexcept;
-
-    /// checks if the given position is within the control's bounds.
     virtual slotid hit_test(float2 Pt) const noexcept { return {}; }
-
-    /// draws the control at the given position with the given size.
     virtual void draw(float2 Pos, float2) const { last_rect = float4(Pos, Pos); };
     virtual void draw() const {}
-    virtual void draw_focus() const {}
+    virtual float2 get_radius() const noexcept { return {}; }
 
     virtual void char_event(wchar_t c) {}
     virtual void click_event(event::button e) {}

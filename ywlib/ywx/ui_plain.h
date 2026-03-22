@@ -36,9 +36,8 @@ public:
       draw_plain(last_rect.xy(), last_rect.zw() - last_rect.xy());
     }
 
-    virtual void draw() const override {
-      draw_plain(last_rect.xy(), last_rect.zw() - last_rect.xy());
-    }
+    virtual void draw() const override { draw_plain(last_rect.xy(), last_rect.zw() - last_rect.xy()); }
+    virtual float2 get_radius() const noexcept override { return radius; } // for drawing focus ring
 
     virtual void button_event(event::button Event) override {
       if (enabled && on_button) on_button(Event);
@@ -55,21 +54,8 @@ public:
 
   plain() noexcept = default;
 
-  // plain(layout& Layout);
-
-  // plain(unknown& Layout) {
   plain(derived_from<unknown> auto& Layout) {
-    const auto cid = system::uis.add(std::make_unique<slot>());
-    const auto csp = system::slot_address<plain>(cid);
-    if (!csp) throw unexpected_error(errors::operation_failed, "Failed to create plain slot");
-    csp->id = cid;
-    const auto lid = Layout.id();
-    const auto lsp = system::uis.get(lid);
-    if (!lsp) throw unexpected_error(errors::operation_failed, "Failed to get layout slot");
-    if (!lsp->attach(cid)) {
-      system::uis.erase(cid);
-      throw unexpected_error(errors::operation_failed, "Failed to attach plain slot to layout");
-    } else _id = cid;
+    if (auto res = create_control<plain>(Layout)) _id = *res;
   }
 
   using control::operator bool;

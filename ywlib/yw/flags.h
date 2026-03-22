@@ -15,7 +15,7 @@ template<is_enum E> struct alignas(E) flags {
   constexpr flags(flags&&) noexcept = default;
   constexpr flags& operator=(flags&&) noexcept = default;
 
-  constexpr explicit flags(E v) noexcept : value(v) {}
+  constexpr flags(E v) noexcept : value(v) {}
   explicit constexpr operator E() const noexcept { return value; }
   constexpr auto to_underlying() const noexcept { return std::to_underlying(value); }
 
