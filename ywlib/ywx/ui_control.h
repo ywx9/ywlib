@@ -92,9 +92,9 @@ public:
     virtual void key_event(event::key e) {}
     virtual void move_event(event::move e) {}
     virtual void wheel_event(event::wheel e) {}
-  };
 
-  ~control() noexcept { destroy(); }
+    virtual slotid find_focusable() const { return {}; }
+  };
 
   using unknown::operator bool;
 
@@ -118,7 +118,5 @@ public:
 
   const bool& enabled() const { return unsafe_get(&slot::enabled); }
   void enabled(bool value) { safe_set(&slot::enabled, value); }
-
-  void destroy() noexcept { system::uis.erase(_id); }
 };
 } // namespace yw

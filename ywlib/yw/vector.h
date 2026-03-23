@@ -188,11 +188,23 @@ constexpr vector<T, N>& operator*=(vector<T, N>& a, const vector<U, N>& b) {
   return a;
 }
 
+template<typename T, typename U, size_t N> requires requires { T() * U(); }
+constexpr vector<T, N>& operator*=(vector<T, N>& a, const U& b) {
+  [&]<size_t... Is>(sequence<Is...>) { ((get<Is>(a) *= b), ...); }(make_sequence<0, N>{});
+  return a;
+}
+
 //////////////////////////////////////// MARK: division assign
 
 template<typename T, typename U, size_t N> requires requires { T() / U(); }
 constexpr vector<T, N>& operator/=(vector<T, N>& a, const vector<U, N>& b) {
   [&]<size_t... Is>(sequence<Is...>) { ((get<Is>(a) /= get<Is>(b)), ...); }(make_sequence<0, N>{});
+  return a;
+}
+
+template<typename T, typename U, size_t N> requires requires { T() / U(); }
+constexpr vector<T, N>& operator/=(vector<T, N>& a, const U& b) {
+  [&]<size_t... Is>(sequence<Is...>) { ((get<Is>(a) /= b), ...); }(make_sequence<0, N>{});
   return a;
 }
 

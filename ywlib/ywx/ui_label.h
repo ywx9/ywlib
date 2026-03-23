@@ -14,8 +14,8 @@ public:
     mutable bool _need_update_layout = true;
 
     std::expected<void, error_trace> _update_layout() const {
-      IDWriteTextFormat* tf = _layout ? static_cast<IDWriteTextFormat*>(_layout) : dwrite.text_format();
-      if (auto tl = text_layout::create(_text, tf, _size)) _layout = std::move(*tl);
+      IDWriteTextFormat* tfp = _layout ? static_cast<IDWriteTextFormat*>(_layout) : dwrite.text_format();
+      if (auto tl = text_layout::create(_text, tfp, _size)) _layout = std::move(*tl);
       else return unexpected_error(tl.error());
       _need_update_layout = false;
       return {};
@@ -81,13 +81,12 @@ public:
     }
   };
 
+  using plain::operator bool;
   label() noexcept = default;
 
   label(derived_from<unknown> auto& Layout) {
     if (auto res = create_control<label>(Layout)) _id = *res;
   }
-
-  using plain::operator bool;
 
   auto& text() { return unsafe_get(&slot::text); }
   const auto& text() const { return unsafe_get(&slot::text); }

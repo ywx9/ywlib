@@ -71,6 +71,18 @@ public:
 // //////////////////////////////////////// MARK: internal::wm_mousemove
 
 namespace internal {
+inline bool next_tab_stop(ui::label::slot& ls) {
+  for (const auto cid : controls) {
+    if (const auto csp = system::slot_address<ui::control>(cid))
+      if (csp->focus_event(true)) return true;
+  }
+}
+
+inline void next_tab_stop(ui::window::slot& ws) {
+
+}
+
+
 inline void wm_size(ui::window::slot& ws, WPARAM, LPARAM lp) {
   if (ws.resizing) return;
   ws.size.x = LOWORD(lp);

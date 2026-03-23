@@ -8,8 +8,8 @@ class text_layout;
 template<typename T> concept text_format_like = castable_to<T, IDWriteTextFormat*>;
 
 enum class text_alignment : uint8_t {
-  leading = DWRITE_TEXT_ALIGNMENT_LEADING,
-  trailing = DWRITE_TEXT_ALIGNMENT_TRAILING,
+  left = DWRITE_TEXT_ALIGNMENT_LEADING,
+  right = DWRITE_TEXT_ALIGNMENT_TRAILING,
   center = DWRITE_TEXT_ALIGNMENT_CENTER,
   justified = DWRITE_TEXT_ALIGNMENT_JUSTIFIED
 };
@@ -91,19 +91,19 @@ public:
   text_format() noexcept = default;
 
   text_format(text_format&& other) noexcept
-    : _p(std::exchange(other._p, nullptr)), _draw_options(other._draw_options) {}
+    : _p(std::exchange(other._p, {})), _draw_options(other._draw_options) {}
 
   text_format& operator=(text_format&& other) noexcept {
     if (this == &other) return *this;
     if (_p) _p->Release();
-    _p = std::exchange(other._p, nullptr);
+    _p = std::exchange(other._p, {});
     _draw_options = other._draw_options;
     return *this;
   }
 
   virtual ~text_format() noexcept {
     try {
-      if (_p) std::exchange(_p, nullptr)->Release();
+      if (_p) std::exchange(_p, {})->Release();
     } catch (...) {}
   }
 
