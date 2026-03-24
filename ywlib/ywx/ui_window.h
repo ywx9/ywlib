@@ -70,7 +70,7 @@ public:
     bool tracking = false;
     bool manual_draw = false;
 
-    key captured_key{};
+    // key captured_key{};
     int capture_count{};
 
     struct {
@@ -148,7 +148,7 @@ public:
 
     virtual bool attach(slotid child_id) override {
       if (const auto lsp = system::uis.get(layout_id)) return lsp->attach(child_id);
-      return false;
+      return true;
     }
 
     virtual void detach(slotid child_id) override {
@@ -159,6 +159,13 @@ public:
       RECT r;
       ::GetWindowRect(hwnd, &r);
       return short2(r.left + margin.x, r.top + margin.y);
+    }
+
+    void next_tab_stop(bool Forward) {
+      if (const auto lsp = system::slot_address<control>(layout_id)) {
+        bool found = !focused_control;
+        focused_control = lsp->next_tab_stop(focused_control, Forward, found);
+      } else focused_control = {};
     }
   };
 

@@ -7,62 +7,62 @@ class layout : public plain {
 public:
   class slot : public plain::slot {
   protected:
-    template<bool Vertical> void draw_layout(float2 Pos, float2 Size) const {
+    template<bool V> void draw_layout(float2 Pos, float2 Size) const {
       float min_primary = 0.0f;
       uint32_t ucc = 0;
       for (const auto& cid : controls)
-        if (const auto csp = system::slot_address<control>(cid); csp && csp->visible) {
+        if (const auto csp = system::slot_address<control>(cid)) {
           const auto [ms, uc] = csp->require_size();
-          min_primary += yw::max(yw::get<Vertical>(ms), 0.0f);
-          ucc += yw::get<Vertical>(uc);
+          min_primary += yw::max(yw::get<V>(ms), 0.0f);
+          ucc += yw::get<V>(uc);
         }
       float offset = 0.0f;
       if (ucc == 0) {
         for (const auto& cid : controls)
-          if (const auto csp = system::slot_address<control>(cid); csp && csp->visible) {
+          if (const auto csp = system::slot_address<control>(cid)) {
             const auto [ms, _] = csp->require_size();
-            if constexpr (Vertical) {
+            if constexpr (V) {
               const auto control_size = float2(Size.x, ms.y);
-              csp->draw({Pos.x, Pos.y + offset}, control_size);
+              if (csp->visible) csp->draw({Pos.x, Pos.y + offset}, control_size);
               offset += yw::max(control_size.y, 0.0f);
             } else {
               const auto control_size = float2(ms.x, Size.y);
-              csp->draw({Pos.x + offset, Pos.y}, control_size);
+              if (csp->visible) csp->draw({Pos.x + offset, Pos.y}, control_size);
               offset += yw::max(control_size.x, 0.0f);
             }
           }
       } else {
-        const auto extra_per_ucc = yw::max((yw::get<Vertical>(Size) - min_primary) / float(ucc), 0.0f);
+        const auto extra_per_ucc = yw::max((yw::get<V>(Size) - min_primary) / float(ucc), 0.0f);
         for (const auto& cid : controls)
-          if (const auto csp = system::slot_address<control>(cid); csp && csp->visible) {
+          if (const auto csp = system::slot_address<control>(cid)) {
             const auto [ms, ucc] = csp->require_size();
-            if constexpr (Vertical) {
+            if constexpr (V) {
               const auto control_size = float2(Size.x, ms.y + ucc.y * extra_per_ucc);
-              csp->draw({Pos.x, Pos.y + offset}, control_size);
+              if (csp->visible) csp->draw({Pos.x, Pos.y + offset}, control_size);
               offset += control_size.y;
             } else {
               const auto control_size = float2(ms.x + ucc.x * extra_per_ucc, Size.y);
-              csp->draw({Pos.x + offset, Pos.y}, control_size);
+              if (csp->visible) csp->draw({Pos.x + offset, Pos.y}, control_size);
               offset += control_size.x;
             }
           }
       }
     }
 
-    template<bool Vertical> tuple<float2, uint2> require_size() const noexcept {
+    template<bool V> tuple<float2, uint2> require_size() const noexcept {
       tuple<float2, uint2> result{};
       for (const auto& cid : controls)
         if (const auto csp = system::slot_address<control>(cid)) {
           const auto [ms, uc] = csp->require_size();
-          yw::get<!Vertical>(result.first) = yw::max(yw::get<!Vertical>(result.first), yw::get<!Vertical>(ms));
-          yw::get<Vertical>(result.first) += yw::max(yw::get<Vertical>(ms), 0.0f);
-          yw::get<!Vertical>(result.second) |= bool(yw::get<!Vertical>(uc));
-          yw::get<Vertical>(result.second) += yw::get<Vertical>(uc);
+          yw::get<!V>(result.first) = yw::max(yw::get<!V>(result.first), yw::get<!V>(ms));
+          yw::get<V>(result.first) += yw::max(yw::get<V>(ms), 0.0f);
+          yw::get<!V>(result.second) |= bool(yw::get<!V>(uc));
+          yw::get<V>(result.second) += yw::get<V>(uc);
         }
-      result.first.x = yw::max(result.first.x, size.x) + margin.x + margin.z;
-      result.first.y = yw::max(result.first.y, size.y) + margin.y + margin.w;
-      if (size.x >= 0.0f) result.second.x = 0;
-      if (size.y >= 0.0f) result.second.y = 0;
+      result.first.x = yw::max(result.first.x, size.x, 0.0f) + margin.x + margin.z;
+      result.first.y = yw::max(result.first.y, size.y, 0.0f) + margin.y + margin.w;
+      yw::get<!V>(result.second) &= yw::get<!V>(size) < 0.0f;
+      if (yw::get<V>(size) >= 0.0f) yw::get<V>(result.second) = 0;
       return result;
     }
 
@@ -78,13 +78,14 @@ public:
     virtual tuple<float2, uint2> require_size() const noexcept override { return require_size<true>(); }
 
     virtual bool attach(ui::slotid ChildId) override {
-      controls.push_back(ChildId);
+      // 無効なIDを渡すことでアタッチ可能か確認できる
       if (const auto csp = system::slot_address<control>(ChildId)) {
+        controls.push_back(ChildId);
         csp->id = ChildId;
         csp->layout_id = id;
         csp->window_id = window_id;
+        make_messy();
       }
-      make_messy();
       return true;
     }
 
@@ -113,6 +114,19 @@ public:
       draw_plain(last_rect.xy(), last_rect.zw() - last_rect.xy());
       for (const auto& cid : controls)
         if (const auto csp = system::slot_address<control>(cid); csp && csp->visible) csp->draw();
+    }
+
+    virtual slotid next_tab_stop(slotid Current, bool Forward, bool& Found) override {
+      if (Forward) {
+        for (const auto cid : controls)
+          if (const auto csp = system::slot_address<control>(cid))
+            if (const auto hit = csp->next_tab_stop(Current, Forward, Found)) return hit;
+      } else {
+        for (const auto cid : controls | std::views::reverse)
+          if (const auto csp = system::slot_address<control>(cid))
+            if (const auto hit = csp->next_tab_stop(Current, Forward, Found)) return hit;
+      }
+      return {};
     }
   };
 

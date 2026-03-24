@@ -93,7 +93,11 @@ public:
     virtual void move_event(event::move e) {}
     virtual void wheel_event(event::wheel e) {}
 
-    virtual slotid find_focusable() const { return {}; }
+    virtual slotid next_tab_stop(slotid Current, bool Forward, bool& Found) {
+      if (Found && visible && enabled && focus_event(true)) return id;
+      if (Current == id) Found = true;
+      return {};
+    }
   };
 
   using unknown::operator bool;

@@ -4,8 +4,7 @@
 
 namespace yw {
 
-namespace system {
-} // namespace system
+namespace system {} // namespace system
 
 //////////////////////////////////////// MARK: mainloop
 
@@ -71,18 +70,6 @@ public:
 // //////////////////////////////////////// MARK: internal::wm_mousemove
 
 namespace internal {
-inline bool next_tab_stop(ui::label::slot& ls) {
-  for (const auto cid : controls) {
-    if (const auto csp = system::slot_address<ui::control>(cid))
-      if (csp->focus_event(true)) return true;
-  }
-}
-
-inline void next_tab_stop(ui::window::slot& ws) {
-
-}
-
-
 inline void wm_size(ui::window::slot& ws, WPARAM, LPARAM lp) {
   if (ws.resizing) return;
   ws.size.x = LOWORD(lp);
@@ -125,10 +112,8 @@ inline void wm_mousemove(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
     fcsp->move_event(event::move(local_pt, system::cursor_delta));
     const bool c = (wp & MK_CONTROL) == MK_CONTROL, s = (wp & MK_SHIFT) == MK_SHIFT, a = (wp & MK_ALT) == MK_ALT;
     if ((wp & MK_LBUTTON) == MK_LBUTTON) fcsp->drag_event(event::drag(local_pt, key::lbutton, c, s, a));
-    else if ((wp & MK_RBUTTON) == MK_RBUTTON)
-      fcsp->drag_event(event::drag(local_pt, key::rbutton, c, s, a));
-    else if ((wp & MK_MBUTTON) == MK_MBUTTON)
-      fcsp->drag_event(event::drag(local_pt, key::mbutton, c, s, a));
+    else if ((wp & MK_RBUTTON) == MK_RBUTTON) fcsp->drag_event(event::drag(local_pt, key::rbutton, c, s, a));
+    else if ((wp & MK_MBUTTON) == MK_MBUTTON) fcsp->drag_event(event::drag(local_pt, key::mbutton, c, s, a));
   }
   ui::slotid new_hcid{};
   if (const auto lsp = system::slot_address<ui::layout>(ws.layout_id)) new_hcid = lsp->hit_test(pt);
@@ -167,192 +152,58 @@ inline void wm_mousewheel(ui::window::slot& ws, WPARAM wp, LPARAM lp, bool horiz
     hcsp->wheel_event(event::wheel(local_pt, delta, horizontal, c, s, a));
 }
 
-inline void wm_keydown_tab(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
-  const auto lsp = system::slot_address<ui::layout>(ws.layout_id);
-  if (!lsp) {
-    ws.focused_control = {};
-    return;
-  }
-  const bool shift = (::GetKeyState(VK_SHIFT) & 0x8000) != 0;
-  // 現在フォーカスされているコントロールのインデックスを見つける
-  int cur = -1;
-  for (int i = 0; i < static_cast<int>(lsp->controls.size()); ++i) {
-    if (lsp->controls[i] == ws.focused_control) {
-      cur = i;
-      break;
-    }
-  }
-  ws.dirty = true;
-  if (const auto fcsp = system::slot_address<ui::control>(ws.focused_control)) fcsp->focus_event(false);
-  if (shift) {
-    if (cur < 0) cur = static_cast<int>(lsp->controls.size());
-    while (--cur >= 0)
-      if (const auto ui_slot_p = system::slot_address<ui::control>(lsp->controls[cur]))
-        if (ui_slot_p->focus_event(true)) {
-          ws.focused_control = lsp->controls[cur];
-          return;
-        }
-    ws.focused_control = {};
-  } else {
-    const int n = static_cast<int>(lsp->controls.size());
-    while (++cur < n)
-      if (const auto ui_slot_p = system::slot_address<ui::control>(lsp->controls[cur]))
-        if (ui_slot_p->focus_event(true)) {
-          ws.focused_control = lsp->controls[cur];
-          return;
-        }
-    ws.focused_control = {};
+inline void wm_keydown(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
+  if (wp == VK_TAB) {
+    if (const auto fsp = system::slot_address<ui::control>(ws.focused_control)) fsp->focus_event(false);
+    const bool shift = (::GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    ws.next_tab_stop(!shift);
+    ws.dirty = true;
+  } else if (const auto p = system::slot_address<ui::control>(ws.focused_control)) {
+    const auto repeat = static_cast<uint16_t>(lp & 0xffff);
+    const auto first = (lp & (1u << 30)) == 0;
+    const auto c = bool(::GetKeyState(VK_CONTROL) & 0x8000);
+    const auto s = bool(::GetKeyState(VK_SHIFT) & 0x8000);
+    const auto a = bool(::GetKeyState(VK_MENU) & 0x8000);
+    p->key_event(event::key(repeat, key(wp), true, first, c, s, a));
   }
 }
 
-inline void wm_lbuttondown(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
+template<key K> void wm_button_down(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
   const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(uint_cast(lp)));
   if (ws.capture_count++ == 0) ::SetCapture(ws.hwnd);
-  ws.captured_key = key::lbutton;
+  // ws.captured_key = K;
   ws.dirty = true;
-  const bool c = (wp & MK_CONTROL) == MK_CONTROL, s = (wp & MK_SHIFT) == MK_SHIFT, a = (wp & MK_ALT) == MK_ALT;
-  if (const auto p = system::slot_address<ui::control>(ws.focused_control)) {
-    if (ws.focused_control == ws.hovered_control) { // inside focused_control, so send event to it
-      ws.captured_control = p->id;
-      p->button_event(event::button(local_pt, key::lbutton, true, c, s, a));
-      return;
-    }
-    ws.focused_control = {};
-    p->focus_event(false);
-  }
-  if (const auto p = system::slot_address<ui::control>(ws.hovered_control)) {
-    ws.captured_control = p->id;
-    p->button_event(event::button(local_pt, key::lbutton, true, c, s, a));
-    ws.focused_control = (p->focus_event(true) ? p->id : ui::slotid());
-  } else ws.captured_control = {}, ws.focused_control = {};
-}
-
-inline void wm_lbuttonup(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
-  const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(uint_cast(lp)));
-  ws.capture_count = yw::max(0, ws.capture_count - 1);
-  if (ws.capture_count == 0) ::ReleaseCapture();
-  const bool c = (wp & MK_CONTROL) == MK_CONTROL, s = (wp & MK_SHIFT) == MK_SHIFT, a = (wp & MK_ALT) == MK_ALT;
-  if (const auto p = system::slot_address<ui::control>(ws.captured_control); p && ws.captured_key == key::lbutton) {
-    p->button_event(event::button(local_pt, key::lbutton, false, c, s, a));
-    if (ws.captured_control == ws.hovered_control)
-      p->click_event(event::button(local_pt, key::lbutton, false, c, s, a));
-  }
-  ws.captured_control = {};
-  ws.captured_key = {};
-  ws.dirty = true;
-}
-
-inline void wm_rbuttondown(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
-  const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(uint_cast(lp)));
-  if (ws.capture_count++ == 0) ::SetCapture(ws.hwnd);
-  ws.captured_key = key::rbutton;
-  ws.dirty = true;
-  const bool c = (wp & MK_CONTROL) == MK_CONTROL, s = (wp & MK_SHIFT) == MK_SHIFT, a = (wp & MK_ALT) == MK_ALT;
-  if (const auto p = system::slot_address<ui::control>(ws.focused_control)) {
+  const bool c = (wp & MK_CONTROL) == MK_CONTROL;
+  const bool s = (wp & MK_SHIFT) == MK_SHIFT;
+  const bool a = (wp & MK_ALT) == MK_ALT;
+  if (const auto fcsp = system::slot_address<ui::control>(ws.focused_control)) {
     if (ws.focused_control == ws.hovered_control) {
-      ws.captured_control = p->id;
-      p->button_event(event::button(local_pt, key::rbutton, true, c, s, a));
+      ws.captured_control = fcsp->id;
+      fcsp->button_event(event::button(local_pt, K, true, c, s, a));
       return;
     }
     ws.focused_control = {};
-    p->focus_event(false);
+    fcsp->focus_event(false);
   }
-  if (const auto p = system::slot_address<ui::control>(ws.hovered_control)) {
-    ws.captured_control = p->id;
-    p->button_event(event::button(local_pt, key::rbutton, true, c, s, a));
-    ws.focused_control = (p->focus_event(true) ? p->id : ui::slotid());
+  if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control)) {
+    ws.captured_control = hcsp->id;
+    hcsp->button_event(event::button(local_pt, K, true, c, s, a));
+    ws.focused_control = (hcsp->focus_event(true) ? hcsp->id : ui::slotid());
   } else ws.captured_control = {}, ws.focused_control = {};
 }
 
-inline void wm_rbuttonup(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
+template<key K> void wm_button_up(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
   const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(uint_cast(lp)));
   ws.capture_count = yw::max(0, ws.capture_count - 1);
   if (ws.capture_count == 0) ::ReleaseCapture();
-  const bool c = (wp & MK_CONTROL) == MK_CONTROL, s = (wp & MK_SHIFT) == MK_SHIFT, a = (wp & MK_ALT) == MK_ALT;
-  if (const auto p = system::slot_address<ui::control>(ws.captured_control); p && ws.captured_key == key::rbutton) {
-    p->button_event(event::button(local_pt, key::rbutton, false, c, s, a));
-    if (ws.captured_control == ws.hovered_control)
-      p->click_event(event::button(local_pt, key::rbutton, false, c, s, a));
+  const bool c = (wp & MK_CONTROL) == MK_CONTROL;
+  const bool s = (wp & MK_SHIFT) == MK_SHIFT;
+  const bool a = (wp & MK_ALT) == MK_ALT;
+  if (const auto ccsp = system::slot_address<ui::control>(ws.captured_control)) {
+    if (ws.captured_control == ws.hovered_control) ccsp->click_event(event::button(local_pt, K, false, c, s, a));
+    ccsp->button_event(event::button(local_pt, K, false, c, s, a));
   }
   ws.captured_control = {};
-  ws.captured_key = {};
-  ws.dirty = true;
-}
-
-inline void wm_mbuttondown(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
-  const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(uint_cast(lp)));
-  if (ws.capture_count++ == 0) ::SetCapture(ws.hwnd);
-  ws.captured_key = key::mbutton;
-  ws.dirty = true;
-  const bool c = (wp & MK_CONTROL) == MK_CONTROL, s = (wp & MK_SHIFT) == MK_SHIFT, a = (wp & MK_ALT) == MK_ALT;
-  if (const auto p = system::slot_address<ui::control>(ws.focused_control)) {
-    if (ws.focused_control == ws.hovered_control) {
-      ws.captured_control = p->id;
-      p->button_event(event::button(local_pt, key::mbutton, true, c, s, a));
-      return;
-    }
-    ws.focused_control = {};
-    p->focus_event(false);
-  }
-  if (const auto p = system::slot_address<ui::control>(ws.hovered_control)) {
-    ws.captured_control = p->id;
-    p->button_event(event::button(local_pt, key::mbutton, true, c, s, a));
-    ws.focused_control = (p->focus_event(true) ? p->id : ui::slotid());
-  } else ws.captured_control = {}, ws.focused_control = {};
-}
-
-inline void wm_mbuttonup(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
-  const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(uint_cast(lp)));
-  ws.capture_count = yw::max(0, ws.capture_count - 1);
-  if (ws.capture_count == 0) ::ReleaseCapture();
-  const bool c = (wp & MK_CONTROL) == MK_CONTROL, s = (wp & MK_SHIFT) == MK_SHIFT, a = (wp & MK_ALT) == MK_ALT;
-  if (const auto p = system::slot_address<ui::control>(ws.captured_control); p && ws.captured_key == key::mbutton) {
-    p->button_event(event::button(local_pt, key::mbutton, false, c, s, a));
-    if (ws.captured_control == ws.hovered_control)
-      p->click_event(event::button(local_pt, key::mbutton, false, c, s, a));
-  }
-  ws.captured_control = {};
-  ws.captured_key = {};
-  ws.dirty = true;
-}
-
-inline void wm_xbuttondown(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
-  const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(uint_cast(lp)));
-  const bool x1 = HIWORD(wp) == XBUTTON1;
-  const auto code = x1 ? key::xbutton1 : key::xbutton2;
-  if (ws.capture_count++ == 0) ::SetCapture(ws.hwnd);
-  ws.captured_key = code;
-  ws.dirty = true;
-  if (const auto p = system::slot_address<ui::control>(ws.focused_control)) {
-    if (ws.focused_control == ws.hovered_control) {
-      ws.captured_control = p->id;
-      p->button_event(event::button(local_pt, code, true, wp, lp));
-      return;
-    } else {
-      ws.focused_control = {};
-      p->focus_event(false);
-    }
-  }
-  if (const auto p = system::slot_address<ui::control>(ws.hovered_control)) {
-    ws.captured_control = p->id;
-    p->button_event(event::button(local_pt, code, true, wp, lp));
-    ws.focused_control = (p->focus_event(true) ? p->id : ui::slotid());
-  } else ws.captured_control = {}, ws.focused_control = {};
-}
-
-inline void wm_xbuttonup(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
-  const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(uint_cast(lp)));
-  const bool x1 = HIWORD(wp) == XBUTTON1;
-  const auto code = x1 ? key::xbutton1 : key::xbutton2;
-  ws.capture_count = yw::max(0, ws.capture_count - 1);
-  if (ws.capture_count == 0) ::ReleaseCapture();
-  if (const auto p = system::slot_address<ui::control>(ws.captured_control); p && ws.captured_key == code) {
-    p->button_event(event::button(local_pt, code, false, wp, lp));
-    if (ws.captured_control == ws.hovered_control)
-      p->click_event(event::button(local_pt, code, false, wp, lp));
-  }
-  ws.captured_control = {};
-  ws.captured_key = {};
   ws.dirty = true;
 }
 } // namespace internal
@@ -370,23 +221,15 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
   case WM_MOUSEWHEEL: internal::wm_mousewheel(*wsp, wp, lp, false); return 0;
   case WM_MOUSEHWHEEL: internal::wm_mousewheel(*wsp, wp, lp, true); return 0;
 
-  case WM_KEYDOWN:
-    if (wp == VK_TAB) internal::wm_keydown_tab(*wsp, wp, lp);
-    else if (const auto p = system::slot_address<ui::control>(wsp->focused_control)) {
-      const auto repeat = static_cast<uint16_t>(lp & 0xffff);
-      const auto c = bool(::GetKeyState(VK_CONTROL) & 0x8000);
-      const auto s = bool(::GetKeyState(VK_SHIFT) & 0x8000);
-      const auto a = bool(::GetKeyState(VK_MENU) & 0x8000);
-      p->key_event(event::key(repeat, key(wp), true, c, s, a));
-    }
-    return 0;
+  case WM_KEYDOWN: internal::wm_keydown(*wsp, wp, lp); return 0;
   case WM_KEYUP:
     if (const auto p = system::slot_address<ui::control>(wsp->focused_control)) {
       const auto repeat = static_cast<uint16_t>(lp & 0xffff);
+      const auto first = true;
       const auto c = bool(::GetKeyState(VK_CONTROL) & 0x8000);
       const auto s = bool(::GetKeyState(VK_SHIFT) & 0x8000);
       const auto a = bool(::GetKeyState(VK_MENU) & 0x8000);
-      p->key_event(event::key(repeat, key(wp), false, c, s, a));
+      p->key_event(event::key(repeat, key(wp), false, first, c, s, a));
     }
     return 0;
 
@@ -394,21 +237,27 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     if (const auto p = system::slot_address<ui::control>(wsp->focused_control)) p->char_event(static_cast<wchar_t>(wp));
     return 0;
 
-  case WM_LBUTTONDOWN: internal::wm_lbuttondown(*wsp, wp, lp); return 0;
-  case WM_LBUTTONUP: internal::wm_lbuttonup(*wsp, wp, lp); return 0;
+  case WM_LBUTTONDOWN: internal::wm_button_down<key::lbutton>(*wsp, wp, lp); return 0;
+  case WM_LBUTTONUP: internal::wm_button_up<key::lbutton>(*wsp, wp, lp); return 0;
 
-  case WM_RBUTTONDOWN: internal::wm_rbuttondown(*wsp, wp, lp); return 0;
-  case WM_RBUTTONUP: internal::wm_rbuttonup(*wsp, wp, lp); return 0;
+  case WM_RBUTTONDOWN: internal::wm_button_down<key::rbutton>(*wsp, wp, lp); return 0;
+  case WM_RBUTTONUP: internal::wm_button_up<key::rbutton>(*wsp, wp, lp); return 0;
 
-  case WM_MBUTTONDOWN: internal::wm_mbuttondown(*wsp, wp, lp); return 0;
-  case WM_MBUTTONUP: internal::wm_mbuttonup(*wsp, wp, lp); return 0;
+  case WM_MBUTTONDOWN: internal::wm_button_down<key::mbutton>(*wsp, wp, lp); return 0;
+  case WM_MBUTTONUP: internal::wm_button_up<key::mbutton>(*wsp, wp, lp); return 0;
 
-  case WM_XBUTTONDOWN: internal::wm_xbuttondown(*wsp, wp, lp); return 0;
-  case WM_XBUTTONUP: internal::wm_xbuttonup(*wsp, wp, lp); return 0;
+  case WM_XBUTTONDOWN:
+    if (HIWORD(wp) == XBUTTON1) internal::wm_button_down<key::xbutton1>(*wsp, wp, lp);
+    else internal::wm_button_down<key::xbutton2>(*wsp, wp, lp);
+    return 0;
+  case WM_XBUTTONUP:
+    if (HIWORD(wp) == XBUTTON1) internal::wm_button_up<key::xbutton1>(*wsp, wp, lp);
+    else internal::wm_button_up<key::xbutton2>(*wsp, wp, lp);
+    return 0;
 
   case WM_KILLFOCUS:
     wsp->captured_control = {};
-    wsp->captured_key = {};
+    // wsp->captured_key = {};
     wsp->capture_count = 0;
     ::ReleaseCapture();
     return 0;

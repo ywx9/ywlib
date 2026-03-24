@@ -15,26 +15,6 @@ struct button {
 };
 static_assert(sizeof(button) <= 8);
 
-//////////////////////////////////////// MARK: event::key
-
-struct key {
-  uint16_t repeat;
-  yw::key code;
-  bool down : 1;
-  bool ctrl : 1;
-  bool shift : 1;
-  bool alt : 1;
-};
-static_assert(sizeof(key) <= 8);
-
-//////////////////////////////////////// MARK: event::move
-
-struct move {
-  short2 pos;
-  short2 delta;
-};
-static_assert(sizeof(move) <= 8);
-
 //////////////////////////////////////// MARK: event::drag
 
 struct drag {
@@ -56,6 +36,27 @@ struct hover {
   bool move() const noexcept { return type == type::move; }
 };
 static_assert(sizeof(hover) <= 8);
+
+//////////////////////////////////////// MARK: event::key
+
+struct key {
+  uint16_t repeat;
+  yw::key code;
+  bool down : 1;
+  bool first : 1;
+  bool ctrl : 1;
+  bool shift : 1;
+  bool alt : 1;
+};
+static_assert(sizeof(key) <= 8);
+
+//////////////////////////////////////// MARK: event::move
+
+struct move {
+  short2 pos;
+  short2 delta;
+};
+static_assert(sizeof(move) <= 8);
 
 //////////////////////////////////////// MARK: event::wheel
 
