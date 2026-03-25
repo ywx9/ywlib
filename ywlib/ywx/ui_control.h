@@ -1,5 +1,6 @@
 #pragma once
 #include "ywx/event.h"
+#include "ywx/tooltip.h"
 #include "ywx/ui_unknown.h"
 
 namespace yw::ui {
@@ -79,14 +80,16 @@ public:
 
     /// コントロールの位置とサイズを更新して描画する
     virtual void draw(float2 Pos, float2 Size) {
+      print(source());
       pos = Pos + margin.xy();
       if (ucc.x) size.x = Size.x - margin.x - margin.z;
       if (ucc.y) size.y = Size.y - margin.y - margin.w;
       draw();
+      print(source());
     };
 
     /// 前回の描画位置に再描画する
-    virtual void draw() const {}
+    virtual void draw() const { print(source()); }
 
     virtual void char_event(wchar_t c) {}
     virtual void click_event(event::button e) {}
@@ -97,14 +100,7 @@ public:
     virtual void move_event(event::move e) {}
     virtual void wheel_event(event::wheel e) {}
 
-    virtual void hover_event(event::hover Event) {
-      if (enabled && on_hover) on_hover(Event);
-      if (tooltip.empty()) return;
-      if (Event.enter()) {
-        if (const auto w = system::slot_address<ui::window>(window_id))
-          system::tooltip.show(pos + w->pos() + w->margin.xy(), size, tooltip);
-      } else if (Event.leave()) system::tooltip.hide();
-    }
+    virtual void hover_event(event::hover Event);
 
     virtual slotid next_tab_stop(slotid Current, bool Forward, bool& Found) {
       if (Found && visible && enabled && focus_event(true)) return id;

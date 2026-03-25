@@ -9,10 +9,12 @@ public:
   class slot : public control::slot {
   protected:
     void draw_plain(float2 Pos, float2 Size) const {
+      print(source());
       brush.color(bg_color);
       fill_round_rectangle(Pos, Size, radius);
       brush.color(border_color);
       draw_round_rectangle(Pos, Size, radius, border_width);
+      print(source());
     }
 
   public:
@@ -23,7 +25,11 @@ public:
     function<void, event::button> on_button;
     function<void, event::wheel> on_wheel;
 
-    virtual void draw() const override { draw_plain(pos, size); }
+    virtual void draw() const override {
+      print(source());
+      draw_plain(pos, size);
+      print(source());
+    }
 
     virtual void button_event(event::button Event) override {
       if (enabled && on_button) on_button(Event);

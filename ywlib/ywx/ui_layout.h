@@ -23,11 +23,11 @@ public:
           const auto [demand, ucc] = csp->demand_survey();
           if constexpr (V) {
             const auto control_size = float2(size.x, demand.y + ucc.y * extra_per_ucc);
-            if (csp->visible) csp->draw({Pos.x, Pos.y + offset}, control_size);
+            if (csp->visible) csp->draw({pos.x, pos.y + offset}, control_size);
             offset += control_size.y;
           } else {
             const auto control_size = float2(demand.x + ucc.x * extra_per_ucc, size.y);
-            if (csp->visible) csp->draw({Pos.x + offset, Pos.y}, control_size);
+            if (csp->visible) csp->draw({pos.x + offset, pos.y}, control_size);
             offset += control_size.x;
           }
         }

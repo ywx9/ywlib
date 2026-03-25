@@ -104,22 +104,24 @@ public:
     virtual void draw() const override {
       const auto lsp = system::slot_address<ui::control>(layout_id);
       if (!lsp) return;
-      const auto [rs, _] = lsp->require_size();
+      const auto [rs, _] = lsp->demand_survey();
       if (size.x < rs.x || size.y < rs.y) {
         const auto sz = int2(yw::max(size.x, rs.x), yw::max(size.y, rs.y)) + margin.xy() + margin.zw();
         ::SetWindowPos(hwnd, nullptr, 0, 0, sz.x, sz.y, SWP_NOZORDER | SWP_NOMOVE);
       }
       if (auto d = manual_draw ? rendertarget.begin_draw() : rendertarget.begin_draw(bg_color)) {
+        print(source());
         if (const auto lsp = system::uis.get(layout_id)) {
+          print(source());
           if (messy) lsp->draw({}, float2(size));
           else if (dirty) lsp->draw();
         }
         if (const auto fcsp = system::slot_address<ui::control>(focused_control)) {
           const auto off = float2::fill(focus_ring.offset);
           brush.color(focus_ring.color);
-          const auto sz = (fcsp->last_rect.zw() - fcsp->last_rect.xy()) + off * 2;
-          const auto pos = fcsp->last_rect.xy() - off;
-          const auto radius = fcsp->get_radius() + off;
+          const auto sz = fcsp->size + off * 2;
+          const auto pos = fcsp->pos - off;
+          const auto radius = fcsp->radius + off;
           draw_round_rectangle(pos, sz, radius, focus_ring.width);
         }
       } else throw unexpected_error(d.error());
@@ -296,4 +298,13 @@ inline void control::slot::make_dirty() noexcept {
 inline void control::slot::make_messy() noexcept {
   if (const auto wsp = system::slot_address<window>(window_id)) wsp->messy = true;
 }
+
+inline void control::slot::hover_event(event::hover Event) {
+      if (enabled && on_hover) on_hover(Event);
+      if (tooltip.empty()) return;
+      if (Event.enter()) {
+        if (const auto w = system::slot_address<window>(window_id))
+          system::tooltip.show(pos + w->pos + w->margin.xy(), size, tooltip);
+      } else if (Event.leave()) system::tooltip.hide();
+    }
 }
