@@ -480,8 +480,8 @@ template<char_type C> inline constexpr auto unicode = []<stringable S>(S&& s) ->
       const auto i = unsigned(c >= 0xc0) + unsigned(c >= 0xe0) + unsigned(c >= 0xf0);
       const auto j = i + 1 + unsigned(i != 0);
       uc = char32_t(-int(i == 3) & s[i < 3 ? i : 3] & 0x3f);
-      uc |= char32_t((-int(i > 1) & s[i < 2 ? i : 2] & 0x3f)) << (6 * (i > 1 ? i - 2 : 0));
-      uc |= char32_t((-int(i > 0) & s[i < 1 ? 1 : 1] & 0x3f)) << (6 * (i > 0 ? i - 1 : 0));
+      uc |= char32_t((-int(i >= 2) & s[i < 2 ? i : 2] & 0x3f)) << (6 * (i >= 2 ? i - 2 : 0));
+      uc |= char32_t((-int(i >= 1) & s[i < 1 ? i : 1] & 0x3f)) << (6 * (i >= 1 ? i - 1 : 0));
       uc |= char32_t(char8_t(c << j) >> j) << (6 * i);
       s += i + 1;
     } else if constexpr (same_as<T, char16_t>) {
