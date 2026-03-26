@@ -96,7 +96,7 @@ public:
     else return unexpected_error(res.error());
     if (auto d = _rendertarget.begin_draw(colors::whitesmoke)) {
       brush.color(colors::black);
-      if (auto res = draw_text({4, 2}, _layout); !res) return unexpected_error(res.error());
+      if (auto res = draw_text_layout({4, 2}, _layout); !res) return unexpected_error(res.error());
       if (auto res = draw_rectangle({0, 0}, _window_size, 1.0f); !res) return unexpected_error(res.error());
     } else return unexpected_error(errors::operation_failed, "begin_draw failed");
     _swapchain->Present(0, 0);

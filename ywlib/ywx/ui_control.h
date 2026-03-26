@@ -5,6 +5,19 @@
 
 namespace yw::ui {
 
+/// コントロール等の配置を指定する列挙型
+enum class alignment {
+  center = 0b0000,
+  left = 0b0001,
+  right = 0b0010,
+  top = 0b0100,
+  bottom = 0b1000,
+  left_top = 0b0101,
+  left_bottom = 0b1001,
+  right_top = 0b0110,
+  right_bottom = 0b1010,
+};
+
 class control : public unknown {
 protected:
   control() noexcept = default;
@@ -51,7 +64,8 @@ public:
     };
     float2 radius{5.0f, 5.0f};
     float2 minimum_size{10.0f, 10.0f};
-    uint2 ucc{1, 1};
+    ui::alignment alignment = ui::alignment::center;
+    vector<bool, 2> ucc{true, true};
     bool visible = true, enabled = true, dying = false;
 
     std::wstring tooltip{};
@@ -61,14 +75,12 @@ public:
       if (const auto lsp = system::slot_address<slot>(layout_id); lsp && !lsp->dying) lsp->detach(id);
     }
 
-    /// コントロールの最小占有サイズと非拘束係数を取得する
-    virtual tuple<float2, uint2> demand_survey() const noexcept {
-      tuple<float2, uint2> result{};
-      result.first.x = yw::max(size.x, minimum_size.x, 0.0f) + margin.x + margin.z;
-      result.first.y = yw::max(size.y, minimum_size.y, 0.0f) + margin.y + margin.w;
-      result.second.x = size.x < 0.0f;
-      result.second.y = size.y < 0.0f;
-      return result;
+    /// コントロールの最小占有サイズを取得する
+    virtual float2 demand_survey() const noexcept {
+      auto result = float2(ucc.x ? 0.0f : size.x, ucc.y ? 0.0f : size.y);
+      result.x = yw::max(result.x, minimum_size.x);
+      result.y = yw::max(result.y, minimum_size.y);
+      return result + margin.xy() + margin.zw();
     }
 
     virtual void make_dirty() noexcept;
@@ -80,16 +92,28 @@ public:
 
     /// コントロールの位置とサイズを更新して描画する
     virtual void draw(float2 Pos, float2 Size) {
-      print(source());
-      pos = Pos + margin.xy();
-      if (ucc.x) size.x = Size.x - margin.x - margin.z;
-      if (ucc.y) size.y = Size.y - margin.y - margin.w;
+      Pos += margin.xy();
+      Size -= margin.xy() + margin.zw();
+      if (ucc.x) size.x = Size.x;
+      if (ucc.y) size.y = Size.y;
+      const auto extra = Size - size;
+      pos = Pos;
+      switch (alignment) {
+      case ui::alignment::center: pos += extra * 0.5f; break;
+      case ui::alignment::left: break;
+      case ui::alignment::right: pos.x += extra.x; break;
+      case ui::alignment::top: break;
+      case ui::alignment::bottom: pos.y += extra.y; break;
+      case ui::alignment::left_top: break;
+      case ui::alignment::left_bottom: pos.y += extra.y; break;
+      case ui::alignment::right_top: pos.x += extra.x; break;
+      case ui::alignment::right_bottom: pos += extra; break;
+      }
       draw();
-      print(source());
     };
 
     /// 前回の描画位置に再描画する
-    virtual void draw() const { print(source()); }
+    virtual void draw() const {}
 
     virtual void char_event(wchar_t c) {}
     virtual void click_event(event::button e) {}
@@ -118,6 +142,7 @@ public:
   const auto& height() const { return unsafe_get(&slot::height); }
   const auto& radius() const { return unsafe_get(&slot::radius); }
   const auto& minimum_size() const { return unsafe_get(&slot::minimum_size); }
+  const auto& alignment() const { return unsafe_get(&slot::alignment); }
   const auto& visible() const { return unsafe_get(&slot::visible); }
   const auto& enabled() const { return unsafe_get(&slot::enabled); }
   const auto& tooltip() const { return unsafe_get(&slot::tooltip); }
@@ -148,6 +173,7 @@ public:
   }
   void radius(float2 radius) { safe_set(&slot::radius, radius); }
   void minimum_size(float2 size) { safe_set_size(&slot::minimum_size, size); }
+  void alignment(ui::alignment alignment) { safe_set_size(&slot::alignment, alignment); }
   void visible(bool b) { safe_set(&slot::visible, b); }
   void enabled(bool b) { safe_set(&slot::enabled, b); }
   template<stringable S> void tooltip(S&& s) { safe_set(&slot::tooltip, unicode<wchar_t>(static_cast<S&&>(s))); }

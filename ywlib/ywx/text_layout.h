@@ -202,7 +202,7 @@ public:
 
 //////////////////////////////////////// MARK: draw_text
 
-template<text_layout_like TL> std::expected<void, error_trace> draw_text(float2 pos, TL&& tl, std::optional<bool> clip = {}) {
+template<text_layout_like TL> std::expected<void, error_trace> draw_text_layout(float2 pos, TL&& tl, std::optional<bool> clip = {}) {
   if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   const auto tlp = static_cast<IDWriteTextLayout*>(tl);

@@ -3,51 +3,53 @@
 
 namespace yw::ui {
 
+/// \note
+/// # レイアウトの非拘束コントロールに対する余剰サイズの配分について
+/// レイアウトの行ごと、あるいは列ごとに配分するサイズが等しくなるようにする。
+/// 例えば、レイアウトA(サイズ2)にレイアウトB(サイズ2)とレイアウトC(サイズ3)がいる場合、
+/// レイアウトBとレイアウトCがともに非拘束であれば、非拘束係数によらず当配分される。
+
 class layout : public plain {
 public:
   class slot : public plain::slot {
   protected:
     template<bool V> void draw_layout() const {
-      uint32_t ucc_count = 0;
-      float min_primary = 0.0f;
+      uint2 ucc_count{};
+      float min_primary{};
       for (const auto& cid : controls)
         if (const auto csp = system::slot_address<control>(cid)) {
-          const auto [demand, _] = csp->demand_survey();
-          ucc_count += yw::get<V>(csp->ucc);
-          min_primary += yw::get<V>(demand);
+          const auto min_size = csp->demand_survey();
+          yw::get<V>(ucc_count) += yw::get<V>(csp->ucc);
+          min_primary += yw::get<V>(min_size);
         }
-      const auto extra_per_ucc = ucc_count ? (yw::get<V>(size) - min_primary) / float(ucc_count) : 0.0f;
-      float offset = 0.0f;
+      float2 extra_per_ucc = size;
+      float2 offset{};
+      if (yw::get<V>(ucc_count))
+        yw::get<V>(extra_per_ucc) = yw::max(yw::get<V>(size) - min_primary, 0.0f) / yw::get<V>(ucc_count);
+      // print("size: {}, min_primary: {}, extra_per_ucc: {}", size, min_primary, extra_per_ucc);
       for (const auto& cid : controls)
         if (const auto csp = system::slot_address<control>(cid)) {
-          const auto [demand, ucc] = csp->demand_survey();
-          if constexpr (V) {
-            const auto control_size = float2(size.x, demand.y + ucc.y * extra_per_ucc);
-            if (csp->visible) csp->draw({pos.x, pos.y + offset}, control_size);
-            offset += control_size.y;
-          } else {
-            const auto control_size = float2(demand.x + ucc.x * extra_per_ucc, size.y);
-            if (csp->visible) csp->draw({pos.x + offset, pos.y}, control_size);
-            offset += control_size.x;
-          }
+          const auto min_size = csp->demand_survey();
+          auto control_size = size;
+          yw::get<V>(control_size) = yw::get<V>((uint2::fill(1) - csp->ucc) * min_size + csp->ucc * extra_per_ucc);
+          if (yw::get<V>(csp->ucc)) yw::get<V>(control_size) += yw::get<V>(min_size);
+          // print("csp: {:x}, pos: {}, offset: {}, ucc: {}, min_size: {}, control_size: {}", (size_t)csp, pos, offset, csp->ucc, min_size, control_size);
+          if (csp->visible) csp->draw(pos + offset, control_size);
+          yw::get<V>(offset) += yw::get<V>(control_size);
         }
     }
 
-    template<bool V> tuple<float2, uint2> demand_survey() const noexcept {
-      tuple<float2, uint2> result;
-      yw::get<!V>(result.second) = yw::get<!V>(ucc);
+    template<bool V> float2 demand_survey() const noexcept {
+      float2 result{};
+      yw::get<!V>(result) = yw::get<!V>(ucc) ? 0.0f : yw::get<!V>(size);
       for (const auto& cid : controls)
         if (const auto csp = system::slot_address<control>(cid)) {
-          const auto [ms, ucc_] = csp->demand_survey();
-          yw::get<!V>(result.first) = yw::max(yw::get<!V>(result.first), yw::get<!V>(ms));
-          yw::get<V>(result.first) += yw::max(yw::get<V>(ms), 0.0f);
-          yw::get<!V>(result.second) &= bool(yw::get<!V>(ucc_));
-          yw::get<V>(result.second) += bool(yw::get<V>(ucc_));
+          const auto min_size = csp->demand_survey();
+          yw::get<!V>(result) = yw::max(yw::get<!V>(result), yw::get<!V>(min_size));
+          yw::get<V>(result) += yw::get<V>(min_size);
         }
-      result.first.x = yw::max(result.first.x, size.x, 0.0f) + margin.x + margin.z;
-      result.first.y = yw::max(result.first.y, size.y, 0.0f) + margin.y + margin.w;
-      yw::get<V>(result.second) *= bool(yw::get<V>(ucc)); // レイアウトの縦幅が非拘束の場合のみ有効
-      return result;
+      if (!yw::get<V>(ucc)) yw::get<V>(result) = yw::max(yw::get<V>(result), yw::get<V>(size));
+      return result + margin.xy() + margin.zw();
     }
 
   public:
@@ -59,7 +61,7 @@ public:
       for (auto cid : controls) system::uis.erase(cid);
     }
 
-    virtual tuple<float2, uint2> demand_survey() const noexcept override { return demand_survey<true>(); }
+    virtual float2 demand_survey() const noexcept override { return demand_survey<true>(); }
 
     virtual bool attach(ui::slotid ChildId) override {
       if (const auto csp = system::slot_address<control>(ChildId)) {
@@ -87,9 +89,23 @@ public:
     }
 
     virtual void draw(float2 Pos, float2 Size) override { //
-      pos = Pos + margin.xy();
-      if (ucc.x) size.x = Size.x - margin.x - margin.z;
-      if (ucc.y) size.y = Size.y - margin.y - margin.w;
+      Pos += margin.xy();
+      Size -= margin.xy() + margin.zw();
+      if (ucc.x) size.x = Size.x;
+      if (ucc.y) size.y = Size.y;
+      auto extra = Size - size;
+      pos = Pos;
+      switch (alignment) {
+      case ui::alignment::center: pos += extra * 0.5f; break;
+      case ui::alignment::left: break;
+      case ui::alignment::right: pos.x += extra.x; break;
+      case ui::alignment::top: break;
+      case ui::alignment::bottom: pos.y += extra.y; break;
+      case ui::alignment::left_top: break;
+      case ui::alignment::left_bottom: pos.y += extra.y; break;
+      case ui::alignment::right_top: pos.x += extra.x; break;
+      case ui::alignment::right_bottom: pos += extra; break;
+      }
       draw_layout<true>();
     }
 
@@ -128,14 +144,26 @@ class horizontal_layout : public layout {
 public:
   class slot : public layout::slot {
   public:
-    virtual tuple<float2, uint2> demand_survey() const noexcept override {
-      return layout::slot::demand_survey<false>();
-    }
+    virtual float2 demand_survey() const noexcept override { return layout::slot::demand_survey<false>(); }
 
     virtual void draw(float2 Pos, float2 Size) override {
-      pos = Pos + margin.xy();
-      if (ucc.x) size.x = Size.x - margin.x - margin.z;
-      if (ucc.y) size.y = Size.y - margin.y - margin.w;
+      Pos += margin.xy();
+      Size -= margin.xy() + margin.zw();
+      if (ucc.x) size.x = Size.x;
+      if (ucc.y) size.y = Size.y;
+      auto extra = Size - size;
+      pos = Pos;
+      switch (alignment) {
+      case ui::alignment::center: pos += extra * 0.5f; break;
+      case ui::alignment::left: break;
+      case ui::alignment::right: pos.x += extra.x; break;
+      case ui::alignment::top: break;
+      case ui::alignment::bottom: pos.y += extra.y; break;
+      case ui::alignment::left_top: break;
+      case ui::alignment::left_bottom: pos.y += extra.y; break;
+      case ui::alignment::right_top: pos.x += extra.x; break;
+      case ui::alignment::right_bottom: pos += extra; break;
+      }
       draw_layout<false>();
     }
   };
@@ -153,151 +181,175 @@ public:
 /// `grid_layout`は、ラジオボタンのように盾にも横にも整列させたいケースのために用意する。
 /// そのため、列数は定数であり、複数を跨ぐような配置はサポートしない。
 
-// template<size_t Columns> class grid_layout : public plain {
-// public:
-//   class slot : public plain::slot {
-//     void draw_layout(float2 Pos, float2 Size) const;
+template<size_t Columns> class grid_layout : public plain {
+public:
+  class slot : public plain::slot {
+  protected:
+    void draw_layout() const {
+      std::array<float, Columns> col_min{};
+      std::array<bool, Columns> col_ucc{};
+      std::vector<float> row_min(rows.size());
+      std::vector<bool> row_ucc(rows.size());
 
-//   protected:
-//     template<bool V> void draw_layout(float2 Pos, float2 Size) const {
-//       float min_primary = 0.0f;
-//       uint32_t ucc = 0;
-//       for (const auto& cid : controls)
-//         if (const auto csp = system::slot_address<control>(cid)) {
-//           const auto [ms, uc] = csp->require_size();
-//           min_primary += yw::max(yw::get<V>(ms), 0.0f);
-//           ucc += yw::get<V>(uc);
-//         }
-//       float offset = 0.0f;
-//       if (ucc == 0) {
-//         for (const auto& cid : controls)
-//           if (const auto csp = system::slot_address<control>(cid)) {
-//             const auto [ms, _] = csp->require_size();
-//             if constexpr (V) {
-//               const auto control_size = float2(Size.x, ms.y);
-//               if (csp->visible) csp->draw({Pos.x, Pos.y + offset}, control_size);
-//               offset += yw::max(control_size.y, 0.0f);
-//             } else {
-//               const auto control_size = float2(ms.x, Size.y);
-//               if (csp->visible) csp->draw({Pos.x + offset, Pos.y}, control_size);
-//               offset += yw::max(control_size.x, 0.0f);
-//             }
-//           }
-//       } else {
-//         const auto extra_per_ucc = yw::max((yw::get<V>(Size) - min_primary) / float(ucc), 0.0f);
-//         for (const auto& cid : controls)
-//           if (const auto csp = system::slot_address<control>(cid)) {
-//             const auto [ms, ucc] = csp->require_size();
-//             if constexpr (V) {
-//               const auto control_size = float2(Size.x, ms.y + ucc.y * extra_per_ucc);
-//               if (csp->visible) csp->draw({Pos.x, Pos.y + offset}, control_size);
-//               offset += control_size.y;
-//             } else {
-//               const auto control_size = float2(ms.x + ucc.x * extra_per_ucc, Size.y);
-//               if (csp->visible) csp->draw({Pos.x + offset, Pos.y}, control_size);
-//               offset += control_size.x;
-//             }
-//           }
-//       }
-//     }
+      for (size_t r = 0; r < rows.size(); ++r)
+        for (size_t c = 0; c < Columns; ++c)
+          if (const auto csp = system::slot_address<control>(rows[r][c])) {
+            const auto min_size = csp->demand_survey();
+            col_min[c] = yw::max(col_min[c], min_size.x);
+            row_min[r] = yw::max(row_min[r], min_size.y);
+            col_ucc[c] = col_ucc[c] || bool(csp->ucc.x);
+            row_ucc[r] = row_ucc[r] || bool(csp->ucc.y);
+          }
 
-//   public:
-//     std::vector<std::array<slotid, Columns>> rows{};
-//     size_t attached_count = 0;
+      float min_width = 0.0f;
+      float min_height = 0.0f;
+      uint32_t ucc_cols = 0;
+      uint32_t ucc_rows = 0;
+      for (size_t c = 0; c < Columns; ++c) {
+        min_width += col_min[c];
+        ucc_cols += uint32_t(col_ucc[c]);
+      }
+      for (size_t r = 0; r < rows.size(); ++r) {
+        min_height += row_min[r];
+        ucc_rows += uint32_t(row_ucc[r]);
+      }
 
-//     virtual ~slot() noexcept {
-//       make_messy();
-//       dying = true;
-//       for (auto& row : controls)
-//         for (auto cid : row) system::uis.erase(cid);
-//     }
+      const float extra_per_col = ucc_cols ? yw::max(size.x - min_width, 0.0f) / ucc_cols : 0.0f;
+      const float extra_per_row = ucc_rows ? yw::max(size.y - min_height, 0.0f) / ucc_rows : 0.0f;
 
-//     virtual tuple<float2, uint2> require_size() const noexcept override {
-//       tuple<float2, uint2> result{};
-//       std::array<tuple<float, bool>, Columns> r{};
-//       for (const auto& row : rows) {
-//         float h = 0.0f;
-//         bool uc = false;
-//         for (size_t i = 0; i < Columns; ++i)
-//           if (const auto csp = system::slot_address<control>(row[i])) {
-//             const auto [ms, uc] = csp->require_size();
-//             r[i].first = yw::max(r[i].first, ms.x);
-//             r[i].second &= bool(uc.x);
-//             h = yw::max(h, ms.y);
-//             uc &= bool(uc.y);
-//           }
-//         result.first.y += h;
-//         result.second.y += uc; // ucな行の数
-//       }
-//       for (size_t i = 0; i < Columns; ++i) {
-//         result.first.x += r[i].first;
-//         result.second.x += r[i].second; // ucな列の数
-//       }
-//       return result;
-//     }
+      std::array<float, Columns> col_size{};
+      std::vector<float> row_size(rows.size());
+      for (size_t c = 0; c < Columns; ++c) col_size[c] = col_min[c] + (col_ucc[c] ? extra_per_col : 0.0f);
+      for (size_t r = 0; r < rows.size(); ++r) row_size[r] = row_min[r] + (row_ucc[r] ? extra_per_row : 0.0f);
 
-//     virtual bool attach(ui::slotid ChildId) override {
-//       const auto row = count / Columns;
-//       const auto col = count % Columns;
-//       if (row >= rows.size()) rows.resize(row + 1);
-//       if (const auto csp = system::slot_address<control>(ChildId)) {
-//         ++attached_count;
-//         rows[row][col] = ChildId;
-//         csp->id = ChildId;
-//         csp->layout_id = id;
-//         csp->window_id = window_id;
-//         make_messy();
-//       }
-//       return true;
-//     }
+      float yoff = 0.0f;
+      for (size_t r = 0; r < rows.size(); ++r) {
+        float xoff = 0.0f;
+        for (size_t c = 0; c < Columns; ++c)
+          if (const auto csp = system::slot_address<control>(rows[r][c])) {
+            const auto control_size = float2(col_size[c], row_size[r]);
+            if (csp->visible) csp->draw(pos + float2(xoff, yoff), control_size);
+            xoff += col_size[c];
+          } else xoff += col_size[c];
+        yoff += row_size[r];
+      }
+    }
 
-//     virtual void detach(ui::slotid ChildId) override {
-//       for (auto& row : rows)
-//         for (auto& cid : row)
-//           if (cid == ChildId) cid = {};
-//       --attached_count;
-//       make_messy();
-//     }
+  public:
+    slot() noexcept { ucc = {true, true}; }
 
-//     virtual slotid hit_test(float2 Pt) const noexcept override {
-//       if (!visible) return {};
-//       if (Pt.x < last_rect.x || Pt.y < last_rect.y || Pt.x > last_rect.z || Pt.y > last_rect.w) return {};
-//       for (const auto& row : rows)
-//         for (const auto& cid : row)
-//           if (const auto csp = system::slot_address<control>(cid); csp && csp->visible)
-//             if (const auto hit = csp->hit_test(Pt)) return hit;
-//       return {};
-//     }
+    std::vector<std::array<slotid, Columns>> rows{};
+    size_t attached_count = 0;
 
-//     virtual void draw() const override {
-//       const auto lr_pos = last_rect.xy();
-//       const auto lr_size = last_rect.zw() - lr_pos;
-//       draw_plain(lr_pos, lr_size);
-//       for ()
-//       // for (const auto& cid : controls)
-//       //   if (const auto csp = system::slot_address<control>(cid); csp && csp->visible) csp->draw();
-//     }
+    virtual ~slot() noexcept {
+      make_messy();
+      dying = true;
+      for (auto& row : rows)
+        for (auto cid : row) system::uis.erase(cid);
+    }
 
-//     virtual slotid next_tab_stop(slotid Current, bool Forward, bool& Found) override {
-//       if (Forward) {
-//         for (const auto cid : controls)
-//           if (const auto csp = system::slot_address<control>(cid))
-//             if (const auto hit = csp->next_tab_stop(Current, Forward, Found)) return hit;
-//       } else {
-//         for (const auto cid : controls | std::views::reverse)
-//           if (const auto csp = system::slot_address<control>(cid))
-//             if (const auto hit = csp->next_tab_stop(Current, Forward, Found)) return hit;
-//       }
-//       return {};
-//     }
-//   };
+    virtual float2 demand_survey() const noexcept override {
+      std::array<float, Columns> col_min{};
+      std::vector<float> row_min(rows.size());
+      for (size_t r = 0; r < rows.size(); ++r)
+        for (size_t c = 0; c < Columns; ++c)
+          if (const auto csp = system::slot_address<control>(rows[r][c])) {
+            const auto min_size = csp->demand_survey();
+            col_min[c] = yw::max(col_min[c], min_size.x);
+            row_min[r] = yw::max(row_min[r], min_size.y);
+          }
 
-//   grid_layout() noexcept = default;
+      float2 result{};
+      for (size_t c = 0; c < Columns; ++c) result.x += col_min[c];
+      for (size_t r = 0; r < rows.size(); ++r) result.y += row_min[r];
+      if (!ucc.x) result.x = yw::max(result.x, size.x);
+      if (!ucc.y) result.y = yw::max(result.y, size.y);
+      return result + margin.xy() + margin.zw();
+    }
 
-//   grid_layout(derived_from<unknown> auto& Layout) {
-//     if (auto res = create_control<grid_layout>(Layout)) _id = *res;
-//   }
+    virtual bool attach(ui::slotid ChildId) override {
+      const auto row = attached_count / Columns;
+      const auto col = attached_count % Columns;
+      if (row >= rows.size()) rows.resize(row + 1);
+      if (const auto csp = system::slot_address<control>(ChildId)) {
+        ++attached_count;
+        rows[row][col] = ChildId;
+        csp->id = ChildId;
+        csp->layout_id = id;
+        csp->window_id = window_id;
+        make_messy();
+      }
+      return true;
+    }
 
-//   using plain::operator bool;
-// };
+    virtual void detach(ui::slotid ChildId) override {
+      for (auto& row : rows)
+        for (auto& cid : row)
+          if (cid == ChildId) cid = {};
+      if (attached_count) --attached_count;
+      make_messy();
+    }
+
+    virtual slotid hit_test(float2 Pt) const noexcept override {
+      if (!visible) return {};
+      if (Pt.x < pos.x || Pt.y < pos.y || Pt.x > pos.x + size.x || Pt.y > pos.y + size.y) return {};
+      for (const auto& row : rows)
+        for (const auto& cid : row)
+          if (const auto csp = system::slot_address<control>(cid); csp && csp->visible)
+            if (const auto hit = csp->hit_test(Pt)) return hit;
+      return {};
+    }
+
+    virtual void draw(float2 Pos, float2 Size) override {
+      Pos += margin.xy();
+      Size -= margin.xy() + margin.zw();
+      if (ucc.x) size.x = Size.x;
+      if (ucc.y) size.y = Size.y;
+      auto extra = Size - size;
+      pos = Pos;
+      switch (alignment) {
+      case ui::alignment::center: pos += extra * 0.5f; break;
+      case ui::alignment::left: break;
+      case ui::alignment::right: pos.x += extra.x; break;
+      case ui::alignment::top: break;
+      case ui::alignment::bottom: pos.y += extra.y; break;
+      case ui::alignment::left_top: break;
+      case ui::alignment::left_bottom: pos.y += extra.y; break;
+      case ui::alignment::right_top: pos.x += extra.x; break;
+      case ui::alignment::right_bottom: pos += extra; break;
+      }
+      draw_layout();
+    }
+
+    virtual void draw() const override {
+      draw_plain(pos, size);
+      for (const auto& row : rows)
+        for (const auto cid : row)
+          if (const auto csp = system::slot_address<control>(cid); csp && csp->visible) csp->draw();
+    }
+
+    virtual slotid next_tab_stop(slotid Current, bool Forward, bool& Found) override {
+      if (Forward) {
+        for (const auto& row : rows)
+          for (const auto cid : row)
+            if (const auto csp = system::slot_address<control>(cid))
+              if (const auto hit = csp->next_tab_stop(Current, Forward, Found)) return hit;
+      } else {
+        for (const auto& row : rows | std::views::reverse)
+          for (const auto cid : row | std::views::reverse)
+            if (const auto csp = system::slot_address<control>(cid))
+              if (const auto hit = csp->next_tab_stop(Current, Forward, Found)) return hit;
+      }
+      return {};
+    }
+  };
+
+  grid_layout() noexcept = default;
+
+  grid_layout(derived_from<unknown> auto& Layout) {
+    if (auto res = create_control<grid_layout<Columns>>(Layout)) _id = *res;
+  }
+
+  using plain::operator bool;
+};
 } // namespace yw::ui

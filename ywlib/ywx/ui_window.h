@@ -104,15 +104,13 @@ public:
     virtual void draw() const override {
       const auto lsp = system::slot_address<ui::control>(layout_id);
       if (!lsp) return;
-      const auto [rs, _] = lsp->demand_survey();
-      if (size.x < rs.x || size.y < rs.y) {
-        const auto sz = int2(yw::max(size.x, rs.x), yw::max(size.y, rs.y)) + margin.xy() + margin.zw();
+      const auto min_size = lsp->demand_survey();
+      if (size.x < min_size.x || size.y < min_size.y) {
+        const auto sz = int2(yw::max(size.x, min_size.x), yw::max(size.y, min_size.y)) + margin.xy() + margin.zw();
         ::SetWindowPos(hwnd, nullptr, 0, 0, sz.x, sz.y, SWP_NOZORDER | SWP_NOMOVE);
       }
       if (auto d = manual_draw ? rendertarget.begin_draw() : rendertarget.begin_draw(bg_color)) {
-        print(source());
-        if (const auto lsp = system::uis.get(layout_id)) {
-          print(source());
+        if (const auto lsp = system::slot_address<ui::control>(layout_id)) {
           if (messy) lsp->draw({}, float2(size));
           else if (dirty) lsp->draw();
         }

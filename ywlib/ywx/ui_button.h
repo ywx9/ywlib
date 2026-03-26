@@ -1,41 +1,81 @@
-// #pragma once
-// #include "ywx/ui_plain.h"
-// #include "ywx/ui_label.h"
+#pragma once
+#include "ywx/ui_plain.h"
+#include "ywx/ui_label.h"
 
-// namespace yw::ui {
+namespace yw::ui {
 
-// class button : public clickable_plain {
-// public:
-//   class slot : public clickable_plain::slot {
-//   public:
-//     mutable label::part text;
+class button : public clickable_plain {
+public:
+  class slot : public clickable_plain::slot {
+  public:
+    yw::text text;
+    color text_color = colors::black;
+    float4 padding = float4::fill(5.0f);
 
-//     virtual void draw(float2 Pos, float2 Size) const override {
-//       clickable_plain::slot::draw(Pos, Size);
-//       text.size(last_rect.zw() - last_rect.xy());
-//       text.draw(last_rect.xy());
-//     }
+    virtual float2 demand_survey() const noexcept {
+      const auto tsz = text.size() + padding.xy() + padding.zw();
+      auto result = float2(ucc.x ? 0.0f : size.x, ucc.y ? 0.0f : size.y);
+      result.x = yw::max(result.x, minimum_size.x, tsz.x);
+      result.y = yw::max(result.y, minimum_size.y, tsz.y);
+      return result + margin.xy() + margin.zw();
+    }
 
-//     virtual void draw() const override {
-//       clickable_plain::slot::draw();
-//       text.draw(last_rect.xy());
-//     }
-//   };
+    virtual void draw(float2 Pos, float2 Size) override {
+      Pos += margin.xy();
+      Size -= margin.xy() + margin.zw();
+      const auto min_size = demand_survey() - margin.xy() - margin.zw();
+      size.x = ucc.x ? Size.x : yw::max(size.x, min_size.x);
+      size.y = ucc.y ? Size.y : yw::max(size.y, min_size.y);
+      const auto extra = Size - size;
+      pos = Pos;
+      switch (alignment) {
+      case ui::alignment::center: pos += extra * 0.5f; break;
+      case ui::alignment::left: break;
+      case ui::alignment::right: pos.x += extra.x; break;
+      case ui::alignment::top: break;
+      case ui::alignment::bottom: pos.y += extra.y; break;
+      case ui::alignment::left_top: break;
+      case ui::alignment::left_bottom: pos.y += extra.y; break;
+      case ui::alignment::right_top: pos.x += extra.x; break;
+      case ui::alignment::right_bottom: pos += extra; break;
+      }
+      draw();
+    }
 
-//   auto& text() { return unsafe_get(&slot::text); }
-//   const auto& text() const { return unsafe_get(&slot::text); }
+    virtual void draw() const override {
+      plain::slot::draw();
+      brush.color(text_color);
+      const auto tsz = text.size() + padding.xy() + padding.zw();
+      draw_text(pos + padding.xy() + (size - tsz) * 0.5f, text);
+    }
+  };
 
-//   bool pressed() const {
-//     if (auto csp = system::slot_address<slot>(_id)) {
-//       const auto ck = csp->captured_key;
-//       return ck == key::lbutton || ck == key::enter || ck == key::space;
-//     } else return false;
-//   }
+  using clickable_plain::operator bool;
+  button() noexcept = default;
+  button(derived_from<unknown> auto& Layout) {
+    if (auto res = create_control<button>(Layout)) _id = *res;
+    if (const auto csp = system::slot_address<slot>(_id))
+      if (auto t = yw::text::create(L"")) csp->text = std::move(*t);
+  }
 
-//   using clickable_plain::operator bool;
-//   button() noexcept = default;
-//   button(derived_from<unknown> auto& Layout) {
-//     if (auto res = create_control<button>(Layout)) _id = *res;
-//   }
-// };
-// } // namespace yw::ui
+  const auto& text() const { return unsafe_get(&slot::text); }
+  const auto& text_color() const { return unsafe_get(&slot::text_color); }
+  const auto& padding() const { return unsafe_get(&slot::padding); }
+
+  auto& text() {
+    if (const auto csp = system::slot_address<slot>(_id)) {
+      csp->make_messy();
+      return csp->text;
+    } else throw std::logic_error("Invalid member access");
+  }
+
+  template<stringable S> void text(S&& Text) {
+    if (const auto csp = system::slot_address<slot>(_id)) {
+      csp->make_messy();
+      csp->text(unicode<wchar_t>(static_cast<S&&>(Text)));
+    }
+  }
+  void text_color(const color& c) { safe_set(&slot::text_color, c); }
+  void padding(const float4& p) { safe_set(&slot::padding, p); }
+};
+} // namespace yw::ui

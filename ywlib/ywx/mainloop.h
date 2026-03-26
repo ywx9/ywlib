@@ -92,7 +92,7 @@ inline void wm_size(ui::window::slot& ws, WPARAM, LPARAM lp) {
     lsp->bg_color = colors::transparent;
     lsp->border_color = colors::transparent;
   }
-  lsp->size = float2(ws.size);
+  // lsp->size = float2(ws.size);
   ws.messy = true;
 }
 
