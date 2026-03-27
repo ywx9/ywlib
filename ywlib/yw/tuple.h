@@ -324,6 +324,17 @@ template<> struct tuple<> {
 };
 
 template<typename... Ts> tuple(Ts...) -> tuple<Ts...>;
+
+//////////////////////////////////////// MARK: apply_r
+
+template<typename R> inline constexpr auto apply_r =
+  []<typename Fn, typename... Tps>(Fn&& fn, Tps&&... tps) -> R
+  requires requires {
+    requires (extent<R> == extent<Tps> && ...);
+  } {
+    return static_cast<Fn&&>(fn)(static_cast<Tps&&>(tps)...);
+  };
+
 } // namespace yw
 
 //////////////////////////////////////// MARK: std

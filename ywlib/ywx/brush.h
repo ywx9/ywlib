@@ -8,6 +8,7 @@ inline class {
     ID2D1SolidColorBrush* solid_brush{};
     ID2D1StrokeStyle* stroke_style{};
     ID2D1StrokeStyle* dashed_stroke_style{};
+    bool dashed = false;
     bool initialized = false;
 
     ~pointers() {
@@ -19,6 +20,7 @@ inline class {
   } p{};
 
 public:
+
   std::expected<void, error_trace> initialize() {
     if (p.initialized) return {};
     if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
@@ -49,6 +51,16 @@ public:
     p.solid_brush->SetColor(reinterpret_cast<const D2D1_COLOR_F*>(&c));
   }
 
+  bool dashed() {
+    if (!initialize()) return false;
+    return p.dashed;
+  }
+
+  void dashed(bool d) {
+    if (!initialize()) return;
+    p.dashed = d;
+  }
+
   ID2D1SolidColorBrush* d2d_brush() {
     if (!initialize()) return nullptr;
     return p.solid_brush;
@@ -56,12 +68,7 @@ public:
 
   ID2D1StrokeStyle* d2d_stroke() {
     if (!initialize()) return nullptr;
-    return p.stroke_style;
-  }
-
-  ID2D1StrokeStyle* d2d_dashed_stroke() {
-    if (!initialize()) return nullptr;
-    return p.dashed_stroke_style;
+    return p.dashed ? p.dashed_stroke_style : p.stroke_style;
   }
 } brush;
 } // namespace yw

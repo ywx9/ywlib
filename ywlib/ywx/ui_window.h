@@ -104,7 +104,7 @@ public:
     virtual void draw() const override {
       const auto lsp = system::slot_address<ui::control>(layout_id);
       if (!lsp) return;
-      const auto min_size = lsp->demand_survey();
+      const auto min_size = lsp->get_minimum_draw_size();
       if (size.x < min_size.x || size.y < min_size.y) {
         const auto sz = int2(yw::max(size.x, min_size.x), yw::max(size.y, min_size.y)) + margin.xy() + margin.zw();
         ::SetWindowPos(hwnd, nullptr, 0, 0, sz.x, sz.y, SWP_NOZORDER | SWP_NOMOVE);
@@ -115,12 +115,8 @@ public:
           else if (dirty) lsp->draw();
         }
         if (const auto fcsp = system::slot_address<ui::control>(focused_control)) {
-          const auto off = float2::fill(focus_ring.offset);
           brush.color(focus_ring.color);
-          const auto sz = fcsp->size + off * 2;
-          const auto pos = fcsp->pos - off;
-          const auto radius = fcsp->radius + off;
-          draw_round_rectangle(pos, sz, radius, focus_ring.width);
+          fcsp->draw_focus_ring(focus_ring.offset, focus_ring.width);
         }
       } else throw unexpected_error(d.error());
       return;

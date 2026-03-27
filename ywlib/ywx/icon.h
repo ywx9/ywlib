@@ -8,12 +8,9 @@ class icon {
   std::variant<std::monostate, bitmap, svgpath> _icon;
 
 public:
-  color fill_color = colors::transparent;
-  color stroke_color = colors::black;
-  float stroke_width = 1.0f;
-
   icon() noexcept = default;
-  explicit icon(std::variant<std::monostate, bitmap, svgpath> Icon) : _icon(std::move(Icon)) {}
+  icon(bitmap Icon) : _icon(std::move(Icon)) {}
+  icon(svgpath Icon) : _icon(std::move(Icon)) {}
 
   explicit operator bool() const noexcept {
     return std::visit(
@@ -37,34 +34,58 @@ public:
   const svgpath& get_svgpath() const { return std::get<svgpath>(_icon); }
 };
 
+//////////////////////////////////////// MARK: draw/stroke_icon
+
+/// アイコンを描画する。SVGパス保持なら塗潰しを行う。
 inline std::expected<void, error_trace> draw_icon(float2 Pos, float2 Size, const icon& Icon) {
   if (Icon.is_bitmap()) {
     if (auto res = draw_bitmap(Pos, Size, Icon.get_bitmap()); !res) return unexpected_error(res.error());
   } else if (Icon.is_svgpath()) {
-    brush.color(Icon.fill_color);
     if (auto res = fill_svgpath(Pos, Size, Icon.get_svgpath()); !res) return unexpected_error(res.error());
-    brush.color(Icon.stroke_color);
-    if (auto res = stroke_svgpath(Pos, Size, Icon.get_svgpath(), Icon.stroke_width); !res)
-      return unexpected_error(res.error());
   }
   return {};
 }
 
+/// アイコンを描画する。SVGパス保持なら塗潰しを行う。
 inline std::expected<void, error_trace> draw_icon(float2 Pos, float1 Scale, const icon& Icon) {
   const auto sz = Icon.size() * Scale.x;
   if (auto res = draw_icon(Pos, sz, Icon)) return {};
   else return unexpected_error(res.error());
 }
 
+/// アイコンを描画する。SVGパス保持なら塗潰しを行う。
 inline std::expected<void, error_trace> draw_icon(float2 Pos, const icon& Icon) {
   if (Icon.is_bitmap()) {
     if (auto res = draw_bitmap(Pos, Icon.get_bitmap()); !res) return unexpected_error(res.error());
   } else if (Icon.is_svgpath()) {
-    brush.color(Icon.fill_color);
     if (auto res = fill_svgpath(Pos, Icon.get_svgpath()); !res) return unexpected_error(res.error());
-    brush.color(Icon.stroke_color);
-    if (auto res = stroke_svgpath(Pos, Icon.get_svgpath(), Icon.stroke_width); !res)
-      return unexpected_error(res.error());
+  }
+  return {};
+}
+
+/// アイコンの輪郭を描画する。ビットマップ保持なら矩形を描く。
+inline std::expected<void, error_trace> stroke_icon(float2 Pos, float2 Size, const icon& Icon, float1 width = 1.0f) {
+  if (Icon.is_bitmap()) {
+    if (auto res = draw_rectangle(Pos, Size, width); !res) return unexpected_error(res.error());
+  } else if (Icon.is_svgpath()) {
+    if (auto res = stroke_svgpath(Pos, Size, Icon.get_svgpath(), width); !res) return unexpected_error(res.error());
+  }
+  return {};
+}
+
+/// アイコンの輪郭を描画する。ビットマップ保持なら矩形を描く。
+inline std::expected<void, error_trace> stroke_icon(float2 Pos, float1 Scale, const icon& Icon, float1 width = 1.0f) {
+  const auto sz = Icon.size() * Scale.x;
+  if (auto res = stroke_icon(Pos, sz, Icon, width)) return {};
+  else return unexpected_error(res.error());
+}
+
+/// アイコンの輪郭を描画する。ビットマップ保持なら矩形を描く。
+inline std::expected<void, error_trace> stroke_icon(float2 Pos, const icon& Icon, float1 width = 1.0f) {
+  if (Icon.is_bitmap()) {
+    if (auto res = draw_rectangle(Pos, Icon.get_bitmap().size(), width); !res) return unexpected_error(res.error());
+  } else if (Icon.is_svgpath()) {
+    if (auto res = stroke_svgpath(Pos, Icon.get_svgpath(), width); !res) return unexpected_error(res.error());
   }
   return {};
 }

@@ -16,6 +16,12 @@ public:
   explicit operator IDWriteTextFormat*() const& noexcept { return _text_format(); }
   explicit operator IDWriteTextLayout*() const& noexcept { return _p.get(); }
 
+  template<stringable S> text& operator=(S&& Text) {
+    if (!*this) *this = assume(create(static_cast<S&&>(Text)));
+    else this->operator()(static_cast<S&&>(Text));
+    return *this;
+  }
+
   template<stringable S> static std::expected<text, error_trace> create(S&& Text) {
     if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
     text t{};

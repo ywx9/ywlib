@@ -69,25 +69,12 @@ inline std::expected<void, error_trace> draw_line(float2 p0, float2 p1, float1 w
   return {};
 }
 
-inline std::expected<void, error_trace> draw_dashed_line(float2 p0, float2 p1, float1 width = 1.0f) {
-  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
-  d2d.context()->DrawLine({p0.x, p0.y}, {p1.x, p1.y}, brush.d2d_brush(), width.x, brush.d2d_dashed_stroke());
-  return {};
-}
-
 /////////////////////////////////////// MARK: draw/fill_rectangle
 
 inline std::expected<void, error_trace> draw_rectangle(float2 pos, float2 size, float1 border_width = 1.0f) {
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   D2D1_RECT_F rect = D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y);
   d2d.context()->DrawRectangle(&rect, brush.d2d_brush(), border_width.x, brush.d2d_stroke());
-  return {};
-}
-
-inline std::expected<void, error_trace> draw_dashed_rectangle(float2 pos, float2 size, float1 border_width = 1.0f) {
-  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
-  D2D1_RECT_F rect = D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y);
-  d2d.context()->DrawRectangle(&rect, brush.d2d_brush(), border_width.x, brush.d2d_dashed_stroke());
   return {};
 }
 
@@ -107,14 +94,6 @@ inline std::expected<void, error_trace> draw_round_rectangle(
   return {};
 }
 
-inline std::expected<void, error_trace> draw_dashed_round_rectangle(
-  float2 pos, float2 size, float2 radius, float1 border_width = 1.0f) {
-  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
-  D2D1_ROUNDED_RECT r{D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
-  d2d.context()->DrawRoundedRectangle(&r, brush.d2d_brush(), border_width.x, brush.d2d_dashed_stroke());
-  return {};
-}
-
 inline std::expected<void, error_trace> fill_round_rectangle(float2 pos, float2 size, float2 radius) {
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   D2D1_ROUNDED_RECT r{D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
@@ -128,13 +107,6 @@ inline std::expected<void, error_trace> draw_ellipse(float2 center, float2 radiu
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   D2D1_ELLIPSE ellipse = D2D1::Ellipse({center.x, center.y}, radius.x, radius.y);
   d2d.context()->DrawEllipse(&ellipse, brush.d2d_brush(), border_width.x, brush.d2d_stroke());
-  return {};
-}
-
-inline std::expected<void, error_trace> draw_dashed_ellipse(float2 center, float2 radius, float1 border_width = 1.0f) {
-  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
-  D2D1_ELLIPSE ellipse = D2D1::Ellipse({center.x, center.y}, radius.x, radius.y);
-  d2d.context()->DrawEllipse(&ellipse, brush.d2d_brush(), border_width.x, brush.d2d_dashed_stroke());
   return {};
 }
 
