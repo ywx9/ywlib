@@ -155,7 +155,114 @@ public:
   }
 };
 
-class grid_layout : public control {};
+//////////////////////////////////////// MARK: grid_layout
+
+template<size_t Columns> class grid_layout : public control {
+public:
+  class slot : public control::slot {
+  public:
+    yw::background background = colors::transparent;
+    color border_color = colors::transparent;
+    float border_width = 1.0f;
+    float4 padding = float4::fill(5.0f);
+
+    std::vector<std::array<slotid, Columns>> rows{};
+    size_t attach_count{};
+
+    virtual ~slot() noexcept override {
+      try {
+        make_messy();
+        dying = true;
+        for (const auto& row : rows)
+          for (const auto& cid : row) system::uis.erase(cid);
+      } catch (...) {}
+    }
+
+    virtual bool attach(ui::slotid cid) override {
+      const auto row = attach_count / Columns;
+      const auto col = attach_count % Columns;
+      if (row >= rows.size()) rows.resize(row + 1);
+      if (const auto csp = system::slot_address<control>(cid)) {
+        ++attach_count;
+        rows[row][col] = cid;
+        csp->id = cid;
+        csp->layout_id = id;
+        csp->window_id = window_id;
+        make_messy();
+      }
+      return true;
+    }
+
+    virtual void detach(ui::slotid cid) override {
+      for (auto& row : rows)
+        for (auto& slot : row)
+          if (slot == cid) slot = {};
+      if (attach_count > 0) --attach_count;
+      make_messy();
+    }
+
+    virtual slotid hit_test(float2 Pt) const noexcept override {
+      if (!visible) return {};
+      if (Pt.x < pos.x || Pt.y < pos.y || Pt.x > pos.x + size.x || Pt.y > pos.y + size.y) return {};
+      for (const auto& row : rows)
+        for (const auto& cid : row)
+          if (const auto csp = system::slot_address<control>(cid))
+            if (const auto hit = csp->hit_test(Pt)) return csp->visible ? hit : slotid{};
+      return {};
+    }
+
+    virtual slotid next_tab_stop(slotid Current, bool Forward, bool& Found) override {
+      if (Forward) {
+        for (const auto& row : rows)
+          for (const auto& cid : row)
+            if (const auto csp = system::slot_address<control>(cid))
+              if (const auto hit = csp->next_tab_stop(Current, Forward, Found)) return hit;
+      } else {
+        for (const auto& row : rows | std::views::reverse)
+          for (const auto& cid : row | std::views::reverse)
+            if (const auto csp = system::slot_address<control>(cid))
+              if (const auto hit = csp->next_tab_stop(Current, Forward, Found)) return hit;
+      }
+      return {};
+    }
+
+    virtual void update_size() noexcept override {
+      //
+    }
+
+    virtual void draw(float2 Pos, float2 Area, bool Visible) override {
+      //
+    }
+
+    virtual void draw() const override {
+      if (!visible) return;
+      draw_background(pos, size, background);
+      brush.color(border_color);
+      draw_round_rectangle(pos, size, radius, border_width);
+      for (const auto& row : rows)
+        for (const auto& cid : row)
+          if (const auto csp = system::slot_address<control>(cid)) csp->draw();
+    }
+  };
+
+  using control::operator bool;
+  layout() noexcept = default;
+  layout(derived_from<unknown> auto& Layout) {
+    if (auto res = create_control<layout>(Layout)) _id = *res;
+  }
+
+  const auto& background() const { return unsafe_get(&slot::background); }
+  void background(yw::background bg) { safe_set(&slot::background, std::move(bg)); }
+
+  const auto& border_color() const { return unsafe_get(&slot::border_color); }
+  void border_color(const color& c) { safe_set(&slot::border_color, c); }
+
+  const auto& border_width() const { return unsafe_get(&slot::border_width); }
+  void border_width(float1 w) { safe_set(&slot::border_width, w.x); }
+
+  const auto& padding() const { return unsafe_get(&slot::padding); }
+  void padding(const float4& p) { safe_set_size(&slot::padding, p); }
+};
 } // namespace yw::ui
 
 // //////////////////////////////////////// MARK: grid_layout
