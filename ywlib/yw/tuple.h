@@ -43,7 +43,8 @@ template<typename S, size_t... Is> struct _extracting_indices : std::type_identi
 template<bool... Bs> struct _extracting_indices<sequence<Bs...>>
   : _extracting_indices<sequence<Bs...>, 0, sizeof...(Bs)> {};
 template<bool... Bs, size_t I, size_t N, size_t... Is> struct _extracting_indices<sequence<Bs...>, I, N, Is...>
-  : select_type<select_value<I, Bs...>, _extracting_indices<sequence<Bs...>, I + 1, N, Is..., I>,
+  : select_type<
+      select_value<I, Bs...>, _extracting_indices<sequence<Bs...>, I + 1, N, Is..., I>,
       _extracting_indices<sequence<Bs...>, I + 1, N, Is...>> {};
 template<bool... Bs, size_t N, size_t... Is> struct _extracting_indices<sequence<Bs...>, N, N, Is...>
   : std::type_identity<sequence<Is...>> {};
@@ -72,7 +73,9 @@ template<auto... Vs> struct sequence {
   template<size_t I, is_sequence Sq> requires(I <= sizeof...(Vs))
   using insert = typename fore<I>::template append<Sq>::template append<back<sizeof...(Vs) - I>>;
   template<template<auto...> typename Tm> using expand = Tm<Vs...>;
-  template<size_t I> requires(I < sizeof...(Vs)) constexpr const auto&& get() const noexcept { return std::move(at<I>); }
+  template<size_t I> requires(I < sizeof...(Vs)) constexpr const auto&& get() const noexcept {
+    return std::move(at<I>);
+  }
 };
 
 //////////////////////////////////////// MARK: typepack
@@ -114,8 +117,9 @@ template<typename... Ts> struct typepack {
 
 inline constexpr struct {
   struct internal {
-    template<typename F, typename Tp, size_t... Is> static constexpr decltype(auto) operator()(F&& f, Tp&& t,
-      sequence<Is...>) noexcept(noexcept(invoke(static_cast<F&&>(f), yw::get<Is>(static_cast<Tp&&>(t))...)))
+    template<typename F, typename Tp, size_t... Is>
+    static constexpr decltype(auto) operator()(F&& f, Tp&& t, sequence<Is...>) noexcept(
+      noexcept(invoke(static_cast<F&&>(f), yw::get<Is>(static_cast<Tp&&>(t))...)))
       requires invocable<F, decltype(yw::get<Is>(static_cast<Tp&&>(t)))...> {
       return invoke(static_cast<F&&>(f), yw::get<Is>(static_cast<Tp&&>(t))...);
     }
@@ -325,15 +329,16 @@ template<> struct tuple<> {
 
 template<typename... Ts> tuple(Ts...) -> tuple<Ts...>;
 
-//////////////////////////////////////// MARK: apply_r
+//////////////////////////////////////// MARK: vapply_r
 
-template<typename R> inline constexpr auto apply_r =
-  []<typename Fn, typename... Tps>(Fn&& fn, Tps&&... tps) -> R
-  requires requires {
-    requires (extent<R> == extent<Tps> && ...);
-  } {
-    return static_cast<Fn&&>(fn)(static_cast<Tps&&>(tps)...);
-  };
+template<typename R> inline constexpr auto vapply_r = []<typename Fn, typename... Tps>(Fn&& fn, Tps&&... tps) -> R
+  requires requires { requires((extent<R> == extent<Tps>) && ...); }
+{
+  constexpr auto foo = []<size_t I>(constant<I>, Fn & fn, Tps & ... tps) { return yw::invoke(fn, yw::get<I>(tps)...); };
+  return [&foo]<size_t... Is>(sequence<Is...>, Fn & fn, Tps & ... tps) -> R {
+    return construct<R>(foo(constant<Is>{}, fn, tps...)...);
+  }(make_indices_for<R>{}, fn, tps...);
+};
 
 } // namespace yw
 

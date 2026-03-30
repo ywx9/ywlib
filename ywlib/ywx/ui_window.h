@@ -56,8 +56,8 @@ public:
     std::wstring title{};
     mutable bitmap rendertarget{};
     comptr<IDXGISwapChain1> swapchain{};
+    yw::background background = colors::white;
     stopwatch timer{};
-    color bg_color = colors::white;
     slotid layout_id{};
     slotid focused_control{};
     slotid hovered_control{};
@@ -68,9 +68,8 @@ public:
     mutable bool messy = true;
     bool resizing = false;
     bool tracking = false;
-    bool manual_draw = false;
+    bool manually_draw = false;
 
-    // key captured_key{};
     int capture_count{};
 
     struct {
@@ -104,16 +103,17 @@ public:
     virtual void draw() const override {
       const auto lsp = system::slot_address<ui::control>(layout_id);
       if (!lsp) return;
-      const auto min_size = lsp->get_minimum_draw_size();
-      if (size.x < min_size.x || size.y < min_size.y) {
-        const auto sz = int2(yw::max(size.x, min_size.x), yw::max(size.y, min_size.y)) + margin.xy() + margin.zw();
-        ::SetWindowPos(hwnd, nullptr, 0, 0, sz.x, sz.y, SWP_NOZORDER | SWP_NOMOVE);
-      }
-      if (auto d = manual_draw ? rendertarget.begin_draw() : rendertarget.begin_draw(bg_color)) {
-        if (const auto lsp = system::slot_address<ui::control>(layout_id)) {
-          if (messy) lsp->draw({}, float2(size));
-          else if (dirty) lsp->draw();
+      if (messy) {
+        lsp->update_size();
+        if (size.x < lsp->size.x || size.y < lsp->size.y) {
+          const auto sz = int2(yw::max(size.x, lsp->size.x), yw::max(size.y, lsp->size.y)) + margin.xy() + margin.zw();
+          ::SetWindowPos(hwnd, nullptr, 0, 0, sz.x, sz.y, SWP_NOZORDER | SWP_NOMOVE);
         }
+      }
+      if (auto d = rendertarget.begin_draw()) {
+        if (!manually_draw) draw_background({}, float2(size), background);
+        if (messy) lsp->draw({}, float2(size), true);
+        else if (dirty) lsp->draw();
         if (const auto fcsp = system::slot_address<ui::control>(focused_control)) {
           brush.color(focus_ring.color);
           fcsp->draw_focus_ring(focus_ring.offset, focus_ring.width);
@@ -211,7 +211,7 @@ public:
   }
 
   const std::wstring& title() const { return unsafe_get(&slot::title); }
-  template<stringable S> std::expected<void, error_trace> title(S&& Title) const {
+  template<stringable S> std::expected<void, error_trace> title(S&& Title) {
     if (auto wsp = system::slot_address<window>(_id)) {
       wsp->title = unicode<wchar_t>(static_cast<S&&>(Title));
       ::SetWindowTextW(wsp->hwnd, wsp->title.c_str());
@@ -219,10 +219,10 @@ public:
     } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
   }
 
-  const color& bg_color() const { return unsafe_get(&slot::bg_color); }
-  std::expected<void, error_trace> bg_color(color BgColor) const {
+  const auto& background() const { return unsafe_get(&slot::background); }
+  std::expected<void, error_trace> background(yw::background bg) {
     if (auto wsp = system::slot_address<window>(_id)) {
-      wsp->bg_color = BgColor;
+      wsp->background = std::move(bg);
       wsp->dirty = true;
       return {};
     } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
@@ -272,9 +272,11 @@ public:
   std::expected<drawing, error_trace> begin_draw() {
     if (const auto wsp = system::slot_address<window>(_id)) {
       wsp->dirty = true;
-      wsp->manual_draw = true;
-      if (auto d = wsp->rendertarget.begin_draw(wsp->bg_color)) return std::move(d);
-      else return unexpected_error(d.error());
+      wsp->manually_draw = true;
+      if (auto d = wsp->rendertarget.begin_draw()) {
+        draw_background({}, float2(wsp->size), wsp->background);
+        return std::move(d);
+      } else return unexpected_error(d.error());
     } else return unexpected_error(errors::invalid_operation, "window slot not found");
   }
 

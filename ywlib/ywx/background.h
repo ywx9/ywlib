@@ -25,7 +25,7 @@ public:
 inline std::expected<void, error_trace> draw_background(float2 Pos, float2 Size, const background& Bg) {
   if (Bg.is_color()) {
     brush.color(Bg.get_color());
-    draw_rectangle(Pos, Size);
+    fill_rectangle(Pos, Size);
   } else if (Bg.is_bitmap()) draw_bitmap(Pos, Size, Bg.get_bitmap());
   return {};
 }

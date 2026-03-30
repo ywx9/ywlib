@@ -3,6 +3,22 @@
 #include "ywx/tooltip.h"
 #include "ywx/ui_unknown.h"
 
+/*
+描画の仕組みを整理する。
+- `get_min_size()`:
+  そのコントロールの最小描画サイズを取得する。
+  サイズが拘束されている場合、そのサイズと`min_size`の最大値を返す。
+
+- `draw(float2 Pos, float2 Area)`:
+  コントロールを指定の位置とエリアで描画する。
+  ここで指定されるエリアは、サイズ+マージンを考慮した領域であり、必ずこれよりも大きい。
+
+- `draw()`:
+  前回描画した位置とエリア(サイズ)で描画する。
+
+レイアウト
+*/
+
 namespace yw::ui {
 
 /// コントロールの配置を指定する列挙型
@@ -71,9 +87,9 @@ public:
       };
     };
     float2 radius{5.0f, 5.0f};
-    float2 minimum_size{10.0f, 10.0f};
+    float2 min_size{10.0f, 10.0f};
     ui::alignment alignment = ui::alignment::center;
-    vector<bool, 2> ucc{true, true};
+    vector<bool, 2> constrained{false, false};
     bool visible = true, enabled = true, dying = false;
 
     std::wstring tooltip{};
@@ -94,34 +110,35 @@ public:
       return Pt.x < pos.x || Pt.y < pos.y || Pt.x > pos.x + size.x || Pt.y > pos.y + size.y ? slotid{} : id;
     }
 
-    /// 最小描画サイズを取得する
-    virtual float2 get_minimum_draw_size() const noexcept {
-      auto result = float2(ucc.x ? 0.0f : size.x, ucc.y ? 0.0f : size.y);
-      result.x = yw::max(result.x, minimum_size.x);
-      result.y = yw::max(result.y, minimum_size.y);
-      return result;
+    /// 描画の前準備として`size`を更新する
+    virtual void update_size() noexcept {
+      min_size = vapply_r<float2>(yw::max, min_size, float2(0.0f, 0.0f));
+      size = vapply_r<float2>(yw::max, min_size, size * constrained);
     }
 
-    /// コントロールの位置とサイズを更新して描画する
-    virtual void draw(float2 Pos, float2 Size) {
-      Size -= margin.xy() + margin.zw();
-      const auto min_draw_size = get_minimum_draw_size();
-      if (ucc.x) size.x = Size.x;
-      if (ucc.y) size.y = Size.y;
-      const auto extra = Size - size;
-      pos = Pos + margin.xy();
+    /// 描画サイズに余剰がある場合に配置を調整する
+    virtual void align(float2 Extra) {
+      if (Extra == float2()) return;
       switch (alignment) {
-      case ui::alignment::center: pos += extra * 0.5f; break;
+      case ui::alignment::center: pos += Extra * 0.5f; break;
       case ui::alignment::left: break;
-      case ui::alignment::right: pos.x += extra.x; break;
+      case ui::alignment::right: pos.x += Extra.x; break;
       case ui::alignment::top: break;
-      case ui::alignment::bottom: pos.y += extra.y; break;
+      case ui::alignment::bottom: pos.y += Extra.y; break;
       case ui::alignment::left_top: break;
-      case ui::alignment::left_bottom: pos.y += extra.y; break;
-      case ui::alignment::right_top: pos.x += extra.x; break;
-      case ui::alignment::right_bottom: pos += extra; break;
+      case ui::alignment::left_bottom: pos.y += Extra.y; break;
+      case ui::alignment::right_top: pos.x += Extra.x; break;
+      case ui::alignment::right_bottom: pos += Extra; break;
       }
-      draw();
+    }
+
+    /// マージンを除いた描画範囲を指定して描画する
+    virtual void draw(float2 Pos, float2 Area, bool Visible) {
+      pos = Pos + margin.xy();
+      const auto size_ = Area - margin.xy() - margin.zw();
+      size = (float2(1.0f, 1.0f) - constrained) * size_ + constrained * size;
+      align(size_ - size);
+      if (Visible && visible) draw();
     };
 
     /// 前回の描画位置に再描画する
@@ -159,7 +176,7 @@ public:
   const auto& width() const { return unsafe_get(&slot::width); }
   const auto& height() const { return unsafe_get(&slot::height); }
   const auto& radius() const { return unsafe_get(&slot::radius); }
-  const auto& minimum_size() const { return unsafe_get(&slot::minimum_size); }
+  const auto& min_size() const { return unsafe_get(&slot::min_size); }
   const auto& alignment() const { return unsafe_get(&slot::alignment); }
   const auto& visible() const { return unsafe_get(&slot::visible); }
   const auto& enabled() const { return unsafe_get(&slot::enabled); }
@@ -169,28 +186,28 @@ public:
   void margin(const float4& margin) { safe_set_size(&slot::margin, margin); }
   void size(float2 size) {
     if (const auto csp = system::slot_address<slot>(_id)) {
-      csp->ucc.x = size.x < 0.0f;
-      csp->ucc.y = size.y < 0.0f;
+      csp->constrained.x = size.x >= 0.0f;
+      csp->constrained.y = size.y >= 0.0f;
       csp->size = size;
       csp->make_messy();
     }
   }
   void width(float1 width) {
     if (const auto csp = system::slot_address<slot>(_id)) {
-      csp->ucc.x = width.x < 0.0f;
+      csp->constrained.x = width.x >= 0.0f;
       csp->size.x = width.x;
       csp->make_messy();
     }
   }
   void height(float1 height) {
     if (const auto csp = system::slot_address<slot>(_id)) {
-      csp->ucc.y = height.x < 0.0f;
+      csp->constrained.y = height.x >= 0.0f;
       csp->size.y = height.x;
       csp->make_messy();
     }
   }
   void radius(float2 radius) { safe_set(&slot::radius, radius); }
-  void minimum_size(float2 size) { safe_set_size(&slot::minimum_size, size); }
+  void min_size(float2 size) { safe_set_size(&slot::min_size, size); }
   void alignment(ui::alignment alignment) { safe_set_size(&slot::alignment, alignment); }
   void visible(bool b) { safe_set(&slot::visible, b); }
   void enabled(bool b) { safe_set(&slot::enabled, b); }

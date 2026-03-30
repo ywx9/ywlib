@@ -20,17 +20,17 @@ public:
     function<void, event::button> on_button;
     function<void, event::wheel> on_wheel;
 
-    virtual float2 get_minimum_draw_size() const noexcept {
-      const auto tsz = text.size() + padding.xy() + padding.zw();
-      auto result = float2(ucc.x ? 0.0f : size.x, ucc.y ? 0.0f : size.y);
-      result.x = yw::max(result.x, minimum_size.x, tsz.x);
-      result.y = yw::max(result.y, minimum_size.y, tsz.y);
-      return result;
+    virtual void update_size() noexcept override {
+      min_size = vapply_r<float2>(yw::max, min_size, float2());
+      const auto inner = text.size() + padding.xy() + padding.zw();
+      size = vapply_r<float2>(yw::max, min_size, inner, size * constrained);
     }
 
     virtual void draw() const override {
       if (!visible) return;
       draw_background(pos, size, background);
+      brush.color(border_color);
+      draw_round_rectangle(pos, size, radius, border_width);
       brush.color(text_color);
       const auto tsz = text.size() + padding.xy() + padding.zw();
       draw_text(pos + padding.xy() + (size - tsz) * 0.5f, text);
@@ -52,7 +52,7 @@ public:
   }
 
   const auto& background() const { return unsafe_get(&slot::background); }
-  void background(yw::background bg) { safe_set(&slot::background, bg); }
+  void background(yw::background bg) { safe_set(&slot::background, std::move(bg)); }
 
   const auto& border_color() const { return unsafe_get(&slot::border_color); }
   void border_color(const color& c) { safe_set(&slot::border_color, c); }
@@ -71,9 +71,9 @@ public:
   void text_color(const color& c) { safe_set(&slot::text_color, c); }
 
   const auto& on_button() const { return unsafe_get(&slot::on_button); }
-  void on_button(function<void, event::button> cb) { safe_set(&slot::on_button, cb); }
+  void on_button(function<void, event::button> cb) { safe_set(&slot::on_button, std::move(cb)); }
 
   const auto& on_wheel() const { return unsafe_get(&slot::on_wheel); }
-  void on_wheel(function<void, event::wheel> cb) { safe_set(&slot::on_wheel, cb); }
+  void on_wheel(function<void, event::wheel> cb) { safe_set(&slot::on_wheel, std::move(cb)); }
 };
 } // namespace yw::ui
