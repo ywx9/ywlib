@@ -11,6 +11,7 @@
 #include <functional>
 #include <iterator>
 #include <memory>
+#include <numeric>
 #include <print>
 #include <ranges>
 #include <source_location>

@@ -73,9 +73,9 @@ public:
     int capture_count{};
 
     struct {
-      float offset = 2.5f;
-      float width = 0.5f;
-      yw::color color = colors::blue;
+      float offset = 3.0f;
+      float width = 1.0f;
+      yw::color color = yw::color(0.0f, 0.0f, 1.0f, 0.5f);
     } focus_ring;
 
     function<bool> on_close;

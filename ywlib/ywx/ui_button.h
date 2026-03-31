@@ -1,6 +1,6 @@
 #pragma once
-#include "ywx/ui_plain.h"
-#include "ywx/ui_label.h"
+#include "ywx/text.h"
+#include "ywx/ui_control.h"
 
 namespace yw::ui {
 
