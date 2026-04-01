@@ -498,9 +498,9 @@ template<bool X, bool Y, bool Z, bool W> __m128 mm_blend(__m128 a, __m128 b) noe
   else return mm_blend<size_t(X + Y * 2 + Z * 4 + W * 8)>(a, b);
 }
 
-template<size_t Mask> requires(lt(Mask, 16)) __m128 mm_setzero(__m128 m) noexcept {
-  if constexpr (Mask == 0b1111) return _mm_setzero_ps();
-  else return mm_blend<Mask>(m, _mm_setzero_ps());
+template<size_t Zero> requires(lt(Zero, 16)) __m128 mm_setzero(__m128 m) noexcept {
+  if constexpr (Zero == 0b1111) return _mm_setzero_ps();
+  else return mm_blend<Zero>(m, _mm_setzero_ps());
 }
 
 template<bool X, bool Y, bool Z, bool W> __m128 mm_setzero(__m128 m) noexcept {
@@ -514,7 +514,7 @@ __m128 mm_insert(__m128 extracted, __m128 inserted) noexcept {
   else return _mm_insert_ps(inserted, extracted, int(From << 6 | To << 4 | Zero));
 }
 
-template<int X, int Y, int Z, int W> __m128 mm_perm(__m128 m) noexcept {
+template<int X, int Y, int Z, int W> __m128 mm_permute(__m128 m) noexcept {
   constexpr bool bx = (X < 0 || 3 < X), by = (Y < 0 || 3 < Y), bz = (Z < 0 || 3 < Z), bw = (W < 0 || 3 < W);
   if constexpr ((bx || X == 0) && (by || Y == 1) && (bz || Z == 2) && (bw || W == 3)) return m;
   else if constexpr ((bx || X == 0) && (by || Y == 0) && (bz || Z == 2) && (bw || W == 2)) return _mm_moveldup_ps(m);
@@ -558,7 +558,16 @@ template<int X, int Y, int Z, int W> __m128 mm_permute(__m128 a, __m128 b) noexc
   } else return mm_blend<lt(X, 4), lt(Y, 4), lt(Z, 4), lt(W, 4)>(mm_permute<x, y, z, w>(b), mm_permute<X, Y, Z, W>(a));
 }
 
+inline __m128 mm_abs(__m128 m) noexcept { return _mm_andnot_ps(_mm_set1_ps(-0.f), m); }
+inline __m128 mm_neg(__m128 m) noexcept { return _mm_xor_ps(_mm_set1_ps(-0.f), m); }
 
+template<size_t N, size_t Zero = 0> requires (le(N, 4) && lt(Zero, 16)) __m128 mm_dot(__m128 a, __m128 b) noexcept {
+  if constexpr (N == 0) return mm_setzero<Zero>(mm_set1(1.0f));
+  else if constexpr (N == 1) return mm_setzero<Zero>(mm_permute<0, 0, 0, 0>(_mm_mul_ps(a, b)));
+  else if constexpr (N == 2) return _mm_dp_ps(a, b, int((0b0011 << 4) | Zero));
+  else if constexpr (N == 3) return _mm_dp_ps(a, b, int((0b0111 << 4) | Zero));
+  else return _mm_dp_ps(a, b, int((0b1111 << 4) | Zero));
+}
 } // namespace yw
 
 //////////////////////////////////////// MARK: std

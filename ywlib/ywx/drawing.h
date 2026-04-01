@@ -19,14 +19,11 @@ public:
       if (auto hr = d2d.context()->EndDraw(); FAILED(hr))
         print_fallback("drawing failed (code={}) that starts at {}", hr, _source);
       d2d.context()->SetTarget(nullptr);
-    } else if (d3d_drawing()) {
-      // nothing to do yet
-    }
+    } else if (d3d_drawing()) d3d.context()->OMSetRenderTargets(0, nullptr, nullptr);
     _rendertarget = std::monostate{};
   }
 
   drawing() noexcept = default;
-
   drawing(drawing&& other) : _source(other._source), _active(std::exchange(other._active, false)) {}
 
   drawing& operator=(drawing&& other) {
@@ -45,15 +42,23 @@ public:
     _rendertarget = rendertarget;
     d2d.context()->SetTarget(rendertarget);
     d2d.context()->BeginDraw();
-    return drawing{src};
+    return drawing(src);
   }
 
-  static std::expected<drawing, error_trace> create(ID3D11RenderTargetView* rendertarget, const source& src) {
+  static std::expected<drawing, error_trace> create(ID3D11RenderTargetView* rtv, const source& src) {
     if (_rendertarget.index() != 0) return unexpected_error(errors::invalid_operation, "rendertarget already set");
-    if (rendertarget == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
+    if (rtv == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
     if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
-    // nothing to do yet
-    return drawing{src};
+    d3d.context()->OMSetRenderTargets(1, &rtv, nullptr);
+    return drawing(src);
+  }
+
+  static std::expected<drawing, error_trace> create(ID3D11RenderTargetView* rtv, ID3D11DepthStencilView* dsv, const source& src) {
+    if (_rendertarget.index() != 0) return unexpected_error(errors::invalid_operation, "rendertarget already set");
+    if (rtv == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
+    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
+    d3d.context()->OMSetRenderTargets(1, &rtv, dsv);
+    return drawing(src);
   }
 
   static bool d2d_drawing() { return _rendertarget.index() == 1; }
