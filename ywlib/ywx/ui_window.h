@@ -84,6 +84,8 @@ public:
     virtual ~slot() noexcept override {
       try {
         ::DestroyWindow(hwnd);
+        // if (auto it = std::ranges::find(system::primal_windows, id); it != system::primal_windows.end())
+        //   system::primal_windows.erase(it);
       } catch (...) {} // noexcept destructor
     }
 
@@ -269,6 +271,14 @@ public:
     } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
   }
 
+  const auto& on_key() const { return unsafe_get(&slot::on_key); }
+  std::expected<void, error_trace> on_key(function<void, event::key> OnKey) const {
+    if (auto wsp = system::slot_address<window>(_id)) {
+      wsp->on_key = std::move(OnKey);
+      return {};
+    } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
+  }
+
   std::expected<drawing, error_trace> begin_draw() {
     if (const auto wsp = system::slot_address<window>(_id)) {
       wsp->dirty = true;
@@ -280,7 +290,9 @@ public:
     } else return unexpected_error(errors::invalid_operation, "window slot not found");
   }
 
-  virtual void destroy() noexcept override { system::uis.erase(_id); }
+  virtual void destroy() noexcept override {
+    if (const auto wsp = system::slot_address<window>(_id)) ::DestroyWindow(wsp->hwnd);
+  }
 
   void screenshot(const std::filesystem::path& PngPath) {
     if (const auto wsp = system::slot_address<window>(_id)) wsp->rendertarget.save_as_png(PngPath);
@@ -296,11 +308,11 @@ inline void control::slot::make_messy() noexcept {
 }
 
 inline void control::slot::hover_event(event::hover Event) {
-      if (enabled && on_hover) on_hover(Event);
-      if (tooltip.empty()) return;
-      if (Event.enter()) {
-        if (const auto w = system::slot_address<window>(window_id))
-          system::tooltip.show(pos + w->pos + w->margin.xy(), size, tooltip);
-      } else if (Event.leave()) system::tooltip.hide();
-    }
+  if (enabled && on_hover) on_hover(Event);
+  if (tooltip.empty()) return;
+  if (Event.enter()) {
+    if (const auto w = system::slot_address<window>(window_id))
+      system::tooltip.show(pos + w->pos + w->margin.xy(), size, tooltip);
+  } else if (Event.leave()) system::tooltip.hide();
 }
+} // namespace yw::ui

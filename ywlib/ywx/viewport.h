@@ -5,8 +5,8 @@
 
 namespace yw {
 
-/// \note right-handed coordinate system; X is right, Y is up, Z is outward
-/// \note reverse-z
+/// \note right-handed coordinate system; X is left, Y is up, looking to Z.
+/// \note reverse-z, row-major
 
 class viewport {
   static constexpr float4x4 identity = {float4(1, 0, 0, 0), float4(0, 1, 0, 0), float4(0, 0, 1, 0), float4(0, 0, 0, 1)};
@@ -22,6 +22,21 @@ class viewport {
     if (auto hr = d3d.device()->CreateDepthStencilState(&depth_stencil_desc, &_dss.get()); FAILED(hr))
       return unexpected_error(errors::operation_failed, "CreateDepthStencilState failed", int32_t(hr));
     return {};
+  }
+
+  void _view_matrix(matrix& m) {
+    const auto radians = vapply_r<float4>([](float deg) { return deg * float(pi) / 180.0f; }, rotation);
+    const auto cos = vapply_r<float4>(yw::cos, radians);
+    const auto sin = vapply_r<float4>(yw::sin, radians);
+    yw::inverse_rotation_matrix(_mm_loadu_ps(cos.data()), _mm_loadu_ps(sin.data()), m);
+    const auto pos = mm_neg(_mm_loadu_ps(position.data()));
+    m.x = mm_insert<0, 3>(mm_dot<3>(pos, m.x), m.x);
+    m.y = mm_insert<0, 3>(mm_dot<3>(pos, m.y), m.y);
+    m.z = mm_insert<0, 3>(mm_dot<3>(pos, m.z), m.z);
+    const auto off = _mm_loadu_ps(offset.data());
+    m.x = _mm_sub_ps(m.x, mm_insert<0, 3, 0b0111>(off, off));
+    m.y = _mm_sub_ps(m.y, mm_insert<1, 3, 0b0111>(off, off));
+    m.z = _mm_sub_ps(m.z, mm_insert<2, 3, 0b0111>(off, off));
   }
 
 public:
@@ -42,10 +57,10 @@ private:
   comptr<ID3D11ShaderResourceView> _srv{};
   comptr<ID3D11RenderTargetView> _rtv{};
   comptr<ID3D11DepthStencilView> _dsv{};
-  constant_buffer<cb> _cb{};
+  yw::constant_buffer<cb> _cb{};
 
-  float _far{1e6};
-  float _factor{float(pi) / 3.0f};
+  float _far{1e6f};
+  float _factor{1.0f};
   bool _orthographic{};
 
 public:
@@ -77,27 +92,16 @@ public:
       return unexpected_error(errors::operation_failed, "Failed to create depth texture", int32_t(hr));
     if (auto hr = d3d.device()->CreateDepthStencilView(vp._depth.get(), nullptr, &vp._dsv.get()); FAILED(hr))
       return unexpected_error(errors::operation_failed, "Failed to create depth stencil view", int32_t(hr));
-    D3D11_RENDER_TARGET_VIEW_DESC rtv_desc{bitmap::dxgiformat, D3D11_RTV_DIMENSION_TEXTURE3D};
+    D3D11_RENDER_TARGET_VIEW_DESC rtv_desc{bitmap::dxgiformat, D3D11_RTV_DIMENSION_TEXTURE2D};
     if (auto hr = d3d.device()->CreateRenderTargetView(vp._texture.get(), &rtv_desc, &vp._rtv.get()); FAILED(hr))
       return unexpected_error(errors::operation_failed, "Failed to create render target view", int32_t(hr));
-    if (auto res = constant_buffer<cb>::create(vp._cb_value)) vp._cb = std::move(*res);
+    if (auto res = yw::constant_buffer<cb>::create(vp._cb_value)) vp._cb = std::move(*res);
     else return unexpected_error(res.error());
     return vp;
   }
 
   void perspective(float1 fov_deg) noexcept {
-    _factor = 1.0f / std::tan(fov_deg.x * float(pi) / 360.0f);
-    _orthographic = false;
-  }
-
-  void perspective(float1 Far) noexcept {
-    _far = Far.x;
-    _orthographic = false;
-  }
-
-  void perspective(float1 fov_deg, float1 Far) noexcept {
-    _far = Far.x;
-    _factor = 1.0f / std::tan(fov_deg.x * float(pi) / 360.0f);
+    _factor = fov_deg.x * float(pi) / 180.0f;
     _orthographic = false;
   }
 
@@ -106,42 +110,46 @@ public:
     _orthographic = true;
   }
 
+  float far_() const noexcept { return _far; }
+  void far_(float1 Far) noexcept { _far = Far.x; }
+
   const auto& view_matrix() const noexcept { return _cb_value.view; }
   const auto& projection_matrix() const noexcept { return _cb_value.projection; }
   const auto& view_projection_matrix() const noexcept { return _cb_value.view_projection; }
   const auto& image() const noexcept { return _bitmap; }
+  const auto& constant_buffer() const noexcept { return _cb; }
 
   std::expected<void, error_trace> update() {
-    const auto radians = vapply_r<float4>([](float deg) { return deg * float(pi) / 180.0f; }, rotation);
-    const auto cos = vapply_r<float4>(yw::cos, radians);
-    const auto sin = vapply_r<float4>(yw::sin, radians);
     auto& vm = _cb_value.view;
     auto& pm = _cb_value.projection;
     auto& vpm = _cb_value.view_projection;
     matrix m;
-    yw::view_matrix(
-      _mm_loadu_ps(position.data()), _mm_loadu_ps(cos.data()), _mm_loadu_ps(sin.data()), _mm_loadu_ps(offset.data()),
-      m);
+    _view_matrix(m);
     _mm_storeu_ps(vm.x.data(), m.x);
     _mm_storeu_ps(vm.y.data(), m.y);
     _mm_storeu_ps(vm.z.data(), m.z);
     _mm_storeu_ps(vm.w.data(), m.w);
     if (_orthographic) {
-      const auto b = 1.0f / (_far - _far / far_by_near);
-      pm.x = float4(2.0f / _bitmap.size().x, 0, 0, 0);
-      pm.y = float4(0, 2.0f / _bitmap.size().y, 0, 0);
-      pm.z = float4(0, 0, b, _far * b);
+      const auto b = 1.0f / _far;
+      pm.x.x = -2.0f * _factor / _bitmap.size().x;
+      pm.y.y = 2.0f * _factor / _bitmap.size().y;
+      pm.z = float4(0, 0, b, 0);
+      pm.w = float4(0, 0, 0, 1);
+      _mm_storeu_ps(vpm.z.data(), _mm_mul_ps(m.z, mm_set1(b)));
     } else {
       const auto f = 1.0f / yw::tan(_factor * 0.5f);
       const auto a = f * _bitmap.size().y / _bitmap.size().x;
       constexpr float b = -1.0f / (far_by_near - 1.0f);
-      pm.x = float4(a, 0, 0, 0);
-      pm.y = float4(0, f, 0, 0);
-      pm.z = float4(0, 0, _far * b, b);
+      const float c = -_far * b;
+      pm.x.x = -a;
+      pm.y.y = f;
+      pm.z = float4(0, 0, b, c);
+      pm.w = float4(0, 0, 1, 0);
+      _mm_storeu_ps(vpm.z.data(), _mm_add_ps(_mm_mul_ps(m.z, mm_set1(b)), mm_set<3>(c)));
+      _mm_storeu_ps(vpm.w.data(), _mm_mul_ps(m.z, mm_set1(pm.w.z)));
     }
-    _mm_store_ps(vpm.x.data(), _mm_mul_ps(m.x, mm_set1(pm.x.x)));
-    _mm_store_ps(vpm.y.data(), _mm_mul_ps(m.y, mm_set1(pm.y.y)));
-    _mm_store_ps(vpm.z.data(), _mm_sub_ps(_mm_mul_ps(m.z, mm_set1(pm.z.z)), mm_set<3>(pm.z.w)));
+    _mm_storeu_ps(vpm.x.data(), _mm_mul_ps(m.x, mm_set1(pm.x.x)));
+    _mm_storeu_ps(vpm.y.data(), _mm_mul_ps(m.y, mm_set1(pm.y.y)));
     _cb_value.camera_pos = position;
     if (auto res = _cb.set(_cb_value); !res) return unexpected_error(res.error());
     return {};
@@ -149,13 +157,13 @@ public:
 
   std::expected<void, error_trace> clear_depth() {
     if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
-    d3d.context()->ClearDepthStencilView(_dsv.get(), D3D11_CLEAR_DEPTH, 1.0f, 0);
+    d3d.context()->ClearDepthStencilView(_dsv.get(), D3D11_CLEAR_DEPTH, 0.0f, 0);
     return {};
   }
 
   std::expected<void, error_trace> clear(const color& Clear = colors::transparent) {
     if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
-    d3d.context()->ClearDepthStencilView(_dsv.get(), D3D11_CLEAR_DEPTH, 1.0f, 0);
+    d3d.context()->ClearDepthStencilView(_dsv.get(), D3D11_CLEAR_DEPTH, 0.0f, 0);
     d3d.context()->ClearRenderTargetView(_rtv.get(), &Clear.r);
     return {};
   }
@@ -164,6 +172,7 @@ public:
     if (!*this) return unexpected_error(errors::not_initialized, "Viewport not initialized");
     D3D11_VIEWPORT vp{0.0f, 0.0f, float(_bitmap.size().x), float(_bitmap.size().y), 0.0f, 1.0f};
     d3d.context()->RSSetViewports(1, &vp);
+    d3d.context()->OMSetDepthStencilState(_dss.get(), 0);
     if (auto res = drawing::create(_rtv.get(), _dsv.get(), source{})) return std::move(*res);
     else return unexpected_error(res.error());
   }
@@ -173,6 +182,7 @@ public:
     if (auto res = clear(Clear); !res) return unexpected_error(res.error());
     D3D11_VIEWPORT vp{0.0f, 0.0f, float(_bitmap.size().x), float(_bitmap.size().y), 0.0f, 1.0f};
     d3d.context()->RSSetViewports(1, &vp);
+    d3d.context()->OMSetDepthStencilState(_dss.get(), 0);
     if (auto res = drawing::create(_rtv.get(), _dsv.get(), source{})) return std::move(*res);
     else return unexpected_error(res.error());
   }

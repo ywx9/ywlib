@@ -49,6 +49,7 @@ public:
     if (_rendertarget.index() != 0) return unexpected_error(errors::invalid_operation, "rendertarget already set");
     if (rtv == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
     if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
+    _rendertarget = rtv;
     d3d.context()->OMSetRenderTargets(1, &rtv, nullptr);
     return drawing(src);
   }
@@ -57,6 +58,7 @@ public:
     if (_rendertarget.index() != 0) return unexpected_error(errors::invalid_operation, "rendertarget already set");
     if (rtv == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
     if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
+    _rendertarget = rtv;
     d3d.context()->OMSetRenderTargets(1, &rtv, dsv);
     return drawing(src);
   }
@@ -119,6 +121,44 @@ inline std::expected<void, error_trace> fill_ellipse(float2 center, float2 radiu
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   D2D1_ELLIPSE ellipse = D2D1::Ellipse(D2D1::Point2F(center.x, center.y), radius.x, radius.y);
   d2d.context()->FillEllipse(&ellipse, brush.d2d_brush());
+  return {};
+}
+
+//////////////////////////////////////// MARK: render
+
+inline std::expected<void, error_trace> set_primitive_topology_pointlist() {
+  if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
+  d3d.context()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_POINTLIST);
+  return {};
+}
+
+inline std::expected<void, error_trace> set_primitive_topology_linelist() {
+  if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
+  d3d.context()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+  return {};
+}
+
+inline std::expected<void, error_trace> set_primitive_topology_linestrip() {
+  if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
+  d3d.context()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP);
+  return {};
+}
+
+inline std::expected<void, error_trace> set_primitive_topology_trianglelist() {
+  if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
+  d3d.context()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  return {};
+}
+
+inline std::expected<void, error_trace> set_primitive_topology_trianglestrip() {
+  if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
+  d3d.context()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+  return {};
+}
+
+inline std::expected<void, error_trace> render(uint1 NumVertices) {
+  if (!drawing::d3d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
+  d3d.context()->Draw(NumVertices.x, 0);
   return {};
 }
 }

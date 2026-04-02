@@ -15,12 +15,15 @@ public:
 private:
   state _state = state::pre_initialize;
   bool _updated = true;
-  stopwatch _timer;
+  stopwatch _timer{};
 
 public:
-  error_trace last_error;
+  error_trace last_error{};
   uint32_t max_messages_per_frame = 100;
   uint32_t max_frames_per_second = 1000;
+
+  double fps{};
+  double spf{};
 
   bool running() const noexcept { return _state == state::running; }
   bool error() const noexcept { return _state == state::error; }
@@ -31,6 +34,7 @@ public:
 
   /// runs the mainloop
   bool operator()() {
+    if (system::primal_windows.empty()) return _state = state::quit, false;
     if (_state == state::pre_initialize) {
       _timer.start();
       _state = state::running;
@@ -41,8 +45,9 @@ public:
           wsp->messy = wsp->dirty = false;
         }
     } else {
+      fps = 1.0 / (spf = _timer.lap());
       _state = state::running;
-      if (_updated = _timer.elapsed() >= 1.0 / max_frames_per_second) {
+      if (_updated = spf >= 1.0 / max_frames_per_second) {
         _timer.restart();
         for (const auto& wid : system::primal_windows)
           if (const auto wsp = system::slot_address<ui::window>(wid); wsp && (wsp->dirty || wsp->messy)) wsp->draw();
@@ -156,13 +161,15 @@ inline void wm_keydown(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
     const bool shift = (::GetKeyState(VK_SHIFT) & 0x8000) != 0;
     ws.next_tab_stop(!shift);
     ws.dirty = true;
-  } else if (const auto p = system::slot_address<ui::control>(ws.focused_control)) {
+  } else {
     const auto repeat = static_cast<uint16_t>(lp & 0xffff);
     const auto first = (lp & (1u << 30)) == 0;
     const auto c = bool(::GetKeyState(VK_CONTROL) & 0x8000);
     const auto s = bool(::GetKeyState(VK_SHIFT) & 0x8000);
     const auto a = bool(::GetKeyState(VK_MENU) & 0x8000);
-    p->key_event(event::key(repeat, key(wp), true, first, c, s, a));
+    const auto e = event::key(repeat, key(wp), true, first, c, s, a);
+    if (const auto p = system::slot_address<ui::control>(ws.focused_control)) p->key_event(e);
+    else if (ws.on_key) ws.on_key(e);
   }
 }
 
@@ -221,13 +228,15 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
 
   case WM_KEYDOWN: internal::wm_keydown(*wsp, wp, lp); return 0;
   case WM_KEYUP:
-    if (const auto p = system::slot_address<ui::control>(wsp->focused_control)) {
+    {
       const auto repeat = static_cast<uint16_t>(lp & 0xffff);
       const auto first = true;
       const auto c = bool(::GetKeyState(VK_CONTROL) & 0x8000);
       const auto s = bool(::GetKeyState(VK_SHIFT) & 0x8000);
       const auto a = bool(::GetKeyState(VK_MENU) & 0x8000);
-      p->key_event(event::key(repeat, key(wp), false, first, c, s, a));
+      const auto e = event::key(repeat, key(wp), false, first, c, s, a);
+      if (const auto p = system::slot_address<ui::control>(wsp->focused_control)) p->key_event(e);
+      else if (wsp->on_key) wsp->on_key(e);
     }
     return 0;
 
@@ -283,7 +292,6 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     return 0;
 
   case WM_NCDESTROY:
-    // Delete root layout/control tree belonging to this master window
     system::uis.erase(wsp->layout_id);
     const auto id = wsp->id;
     system::uis.erase(id);

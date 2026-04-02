@@ -63,23 +63,6 @@ inline void inverse_rotation_matrix(const __m128 Cos, const __m128 Sin, matrix& 
   Out.w = mm_set<3>(1.0f);
 }
 
-/// rotation -> translate
-inline void view_matrix(const __m128 Pos, const __m128 Cos, const __m128 Sin, matrix& Out) {
-  inverse_rotation_matrix(Cos, Sin, Out);
-  const auto a = mm_neg(Pos);
-  Out.x = mm_insert<0, 3>(mm_dot<3>(a, Out.x), Out.x);
-  Out.y = mm_insert<0, 3>(mm_dot<3>(a, Out.y), Out.y);
-  Out.z = mm_insert<0, 3>(mm_dot<3>(a, Out.z), Out.z);
-}
-
-/// offset -> rotation -> translate
-inline void view_matrix(const __m128 Pos, const __m128 Cos, const __m128 Sin, const __m128 Off, matrix& Out) {
-  view_matrix(Pos, Cos, Sin, Out);
-  Out.x = _mm_sub_ps(Out.x, mm_insert<0, 3, 0b0111>(Off, Off));
-  Out.y = _mm_sub_ps(Out.y, mm_insert<1, 3, 0b0111>(Off, Off));
-  Out.z = _mm_sub_ps(Out.z, mm_insert<2, 3, 0b0111>(Off, Off));
-}
-
 using float4x4 = vector4<vector4<float>>;
 
 inline constexpr void rotation_matrix(float4 rad, float4x4& out) {

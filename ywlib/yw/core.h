@@ -373,7 +373,7 @@ inline constexpr auto is_xdigit = []<char_type C>(C c) noexcept {
 };
 
 template<typename S, typename C = iter_value_t<S>> concept stringable = requires {
-  requires different_from<C, void>;
+  requires char_type<C>;
   requires std::convertible_to<S, std::basic_string_view<C>>;
   requires std::constructible_from<std::basic_string_view<C>, S>;
 };

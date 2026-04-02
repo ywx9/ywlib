@@ -27,6 +27,7 @@ ConstructorInitializerIndentWidth: 2
 ContinuationIndentWidth: 2
 
 AlignAfterOpenBracket: false
+AlignEscapedNewlines: Left
 
 AllowShortBlocksOnASingleLine: Always
 AllowShortCaseLabelsOnASingleLine: true

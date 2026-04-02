@@ -210,10 +210,33 @@ constexpr vector<T, N>& operator/=(vector<T, N>& a, const U& b) {
 
 //////////////////////////////////////// MARK: vector operations
 
-template<typename T, typename U, size_t N> constexpr auto mul(const vector<T, N>& a, const U& b) { return a * b; }
-template<typename T, typename U, size_t N> constexpr auto mul(const U& a, const vector<T, N>& b) { return a * b; }
-template<typename T, typename U, size_t N> constexpr auto mul(const vector<T, N>& a, const vector<U, N>& b) {
+// template<typename T, typename U, size_t N> constexpr auto mul(const vector<T, N>& a, const U& b) { return a * b; }
+// template<typename T, typename U, size_t N> constexpr auto mul(const U& a, const vector<T, N>& b) { return a * b; }
+// template<typename T, typename U, size_t N> constexpr auto mul(const vector<T, N>& a, const vector<U, N>& b) {
+//   return [&]<size_t... Is>(sequence<Is...>) { return ((get<Is>(a) * get<Is>(b)) + ...); }(make_sequence<0, N>{});
+// }
+
+template<typename T, typename U, size_t N>
+requires(!variation_of<T, vector<int, 1>> && !variation_of<U, vector<int, 1>>)
+constexpr auto dot(const vector<T, N>& a, const vector<U, N>& b) {
   return [&]<size_t... Is>(sequence<Is...>) { return ((get<Is>(a) * get<Is>(b)) + ...); }(make_sequence<0, N>{});
+}
+
+template<typename T, typename U, size_t M, size_t N>
+requires(!variation_of<T, vector<int, 1>> && !variation_of<U, vector<int, 1>>)
+constexpr auto dot(const vector<vector<T, N>, M>& a, const vector<U, N>& b) {
+  vector<decltype(T{} * U{}), M> result;
+  for (size_t i = 0; i < M; ++i) result[i] = dot(a[i], b);
+  return result;
+}
+
+template<typename T, typename U, size_t M, size_t N>
+requires(!variation_of<T, vector<int, 1>> && !variation_of<U, vector<int, 1>>)
+constexpr auto dot(const vector<vector<T, N>, M>& a, const vector<vector<U, M>, N>& b) {
+  vector<vector<decltype(T{} * U{}), M>, N> result;
+  for (size_t i = 0; i < M; ++i)
+    for (size_t j = 0; j < N; ++j) result[i][j] = dot(a[i], b[j]);
+  return result;
 }
 
 template<typename T, size_t M, typename U, size_t N>
@@ -471,7 +494,7 @@ template<std::regular T> struct vector<T, 4> {
 
 template<size_t I> requires(lt(I, 4)) float mm_get(__m128 m) noexcept {
   if constexpr (I == 0) return _mm_cvtss_f32(m);
-  else return bitcast<float>(_mm_extract_ps(m, int(I)));
+  else return std::bit_cast<float>(_mm_extract_ps(m, int(I)));
 }
 
 inline __m128 mm_set1(float v) noexcept { return _mm_set1_ps(v); }
@@ -479,11 +502,11 @@ inline __m128 mm_set1(float v) noexcept { return _mm_set1_ps(v); }
 inline __m128 mm_set(float x, float y, float z = 0.0f, float w = 0.0f) noexcept { return _mm_set_ps(w, z, y, x); }
 
 template<size_t I> requires(lt(I, 4)) __m128 mm_set(__m128 m, float v) noexcept {
-  return _mm_castsi128_ps(_mm_insert_epi32(_mm_castps_si128(m), bitcast<int>(v), int(I)));
+  return _mm_castsi128_ps(_mm_insert_epi32(_mm_castps_si128(m), std::bit_cast<int>(v), int(I)));
 }
 
 template<size_t I> requires(lt(I, 4)) __m128 mm_set(float v) noexcept {
-  return _mm_castsi128_ps(_mm_insert_epi32(_mm_setzero_si128(), bitcast<int>(v), int(I)));
+  return _mm_castsi128_ps(_mm_insert_epi32(_mm_setzero_si128(), std::bit_cast<int>(v), int(I)));
 }
 
 template<size_t Mask> requires(lt(Mask, 16)) __m128 mm_blend(__m128 a, __m128 b) noexcept {
@@ -561,12 +584,12 @@ template<int X, int Y, int Z, int W> __m128 mm_permute(__m128 a, __m128 b) noexc
 inline __m128 mm_abs(__m128 m) noexcept { return _mm_andnot_ps(_mm_set1_ps(-0.f), m); }
 inline __m128 mm_neg(__m128 m) noexcept { return _mm_xor_ps(_mm_set1_ps(-0.f), m); }
 
-template<size_t N, size_t Zero = 0> requires (le(N, 4) && lt(Zero, 16)) __m128 mm_dot(__m128 a, __m128 b) noexcept {
+template<size_t N, size_t Zero = 0> requires(le(N, 4) && lt(Zero, 16)) __m128 mm_dot(__m128 a, __m128 b) noexcept {
   if constexpr (N == 0) return mm_setzero<Zero>(mm_set1(1.0f));
   else if constexpr (N == 1) return mm_setzero<Zero>(mm_permute<0, 0, 0, 0>(_mm_mul_ps(a, b)));
-  else if constexpr (N == 2) return _mm_dp_ps(a, b, int((0b0011 << 4) | Zero));
-  else if constexpr (N == 3) return _mm_dp_ps(a, b, int((0b0111 << 4) | Zero));
-  else return _mm_dp_ps(a, b, int((0b1111 << 4) | Zero));
+  else if constexpr (N == 2) return _mm_dp_ps(a, b, int((0b0011 << 4) | (~Zero & 0b1111)));
+  else if constexpr (N == 3) return _mm_dp_ps(a, b, int((0b0111 << 4) | (~Zero & 0b1111)));
+  else return _mm_dp_ps(a, b, int((0b1111 << 4) | (~Zero & 0b1111)));
 }
 } // namespace yw
 

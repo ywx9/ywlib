@@ -67,19 +67,21 @@ This script will:
 ### Configure
 
 ```bash
-cmake -S . -B build
-```
-
-If you want to explicitly select a compiler:
-
-```bash
-cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_CXX_COMPILER=g++
+python tools/init.py
 ```
 
 ### Compile
 
+Use the build script:
+
 ```bash
-cmake --build build
+python tools/build.py
+```
+
+### Run
+
+```bash
+build/app
 ```
 
 The executable name is defined at the top of `CMakeLists.txt`.
