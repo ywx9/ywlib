@@ -25,6 +25,11 @@ public:
 
     key captured_key{};
 
+    virtual float2 calculate_size() const noexcept override {
+      const auto inner = text.size() + padding.xy() + padding.zw();
+      return vapply_r<float2>(yw::max, float2(), min_size, inner, size * constrained);
+    }
+
     virtual void update_size() noexcept override {
       min_size = vapply_r<float2>(yw::max, min_size, float2());
       const auto inner = text.size() + padding.xy() + padding.zw();

@@ -9,8 +9,8 @@
   そのコントロールの最小描画サイズを取得する。
   サイズが拘束されている場合、そのサイズと`min_size`の最大値を返す。
 
-- `draw(float2 Pos, float2 Area)`:
-  コントロールを指定の位置とエリアで描画する。
+- `update_layout(float2 Pos, float2 Area)`:
+  コントロールを指定の位置とエリアでレイアウト確定する。
   ここで指定されるエリアは、サイズ+マージンを考慮した領域であり、必ずこれよりも大きい。
 
 - `draw()`:
@@ -97,6 +97,7 @@ public:
 
     virtual ~slot() noexcept {
       if (const auto lsp = system::slot_address<slot>(layout_id); lsp && !lsp->dying) lsp->detach(id);
+      system::uis.erase(id);
     }
 
     /// 所属ウィンドウのdirtyフラグを立てる
@@ -108,6 +109,11 @@ public:
     /// 矩形ヒットテストの結果によって自身のIDか無効IDを返す
     virtual slotid hit_test(float2 Pt) const noexcept {
       return Pt.x < pos.x || Pt.y < pos.y || Pt.x > pos.x + size.x || Pt.y > pos.y + size.y ? slotid{} : id;
+    }
+
+    /// 最小サイズを計算する
+    virtual float2 calculate_size() const noexcept {
+      return vapply_r<float2>(yw::max, float2(), min_size, size * constrained);
     }
 
     /// 描画の前準備として`size`を更新する
@@ -132,13 +138,12 @@ public:
       }
     }
 
-    /// マージンを除いた描画範囲を指定して描画する
-    virtual void draw(float2 Pos, float2 Area, bool Visible) {
+    /// 描画レイアウトを更新する
+    virtual void update_layout(float2 Pos, float2 Area) {
       pos = Pos + margin.xy();
       const auto size_ = Area - margin.xy() - margin.zw();
       size = (float2(1.0f, 1.0f) - constrained) * size_ + constrained * size;
       align(size_ - size);
-      if (Visible && visible) draw();
     };
 
     /// 前回の描画位置に再描画する

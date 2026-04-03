@@ -54,21 +54,21 @@ public:
     int4 margin{};
     window::style style{};
     std::wstring title{};
-    mutable bitmap rendertarget{};
+    bitmap rendertarget{};
+    bitmap layout_bitmap{};
     comptr<IDXGISwapChain1> swapchain{};
     yw::background background = colors::white;
-    stopwatch timer{};
     slotid layout_id{};
     slotid focused_control{};
     slotid hovered_control{};
     slotid captured_control{};
     bool visible = true;
     bool enabled = true;
-    mutable bool dirty = true;
-    mutable bool messy = true;
+    bool dirty = true;
+    bool messy = true;
     bool resizing = false;
     bool tracking = false;
-    bool manually_draw = false;
+    bool drawn = false;
 
     int capture_count{};
 
@@ -81,13 +81,7 @@ public:
     function<bool> on_close;
     function<void, event::key> on_key;
 
-    virtual ~slot() noexcept override {
-      try {
-        ::DestroyWindow(hwnd);
-        // if (auto it = std::ranges::find(system::primal_windows, id); it != system::primal_windows.end())
-        //   system::primal_windows.erase(it);
-      } catch (...) {} // noexcept destructor
-    }
+    virtual ~slot() noexcept override { ::DestroyWindow(hwnd); }
 
     std::expected<void, error_trace> initialize(slotid Id, std::optional<int2> Pos, uint2 Size, window::style Style) {
       id = Id, style = Style, size = Size;
@@ -98,36 +92,54 @@ public:
         pos = (int2(desktop_client_size()) - sz) / 2;
       } else pos = *Pos;
       if (auto res = _set_position(); !res) return unexpected_error(res.error());
-      timer.restart();
       return {};
     }
 
-    virtual void draw() const override {
+    std::expected<void, error_trace> draw() {
+      if (messy || dirty) {
+        if (auto res = draw_layout_bitmap(); !res) return unexpected_error(res.error());
+      }
+      if (auto d = rendertarget.begin_draw()) {
+        if (drawn) drawn = false;
+        draw_bitmap({}, float2(size), layout_bitmap);
+        if (const auto fcsp = system::slot_address<ui::control>(focused_control)) {
+          brush.color(focus_ring.color);
+          fcsp->draw_focus_ring(focus_ring.offset, focus_ring.width);
+        }
+      } else return unexpected_error(d.error());
+      return {};
+    }
+
+    std::expected<void, error_trace> draw_layout_bitmap() {
       const auto lsp = system::slot_address<ui::control>(layout_id);
-      if (!lsp) return;
+      if (!lsp) return unexpected_error(errors::not_initialized, "Window layout not initialized");
       if (messy) {
         lsp->update_size();
         if (size.x < lsp->size.x || size.y < lsp->size.y) {
           const auto sz = int2(yw::max(size.x, lsp->size.x), yw::max(size.y, lsp->size.y)) + margin.xy() + margin.zw();
           ::SetWindowPos(hwnd, nullptr, 0, 0, sz.x, sz.y, SWP_NOZORDER | SWP_NOMOVE);
         }
+      } else if (!dirty) return {};
+      if (!layout_bitmap || layout_bitmap.size() != size) {
+        if (auto res = bitmap::create(size)) layout_bitmap = std::move(*res);
+        else return unexpected_error(res.error());
       }
-      if (auto d = rendertarget.begin_draw()) {
-        if (!manually_draw) draw_background({}, float2(size), background);
-        if (messy) lsp->draw({}, float2(size), true);
-        else if (dirty) lsp->draw();
-        if (const auto fcsp = system::slot_address<ui::control>(focused_control)) {
-          brush.color(focus_ring.color);
-          fcsp->draw_focus_ring(focus_ring.offset, focus_ring.width);
-        }
-      } else throw unexpected_error(d.error());
-      return;
+      if (auto d = layout_bitmap.begin_draw(color(0.0f, 0.0f, 0.0f, 0.0f))) {
+        if (!drawn) draw_background({}, float2(size), background);
+        if (messy) {
+          lsp->update_layout({}, float2(size));
+          lsp->draw();
+        } else if (dirty) lsp->draw();
+      } else return unexpected_error(d.error());
+      dirty = messy = false;
+      return {};
     }
 
     std::expected<void, error_trace> resize_rendertarget(uint2 sz) {
       if (sz.x <= 0 || sz.y <= 0) return {};
       if (swapchain) {
         rendertarget = {}; // releases the back buffer.
+        layout_bitmap = {};
         auto hr = swapchain->ResizeBuffers(0, sz.x, sz.y, DXGI_FORMAT_UNKNOWN, 0);
         if (FAILED(hr)) return unexpected_win32_error("ResizeBuffers failed");
       } else {
@@ -138,6 +150,8 @@ public:
         if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSwapChainForHwnd failed", int32_t(hr));
       }
       if (auto res = bitmap::create(swapchain.get())) rendertarget = std::move(*res);
+      else return unexpected_error(res.error());
+      if (auto res = bitmap::create(sz)) layout_bitmap = std::move(*res);
       else return unexpected_error(res.error());
       size = sz;
       messy = true;
@@ -191,7 +205,6 @@ public:
   const slotid& id() const noexcept { return _id; }
   const HWND& hwnd() const { return unsafe_get(&slot::hwnd); }
   const int4& margin() const { return unsafe_get(&slot::margin); }
-  float time() const { return unsafe_get(&slot::timer).elapsed(); }
 
   const int2& pos() const { return unsafe_get(&slot::pos); }
   std::expected<void, error_trace> pos(int2 Pos) const {
@@ -250,15 +263,8 @@ public:
   const bool& enabled() const { return unsafe_get(&slot::enabled); }
   std::expected<void, error_trace> enabled(bool Enabled) const {
     if (auto wsp = system::slot_address<window>(_id)) {
-      if (Enabled) {
-        wsp->enabled = true;
-        wsp->timer.start();
-        ::EnableWindow(wsp->hwnd, true);
-      } else {
-        wsp->enabled = false;
-        wsp->timer.stop();
-        ::EnableWindow(wsp->hwnd, false);
-      }
+      wsp->enabled = Enabled;
+      ::EnableWindow(wsp->hwnd, Enabled);
       return {};
     } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
   }
@@ -282,7 +288,7 @@ public:
   std::expected<drawing, error_trace> begin_draw() {
     if (const auto wsp = system::slot_address<window>(_id)) {
       wsp->dirty = true;
-      wsp->manually_draw = true;
+      wsp->drawn = true;
       if (auto d = wsp->rendertarget.begin_draw()) {
         draw_background({}, float2(wsp->size), wsp->background);
         return std::move(d);
@@ -290,12 +296,33 @@ public:
     } else return unexpected_error(errors::invalid_operation, "window slot not found");
   }
 
-  virtual void destroy() noexcept override {
+  virtual void destroy() noexcept {
     if (const auto wsp = system::slot_address<window>(_id)) ::DestroyWindow(wsp->hwnd);
   }
 
-  void screenshot(const std::filesystem::path& PngPath) {
-    if (const auto wsp = system::slot_address<window>(_id)) wsp->rendertarget.save_as_png(PngPath);
+  void screenshot(const std::filesystem::path& PngPath, bool WriteUI = false) {
+    if (const auto wsp = system::slot_address<window>(_id)) {
+      if (!WriteUI) {
+        wsp->rendertarget.save_as_png(PngPath);
+        return;
+      }
+
+      if ((wsp->dirty || wsp->messy) && wsp->layout_id)
+        if (auto res = wsp->draw_layout_bitmap(); !res) return;
+
+      auto rt_copy_res = bitmap::create(wsp->rendertarget);
+      if (!rt_copy_res) return;
+      auto rt_copy = std::move(*rt_copy_res);
+
+      if (auto res = bitmap::create(wsp->size)) {
+        auto composed = std::move(*res);
+        if (auto d = composed.begin_draw(color(0.0f, 0.0f, 0.0f, 0.0f))) {
+          draw_bitmap({}, float2(wsp->size), rt_copy);
+          draw_bitmap({}, float2(wsp->size), wsp->layout_bitmap);
+        } else return;
+        composed.save_as_png(PngPath);
+      }
+    }
   }
 };
 

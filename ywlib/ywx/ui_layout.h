@@ -8,6 +8,17 @@ class layout : public control {
 public:
   class slot : public control::slot {
   protected:
+    template<bool V> float2 calculate_size() const noexcept {
+      float2 inner = padding.xy() + padding.zw();
+      for (const auto& cid : controls)
+        if (const auto csp = system::slot_address<control>(cid)) {
+          const auto area = csp->calculate_size() + csp->margin.xy() + csp->margin.zw();
+          get<!V>(inner) = yw::max(yw::get<!V>(inner), yw::get<!V>(area));
+          get<V>(inner) += get<V>(area);
+        }
+      return vapply_r<float2>(yw::max, float2(), min_size, inner, size * constrained);
+    }
+
     template<bool V> void update_size() noexcept {
       min_size = vapply_r<float2>(yw::max, min_size, float2(0.0f, 0.0f));
       float2 inner{};
@@ -21,7 +32,7 @@ public:
       size = vapply_r<float2>(yw::max, min_size, inner, size * constrained);
     }
 
-    template<bool V> void draw(float2 Pos, float2 Area, bool Visible) {
+    template<bool V> void update_layout(float2 Pos, float2 Area) {
       pos = Pos + margin.xy();
       const auto size_ = Area - margin.xy() - margin.zw();
       size = (float2(1.0f, 1.0f) - constrained) * size_ + constrained * size;
@@ -34,11 +45,6 @@ public:
           uc_count += !get<V>(csp->constrained);
           min_primary += get<V>(csp->size) + get<V>(csp->margin) + get<2 + V>(csp->margin);
         }
-      if (Visible && visible) {
-        draw_background(pos, size, background);
-        brush.color(border_color);
-        draw_round_rectangle(pos, size, radius, border_width);
-      }
       float2 offset{};
       float2 extra_per_uc{};
       if (uc_count) get<V>(extra_per_uc) = (get<V>(size) - min_primary) / uc_count;
@@ -47,7 +53,7 @@ public:
           auto sz =
             csp->size + csp->margin.xy() + csp->margin.zw() + extra_per_uc * (float2(1.0f, 1.0f) - csp->constrained);
           get<!V>(sz) = get<!V>(size);
-          csp->draw(pos + offset, sz, Visible && visible);
+          csp->update_layout(pos + offset, sz);
           get<V>(offset) += get<V>(sz);
         }
     }
@@ -106,8 +112,9 @@ public:
       return {};
     }
 
+    virtual float2 calculate_size() const noexcept override { return calculate_size<true>(); }
     virtual void update_size() noexcept override { update_size<true>(); }
-    virtual void draw(float2 Pos, float2 Area, bool Visible) override { draw<true>(Pos, Area, Visible); }
+    virtual void update_layout(float2 Pos, float2 Area) override { update_layout<true>(Pos, Area); }
 
     virtual void draw() const override {
       if (!visible) return;
@@ -144,8 +151,9 @@ class horizontal_layout : public layout {
 public:
   class slot : public layout::slot {
   public:
+    virtual float2 calculate_size() const noexcept override { return layout::slot::calculate_size<false>(); }
     virtual void update_size() noexcept override { layout::slot::update_size<false>(); }
-    virtual void draw(float2 Pos, float2 Area, bool Visible) override { layout::slot::draw<false>(Pos, Area, Visible); }
+    virtual void update_layout(float2 Pos, float2 Area) override { layout::slot::update_layout<false>(Pos, Area); }
   };
 
   using layout::operator bool;
@@ -226,10 +234,9 @@ public:
       return {};
     }
 
-    virtual void update_size() noexcept override {
-      min_size = yw::min(min_size, float2::fill(0.0f));
+    virtual float2 calculate_size() const noexcept override {
       vector<float, Columns> col_width{};
-      float height{};
+      float2 inner{};
       for (const auto& row : rows) {
         float temp_height{};
         for (size_t c = 0; c < Columns; ++c)
@@ -239,13 +246,18 @@ public:
             temp_height = yw::max(temp_height, area.y);
             col_width[c] = yw::max(col_width[c], area.x);
           }
-        height += temp_height;
+        inner.y += temp_height;
       }
-      size.x = std::accumulate(col_width.begin(), col_width.end(), 0.0f);
-      size.y = height;
+      inner.x = std::accumulate(col_width.begin(), col_width.end(), 0.0f);
+      return vapply_r<float2>(yw::max, float2(), min_size, inner, size * constrained);
     }
 
-    virtual void draw(float2 Pos, float2 Area, bool Visible) override {
+    virtual void update_size() noexcept override {
+      min_size = yw::min(min_size, float2::fill(0.0f));
+      size = calculate_size();
+    }
+
+    virtual void update_layout(float2 Pos, float2 Area) override {
       pos = Pos + margin.xy();
       const auto size_ = Area - margin.xy() - margin.zw();
       size = (float2(1.0f, 1.0f) - constrained) * size_ + constrained * size;
@@ -265,16 +277,10 @@ public:
           }
       }
       const uint2 uc_count{
-        std::count(uc_columns.begin(), uc_columns.end(), true),
-        std::count(uc_rows.begin(), uc_rows.end(), true)};
+        std::count(uc_columns.begin(), uc_columns.end(), true), std::count(uc_rows.begin(), uc_rows.end(), true)};
       const float2 inner{
         std::accumulate(col_width.begin(), col_width.end(), 0.0f),
         std::accumulate(row_width.begin(), row_width.end(), 0.0f)};
-      if (Visible && visible) {
-        draw_background(pos, size, background);
-        brush.color(border_color);
-        draw_round_rectangle(pos, size, radius, border_width);
-      }
       float2 extra_per_uc{};
       if (uc_count.x) extra_per_uc.x = (size.x - inner.x) / uc_count.x;
       if (uc_count.y) extra_per_uc.y = (size.y - inner.y) / uc_count.y;
@@ -285,7 +291,7 @@ public:
         for (size_t c = 0; c < Columns; ++c)
           if (const auto csp = system::slot_address<control>(rows[r][c])) {
             const auto width = col_width[c] + extra_per_uc.x * !uc_columns[c];
-            csp->draw(pos + float2(xoff, yoff), float2(width, height), Visible && visible);
+            csp->update_layout(pos + float2(xoff, yoff), float2(width, height));
             xoff += width;
           }
         yoff += height;

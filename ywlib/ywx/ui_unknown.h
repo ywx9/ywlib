@@ -11,8 +11,6 @@ public:
   public:
     slotset<slot>::slotid id{};
     virtual ~slot() noexcept {}
-    virtual void draw(float2, float2) const {}
-    virtual void draw() const {}
     virtual bool attach(slotset<slot>::slotid child_id) { return false; }
     virtual void detach(slotset<slot>::slotid child_id) {}
   };
@@ -25,7 +23,7 @@ protected:
   template<typename Mp> member_type<Mp>& unsafe_get(Mp Member) const;
 
 public:
-  virtual ~unknown() noexcept { destroy(); }
+  virtual ~unknown() noexcept {}
   unknown(unknown&& other) noexcept : _id(std::exchange(other._id, {})) {}
   unknown& operator=(unknown&& other) noexcept {
     if (this != &other) _id = std::exchange(other._id, {});
@@ -34,7 +32,6 @@ public:
 
   explicit operator bool() const noexcept;
   const slotset<slot>::slotid& id() const noexcept { return _id; }
-  virtual void destroy() noexcept;
 };
 
 using slotid = slotset<unknown::slot>::slotid;
@@ -63,10 +60,4 @@ template<typename Mp> member_type<Mp>& ui::unknown::unsafe_get(Mp Member) const 
 }
 
 inline ui::unknown::operator bool() const noexcept { return system::uis.contains(_id); }
-
-inline void ui::unknown::destroy() noexcept {
-  try {
-    system::uis.erase(std::exchange(_id, {}));
-  } catch (...) {}
-}
 } // namespace yw

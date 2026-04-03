@@ -45,6 +45,13 @@ public:
 
     key captured_key{};
 
+    virtual float2 calculate_size() const noexcept override {
+      const auto tsz = text.size();
+      const auto inner_x = icon_size.x + icon_offset + tsz.x + padding.x + padding.z;
+      const auto inner = float2(inner_x, yw::max(icon_size.y, tsz.y) + padding.y + padding.w);
+      return vapply_r<float2>(yw::max, float2(), min_size, inner, size * constrained);
+    }
+
     virtual void update_size() noexcept override {
       min_size = vapply_r<float2>(yw::max, min_size, float2());
       const auto tsz = text.size();

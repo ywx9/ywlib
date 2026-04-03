@@ -97,18 +97,28 @@ public:
       if (on_change) on_change(index);
     }
 
-    virtual void update_size() noexcept override {
-      min_size = vapply_r<float2>(yw::max, min_size, float2());
-      float inner_x = padding.x + padding.z;
-      float inner_y = padding.y + padding.w;
-      if (items.empty()) inner_y += icon_size.y;
+    virtual float2 calculate_size() const noexcept override {
+      float2 inner = padding.xy() + padding.zw();
+      if (items.empty()) inner.y += icon_size.y;
       for (const auto& value : items) {
         const auto tsz = value.text.size();
-        inner_x = yw::max(inner_x, icon_size.x + icon_offset + tsz.x + padding.x + padding.z);
-        inner_y += yw::max(icon_size.y, tsz.y);
+        inner.x = yw::max(inner.x, icon_size.x + icon_offset + tsz.x + padding.x + padding.z);
+        inner.y += yw::max(icon_size.y, tsz.y);
       }
-      if (items.size() > 1) inner_y += item_gap * float(items.size() - 1);
-      const auto inner = float2(inner_x, inner_y);
+      if (items.size() > 1) inner.y += item_gap * float(items.size() - 1);
+      return vapply_r<float2>(yw::max, float2(), min_size, inner, size * constrained);
+    }
+
+    virtual void update_size() noexcept override {
+      min_size = vapply_r<float2>(yw::max, min_size, float2());
+      float2 inner = padding.xy() + padding.zw();
+      if (items.empty()) inner.y += icon_size.y;
+      for (const auto& value : items) {
+        const auto tsz = value.text.size();
+        inner.x = yw::max(inner.x, icon_size.x + icon_offset + tsz.x + padding.x + padding.z);
+        inner.y += yw::max(icon_size.y, tsz.y);
+      }
+      if (items.size() > 1) inner.y += item_gap * float(items.size() - 1);
       size = vapply_r<float2>(yw::max, min_size, inner, size * constrained);
     }
 

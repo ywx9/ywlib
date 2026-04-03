@@ -10,17 +10,16 @@ namespace system {} // namespace system
 
 inline class {
 public:
-  enum class state { pre_initialize, running, error, quit };
+  enum class state { running, error, quit };
 
 private:
-  state _state = state::pre_initialize;
+  state _state = state::quit;
   bool _updated = true;
   stopwatch _timer{};
 
 public:
   error_trace last_error{};
   uint32_t max_messages_per_frame = 100;
-  uint32_t max_frames_per_second = 1000;
 
   double fps{};
   double spf{};
@@ -29,42 +28,35 @@ public:
   bool error() const noexcept { return _state == state::error; }
   bool quit() const noexcept { return _state == state::quit; }
 
-  /// returns true when drawing of windows is updated in the current frame
-  bool updated() const noexcept { return _updated; }
-
   /// runs the mainloop
   bool operator()() {
     if (system::primal_windows.empty()) return _state = state::quit, false;
-    if (_state == state::pre_initialize) {
-      _timer.start();
-      _state = state::running;
-      for (const auto& wid : system::primal_windows)
-        if (const auto wsp = system::slot_address<ui::window>(wid); wsp && (wsp->dirty || wsp->messy)) {
-          wsp->draw();
-          wsp->swapchain->Present(0, 0);
-          wsp->messy = wsp->dirty = false;
+    if (_state == state::quit) _timer.restart();
+    _state = state::running;
+
+    for (const auto& wid : system::primal_windows)
+      if (const auto wsp = system::slot_address<ui::window>(wid); wsp && wsp->visible && (wsp->dirty || wsp->messy)) {
+        if (auto res = wsp->draw_layout_bitmap(); !res) {
+          last_error = std::move(res.error().push());
+          return _state = state::error, false;
         }
-    } else {
-      fps = 1.0 / (spf = _timer.lap());
-      _state = state::running;
-      if (_updated = spf >= 1.0 / max_frames_per_second) {
-        _timer.restart();
-        for (const auto& wid : system::primal_windows)
-          if (const auto wsp = system::slot_address<ui::window>(wid); wsp && (wsp->dirty || wsp->messy)) wsp->draw();
       }
-      uint32_t processed_messages = 0;
-      for (MSG msg; ::PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);) {
-        if (msg.message == WM_QUIT) return _state = state::quit, false;
-        ::TranslateMessage(&msg);
-        ::DispatchMessageW(&msg);
-        if (last_error) return _state = state::error, false;
-        if (++processed_messages >= max_messages_per_frame) break;
-      }
-      if (_updated)
-        for (const auto& wid : system::primal_windows)
-          if (const auto wsp = system::slot_address<ui::window>(wid); wsp && (wsp->dirty || wsp->messy))
-            wsp->swapchain->Present(0, 0), wsp->messy = wsp->dirty = false;
+
+    uint32_t processed_messages = 0;
+    for (MSG msg; ::PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);) {
+      if (msg.message == WM_QUIT) return _state = state::quit, false;
+      ::TranslateMessage(&msg);
+      ::DispatchMessageW(&msg);
+      if (last_error) return _state = state::error, false;
+      if (++processed_messages >= max_messages_per_frame) break;
     }
+
+    for (const auto& wid : system::primal_windows)
+      if (const auto wsp = system::slot_address<ui::window>(wid); wsp && wsp->visible) {
+        wsp->draw();
+        wsp->swapchain->Present(0, 0);
+      }
+    fps = 1.0 / (spf = _timer.lap());
     return _state == state::running;
   }
 
