@@ -244,6 +244,10 @@ constexpr std::string_view key_name(key code) {
   };
   return names[static_cast<uint8_t>(code)];
 }
+
+inline bool is_key_down(key code) noexcept {
+  return (::GetKeyState(static_cast<int>(code)) & 0x8000) != 0;
+}
 }
 
 namespace std {

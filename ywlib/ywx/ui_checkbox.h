@@ -39,7 +39,8 @@ public:
     function<void, bool> on_change;
     function<void, key> on_click;
     function<void, bool> on_focus;
-    function<void, event::key> on_key;
+    function<void, event::key> on_keydown;
+    function<void, event::key> on_keyup;
     function<void, event::move> on_move;
     function<void, event::wheel> on_wheel;
 
@@ -105,12 +106,14 @@ public:
 
     virtual void key_event(event::key e) override {
       if (!enabled) return;
-      if (e.first) {
-        if (e.down) captured_key = e.code;
-        else if (e.code == captured_key) click_action();
+      if (e.down) {
+        captured_key = e.code;
+        if (e.first && on_keydown) on_keydown(e);
+      } else {
+        if (e.code == captured_key) click_action();
         else captured_key = {};
+        if (on_keyup) on_keyup(e);
       }
-      if (on_key) on_key(e);
     }
 
     virtual void wheel_event(event::wheel Event) override {
@@ -202,8 +205,11 @@ public:
   const auto& on_focus() const { return unsafe_get(&slot::on_focus); }
   void on_focus(function<void, bool> f) { safe_set(&slot::on_focus, std::move(f)); }
 
-  const auto& on_key() const { return unsafe_get(&slot::on_key); }
-  void on_key(function<void, event::key> f) { safe_set(&slot::on_key, std::move(f)); }
+  const auto& on_keydown() const { return unsafe_get(&slot::on_keydown); }
+  void on_keydown(function<void, event::key> f) { safe_set(&slot::on_keydown, std::move(f)); }
+
+  const auto& on_keyup() const { return unsafe_get(&slot::on_keyup); }
+  void on_keyup(function<void, event::key> f) { safe_set(&slot::on_keyup, std::move(f)); }
 
   const auto& on_move() const { return unsafe_get(&slot::on_move); }
   void on_move(function<void, event::move> f) { safe_set(&slot::on_move, std::move(f)); }

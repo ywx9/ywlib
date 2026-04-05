@@ -1,9 +1,9 @@
 #pragma once
 #include "ywx/ui_control.h"
 
-namespace yw::ui {
+namespace yw {
 
-class window : public unknown {
+class window : public ui::unknown {
 public:
   enum class style : uint32_t {
     unknown,
@@ -12,7 +12,7 @@ public:
     borderless = WS_POPUP
   };
 
-  class slot : public unknown::slot {
+  class slot : public ui::unknown::slot {
     std::expected<void, error_trace> _create_window() {
       if (auto res = wclass.initialize(); !res) return unexpected_error(res.error());
       if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
@@ -58,10 +58,10 @@ public:
     bitmap layout_bitmap{};
     comptr<IDXGISwapChain1> swapchain{};
     yw::background background = colors::white;
-    slotid layout_id{};
-    slotid focused_control{};
-    slotid hovered_control{};
-    slotid captured_control{};
+    ui::slotid layout_id{};
+    ui::slotid focused_control{};
+    ui::slotid hovered_control{};
+    ui::slotid captured_control{};
     bool visible = true;
     bool enabled = true;
     bool dirty = true;
@@ -79,11 +79,12 @@ public:
     } focus_ring;
 
     function<bool> on_close;
-    function<void, event::key> on_key;
+    function<void, event::key> on_keydown;
+    function<void, event::key> on_keyup;
 
     virtual ~slot() noexcept override { ::DestroyWindow(hwnd); }
 
-    std::expected<void, error_trace> initialize(slotid Id, std::optional<int2> Pos, uint2 Size, window::style Style) {
+    std::expected<void, error_trace> initialize(ui::slotid Id, std::optional<int2> Pos, uint2 Size, window::style Style) {
       id = Id, style = Style, size = Size;
       if (auto res = _create_window(); !res) return unexpected_error(res.error());
       if (auto res = _calculate_margin(); !res) return unexpected_error(res.error());
@@ -158,12 +159,12 @@ public:
       return {};
     }
 
-    virtual bool attach(slotid child_id) override {
+    virtual bool attach(ui::slotid child_id) override {
       if (const auto lsp = system::uis.get(layout_id)) return lsp->attach(child_id);
       return true;
     }
 
-    virtual void detach(slotid child_id) override {
+    virtual void detach(ui::slotid child_id) override {
       if (const auto lsp = system::uis.get(layout_id)) lsp->detach(child_id);
     }
 
@@ -174,7 +175,7 @@ public:
     }
 
     void next_tab_stop(bool Forward) {
-      if (const auto lsp = system::slot_address<control>(layout_id)) {
+      if (const auto lsp = system::slot_address<ui::control>(layout_id)) {
         bool found = !focused_control;
         focused_control = lsp->next_tab_stop(focused_control, Forward, found);
       } else focused_control = {};
@@ -202,7 +203,7 @@ public:
   }
 
   explicit operator bool() const noexcept;
-  const slotid& id() const noexcept { return _id; }
+  const ui::slotid& id() const noexcept { return _id; }
   const HWND& hwnd() const { return unsafe_get(&slot::hwnd); }
   const int4& margin() const { return unsafe_get(&slot::margin); }
 
@@ -277,10 +278,18 @@ public:
     } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
   }
 
-  const auto& on_key() const { return unsafe_get(&slot::on_key); }
-  std::expected<void, error_trace> on_key(function<void, event::key> OnKey) const {
+  const auto& on_keydown() const { return unsafe_get(&slot::on_keydown); }
+  std::expected<void, error_trace> on_keydown(function<void, event::key> OnKeyDown) const {
     if (auto wsp = system::slot_address<window>(_id)) {
-      wsp->on_key = std::move(OnKey);
+      wsp->on_keydown = std::move(OnKeyDown);
+      return {};
+    } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
+  }
+
+  const auto& on_keyup() const { return unsafe_get(&slot::on_keyup); }
+  std::expected<void, error_trace> on_keyup(function<void, event::key> OnKeyUp) const {
+    if (auto wsp = system::slot_address<window>(_id)) {
+      wsp->on_keyup = std::move(OnKeyUp);
       return {};
     } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
   }
@@ -326,15 +335,15 @@ public:
   }
 };
 
-inline void control::slot::make_dirty() noexcept {
+inline void ui::control::slot::make_dirty() noexcept {
   if (const auto wsp = system::slot_address<window>(window_id)) wsp->dirty = true;
 }
 
-inline void control::slot::make_messy() noexcept {
+inline void ui::control::slot::make_messy() noexcept {
   if (const auto wsp = system::slot_address<window>(window_id)) wsp->messy = true;
 }
 
-inline void control::slot::hover_event(event::hover Event) {
+inline void ui::control::slot::hover_event(event::hover Event) {
   if (enabled && on_hover) on_hover(Event);
   if (tooltip.empty()) return;
   if (Event.enter()) {

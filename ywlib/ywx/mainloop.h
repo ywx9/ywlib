@@ -1,6 +1,6 @@
 #pragma once
 #include "ywx/ui_layout.h"
-#include "ywx/ui_window.h"
+#include "ywx/window.h"
 
 namespace yw {
 
@@ -35,7 +35,7 @@ public:
     _state = state::running;
 
     for (const auto& wid : system::primal_windows)
-      if (const auto wsp = system::slot_address<ui::window>(wid); wsp && wsp->visible && (wsp->dirty || wsp->messy)) {
+      if (const auto wsp = system::slot_address<window>(wid); wsp && wsp->visible && (wsp->dirty || wsp->messy)) {
         if (auto res = wsp->draw_layout_bitmap(); !res) {
           last_error = std::move(res.error().push());
           return _state = state::error, false;
@@ -52,7 +52,7 @@ public:
     }
 
     for (const auto& wid : system::primal_windows)
-      if (const auto wsp = system::slot_address<ui::window>(wid); wsp && wsp->visible) {
+      if (const auto wsp = system::slot_address<window>(wid); wsp && wsp->visible) {
         wsp->draw();
         wsp->swapchain->Present(0, 0);
       }
@@ -67,7 +67,7 @@ public:
 // //////////////////////////////////////// MARK: internal::wm_mousemove
 
 namespace internal {
-inline void wm_size(ui::window::slot& ws, WPARAM, LPARAM lp) {
+inline void wm_size(window::slot& ws, WPARAM, LPARAM lp) {
   if (ws.resizing) return;
   ws.size.x = LOWORD(lp);
   ws.size.y = HIWORD(lp);
@@ -91,7 +91,7 @@ inline void wm_size(ui::window::slot& ws, WPARAM, LPARAM lp) {
   ws.messy = true;
 }
 
-inline void wm_mousemove(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
+inline void wm_mousemove(window::slot& ws, WPARAM wp, LPARAM lp) {
   if (!ws.tracking) {
     TRACKMOUSEEVENT tme{sizeof(TRACKMOUSEEVENT), TME_LEAVE, ws.hwnd, 0};
     ::TrackMouseEvent(&tme);
@@ -127,7 +127,7 @@ inline void wm_mousemove(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
   }
 }
 
-inline void wm_mouseleave(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
+inline void wm_mouseleave(window::slot& ws, WPARAM wp, LPARAM lp) {
   const auto local_pt = ws.cursor_pos();
   ws.tracking = false;
   if (ws.hovered_control) {
@@ -137,7 +137,7 @@ inline void wm_mouseleave(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
   }
 }
 
-inline void wm_mousewheel(ui::window::slot& ws, WPARAM wp, LPARAM lp, bool horizontal) {
+inline void wm_mousewheel(window::slot& ws, WPARAM wp, LPARAM lp, bool horizontal) {
   const auto local_pt = ws.cursor_pos();
   const auto delta = static_cast<short>(GET_WHEEL_DELTA_WPARAM(wp));
   const bool c = (GET_KEYSTATE_WPARAM(wp) & MK_CONTROL) == MK_CONTROL;
@@ -147,25 +147,24 @@ inline void wm_mousewheel(ui::window::slot& ws, WPARAM wp, LPARAM lp, bool horiz
     hcsp->wheel_event(event::wheel(local_pt, delta, horizontal, c, s, a));
 }
 
-inline void wm_keydown(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
+inline void wm_keydown(window::slot& ws, WPARAM wp, LPARAM lp) {
   if (wp == VK_TAB) {
     if (const auto fsp = system::slot_address<ui::control>(ws.focused_control)) fsp->focus_event(false);
-    const bool shift = (::GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    const bool shift = is_key_down(key::shift);
     ws.next_tab_stop(!shift);
     ws.dirty = true;
   } else {
-    const auto repeat = static_cast<uint16_t>(lp & 0xffff);
+    const auto c = is_key_down(key::ctrl);
+    const auto s = is_key_down(key::shift);
+    const auto a = is_key_down(key::alt);
     const auto first = (lp & (1u << 30)) == 0;
-    const auto c = bool(::GetKeyState(VK_CONTROL) & 0x8000);
-    const auto s = bool(::GetKeyState(VK_SHIFT) & 0x8000);
-    const auto a = bool(::GetKeyState(VK_MENU) & 0x8000);
-    const auto e = event::key(repeat, key(wp), true, first, c, s, a);
+    const auto e = event::key(key(wp), true, first, c, s, a);
     if (const auto p = system::slot_address<ui::control>(ws.focused_control)) p->key_event(e);
-    else if (ws.on_key) ws.on_key(e);
+    else if (ws.on_keydown) ws.on_keydown(e);
   }
 }
 
-template<key K> void wm_button_down(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
+template<key K> void wm_button_down(window::slot& ws, WPARAM wp, LPARAM lp) {
   const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(uint_cast(lp)));
   if (ws.capture_count++ == 0) ::SetCapture(ws.hwnd);
   // ws.captured_key = K;
@@ -189,7 +188,7 @@ template<key K> void wm_button_down(ui::window::slot& ws, WPARAM wp, LPARAM lp) 
   } else ws.captured_control = {}, ws.focused_control = {};
 }
 
-template<key K> void wm_button_up(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
+template<key K> void wm_button_up(window::slot& ws, WPARAM wp, LPARAM lp) {
   const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(uint_cast(lp)));
   ws.capture_count = yw::max(0, ws.capture_count - 1);
   if (ws.capture_count == 0) ::ReleaseCapture();
@@ -209,7 +208,7 @@ template<key K> void wm_button_up(ui::window::slot& ws, WPARAM wp, LPARAM lp) {
 
 inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   const auto wsid = std::bit_cast<ui::slotid>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-  auto wsp = system::slot_address<ui::window::slot>(wsid);
+  auto wsp = system::slot_address<window::slot>(wsid);
   if (!wsp) return ::DefWindowProcW(hwnd, msg, wp, lp);
 
   switch (msg) {
@@ -221,14 +220,12 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
   case WM_KEYDOWN: internal::wm_keydown(*wsp, wp, lp); return 0;
   case WM_KEYUP:
     {
-      const auto repeat = static_cast<uint16_t>(lp & 0xffff);
-      const auto first = true;
-      const auto c = bool(::GetKeyState(VK_CONTROL) & 0x8000);
-      const auto s = bool(::GetKeyState(VK_SHIFT) & 0x8000);
-      const auto a = bool(::GetKeyState(VK_MENU) & 0x8000);
-      const auto e = event::key(repeat, key(wp), false, first, c, s, a);
+      const auto c = is_key_down(key::ctrl);
+      const auto s = is_key_down(key::shift);
+      const auto a = is_key_down(key::alt);
+      const auto e = event::key(key(wp), false, false, c, s, a);
       if (const auto p = system::slot_address<ui::control>(wsp->focused_control)) p->key_event(e);
-      else if (wsp->on_key) wsp->on_key(e);
+      else if (wsp->on_keyup) wsp->on_keyup(e);
     }
     return 0;
 

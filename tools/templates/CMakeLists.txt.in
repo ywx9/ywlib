@@ -24,7 +24,7 @@ target_include_directories(${YOUR_APP_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}
 
 if (WIN32)
   target_compile_definitions(${YOUR_APP_NAME} PRIVATE NOMINMAX UNICODE _UNICODE)
-  target_link_libraries(${YOUR_APP_NAME} PRIVATE dxgi d3d11 d3dcompiler d2d1 dwrite dxguid windowscodecs)
+  target_link_libraries(${YOUR_APP_NAME} PRIVATE dxgi d3d11 d3dcompiler d2d1 dwrite dxguid windowscodecs imm32)
 endif()
 
 target_compile_options(${YOUR_APP_NAME} PRIVATE

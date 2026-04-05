@@ -7,6 +7,7 @@
 #include <d3dcompiler.h>
 #include <dwrite_1.h>
 #include <dxgi1_3.h>
+#include <imm.h>
 #include <wincodec.h>
 #include <xaudio2.h>
 

@@ -40,7 +40,6 @@ static_assert(sizeof(hover) <= 8);
 //////////////////////////////////////// MARK: event::key
 
 struct key {
-  uint16_t repeat;
   yw::key code;
   bool down : 1;
   bool first : 1;
