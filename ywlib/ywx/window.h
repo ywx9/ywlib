@@ -1,4 +1,5 @@
 #pragma once
+#include "ywx/command_manager.h"
 #include "ywx/ui_control.h"
 
 namespace yw {
@@ -81,6 +82,7 @@ public:
     function<bool> on_close;
     function<void, event::key> on_keydown;
     function<void, event::key> on_keyup;
+    yw::command_manager commands;
 
     virtual ~slot() noexcept override { ::DestroyWindow(hwnd); }
 
@@ -293,6 +295,9 @@ public:
       return {};
     } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
   }
+
+  const auto& commands() const { return unsafe_get(&slot::commands); }
+  auto& commands() { return unsafe_get(&slot::commands); }
 
   std::expected<drawing, error_trace> begin_draw() {
     if (const auto wsp = system::slot_address<window>(_id)) {

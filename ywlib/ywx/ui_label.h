@@ -16,6 +16,7 @@ public:
 
     yw::text text = assume(yw::text::create(L""));
     color text_color = colors::black;
+    ui::alignment text_alignment = ui::alignment::center;
 
     function<void, event::button> on_button;
     function<void, event::wheel> on_wheel;
@@ -38,7 +39,19 @@ public:
       draw_round_rectangle(pos, size, radius, border_width);
       brush.color(text_color);
       const auto tsz = text.size() + padding.xy() + padding.zw();
-      draw_text(pos + padding.xy() + (size - tsz) * 0.5f, text);
+      auto extra = size - tsz;
+      switch (text_alignment) {
+      case ui::alignment::center: extra *= 0.5f; break;
+      case ui::alignment::left: extra *= float2(0.0f, 0.5f); break;
+      case ui::alignment::right: extra *= float2(1.0f, 0.5f); break;
+      case ui::alignment::top: extra *= float2(0.5f, 0.0f); break;
+      case ui::alignment::bottom: extra *= float2(0.5f, 1.0f); break;
+      case ui::alignment::left_top: extra = {}; break;
+      case ui::alignment::left_bottom: extra *= float2(0.0f, 1.0f); break;
+      case ui::alignment::right_top: extra *= float2(1.0f, 0.0f); break;
+      // case ui::alignment::right_bottom: break;
+      }
+      draw_text(pos + padding.xy() + extra, text);
     }
 
     virtual void button_event(event::button Event) override {
@@ -74,6 +87,19 @@ public:
 
   const auto& text_color() const { return unsafe_get(&slot::text_color); }
   void text_color(const color& c) { safe_set(&slot::text_color, c); }
+
+  const auto& text_alignment() const { return unsafe_get(&slot::text_alignment); }
+  void text_alignment(ui::alignment align) {
+    if (auto csp = system::slot_address<label>(_id)) {
+      csp->text_alignment = align;
+      switch (uint_cast(align) & 0b11) {
+      case 0b00: csp->text.text_alignment(yw::text_alignment::center); break;
+      case 0b01: csp->text.text_alignment(yw::text_alignment::left); break;
+      case 0b10: csp->text.text_alignment(yw::text_alignment::right); break;
+      }
+      csp->make_dirty();
+    }
+  }
 
   const auto& on_button() const { return unsafe_get(&slot::on_button); }
   void on_button(function<void, event::button> cb) { safe_set(&slot::on_button, std::move(cb)); }
