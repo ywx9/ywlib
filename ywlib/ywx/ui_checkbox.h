@@ -104,15 +104,20 @@ public:
       return enabled;
     }
 
-    virtual void key_event(event::key e) override {
-      if (!enabled) return;
+    virtual bool key_event(event::key e) override {
+      if (!enabled) return false;
       if (e.down) {
         captured_key = e.code;
         if (e.first && on_keydown) on_keydown(e);
+        return true;
       } else {
-        if (e.code == captured_key) click_action();
-        else captured_key = {};
+        if (e.code == captured_key) {
+          click_action();
+        } else {
+          captured_key = {};
+        }
         if (on_keyup) on_keyup(e);
+        return true;
       }
     }
 

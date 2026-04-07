@@ -499,8 +499,8 @@ public:
       return pos;
     }
 
-    virtual void key_event(event::key e) override {
-      if (!enabled) return;
+    virtual bool key_event(event::key e) override {
+      if (!enabled) return false;
       if (e.down) {
         if (e.ctrl) {
           switch (e.code) {
@@ -508,17 +508,17 @@ public:
             end_typing_group();
             copy_selection();
             if (e.first && on_keydown) on_keydown(e);
-            return;
+            return true;
           case key::x:
             end_typing_group();
             cut_selection();
             if (e.first && on_keydown) on_keydown(e);
-            return;
+            return true;
           case key::v:
             end_typing_group();
             paste_from_clipboard();
             if (e.first && on_keydown) on_keydown(e);
-            return;
+            return true;
           case key::z:
             end_typing_group();
             if (const auto wsp = system::slot_address<window>(window_id)) {
@@ -526,13 +526,13 @@ public:
               else wsp->commands.undo();
             }
             if (e.first && on_keydown) on_keydown(e);
-            return;
+            return true;
           case key::y:
             end_typing_group();
             if (const auto wsp = system::slot_address<window>(window_id))
               wsp->commands.redo();
             if (e.first && on_keydown) on_keydown(e);
-            return;
+            return true;
           default: break;
           }
         }
@@ -541,43 +541,48 @@ public:
           selection_anchor = 0;
           move_caret(text_length(), true);
           if (e.first && on_keydown) on_keydown(e);
-          return;
+          return true;
         }
         switch (e.code) {
         case key::left:
           end_typing_group();
           if (e.ctrl) move_caret(word_left(caret), e.shift);
           else if (caret > 0) move_caret(caret - 1, e.shift);
-          break;
+          return true;
         case key::right:
           end_typing_group();
           if (e.ctrl) move_caret(word_right(caret), e.shift);
           else if (caret < text_length()) move_caret(caret + 1, e.shift);
-          break;
+          return true;
         case key::home:
           end_typing_group();
           move_caret(0, e.shift);
-          break;
+          return true;
         case key::end:
           end_typing_group();
           move_caret(text_length(), e.shift);
-          break;
+          return true;
         case key::backspace:
           end_typing_group();
           if (caret != selection_anchor) erase_selection();
           else if (e.ctrl && caret > 0) erase_at(word_left(caret), caret);
           else if (caret > 0) erase_at(caret - 1, caret);
-          break;
+          return true;
         case key::delete_:
           end_typing_group();
           if (caret != selection_anchor) erase_selection();
           else if (e.ctrl && caret < text_length()) erase_at(caret, word_right(caret));
           else if (caret < text_length()) erase_at(caret, caret + 1);
-          break;
+          return true;
         default: break;
         }
         if (e.first && on_keydown) on_keydown(e);
-      } else if (on_keyup) on_keyup(e);
+          return false;
+      } else if (on_keyup) {
+        on_keyup(e);
+          return false;
+      }
+      return false;
     }
 
     virtual void move_event(event::move e) override {

@@ -195,8 +195,8 @@ public:
       return enabled;
     }
 
-    virtual void key_event(event::key e) override {
-      if (!enabled) return;
+    virtual bool key_event(event::key e) override {
+      if (!enabled) return false;
       if (e.down) {
         switch (e.code) {
         case key::up:
@@ -216,6 +216,7 @@ public:
           break;
         }
         if (e.first && on_keydown) on_keydown(e);
+        return true;
       } else {
         if (e.code == captured_key && (e.code == key::enter || e.code == key::space)) {
           if (const auto index = normalize_focus(); index != ~0u) select(index);
@@ -223,6 +224,7 @@ public:
         }
         captured_key = {};
         if (on_keyup) on_keyup(e);
+        return true;
       }
     }
 

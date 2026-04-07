@@ -168,7 +168,7 @@ public:
     virtual void drag_event(event::drag e) {}
     virtual bool focus_event(bool) { return false; }
     virtual void hover_event(event::hover Event);
-    virtual void key_event(event::key e) {}
+    virtual bool key_event(event::key e) { return false; }
     virtual void move_event(event::move e) {}
     virtual void wheel_event(event::wheel e) {}
   };

@@ -159,8 +159,9 @@ inline void wm_keydown(window::slot& ws, WPARAM wp, LPARAM lp) {
     const auto a = is_key_down(key::alt);
     const auto first = (lp & (1u << 30)) == 0;
     const auto e = event::key(key(wp), true, first, c, s, a);
-    if (const auto p = system::slot_address<ui::control>(ws.focused_control)) p->key_event(e);
-    else if (ws.on_keydown) ws.on_keydown(e);
+    bool handled = false;
+    if (const auto p = system::slot_address<ui::control>(ws.focused_control)) handled = p->key_event(e);
+    if (!handled && ws.on_keydown) ws.on_keydown(e);
   }
 }
 
@@ -224,8 +225,9 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
       const auto s = is_key_down(key::shift);
       const auto a = is_key_down(key::alt);
       const auto e = event::key(key(wp), false, false, c, s, a);
-      if (const auto p = system::slot_address<ui::control>(wsp->focused_control)) p->key_event(e);
-      else if (wsp->on_keyup) wsp->on_keyup(e);
+      bool handled = false;
+      if (const auto p = system::slot_address<ui::control>(wsp->focused_control)) handled = p->key_event(e);
+      if (!handled && wsp->on_keyup) wsp->on_keyup(e);
     }
     return 0;
 
