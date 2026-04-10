@@ -1,4 +1,5 @@
 #pragma once
+#include "ywx/ime.h"
 #include "ywx/ui_layout.h"
 #include "ywx/window.h"
 
@@ -219,16 +220,15 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
   case WM_MOUSEHWHEEL: internal::wm_mousewheel(*wsp, wp, lp, true); return 0;
 
   case WM_KEYDOWN: internal::wm_keydown(*wsp, wp, lp); return 0;
-  case WM_KEYUP:
-    {
-      const auto c = is_key_down(key::ctrl);
-      const auto s = is_key_down(key::shift);
-      const auto a = is_key_down(key::alt);
-      const auto e = event::key(key(wp), false, false, c, s, a);
-      bool handled = false;
-      if (const auto p = system::slot_address<ui::control>(wsp->focused_control)) handled = p->key_event(e);
-      if (!handled && wsp->on_keyup) wsp->on_keyup(e);
-    }
+  case WM_KEYUP: {
+    const auto c = is_key_down(key::ctrl);
+    const auto s = is_key_down(key::shift);
+    const auto a = is_key_down(key::alt);
+    const auto e = event::key(key(wp), false, false, c, s, a);
+    bool handled = false;
+    if (const auto p = system::slot_address<ui::control>(wsp->focused_control)) handled = p->key_event(e);
+    if (!handled && wsp->on_keyup) wsp->on_keyup(e);
+  }
     return 0;
 
   case WM_CHAR:
@@ -276,6 +276,15 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
       internal::wm_size(*wsp, 0, MAKELPARAM(cx, cy));
     } else internal::wm_size(*wsp, 0, MAKELPARAM(wsp->size.x, wsp->size.y));
     return 0;
+
+  case WM_IME_STARTCOMPOSITION: ime._opened = true; break;
+  // case WM_IME_COMPOSITION: ime._opened = true; break;
+  case WM_IME_NOTIFY:
+    switch (wp) {
+    case IMN_OPENCANDIDATE: ime._opened = true; return 0;
+    case IMN_CLOSECANDIDATE: ime._opened = false; return 0;
+    }
+    break;
 
   case WM_CLOSE:
     if (wsp->on_close && !wsp->on_close()) return 0;

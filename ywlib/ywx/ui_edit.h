@@ -1,6 +1,7 @@
 #pragma once
 #include "ywx/background.h"
 #include "ywx/clipboard.h"
+#include "ywx/ime.h"
 #include "ywx/text_layout.h"
 #include "ywx/ui_control.h"
 #include "ywx/window.h"
@@ -192,26 +193,31 @@ public:
       request_ime_position_update();
     }
 
-    void update_ime_position() const {
-      if (!focused || !enabled) return;
+    virtual void update_ime_position() const override {
       const auto wsp = system::slot_address<window>(window_id);
       if (!wsp || !wsp->hwnd) return;
+      const auto imc = ::ImmGetContext(wsp->hwnd);
+      if (!imc) return;
+      const auto caret_xywh = text.hit_test(caret);
+
+
+      COMPOSITIONFORM comp{};
+      comp.dwStyle = CFS_RECT;
+      comp.rcArea.left = long(pos.x + padding.x);
+
       const auto text_pos = text_origin();
       const auto rect = caret_rect();
       const LONG x = LONG(text_pos.x + rect.x);
       const LONG bottom = LONG(text_pos.y + rect.y + yw::max(rect.w, 1.0f));
 
-      if (has_last_ime_position && last_ime_x == x && last_ime_y == bottom) {
-        ime_position_dirty = false;
-        return;
-      }
 
-      HIMC imc = ::ImmGetContext(wsp->hwnd);
-      if (!imc) return;
-
+      // COMPOSITIONFORM comp{};
+      // comp.dwStyle = CFS_POINT;
+      // comp.ptCurrentPos = POINT{x, bottom};
       COMPOSITIONFORM comp{};
-      comp.dwStyle = CFS_POINT;
+      comp.dwStyle = CFS_RECT;
       comp.ptCurrentPos = POINT{x, bottom};
+      comp.rcArea = RECT{x, bottom, 100000, 100000};
       ::ImmSetCompositionWindow(imc, &comp);
 
       print("IME position updated: ({}, {})", x, bottom);
@@ -224,8 +230,7 @@ public:
     }
 
     void flush_ime_position_if_needed() const {
-      if (!ime_position_dirty) return;
-      update_ime_position();
+      if (ime.opened() && ime_position_dirty) update_ime_position();
     }
 
     uint32_t hit_caret(float2 point) const {
@@ -260,9 +265,7 @@ public:
       make_dirty();
     }
 
-    void commit_text(std::wstring value, size_t new_caret) {
-      apply_text(std::move(value), new_caret);
-    }
+    void commit_text(std::wstring value, size_t new_caret) { apply_text(std::move(value), new_caret); }
 
     void erase_range(uint32_t first, uint32_t last, bool allow_local_group = true) {
       if (last <= first) return;
@@ -314,9 +317,7 @@ public:
       if (auto value = clipboard.text()) insert_text(*value);
     }
 
-    void erase_at(size_t first, size_t last) {
-      erase_range(static_cast<uint32_t>(first), static_cast<uint32_t>(last));
-    }
+    void erase_at(size_t first, size_t last) { erase_range(static_cast<uint32_t>(first), static_cast<uint32_t>(last)); }
 
     void insert_text(std::wstring_view value) {
       if (value.empty()) return;
@@ -529,8 +530,7 @@ public:
             return true;
           case key::y:
             end_typing_group();
-            if (const auto wsp = system::slot_address<window>(window_id))
-              wsp->commands.redo();
+            if (const auto wsp = system::slot_address<window>(window_id)) wsp->commands.redo();
             if (e.first && on_keydown) on_keydown(e);
             return true;
           default: break;
@@ -577,10 +577,10 @@ public:
         default: break;
         }
         if (e.first && on_keydown) on_keydown(e);
-          return false;
+        return false;
       } else if (on_keyup) {
         on_keyup(e);
-          return false;
+        return false;
       }
       return false;
     }
