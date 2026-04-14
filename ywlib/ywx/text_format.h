@@ -7,6 +7,12 @@ class text_layout;
 
 template<typename T> concept text_format_like = castable_to<T, IDWriteTextFormat*>;
 
+struct text_hit_test_result {
+  float2 pos;
+  float2 size;
+  float2 caret_pos;
+};
+
 enum class text_alignment : uint8_t {
   left = DWRITE_TEXT_ALIGNMENT_LEADING,
   right = DWRITE_TEXT_ALIGNMENT_TRAILING,

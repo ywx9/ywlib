@@ -12,14 +12,15 @@ namespace yw::system {
 
 inline class {
   HWND _hwnd{};
-  bitmap _rendertarget;
-  comptr<IDXGISwapChain1> _swapchain;
-  text_layout _layout;
-  int2 _layout_size;
   int2 _window_size;
   int2 _window_pos;
-
   bool _visible = false;
+
+  bitmap _rendertarget;
+  comptr<IDXGISwapChain1> _swapchain;
+
+  text_layout _layout;
+  int2 _layout_size;
 
   const DWORD _style = WS_POPUP;
   const DWORD _ex_style = WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT;
@@ -59,14 +60,6 @@ public:
       if (Pos.y < dc_center.y) _window_pos = {Pos.x - _window_size.x - 4, Pos.y}; // top-right
       else _window_pos = {Pos.x - _window_size.x - 4, Pos.y + Size.y - _window_size.y}; // bottom-right
     }
-    // const auto ui_center = Pos + int2(Size) / 2;
-    // if (ui_center.x < dc_center.x) {
-    //   if (ui_center.y < dc_center.y) _window_pos = {Pos.x, Pos.y + Size.y + 4}; // top-left
-    //   else _window_pos = {Pos.x, Pos.y - _window_size.y - 4};                   // bottom-left
-    // } else {
-    //   if (ui_center.y < dc_center.y) _window_pos = {Pos.x - _window_size.x - 4, Pos.y}; // top-right
-    //   else _window_pos = {Pos.x - _window_size.x - 4, Pos.y + Size.y - _window_size.y}; // bottom-right
-    // }
     if (!::SetWindowPos(_hwnd, HWND_TOPMOST, _window_pos.x, _window_pos.y, _window_size.x, _window_size.y,
           SWP_NOACTIVATE | SWP_SHOWWINDOW))
       return unexpected_win32_error("SetWindowPos failed");

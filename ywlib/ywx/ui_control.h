@@ -162,8 +162,8 @@ public:
       return {};
     }
 
-    /// IME変換文字列の表示位置を更新する (有効なコントロール以外は何もしない)
-    virtual void update_ime_position() const {}
+    virtual float2 ime_position() const { return {}; };
+    virtual void ime_insert_text(std::wstring_view) {}
 
     virtual void char_event(wchar_t c) {}
     virtual void click_event(event::button e) {}

@@ -8,83 +8,62 @@ public:
   struct command {
     function<void> redo;
     function<void> undo;
-    std::wstring label{};
   };
 
   struct group {
-    std::wstring label{};
     std::vector<command> commands{};
   };
 
 private:
   std::vector<group> _undo_stack{};
   std::vector<group> _redo_stack{};
-  std::optional<group> _building{};
+  // std::optional<group> _building{};
   bool _replaying = false;
   size_t _limit = 256;
+  stopwatch _grouping_timer;
+  double _grouping_gap = 0.8;
+  bool _last_command_is_groupable = false;
 
   void trim_undo_stack() {
-    if (_limit == 0) {
-      _undo_stack.clear();
-      return;
-    }
-    while (_undo_stack.size() > _limit) _undo_stack.erase(_undo_stack.begin());
+    if (_limit != 0)
+      while (_undo_stack.size() > _limit) _undo_stack.erase(_undo_stack.begin());
+    else _undo_stack.clear();
+  }
+
+  void push_new(command cmd) {
+    group g{};
+    g.commands.push_back(std::move(cmd));
+    _undo_stack.push_back(std::move(g));
+    _redo_stack.clear();
+    trim_undo_stack();
   }
 
 public:
   bool is_replaying() const noexcept { return _replaying; }
-  bool has_open_group() const noexcept { return _building.has_value(); }
   bool can_undo() const noexcept { return !_undo_stack.empty(); }
   bool can_redo() const noexcept { return !_redo_stack.empty(); }
 
   size_t limit() const noexcept { return _limit; }
-  void limit(size_t value) {
-    _limit = value;
-    trim_undo_stack();
-  }
+  void limit(size_t value) { _limit = value, trim_undo_stack(); }
 
-  void clear() {
-    _undo_stack.clear();
-    _redo_stack.clear();
-    _building.reset();
-  }
+  double grouping_gap() const noexcept { return _grouping_gap; }
+  void grouping_gap(double value) noexcept { _grouping_gap = value; }
 
-  void begin_group(std::wstring label = {}) {
-    if (_replaying) return;
-    end_group();
-    _building.emplace();
-    _building->label = std::move(label);
-  }
+  void end_grouping() noexcept { _grouping_timer.reset(); _last_command_is_groupable = false; }
+  void clear() {_undo_stack.clear(), _redo_stack.clear(); }
 
-  void end_group() {
-    if (!_building) return;
-    if (!_building->commands.empty()) {
-      _undo_stack.push_back(std::move(*_building));
-      _redo_stack.clear();
-      trim_undo_stack();
-    }
-    _building.reset();
-  }
-
-  void push(command cmd) {
+  void push(command cmd, bool Groupable = false) {
     if (_replaying) return;
     if (!cmd.undo || !cmd.redo) return;
-    if (_building) _building->commands.push_back(std::move(cmd));
-    else {
-      group g{};
-      g.commands.push_back(std::move(cmd));
-      _undo_stack.push_back(std::move(g));
+    const bool append = Groupable && _last_command_is_groupable && _grouping_timer.running() &&
+                        _grouping_timer.elapsed() <= _grouping_gap;
+    if (append) {
+      _undo_stack.back().commands.push_back(std::move(cmd));
       _redo_stack.clear();
-      trim_undo_stack();
-    }
-  }
-
-  template<stringable S> void push(function<void> redo_fn, function<void> undo_fn, S&& label) {
-    command cmd{};
-    cmd.redo = std::move(redo_fn);
-    cmd.undo = std::move(undo_fn);
-    cmd.label = unicode<wchar_t>(static_cast<S&&>(label));
-    push(std::move(cmd));
+    } else push_new(std::move(cmd));
+    if (Groupable) _grouping_timer.restart();
+    else _grouping_timer.reset();
+    _last_command_is_groupable = Groupable;
   }
 
   void push(function<void> redo_fn, function<void> undo_fn) {
@@ -95,7 +74,7 @@ public:
   }
 
   bool undo() {
-    end_group();
+    _grouping_timer.reset(); // 停止により、次のコマンドを強制的に新グループに
     if (_undo_stack.empty()) return false;
     auto g = std::move(_undo_stack.back());
     _undo_stack.pop_back();
@@ -108,7 +87,7 @@ public:
   }
 
   bool redo() {
-    end_group();
+    _grouping_timer.reset(); // 停止により、次のコマンドを強制的に新グループに
     if (_redo_stack.empty()) return false;
     auto g = std::move(_redo_stack.back());
     _redo_stack.pop_back();

@@ -8,10 +8,11 @@ namespace yw::event {
 struct button {
   short2 pos;
   yw::key code;
-  bool down : 1;
   bool ctrl : 1;
   bool shift : 1;
   bool alt : 1;
+  bool down : 1;
+  bool double_click : 1;
 };
 static_assert(sizeof(button) <= 8);
 
@@ -41,11 +42,11 @@ static_assert(sizeof(hover) <= 8);
 
 struct key {
   yw::key code;
-  bool down : 1;
-  bool first : 1;
   bool ctrl : 1;
   bool shift : 1;
   bool alt : 1;
+  bool down : 1;
+  bool first : 1;
 };
 static_assert(sizeof(key) <= 8);
 
@@ -62,10 +63,10 @@ static_assert(sizeof(move) <= 8);
 struct wheel {
   short2 pos;
   short delta;
-  bool horizontal : 1;
   bool ctrl : 1;
   bool shift : 1;
   bool alt : 1;
+  bool horizontal : 1;
 };
 static_assert(sizeof(wheel) <= 8);
 } // namespace yw::event

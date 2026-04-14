@@ -35,6 +35,19 @@ public:
     return std::move(t);
   }
 
+  template<stringable S> static std::expected<text, error_trace> create(S&& Text, const text_format_like auto& Format) {
+    if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
+    text t{};
+    t._text = unicode<wchar_t>(static_cast<S&&>(Text));
+    auto hr = dwrite.factory()->CreateTextLayout(
+      t._text.data(), UINT(t._text.size()), static_cast<IDWriteTextFormat*>(Format), 0, 0, &t._p.get());
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", int32_t(hr));
+    if (auto hr = t._p->GetMetrics(&t._metrics); FAILED(hr))
+      return unexpected_error(errors::operation_failed, "GetMetrics failed", int32_t(hr));
+    t._p->SetMaxWidth(t._metrics.width);
+    return std::move(t);
+  }
+
   template<stringable S> static std::expected<text, error_trace> create(
     S&& Text, null_terminated<wchar_t> FontName, std::optional<float> FontSize = {},
     std::optional<yw::font_weight> FontWeight = {}, std::optional<yw::font_style> FontStyle = {},
@@ -99,12 +112,11 @@ public:
     return {};
   }
 
-  /// returns position and size `{left, top, width, height}` of the character at the specified text position
   std::expected<float4, error_trace> hit_test(uint1 text_position, bool is_trailing = false) const {
     if (!_p) return unexpected_error(errors::not_initialized, "text is not initialized");
     DWRITE_HIT_TEST_METRICS metrics{};
-    float x = 0.0f, y = 0.0f;
-    auto hr = _p->HitTestTextPosition(text_position.x, is_trailing, &x, &y, &metrics);
+    float2 pt{};
+    auto hr = _p->HitTestTextPosition(text_position.x, is_trailing, &pt.x, &pt.y, &metrics);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "HitTestTextPosition failed", int32_t(hr));
     return float4(metrics.left, metrics.top, metrics.width, metrics.height);
   }

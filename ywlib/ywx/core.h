@@ -73,6 +73,7 @@ public:
     _hinstance = ::GetModuleHandleW(nullptr);
     _name = L"ywlib_window_class";
     WNDCLASSW wc{};
+    wc.style = CS_DBLCLKS;
     wc.lpfnWndProc = proc;
     wc.hInstance = _hinstance;
     wc.hCursor = ::LoadCursorW(nullptr, IDC_ARROW);

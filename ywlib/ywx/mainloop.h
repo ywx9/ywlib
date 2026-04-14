@@ -166,7 +166,7 @@ inline void wm_keydown(window::slot& ws, WPARAM wp, LPARAM lp) {
   }
 }
 
-template<key K> void wm_button_down(window::slot& ws, WPARAM wp, LPARAM lp) {
+template<key K, bool DBL = false> void wm_button_down(window::slot& ws, WPARAM wp, LPARAM lp) {
   const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(uint_cast(lp)));
   if (ws.capture_count++ == 0) ::SetCapture(ws.hwnd);
   // ws.captured_key = K;
@@ -177,7 +177,7 @@ template<key K> void wm_button_down(window::slot& ws, WPARAM wp, LPARAM lp) {
   if (const auto fcsp = system::slot_address<ui::control>(ws.focused_control)) {
     if (ws.focused_control == ws.hovered_control) {
       ws.captured_control = fcsp->id;
-      fcsp->button_event(event::button(local_pt, K, true, c, s, a));
+      fcsp->button_event(event::button(local_pt, K, c, s, a, true, DBL));
       return;
     }
     ws.focused_control = {};
@@ -185,12 +185,12 @@ template<key K> void wm_button_down(window::slot& ws, WPARAM wp, LPARAM lp) {
   }
   if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control)) {
     ws.captured_control = hcsp->id;
-    hcsp->button_event(event::button(local_pt, K, true, c, s, a));
+    hcsp->button_event(event::button(local_pt, K, c, s, a, true, DBL));
     ws.focused_control = (hcsp->focus_event(true) ? hcsp->id : ui::slotid());
   } else ws.captured_control = {}, ws.focused_control = {};
 }
 
-template<key K> void wm_button_up(window::slot& ws, WPARAM wp, LPARAM lp) {
+template<key K, bool DBL = false> void wm_button_up(window::slot& ws, WPARAM wp, LPARAM lp) {
   const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(uint_cast(lp)));
   ws.capture_count = yw::max(0, ws.capture_count - 1);
   if (ws.capture_count == 0) ::ReleaseCapture();
@@ -198,8 +198,8 @@ template<key K> void wm_button_up(window::slot& ws, WPARAM wp, LPARAM lp) {
   const bool s = (wp & MK_SHIFT) == MK_SHIFT;
   const bool a = (wp & MK_ALT) == MK_ALT;
   if (const auto ccsp = system::slot_address<ui::control>(ws.captured_control)) {
-    if (ws.captured_control == ws.hovered_control) ccsp->click_event(event::button(local_pt, K, false, c, s, a));
-    ccsp->button_event(event::button(local_pt, K, false, c, s, a));
+    if (ws.captured_control == ws.hovered_control) ccsp->click_event(event::button(local_pt, K, c, s, a, false, DBL));
+    ccsp->button_event(event::button(local_pt, K, c, s, a, false, DBL));
   }
   ws.captured_control = {};
   ws.dirty = true;
@@ -235,6 +235,8 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     if (const auto p = system::slot_address<ui::control>(wsp->focused_control)) p->char_event(static_cast<wchar_t>(wp));
     return 0;
 
+    //////////////////////////////////// MARK: ボタンイベント
+
   case WM_LBUTTONDOWN: internal::wm_button_down<key::lbutton>(*wsp, wp, lp); return 0;
   case WM_LBUTTONUP: internal::wm_button_up<key::lbutton>(*wsp, wp, lp); return 0;
 
@@ -252,6 +254,9 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     if (HIWORD(wp) == XBUTTON1) internal::wm_button_up<key::xbutton1>(*wsp, wp, lp);
     else internal::wm_button_up<key::xbutton2>(*wsp, wp, lp);
     return 0;
+
+  case WM_LBUTTONDBLCLK: internal::wm_button_down<key::lbutton, true>(*wsp, wp, lp); return 0;
+  case WM_RBUTTONDBLCLK: internal::wm_button_down<key::rbutton, true>(*wsp, wp, lp); return 0;
 
   case WM_KILLFOCUS:
     wsp->captured_control = {};
@@ -277,14 +282,65 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     } else internal::wm_size(*wsp, 0, MAKELPARAM(wsp->size.x, wsp->size.y));
     return 0;
 
-  case WM_IME_STARTCOMPOSITION: ime._opened = true; break;
-  // case WM_IME_COMPOSITION: ime._opened = true; break;
-  case WM_IME_NOTIFY:
-    switch (wp) {
-    case IMN_OPENCANDIDATE: ime._opened = true; return 0;
-    case IMN_CLOSECANDIDATE: ime._opened = false; return 0;
+    ////////////////////////////////////// MARK: IME
+
+  case WM_IME_SETCONTEXT: lp &= ~ISC_SHOWUICOMPOSITIONWINDOW; return ::DefWindowProcW(hwnd, msg, wp, lp);
+
+  case WM_IME_STARTCOMPOSITION: {
+    system::ime.hide();
+    // 必要なら edit 側の通常キャレットを消す
+    return 0;
+  }
+
+  case WM_IME_COMPOSITION:
+    if (const auto fcsp = system::slot_address<ui::control>(wsp->focused_control); !fcsp) system::ime.hide();
+    else if (HIMC himc = ::ImmGetContext(hwnd); !himc) system::ime.hide();
+    else {
+      if (lp & GCS_COMPSTR) {
+        if (auto bytes = ::ImmGetCompositionStringW(himc, GCS_COMPSTR, nullptr, 0); bytes > 0) {
+          std::wstring s(bytes / sizeof(wchar_t), L'\0');
+          ::ImmGetCompositionStringW(himc, GCS_COMPSTR, s.data(), bytes);
+          system::ime.update_text(s);
+        } else system::ime.update_text(L"");
+      }
+      if (lp & GCS_COMPATTR) {
+        std::vector<uint8_t> attrs;
+        if (auto bytes = ::ImmGetCompositionStringW(himc, GCS_COMPATTR, nullptr, 0); bytes > 0) {
+          attrs.resize(static_cast<size_t>(bytes));
+          ::ImmGetCompositionStringW(himc, GCS_COMPATTR, attrs.data(), bytes);
+        }
+        system::ime.update_attrs(attrs);
+      }
+      if (lp & GCS_CURSORPOS) {
+        LONG pos = ::ImmGetCompositionStringW(himc, GCS_CURSORPOS, nullptr, 0);
+        system::ime.update_cursor_pos(pos);
+      }
+      if (lp & GCS_RESULTSTR) {
+        if (auto bytes = ::ImmGetCompositionStringW(himc, GCS_RESULTSTR, nullptr, 0); bytes > 0) {
+          std::wstring s(bytes / sizeof(wchar_t), L'\0');
+          ::ImmGetCompositionStringW(himc, GCS_RESULTSTR, s.data(), bytes);
+          fcsp->ime_insert_text(s);
+        }
+      }
+
+      ::ImmReleaseContext(hwnd, himc);
+
+      system::ime.update_window_size();
+      system::ime.draw();
+      const auto local_caret_pos = fcsp->ime_position();
+      const auto global_caret_pos = wsp->pos + wsp->margin.xy() + int2(local_caret_pos);
+      if (system::ime.window_size().x > 1) system::ime.show(global_caret_pos);
+      else system::ime.hide();
     }
-    break;
+    return 0;
+
+  case WM_IME_ENDCOMPOSITION:
+    system::ime.hide();
+    system::ime.update_text(L"");
+    // 必要なら edit 側の通常キャレットを戻す
+    return 0;
+
+    //////////////////////////////////// MARK: 終了処理
 
   case WM_CLOSE:
     if (wsp->on_close && !wsp->on_close()) return 0;
