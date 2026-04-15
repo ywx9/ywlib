@@ -27,16 +27,51 @@ public:
 
     void insert_text(std::wstring_view Str) {
       if (Str.empty()) return;
-      std::wstring s;
       const auto& o = text();
+      const auto prefix_len = yw::min(static_cast<size_t>(caret_pos), o.size());
+      const auto suffix_len = o.size() - prefix_len;
+
+      std::wstring s;
       s.reserve(o.size() + Str.size());
-      std::memcpy(s.data(), o.data(), caret_pos * sizeof(wchar_t));
-      std::memcpy(s.data() + caret_pos, Str.data(), Str.size() * sizeof(wchar_t));
-      const auto old_caret_pos = caret_pos;
-      caret_pos += Str.size();
-      std::memcpy(s.data() + caret_pos, o.data() + old_caret_pos, (o.size() - old_caret_pos) * sizeof(wchar_t));
-      // フィルター適用の必要あり
-      if (s.size() > max_length) s.resize(max_length);
+      s.append(o.data(), prefix_len);
+
+      size_t inserted = 0;
+      if (filter) {
+        for (const auto c : Str) {
+          if (!filter(c)) continue;
+          if (max_length != npos && s.size() >= max_length) break;
+          s.push_back(c);
+          ++inserted;
+        }
+      } else {
+        auto accepted = Str.size();
+        if (max_length != npos) {
+          const auto remain = max_length > s.size() ? (max_length - s.size()) : size_t(0);
+          accepted = yw::min(accepted, remain);
+        }
+        if (accepted > 0) {
+          s.append(Str.data(), accepted);
+          inserted = accepted;
+        }
+      }
+      if (max_length == npos || s.size() < max_length) {
+        auto tail = suffix_len;
+        if (max_length != npos) {
+          const auto remain = max_length - s.size();
+          tail = yw::min(tail, remain);
+        }
+        if (tail > 0) s.append(o.data() + prefix_len, tail);
+      }
+      text(std::move(s));
+      caret_pos = static_cast<uint32_t>(prefix_len + inserted);
+      selection_anchor = caret_pos;
+      make_dirty();
+      if (const auto wsp = system::slot_address<window>(window_id)) {
+        wsp->commands.push(
+          //
+        );
+      }
+      if (on_change) on_change(text());
     }
 
   public:
