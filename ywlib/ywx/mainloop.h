@@ -154,12 +154,16 @@ inline void wm_keydown(window::slot& ws, WPARAM wp, LPARAM lp) {
     const bool shift = is_key_down(key::shift);
     ws.next_tab_stop(!shift);
     ws.dirty = true;
+  } else if (wp == VK_ESCAPE) {
+    if (const auto fsp = system::slot_address<ui::control>(ws.focused_control)) fsp->focus_event(false);
+    ws.focused_control = {};
+    ws.dirty = true;
   } else {
     const auto c = is_key_down(key::ctrl);
     const auto s = is_key_down(key::shift);
     const auto a = is_key_down(key::alt);
     const auto first = (lp & (1u << 30)) == 0;
-    const auto e = event::key(key(wp), true, first, c, s, a);
+    const auto e = event::key(key(wp), c, s, a, true, first);
     bool handled = false;
     if (const auto p = system::slot_address<ui::control>(ws.focused_control)) handled = p->key_event(e);
     if (!handled && ws.on_keydown) ws.on_keydown(e);
@@ -224,7 +228,7 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     const auto c = is_key_down(key::ctrl);
     const auto s = is_key_down(key::shift);
     const auto a = is_key_down(key::alt);
-    const auto e = event::key(key(wp), false, false, c, s, a);
+    const auto e = event::key(key(wp), c, s, a, false, false);
     bool handled = false;
     if (const auto p = system::slot_address<ui::control>(wsp->focused_control)) handled = p->key_event(e);
     if (!handled && wsp->on_keyup) wsp->on_keyup(e);
@@ -288,6 +292,7 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
 
   case WM_IME_STARTCOMPOSITION: {
     system::ime.hide();
+    system::ime.reset_state();
     // 必要なら edit 側の通常キャレットを消す
     return 0;
   }
@@ -322,12 +327,24 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
           fcsp->ime_insert_text(s);
         }
       }
+      const auto local_caret_pos = fcsp->ime_position();
+      COMPOSITIONFORM comp_form{};
+      comp_form.dwStyle = CFS_POINT;
+      comp_form.ptCurrentPos.x = LONG(local_caret_pos.x);
+      comp_form.ptCurrentPos.y = LONG(local_caret_pos.y);
+      ::ImmSetCompositionWindow(himc, &comp_form);
+
+      CANDIDATEFORM cand_form{};
+      cand_form.dwIndex = 0;
+      cand_form.dwStyle = CFS_CANDIDATEPOS;
+      cand_form.ptCurrentPos.x = LONG(local_caret_pos.x);
+      cand_form.ptCurrentPos.y = LONG(local_caret_pos.y);
+      ::ImmSetCandidateWindow(himc, &cand_form);
 
       ::ImmReleaseContext(hwnd, himc);
 
       system::ime.update_window_size();
       system::ime.draw();
-      const auto local_caret_pos = fcsp->ime_position();
       const auto global_caret_pos = wsp->pos + wsp->margin.xy() + int2(local_caret_pos);
       if (system::ime.window_size().x > 1) system::ime.show(global_caret_pos);
       else system::ime.hide();
@@ -336,7 +353,7 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
 
   case WM_IME_ENDCOMPOSITION:
     system::ime.hide();
-    system::ime.update_text(L"");
+    system::ime.reset_state();
     // 必要なら edit 側の通常キャレットを戻す
     return 0;
 

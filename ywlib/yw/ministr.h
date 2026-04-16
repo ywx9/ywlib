@@ -70,5 +70,24 @@ public:
     _p = allocate(static_cast<wchar_t>(size));
     if (_p) std::memcpy(_p + 1, sv.data(), size * sizeof(wchar_t));
   }
+
+  template<input_range<wchar_t> R> requires (!stringable<R, wchar_t>) ministr(R&& Range) {
+    const auto n = static_cast<size_t>(std::ranges::distance(Range));
+    if (n == 0 || n > max_length) return;
+    _p = allocate(static_cast<wchar_t>(n));
+    if (_p) std::ranges::copy(Range, _p + 1);
+  }
+
+  void resize(size_t Size) {
+    if (Size == 0 || Size > max_length) return;
+    if (Size < size()) {
+      _p[0] = static_cast<wchar_t>(Size);
+      _p[Size + 1] = L'\0';
+    } else if (auto new_p = allocate(static_cast<wchar_t>(Size))) {
+      std::memcpy(new_p + 1, _p + 1, size() * sizeof(wchar_t));
+      delete[] _p;
+      _p = new_p;
+    }
+  }
 };
 }

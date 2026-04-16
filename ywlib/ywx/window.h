@@ -127,7 +127,7 @@ public:
         if (auto res = bitmap::create(size)) layout_bitmap = std::move(*res);
         else return unexpected_error(res.error());
       }
-      if (auto d = layout_bitmap.begin_draw(color(0.0f, 0.0f, 0.0f, 0.0f))) {
+      if (auto d = layout_bitmap.begin_draw(colors::transparent)) {
         if (!drawn) draw_background({}, float2(size), background);
         if (messy) {
           lsp->update_layout({}, float2(size));

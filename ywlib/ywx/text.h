@@ -11,6 +11,43 @@ class text {
   IDWriteTextFormat* _text_format() const { return static_cast<IDWriteTextFormat*>(_p.get()); }
 
 public:
+  /// 文字列を直接操作するためのハンドラ。デストラクト時にレイアウトに反映する。
+  class handle {
+    friend class text;
+    text* _p = nullptr;
+    handle(text* t) : _p(t) {}
+
+    std::expected<void, error_trace> _update();
+
+  public:
+    ~handle() noexcept {
+      try {
+        check_error(_update());
+      } catch (...) {}
+    }
+    handle(const handle&) = delete;
+    handle& operator=(const handle&) = delete;
+    handle(handle&& s) noexcept : _p(s._p) { s._p = nullptr; }
+    handle& operator=(handle&& s) noexcept {
+      if (this != &s) _p = s._p, s._p = nullptr;
+      return *this;
+    }
+
+    explicit operator bool() const noexcept { return _p != nullptr; }
+
+    std::wstring* operator->() {
+      if (!_p) {
+        print.err("invalid access to closed text::handle");
+        return nullptr;
+      } else return &_p->_text;
+    }
+
+    /// 文字列操作を終了し、レイアウトに反映する。
+    std::expected<void, error_trace> close() { return check_error(_update()); }
+  };
+
+  friend class handle;
+
   text() noexcept = default;
   explicit operator bool() const noexcept { return static_cast<bool>(_p); }
   explicit operator IDWriteTextFormat*() const& noexcept { return _text_format(); }
@@ -29,6 +66,7 @@ public:
     auto hr =
       dwrite.factory()->CreateTextLayout(t._text.data(), UINT(t._text.size()), dwrite.text_format(), 0, 0, &t._p.get());
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", int32_t(hr));
+    t._p->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
     if (auto hr = t._p->GetMetrics(&t._metrics); FAILED(hr))
       return unexpected_error(errors::operation_failed, "GetMetrics failed", int32_t(hr));
     t._p->SetMaxWidth(t._metrics.width);
@@ -42,6 +80,7 @@ public:
     auto hr = dwrite.factory()->CreateTextLayout(
       t._text.data(), UINT(t._text.size()), static_cast<IDWriteTextFormat*>(Format), 0, 0, &t._p.get());
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", int32_t(hr));
+    t._p->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
     if (auto hr = t._p->GetMetrics(&t._metrics); FAILED(hr))
       return unexpected_error(errors::operation_failed, "GetMetrics failed", int32_t(hr));
     t._p->SetMaxWidth(t._metrics.width);
@@ -153,15 +192,41 @@ public:
 
   template<stringable S> std::expected<void, error_trace> operator()(S&& NewText) {
     _text = unicode<wchar_t>(static_cast<S&&>(NewText));
-    if (auto res = create(_text, font_name(), font_size(), font_weight(), font_style(), font_stretch()))
-      *this = std::move(*res);
-    else return unexpected_error(res.error());
+    std::expected<text, error_trace> res;
+    if (!*this) res = create(_text);
+    else res = create(_text, font_name(), font_size(), font_weight(), font_style(), font_stretch());
+    if (!res) return unexpected_error(res.error());
+    else *this = std::move(*res);
     return {};
   }
+
+  /// 文字列操作のためのハンドルを作成する。
+  /// \note textの内部文字列のバッファを使いまわしたい場合などに便利。
+  handle open_handle() & noexcept { return handle(this); }
 };
+
+//////////////////////////////////////// \note text::handle
+
+inline std::expected<void, error_trace> text::handle::_update() {
+  if (!_p) return {}; // text::handle is not initialized
+  auto tfp = static_cast<IDWriteTextFormat*>(*_p);
+  if (!tfp && !(tfp = dwrite.text_format()))
+    return unexpected_error(errors::operation_failed, "text format is not available");
+  auto hr = dwrite.factory()->CreateTextLayout(_p->_text.data(), UINT32(_p->_text.size()), tfp, 0, 0, &_p->_p.get());
+  if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", int32_t(hr));
+  _p->_p->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+  if (auto hr = _p->_p->GetMetrics(&_p->_metrics); FAILED(hr))
+    return unexpected_error(errors::operation_failed, "GetMetrics failed", int32_t(hr));
+  _p->_p->SetMaxWidth(_p->_metrics.width);
+  _p = nullptr;
+  return {};
+}
+
+//////////////////////////////////////// \note 描画
 
 inline std::expected<void, error_trace> draw_text(float2 Pos, const text& Text) {
   if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
+  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   if (!Text) return unexpected_error(errors::operation_failed, "Text not initialized");
   d2d.context()->DrawTextLayout(
     std::bit_cast<D2D1_POINT_2F>(Pos), static_cast<IDWriteTextLayout*>(Text), brush.d2d_brush());

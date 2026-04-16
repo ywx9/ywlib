@@ -32,6 +32,12 @@ public:
   int2 window_pos() const noexcept { return _window_pos; }
   bool visible() const noexcept { return _visible; }
 
+  void reset_state() {
+    _cursor_pos = 0;
+    _attrs.clear();
+    check_error(update_text(L""));
+  }
+
   void hide() {
     if (!_hwnd) return;
     ::ShowWindow(_hwnd, SW_HIDE);
@@ -116,6 +122,7 @@ public:
       for (const auto& attr : _attrs) {
         auto res = _composition.hit_test_range({attr.begin, attr.end});
         if (!res) return unexpected_error(res.error());
+        if (res->empty()) continue;
         const auto pt = res->operator[](0).xy();
         const auto sz = res->operator[](0).zw();
         switch (attr.type) {

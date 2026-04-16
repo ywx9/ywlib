@@ -249,8 +249,9 @@ template<typename T> concept is_none = same_as<remove_cv<T>, none>;
 
 //////////////////////////////////////// MARK: common_type
 
-template<typename... Ts> using common_type = select_type<requires { typename std::common_reference<Ts...>::type; },
-  std::common_reference<Ts...>, std::type_identity<none>>::type;
+template<typename... Ts> using common_type = select_type<requires {
+  typename std::common_reference<Ts...>::type;
+}, std::common_reference<Ts...>, std::type_identity<none>>::type;
 
 template<typename... Ts> concept common_with = !is_none<common_type<Ts...>>;
 
@@ -335,16 +336,25 @@ template<typename T> using iter_value_t = sys::iter_type<remove_cvref<T>, std::i
 template<typename T> using iter_difference_t = sys::iter_type<remove_cvref<T>, std::iter_difference_t>::type;
 template<typename T> using iter_reference_t = sys::iter_type<remove_cvref<T>, std::iter_reference_t>::type;
 
-template<typename I> concept input_iterator = std::input_iterator<I>;
-template<typename I> concept forward_iterator = std::forward_iterator<I>;
-template<typename I> concept bidirectional_iterator = std::bidirectional_iterator<I>;
-template<typename I> concept random_access_iterator = std::random_access_iterator<I>;
+template<typename I, typename T = iter_value_t<I>> concept input_iterator =
+  std::input_iterator<I> && same_as<T, iter_value_t<I>>;
+template<typename I, typename T = iter_value_t<I>> concept forward_iterator =
+  std::forward_iterator<I> && same_as<T, iter_value_t<I>>;
+template<typename I, typename T = iter_value_t<I>> concept bidirectional_iterator =
+  std::bidirectional_iterator<I> && same_as<T, iter_value_t<I>>;
+template<typename I, typename T = iter_value_t<I>> concept random_access_iterator =
+  std::random_access_iterator<I> && same_as<T, iter_value_t<I>>;
 
-template<typename R> concept sized_range = std::ranges::sized_range<R>;
-template<typename R> concept input_range = std::ranges::input_range<R>;
-template<typename R> concept forward_range = std::ranges::forward_range<R>;
-template<typename R> concept bidirectional_range = std::ranges::bidirectional_range<R>;
-template<typename R> concept random_access_range = std::ranges::random_access_range<R>;
+template<typename R, typename T = iter_value_t<R>> concept sized_range =
+  std::ranges::sized_range<R> && same_as<T, iter_value_t<R>>;
+template<typename R, typename T = iter_value_t<R>> concept input_range =
+  std::ranges::input_range<R> && same_as<T, iter_value_t<R>>;
+template<typename R, typename T = iter_value_t<R>> concept forward_range =
+  std::ranges::forward_range<R> && same_as<T, iter_value_t<R>>;
+template<typename R, typename T = iter_value_t<R>> concept bidirectional_range =
+  std::ranges::bidirectional_range<R> && same_as<T, iter_value_t<R>>;
+template<typename R, typename T = iter_value_t<R>> concept random_access_range =
+  std::ranges::random_access_range<R> && same_as<T, iter_value_t<R>>;
 
 template<typename I, typename T = iter_value_t<I>> concept contiguous_iterator =
   std::contiguous_iterator<I> && same_as<T, iter_value_t<I>>;
@@ -396,14 +406,14 @@ constexpr auto vtos = [](arithmetic auto value) -> std::string {
 namespace internal {
 inline constexpr char utos_table_upper[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 inline constexpr char utos_table_lower[] = "0123456789abcdefghijklmnopqrstuvwxyz";
-template<unsigned Width, unsigned Base = 10, bool Upper = false, char_type C = char>
-requires(Base >= 2 && Base <= 36) constexpr C* utos(C* dest, uint64_t u) {
-  C* p       = dest + Width;
+template<unsigned Width, unsigned Base = 10, bool Upper = false, char_type C = char> requires(Base >= 2 && Base <= 36)
+constexpr C* utos(C* dest, uint64_t u) {
+  C* p = dest + Width;
   auto table = Upper ? utos_table_upper : utos_table_lower;
   while (p != dest) *(--p) = static_cast<C>(table[u % Base]), u /= Base;
   return dest + Width;
 }
-}
+} // namespace internal
 
 //////////////////////////////////////// MARK: GET
 

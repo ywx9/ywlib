@@ -340,8 +340,8 @@ public:
     hr = p.factory->CreateTextFormat(L"", nullptr, DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
       DWRITE_FONT_STRETCH_NORMAL, 16.0f, L"", &p.text_format);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int32_t(hr));
-    p.text_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-    p.text_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+    // p.text_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+    // p.text_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     p.initialized = true;
     return {};
   }

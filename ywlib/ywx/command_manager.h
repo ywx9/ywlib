@@ -66,11 +66,21 @@ public:
     _last_command_is_groupable = Groupable;
   }
 
-  void push(function<void> redo_fn, function<void> undo_fn) {
+  void push(function<void> redo_fn, function<void> undo_fn, bool Groupable = false) {
     command cmd{};
     cmd.redo = std::move(redo_fn);
     cmd.undo = std::move(undo_fn);
-    push(std::move(cmd));
+    push(std::move(cmd), Groupable);
+  }
+
+  void push(group g) {
+    if (_replaying) return;
+    if (g.commands.empty()) return;
+    _undo_stack.push_back(std::move(g));
+    _redo_stack.clear();
+    trim_undo_stack();
+    _grouping_timer.reset();
+    _last_command_is_groupable = false;
   }
 
   bool undo() {

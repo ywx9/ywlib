@@ -154,6 +154,13 @@ inline std::unexpected<error_trace> unexpected_error(std::unexpected<error_trace
   return std::move(e);
 }
 
+//////////////////////////////////////// MARK: check_error
+
+inline std::expected<void, error_trace> check_error(std::expected<void, error_trace>&& res, const source& src = {}) {
+  if (!res) return unexpected_error(res.error(), src);
+  return {};
+}
+
 //////////////////////////////////////// MARK: print_error
 
 inline constexpr struct {
