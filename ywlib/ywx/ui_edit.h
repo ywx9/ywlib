@@ -16,6 +16,7 @@ public:
   class slot : public control::slot {
     // 文字グループ: 0=alnum, 1=ascii記号, 2=その他
     static int char_group(wchar_t c) noexcept { return !is_alnum(c) + !is_ascii(c); }
+    const float caret_hit_threshold = 0.5f;
 
     template<bool Foward> size_t next_char_group(size_t pos) const {
       const auto& t = text();
@@ -49,6 +50,50 @@ public:
       else if (caret_pos > selection_anchor)
         return std::wstring_view(text().data() + selection_anchor, caret_pos - selection_anchor);
       else return {};
+    }
+
+    uint32_t hit_character(float2 point) const {
+      if (text.empty()) return 0;
+
+      const auto text_pos = text_origin();
+      const auto text_end_x = text_pos.x + text.size().x;
+      const auto text_end_y = text_pos.y + yw::max(text.size().y, text.font_size());
+
+      if (point.x < text_pos.x || point.y < text_pos.y) return 0;
+      if (point.x > text_end_x || point.y > text_end_y) return static_cast<uint32_t>(text().size());
+
+      auto local = point - text_pos;
+      local.x = yw::max(0.0f, local.x);
+      local.y = yw::max(0.0f, local.y);
+      if (auto res = text.hit_test_detail(local, false)) return yw::get<0>(*res);
+      return static_cast<uint32_t>(text().size());
+    }
+
+    uint32_t hit_caret(float2 point) const {
+      if (text.empty()) return 0;
+
+      const auto text_pos = text_origin();
+      const auto text_end_x = text_pos.x + text.size().x;
+      const auto text_end_y = text_pos.y + yw::max(text.size().y, text.font_size());
+
+      if (point.x < text_pos.x || point.y < text_pos.y) return 0;
+      if (point.x > text_end_x || point.y > text_end_y) return static_cast<uint32_t>(text().size());
+
+      auto local = point - text_pos;
+      local.x = yw::max(0.0f, local.x);
+      local.y = yw::max(0.0f, local.y);
+      if (auto res = text.hit_test_detail(local, false)) {
+        const auto hit_pos = yw::get<0>(*res);
+        const auto hit_size = yw::get<1>(*res);
+        if (hit_size.x > 0.0f) {
+          if (auto htr = text.hit_test(hit_pos)) {
+            const auto ratio = (local.x - htr->x) / hit_size.x;
+            if (ratio >= caret_hit_threshold) return yw::min(hit_pos + 1, static_cast<uint32_t>(text().size()));
+          }
+        }
+        return hit_pos;
+      }
+      return static_cast<uint32_t>(text().size());
     }
 
     void erase_text(size_t Pos, size_t Count) {
@@ -163,13 +208,11 @@ public:
       if (e.code == key::lbutton && e.down) {
         selecting = true;
         wsp->commands.end_grouping();
-        const auto htr = text.hit_test(float2(e.pos));
-        if (!htr) return;
-        auto hit_pos = *htr;
+        const auto hit_pos = hit_caret(float2(e.pos));
         if (e.double_click) {
           const auto& s = text();
           const auto len = static_cast<uint32_t>(s.size());
-          const auto i = yw::min(hit_pos, len - 1);
+          const auto i = yw::min(hit_character(float2(e.pos)), len - 1);
           const auto cg = char_group(s[i]);
           auto first = i;
           while (first > 0 && char_group(s[first - 1]) == cg) --first;
@@ -181,10 +224,8 @@ public:
             else selection_anchor = first, caret_pos = last;
           } else selection_anchor = first, caret_pos = last;
         } else {
-          if (e.shift) {
-            if (selection_anchor < hit_pos) caret_pos = hit_pos + 1;
-            else caret_pos = hit_pos;
-          } else selection_anchor = caret_pos = hit_pos;
+          if (e.shift) caret_pos = hit_pos;
+          else selection_anchor = caret_pos = hit_pos;
         }
       }
       make_dirty();
@@ -192,9 +233,7 @@ public:
 
     virtual void drag_event(event::drag e) override {
       if (!enabled || !selecting || e.code != key::lbutton || text.empty()) return;
-      const auto htr = text.hit_test(float2(e.delta));
-      if (!htr) return;
-      const auto hit_pos = *htr;
+      const auto hit_pos = hit_caret(float2(e.delta));
       if (caret_pos != hit_pos) {
         caret_pos = hit_pos;
         make_dirty();

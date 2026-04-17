@@ -74,13 +74,13 @@ public:
   }
 
   /// returns text position at the specified point
-  std::expected<uint32_t, error_trace> hit_test(float2 point) const {
+  std::expected<uint32_t, error_trace> hit_test(float2 point, bool trailing = true) const {
     if (!_p) return unexpected_error(errors::not_initialized, "text_layout is not initialized");
     DWRITE_HIT_TEST_METRICS metrics{};
     BOOL is_inside = FALSE, is_trailing = FALSE;
     auto hr = _p->HitTestPoint(point.x, point.y, &is_inside, &is_trailing, &metrics);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "HitTestPoint failed", int32_t(hr));
-    return metrics.textPosition + uint32_t(is_trailing);
+    return metrics.textPosition + uint32_t(trailing && is_trailing);
   }
 
   /// returns the size of the text layout

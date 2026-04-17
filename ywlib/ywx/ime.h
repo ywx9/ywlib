@@ -13,7 +13,7 @@ class {
   bitmap _rendertarget;
   comptr<IDXGISwapChain1> _swapchain;
 
-  text _composition = assume(text::create(L""));
+  text _composition;
   uint32_t _cursor_pos = 0;
 
   const DWORD _style = WS_POPUP;
@@ -55,6 +55,8 @@ public:
       return unexpected_win32_error("RegisterClassW failed");
     _hwnd = ::CreateWindowExW(_ex_style, wc.lpszClassName, L"", _style, 0, 0, 100, 100, 0, 0, wc.hInstance, 0);
     if (!_hwnd) return unexpected_win32_error("CreateWindowExW failed");
+    if (auto res = text::create(L"")) _composition = std::move(*res);
+    else return unexpected_error(res.error());
     return {};
   }
 

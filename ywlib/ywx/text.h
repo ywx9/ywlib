@@ -1,4 +1,5 @@
 #pragma once
+#include "yw/tuple.h"
 #include "ywx/text_format.h"
 
 namespace yw {
@@ -160,14 +161,21 @@ public:
     return float4(metrics.left, metrics.top, metrics.width, metrics.height);
   }
 
-  /// returns text position at the specified point
-  std::expected<uint32_t, error_trace> hit_test(float2 point) const {
+  /// returns text position and hit character size `{width, height}` at the specified point
+  std::expected<yw::tuple<uint32_t, float2>, error_trace> hit_test_detail(float2 point, bool trailing = true) const {
     if (!_p) return unexpected_error(errors::not_initialized, "text is not initialized");
     DWRITE_HIT_TEST_METRICS metrics{};
     BOOL is_inside = FALSE, is_trailing = FALSE;
     auto hr = _p->HitTestPoint(point.x, point.y, &is_inside, &is_trailing, &metrics);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "HitTestPoint failed", int32_t(hr));
-    return metrics.textPosition + uint32_t(is_trailing);
+    return yw::tuple<uint32_t, float2>{metrics.textPosition + uint32_t(trailing && is_trailing),
+                                       float2(metrics.width, metrics.height)};
+  }
+
+  /// returns text position at the specified point
+  std::expected<uint32_t, error_trace> hit_test(float2 point, bool trailing = true) const {
+    if (auto res = hit_test_detail(point, trailing)) return yw::get<0>(*res);
+    else return unexpected_error(res.error());
   }
 
   /// returns rectangles `{left, top, width, height}` for each run in the specified text range
