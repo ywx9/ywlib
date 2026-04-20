@@ -120,7 +120,7 @@ def main() -> int:
     ap.add_argument("--reset-vscode", action="store_true")
     args = ap.parse_args()
 
-    root = Path.cwd()
+    root = workspace
     build = root / args.build_dir
     output_dir = (root / args.output_dir) if args.output_dir else build
     vscode = root / ".vscode"
