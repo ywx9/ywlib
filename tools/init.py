@@ -23,7 +23,9 @@ def ensure_main_cpp(workspace: Path):
     main_cpp.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
 
 def ensure_vscode_settings(workspace: Path):
-    settings = workspace / ".vscode" / "settings.json"
+    vscode_dir = workspace / ".vscode"
+    vscode_dir.mkdir(parents=True, exist_ok=True)
+    settings = vscode_dir / "settings.json"
     if settings.exists(): return None
     template = workspace / "tools" / "templates" / "settings.json.in"
     if not template.exists(): raise RuntimeError("settings.json template not found")
