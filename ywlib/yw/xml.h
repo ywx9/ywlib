@@ -125,7 +125,7 @@ public:
   /// returns string size returned by `to_string`
   constexpr size_t to_string_size() const noexcept { return content.empty() ? 0 : content.size() + 7; }
 
-  /// writes comment into the provided buffer
+  /// writes comment into provided buffer
   constexpr char* to_string_into(char* out) const noexcept {
     if (content.empty()) return out;
     auto it = std::ranges::copy("<!--"sv, out).out;
@@ -158,16 +158,20 @@ public:
 //////////////////////////////////////// MARK: text
 
 template<bool View> class text {
-  constexpr text(std::string_view Data) noexcept : data(Data) {}
+  constexpr text(std::string_view Data) noexcept : content(Data) {}
 
 public:
-  string_type<View> data{};
-  explicit constexpr operator bool() const { return !data.empty(); }
-  constexpr operator std::string_view() const { return data; }
-  constexpr text() noexcept = default;
+  select_type<View, const std::string_view, std::string> content;
 
-  constexpr size_t to_string_size() const { return data.size(); }
-  constexpr char* to_string_into(char* out) const { return std::ranges::copy(data, out).out; }
+  explicit constexpr operator bool() const { return !content.empty(); }
+
+  /// returns string size returned by 'to_string'
+  constexpr size_t to_string_size() const noexcept { return content.size(); }
+
+  /// writes xml-text into provided buffer
+  constexpr char* to_string_into(char* out) const noexcept { return std::ranges::copy(content, out).out; }
+
+  /// returns xml-text as string
   constexpr std::string to_string() const {
     std::string result(to_string_size(), '\0');
     to_string_into(result.data());
