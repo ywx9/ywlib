@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 # ============================================================
 # User-configurable section
 # ============================================================
-set(YOUR_APP_NAME app)
+set(YOUR_PROJECT_NAME __PROJECT_NAME__)
 set(SHOW_CONSOLE ON)
 
 # ============================================================
@@ -13,27 +13,27 @@ project(ywlib LANGUAGES CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if (WIN32 AND !SHOW_CONSOLE)
-  add_executable(${YOUR_APP_NAME} WIN32 main.cpp)
+  add_executable(${YOUR_PROJECT_NAME} WIN32 main.cpp)
 else()
-  add_executable(${YOUR_APP_NAME} main.cpp)
+  add_executable(${YOUR_PROJECT_NAME} main.cpp)
 endif()
 
-target_compile_definitions(${YOUR_APP_NAME} PRIVATE YWLIB_COMPILE)
-target_compile_features(${YOUR_APP_NAME} PRIVATE cxx_std_23)
-target_include_directories(${YOUR_APP_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ywlib")
+target_compile_definitions(${YOUR_PROJECT_NAME} PRIVATE YWLIB_COMPILE)
+target_compile_features(${YOUR_PROJECT_NAME} PRIVATE cxx_std_23)
+target_include_directories(${YOUR_PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ywlib")
 
 if (WIN32)
-  target_compile_definitions(${YOUR_APP_NAME} PRIVATE NOMINMAX UNICODE _UNICODE)
-  target_link_libraries(${YOUR_APP_NAME} PRIVATE dxgi d3d11 d3dcompiler d2d1 dwrite dxguid windowscodecs imm32)
+  target_compile_definitions(${YOUR_PROJECT_NAME} PRIVATE NOMINMAX UNICODE _UNICODE)
+  target_link_libraries(${YOUR_PROJECT_NAME} PRIVATE dxgi d3d11 d3dcompiler d2d1 dwrite dxguid windowscodecs imm32)
 endif()
 
-target_compile_options(${YOUR_APP_NAME} PRIVATE
+target_compile_options(${YOUR_PROJECT_NAME} PRIVATE
   $<$<CXX_COMPILER_ID:MSVC>:/utf-8 /arch:AVX2>
   $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-finput-charset=UTF-8 -fexec-charset=UTF-8 -mavx2>
 )
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
-  target_link_libraries(${YOUR_APP_NAME} PRIVATE stdc++exp)
+  target_link_libraries(${YOUR_PROJECT_NAME} PRIVATE stdc++exp)
 endif()
 
 # ============================================================
@@ -89,4 +89,4 @@ else()
   add_dependencies(ywlib_umbrellas ywlib_umbrella_yw)
 endif()
 
-add_dependencies(${YOUR_APP_NAME} ywlib_umbrellas)
+add_dependencies(${YOUR_PROJECT_NAME} ywlib_umbrellas)
