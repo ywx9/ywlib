@@ -104,7 +104,7 @@ def ensure_cmakelists(workspace: Path):
 def main() -> int:
     workspace = Path(__file__).resolve().parents[1]
     ensure_main_cpp(workspace)
-    ensure_cmakelists(Path.cwd())
+    ensure_cmakelists(workspace)
 
     ap = argparse.ArgumentParser()
     ap.add_argument(

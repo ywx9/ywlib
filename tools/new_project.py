@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -23,8 +25,13 @@ def run(cmd: list[str], cwd: Path | None = None) -> None:
 
 def remove_git_dir(path: Path) -> None:
     git_dir = path / ".git"
+
+    def handle_remove_readonly(func, path, exc): # 読み取り専用解除
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+
     if git_dir.exists():
-        shutil.rmtree(git_dir)
+        shutil.rmtree(git_dir, onerror=handle_remove_readonly)
 
 
 def copy_template(src: Path, dst: Path) -> None:
