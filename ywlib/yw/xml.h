@@ -101,22 +101,42 @@ constexpr std::unexpected<error_trace> unexpected_error(
 //////////////////////////////////////// MARK: comment
 
 template<bool View> class comment {
-  constexpr comment(std::string_view Data) noexcept : data(Data) {}
+  constexpr comment(std::string_view Content) noexcept : content(Content) {}
 
 public:
-  string_type<View> data{};
-  explicit constexpr operator bool() const { return !data.empty(); }
-  constexpr operator std::string_view() const { return data; }
-  constexpr comment() noexcept = default;
+  select_type<View, const std::string_view, std::string> content;
 
-  constexpr size_t to_string_size() const { return data.size() + 7; }
-  constexpr char* to_string_into(char* out) const {
+  /// checks if content can be written. (valid or empty)
+  constexpr operator bool() const noexcept {
+    return content.empty() || (content.front() != '-' && content.find("--"sv) == std::string_view::npos);
+  }
+
+  /// checks if content is empty. In writing, empty comment is ignored.
+  static constexpr bool is_empty(std::string_view content) noexcept { return content.empty(); }
+
+  /// checks if content is valid for comment or empty
+  constexpr bool is_valid() const noexcept { return operator bool(); }
+
+  /// checks if given content is valid for comment
+  static constexpr bool is_valid(std::string_view Content) noexcept {
+    return Content.empty() || (Content.front() != '-' && Content.find("--"sv) == std::string_view::npos);
+  }
+
+  /// returns string size returned by `to_string`
+  constexpr size_t to_string_size() const noexcept { return content.empty() ? 0 : content.size() + 7; }
+
+  /// writes comment into the provided buffer
+  constexpr char* to_string_into(char* out) const noexcept {
+    if (content.empty()) return out;
     auto it = std::ranges::copy("<!--"sv, out).out;
-    it = std::ranges::copy(data, it).out;
+    it = std::ranges::copy(content, it).out;
     it = std::ranges::copy("-->"sv, it).out;
     return it;
   }
+
+  /// returns comment as string
   constexpr std::string to_string() const {
+    if (content.empty()) return {};
     std::string result(to_string_size(), '\0');
     to_string_into(result.data());
     return result;
@@ -147,9 +167,7 @@ public:
   constexpr text() noexcept = default;
 
   constexpr size_t to_string_size() const { return data.size(); }
-  constexpr char* to_string_into(char* out) const {
-    return std::ranges::copy(data, out).out;
-  }
+  constexpr char* to_string_into(char* out) const { return std::ranges::copy(data, out).out; }
   constexpr std::string to_string() const {
     std::string result(to_string_size(), '\0');
     to_string_into(result.data());
@@ -486,8 +504,7 @@ public:
           return yw::unexpected_error(res.error());
         }
       }
-    }
-    else {
+    } else {
       if (auto res = text<View>::parse(rest, doc); res) return child<View>(std::move(*res));
       else return yw::unexpected_error(res.error());
     }
@@ -507,13 +524,13 @@ template<bool View> constexpr element<View>::element(
   : name(Name), attributes(std::move(Attributes)), children(std::move(Children)) {}
 
 template<bool View> constexpr size_t element<View>::to_string_size() const {
-  size_t size = 2 + name.size() + 1; // <name>
+  size_t size = 2 + name.size() + 1;                                     // <name>
   for (const auto& attr : attributes) size += attr.to_string_size() + 1; // space + attr
   if (!children.empty()) {
-    size += 1; // >
+    size += 1;                                                         // >
     for (const auto& child : children) size += child.to_string_size(); // child
-    size += 3 + name.size(); // </name>
-  } else size += 2; // />
+    size += 3 + name.size();                                           // </name>
+  } else size += 2;                                                    // />
   return size;
 }
 template<bool View> constexpr char* element<View>::to_string_into(char* out) const {
@@ -570,8 +587,7 @@ template<bool View> inline constexpr std::expected<element<View>, error_trace> e
     }
     rest.remove_prefix(2);
     auto end_name = _extract_name(rest);
-    if (end_name != name)
-      return unexpected_error("xml: end tag name does not match start tag name", rest.data(), doc);
+    if (end_name != name) return unexpected_error("xml: end tag name does not match start tag name", rest.data(), doc);
     _extract_whitespace(rest);
     if (rest.empty() || rest.front() != '>')
       return unexpected_error("xml: expected '>' at end of end tag", rest.data(), doc);
@@ -585,6 +601,7 @@ template<bool View> inline constexpr std::expected<element<View>, error_trace> e
 template<bool View> class document {
   constexpr document(std::vector<misc<View>> Prolog, xml::element<View> Root, std::vector<misc<View>> Trailing) noexcept
     : prolog(std::move(Prolog)), element(std::move(Root)), trailing_misc(std::move(Trailing)) {}
+
 public:
   string_type<View> xml_declaration;
   std::vector<misc<View>> prolog;
@@ -599,7 +616,7 @@ public:
     size_t size = xml_declaration.size() + (has_xml_declaration() ? 1 : 0); // xml declaration + newline
     for (const auto& m : prolog) size += m.to_string_size() + 1;            // misc + newline
     size += element.to_string_size();
-    for (const auto& m : trailing_misc) size += m.to_string_size() + 1;     // newline + misc
+    for (const auto& m : trailing_misc) size += m.to_string_size() + 1; // newline + misc
     return size;
   }
   constexpr char* to_string_into(char* out) const {
@@ -628,7 +645,8 @@ public:
   static constexpr std::expected<document<View>, error_trace> parse(std::string_view doc) {
     std::string_view rest = doc;
     const char* doc_end = doc.data() + doc.size();
-    if (rest.size() >= 3 && char8_t(rest[0]) == 0xEF && char8_t(rest[1]) == 0xBB && char8_t(rest[2]) == 0xBF) rest.remove_prefix(3);
+    if (rest.size() >= 3 && char8_t(rest[0]) == 0xEF && char8_t(rest[1]) == 0xBB && char8_t(rest[2]) == 0xBF)
+      rest.remove_prefix(3);
     _extract_whitespace(rest);
     string_type<View> xml_declaration;
     if (rest.starts_with("<?xml"sv)) {
