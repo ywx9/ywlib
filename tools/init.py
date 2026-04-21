@@ -53,17 +53,9 @@ def run_cmake(root: Path, build: Path, extra: list[str]) -> int:
     print("[init_vscode] running:", " ".join(cmd))
     return subprocess.run(cmd).returncode
 
+
 def generate_dll_cmakelists(base_cmake: Path, generated_cmake: Path, project_root: Path) -> None:
     src_text = base_cmake.read_text(encoding="utf-8")
-
-    exe_block_pattern = re.compile(
-        r"if \(WIN32 AND !SHOW_CONSOLE\)\s*"
-        r"add_executable\(\$\{YOUR_APP_NAME\} WIN32 main\.cpp\)\s*"
-        r"else\(\)\s*"
-        r"add_executable\(\$\{YOUR_APP_NAME\} main\.cpp\)\s*"
-        r"endif\(\)",
-        flags=re.MULTILINE,
-    )
 
     dll_target = (
         'add_library(${YOUR_APP_NAME} SHARED "${YWLIB_PROJECT_ROOT}/main.cpp")\n\n'
@@ -76,18 +68,46 @@ def generate_dll_cmakelists(base_cmake: Path, generated_cmake: Path, project_roo
         ')'
     )
 
-    if exe_block_pattern.search(src_text):
-        cmake_text = exe_block_pattern.sub(dll_target, src_text, count=1)
-    else:
-        cmake_text = src_text.replace("add_executable(${YOUR_APP_NAME} WIN32 main.cpp)", dll_target)
-        cmake_text = cmake_text.replace("add_executable(${YOUR_APP_NAME} main.cpp)", dll_target)
+    replaced = False
 
-    cmake_text = cmake_text.replace("${CMAKE_CURRENT_SOURCE_DIR}", "${YWLIB_PROJECT_ROOT}")
-    cmake_text = f'set(YWLIB_PROJECT_ROOT "{project_root.resolve().as_posix()}")\n\n' + cmake_text
+    # 1) まず if(WIN32 AND !SHOW_CONSOLE) ... else() ... endif() の典型ブロックを置換
+    exe_block_pattern = re.compile(
+        r"if\s*\(\s*WIN32\s+AND\s+!SHOW_CONSOLE\s*\)\s*"
+        r"add_executable\s*\(\s*\$\{YOUR_APP_NAME\}\s+WIN32\s+main\.cpp\s*\)\s*"
+        r"else\s*\(\s*\)\s*"
+        r"add_executable\s*\(\s*\$\{YOUR_APP_NAME\}\s+main\.cpp\s*\)\s*"
+        r"endif\s*\(\s*\)",
+        flags=re.MULTILINE,
+    )
+    src_text, n = exe_block_pattern.subn(dll_target, src_text, count=1)
+    if n:
+        replaced = True
+
+    # 2) 単独の add_executable(${YOUR_APP_NAME} [WIN32] main.cpp) も置換
+    single_exe_pattern = re.compile(
+        r"add_executable\s*\(\s*\$\{YOUR_APP_NAME\}\s+(?:WIN32\s+)?main\.cpp\s*\)",
+        flags=re.MULTILINE,
+    )
+    src_text, n = single_exe_pattern.subn(dll_target, src_text, count=1)
+    if n:
+        replaced = True
+
+    # 3) それでも置換できなかった場合でも、少なくとも main.cpp はプロジェクトルート参照へ補正
+    if not replaced:
+        src_text = re.sub(
+            r'(?<![A-Za-z0-9_./"-])main\.cpp(?=[\s\)])',
+            '"${YWLIB_PROJECT_ROOT}/main.cpp"',
+            src_text,
+        )
+
+    # build/_dll_src をソースディレクトリにするため、元のソース基準参照をルートへ向ける
+    src_text = src_text.replace("${CMAKE_CURRENT_SOURCE_DIR}", "${YWLIB_PROJECT_ROOT}")
+    src_text = f'set(YWLIB_PROJECT_ROOT "{project_root.resolve().as_posix()}")\n\n' + src_text
 
     generated_cmake.parent.mkdir(parents=True, exist_ok=True)
-    generated_cmake.write_text(cmake_text, encoding="utf-8")
+    generated_cmake.write_text(src_text, encoding="utf-8")
     print("[init_vscode] generated dll cmakelists:", generated_cmake)
+
 
 def ensure_cmakelists(workspace: Path):
     cmakelists = workspace / "CMakeLists.txt"
