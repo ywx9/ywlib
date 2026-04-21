@@ -26,7 +26,7 @@ def run(cmd: list[str], cwd: Path | None = None) -> None:
 def remove_git_dir(path: Path) -> None:
     git_dir = path / ".git"
 
-    def handle_remove_readonly(func, path, exc): # 読み取り専用解除
+    def handle_remove_readonly(func, path, exc):
         os.chmod(path, stat.S_IWRITE)
         func(path)
 
@@ -61,11 +61,9 @@ def main() -> None:
 
     print(f"created: {destination}")
 
-    # プロジェクト初期化 (CMakeLists.txtが生成される)
     run(["python", f"{destination}/tools/init.py"])
 
-    # CMakeLists.txtのプロジェクト名を置換
-    with open(f"{destination}/CMakeLists.txt", "r+") as f:
+    with open(f"{destination}/CMakeLists.txt", "r+", encoding="utf-8") as f:
         text = f.read()
         text = text.replace("__PROJECT_NAME__", project_name)
         f.seek(0)

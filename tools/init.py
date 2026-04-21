@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import argparse
-import json
 import platform
-import re
 import shutil
 import subprocess
 import sys
@@ -14,32 +12,36 @@ from pathlib import Path
 # helpers
 # ------------------------------------------------------------
 
-def ensure_main_cpp(workspace: Path):
-    main_cpp = workspace / "main.cpp"
-    if main_cpp.exists(): return
-    template = workspace / "tools" / "templates" / "main.cpp.in"
-    if not template.exists(): raise RuntimeError("main.cpp template not found")
-    print("[init_vscode] creating main.cpp from template")
-    main_cpp.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
+def ensure_source_cpp(workspace: Path):
+    source_cpp = workspace / "source.cpp"
+    if source_cpp.exists():
+        return
+    template = workspace / "tools" / "templates" / "source.cpp.in"
+    if not template.exists():
+        raise RuntimeError("source.cpp template not found")
+    print("[init_vscode] creating source.cpp from template")
+    source_cpp.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
 
 def ensure_vscode_settings(workspace: Path):
     vscode_dir = workspace / ".vscode"
     vscode_dir.mkdir(parents=True, exist_ok=True)
     settings = vscode_dir / "settings.json"
-    if settings.exists(): return None
+    if settings.exists():
+        return None
     template = workspace / "tools" / "templates" / "settings.json.in"
-    if not template.exists(): raise RuntimeError("settings.json template not found")
+    if not template.exists():
+        raise RuntimeError("settings.json template not found")
     print("[init_vscode] creating .vscode/settings.json from template")
     settings.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
     return settings
 
 def which_or_error(name: str) -> str:
     p = shutil.which(name)
-    if not p: raise RuntimeError(f"{name} not found in PATH")
+    if not p:
+        raise RuntimeError(f"{name} not found in PATH")
     return p
 
 def pick_mingw_generator() -> str:
-    # Prefer Ninja if available
     return "Ninja" if shutil.which("ninja") else "MinGW Makefiles"
 
 def run_cmake(root: Path, build: Path, extra: list[str]) -> int:
@@ -53,62 +55,6 @@ def run_cmake(root: Path, build: Path, extra: list[str]) -> int:
     print("[init_vscode] running:", " ".join(cmd))
     return subprocess.run(cmd).returncode
 
-
-def generate_dll_cmakelists(base_cmake: Path, generated_cmake: Path, project_root: Path) -> None:
-    src_text = base_cmake.read_text(encoding="utf-8")
-
-    dll_target = (
-        'add_library(${YOUR_APP_NAME} SHARED "${YWLIB_PROJECT_ROOT}/main.cpp")\n\n'
-        '# DLL output naming (user-configurable)\n'
-        'set(YOUR_DLL_PREFIX "" CACHE STRING "Prefix for DLL/shared library filename")\n'
-        'set(YOUR_DLL_OUTPUT_NAME "${YOUR_APP_NAME}" CACHE STRING "Output filename base for DLL/shared library")\n'
-        'set_target_properties(${YOUR_APP_NAME} PROPERTIES\n'
-        '  PREFIX "${YOUR_DLL_PREFIX}"\n'
-        '  OUTPUT_NAME "${YOUR_DLL_OUTPUT_NAME}"\n'
-        ')'
-    )
-
-    replaced = False
-
-    # 1) まず if(WIN32 AND !SHOW_CONSOLE) ... else() ... endif() の典型ブロックを置換
-    exe_block_pattern = re.compile(
-        r"if\s*\(\s*WIN32\s+AND\s+!SHOW_CONSOLE\s*\)\s*"
-        r"add_executable\s*\(\s*\$\{YOUR_APP_NAME\}\s+WIN32\s+main\.cpp\s*\)\s*"
-        r"else\s*\(\s*\)\s*"
-        r"add_executable\s*\(\s*\$\{YOUR_APP_NAME\}\s+main\.cpp\s*\)\s*"
-        r"endif\s*\(\s*\)",
-        flags=re.MULTILINE,
-    )
-    src_text, n = exe_block_pattern.subn(dll_target, src_text, count=1)
-    if n:
-        replaced = True
-
-    # 2) 単独の add_executable(${YOUR_APP_NAME} [WIN32] main.cpp) も置換
-    single_exe_pattern = re.compile(
-        r"add_executable\s*\(\s*\$\{YOUR_APP_NAME\}\s+(?:WIN32\s+)?main\.cpp\s*\)",
-        flags=re.MULTILINE,
-    )
-    src_text, n = single_exe_pattern.subn(dll_target, src_text, count=1)
-    if n:
-        replaced = True
-
-    # 3) それでも置換できなかった場合でも、少なくとも main.cpp はプロジェクトルート参照へ補正
-    if not replaced:
-        src_text = re.sub(
-            r'(?<![A-Za-z0-9_./"-])main\.cpp(?=[\s\)])',
-            '"${YWLIB_PROJECT_ROOT}/main.cpp"',
-            src_text,
-        )
-
-    # build/_dll_src をソースディレクトリにするため、元のソース基準参照をルートへ向ける
-    src_text = src_text.replace("${CMAKE_CURRENT_SOURCE_DIR}", "${YWLIB_PROJECT_ROOT}")
-    src_text = f'set(YWLIB_PROJECT_ROOT "{project_root.resolve().as_posix()}")\n\n' + src_text
-
-    generated_cmake.parent.mkdir(parents=True, exist_ok=True)
-    generated_cmake.write_text(src_text, encoding="utf-8")
-    print("[init_vscode] generated dll cmakelists:", generated_cmake)
-
-
 def ensure_cmakelists(workspace: Path):
     cmakelists = workspace / "CMakeLists.txt"
     if cmakelists.exists():
@@ -119,13 +65,69 @@ def ensure_cmakelists(workspace: Path):
     print("[init_vscode] creating CMakeLists.txt from template")
     cmakelists.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
 
+def generate_wrapper_cmakelists(project_root: Path, generated_cmake: Path, kind: str) -> None:
+    root_posix = project_root.resolve().as_posix()
+
+    common = f'''cmake_minimum_required(VERSION 3.20)
+
+set(YWLIB_PROJECT_ROOT "{root_posix}")
+
+project(ywlib_wrapper LANGUAGES CXX)
+
+add_subdirectory("${{YWLIB_PROJECT_ROOT}}" "${{CMAKE_BINARY_DIR}}/project_src")
+'''
+
+    if kind == "dll":
+        body = r'''
+add_library(${YOUR_APP_NAME} SHARED $<TARGET_OBJECTS:${YOUR_APP_NAME}_obj>)
+
+target_link_libraries(${YOUR_APP_NAME}
+    PRIVATE
+        ${YOUR_APP_LIBRARIES}
+)
+
+set(YOUR_DLL_PREFIX "" CACHE STRING "Prefix for DLL/shared library filename")
+set(YOUR_DLL_OUTPUT_NAME "${YOUR_APP_NAME}" CACHE STRING "Output filename base for DLL/shared library")
+
+set_target_properties(${YOUR_APP_NAME} PROPERTIES
+    PREFIX "${YOUR_DLL_PREFIX}"
+    OUTPUT_NAME "${YOUR_DLL_OUTPUT_NAME}"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}"
+)
+'''
+    elif kind == "exe":
+        body = r'''
+if (WIN32 AND NOT SHOW_CONSOLE)
+    add_executable(${YOUR_APP_NAME} WIN32 $<TARGET_OBJECTS:${YOUR_APP_NAME}_obj>)
+else()
+    add_executable(${YOUR_APP_NAME} $<TARGET_OBJECTS:${YOUR_APP_NAME}_obj>)
+endif()
+
+target_link_libraries(${YOUR_APP_NAME}
+    PRIVATE
+        ${YOUR_APP_LIBRARIES}
+)
+
+set_target_properties(${YOUR_APP_NAME} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+)
+'''
+    else:
+        raise ValueError(f"unknown wrapper kind: {kind}")
+
+    generated_cmake.parent.mkdir(parents=True, exist_ok=True)
+    generated_cmake.write_text(common + body, encoding="utf-8")
+    print("[init_vscode] generated wrapper cmakelists:", generated_cmake)
+
 # ------------------------------------------------------------
 # main
 # ------------------------------------------------------------
 
 def main() -> int:
     workspace = Path(__file__).resolve().parents[1]
-    ensure_main_cpp(workspace)
+    ensure_source_cpp(workspace)
     ensure_cmakelists(workspace)
 
     ap = argparse.ArgumentParser()
@@ -135,7 +137,7 @@ def main() -> int:
         default="gcc",
         help="Toolchain to use (default: gcc)",
     )
-    ap.add_argument("--dll", action="store_true", help="Configure build as DLL (without modifying root CMakeLists.txt)")
+    ap.add_argument("--dll", action="store_true", help="Configure build as DLL")
     ap.add_argument("--build-dir", default="build")
     ap.add_argument("--output-dir", default=None, help="Directory for final binaries (.exe/.dll). Default: same as --build-dir")
     ap.add_argument("--reset-build", action="store_true")
@@ -146,14 +148,13 @@ def main() -> int:
     build = root / args.build_dir
     output_dir = (root / args.output_dir) if args.output_dir else build
     vscode = root / ".vscode"
-    settings = vscode / "settings.json"
 
     if args.reset_build and build.exists():
         shutil.rmtree(build)
     if args.reset_vscode and vscode.exists():
         shutil.rmtree(vscode)
 
-    build.mkdir(exist_ok=True)
+    build.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     extra: list[str] = []
@@ -161,7 +162,6 @@ def main() -> int:
     try:
         if args.toolchain == "gcc":
             gen = pick_mingw_generator()
-            gcc = which_or_error("gcc")
             gpp = which_or_error("g++")
             extra += [
                 "-G", gen,
@@ -169,9 +169,7 @@ def main() -> int:
             ]
 
         elif args.toolchain == "clang":
-            clang = which_or_error("clang")
             clangpp = which_or_error("clang++")
-            # generatorは指定しない（Ninjaが入っていればCMakeが選びやすい）
             extra += [
                 f"-DCMAKE_CXX_COMPILER={clangpp}",
             ]
@@ -179,11 +177,9 @@ def main() -> int:
         elif args.toolchain == "msvc":
             if platform.system().lower() != "windows":
                 raise RuntimeError("msvc toolchain is only valid on Windows")
-            # 明示的にVS generatorを指定
             extra += ["-G", "Visual Studio 17 2022"]
 
         elif args.toolchain == "auto":
-            # 完全にCMakeに任せる
             pass
 
     except RuntimeError as e:
@@ -202,28 +198,21 @@ def main() -> int:
         f"-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY={out}",
     ]
 
-    cmake_source = root
-    if args.dll:
-        generated_source = build / "_dll_src"
-        generate_dll_cmakelists(root / "CMakeLists.txt", generated_source / "CMakeLists.txt", root)
-        cmake_source = generated_source
+    wrapper_dir = build / ("_dll_src" if args.dll else "_exe_src")
+    generate_wrapper_cmakelists(root, wrapper_dir / "CMakeLists.txt", "dll" if args.dll else "exe")
+    cmake_source = wrapper_dir
 
     rc = run_cmake(cmake_source, build, extra)
     if rc != 0:
         return rc
 
-    # --------------------------------------------------------
-    # VS Code settings (minimal)
-    # --------------------------------------------------------
     settings = ensure_vscode_settings(root)
-    if settings: print("[init_vscode] wrote:", settings)
+    if settings:
+        print("[init_vscode] wrote:", settings)
 
     cc = build / "compile_commands.json"
     if not cc.exists():
-        print(
-            "[init_vscode] WARNING: compile_commands.json not found.",
-            file=sys.stderr,
-        )
+        print("[init_vscode] WARNING: compile_commands.json not found.", file=sys.stderr)
 
     subprocess.run(["cmake", "--build", str(build), "--target", "ywlib_umbrellas"], check=False)
 

@@ -1,0 +1,7 @@
+#include <ywlib>
+using namespace yw;
+
+int main() {
+  print("Hello, world!");
+  return 0;
+}
