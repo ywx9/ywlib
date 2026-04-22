@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 
-TEMPLATE_REPOSITORY_URL = "https://github.com/yourname/your-template-repository.git"
+TEMPLATE_REPOSITORY_URL = "https://github.com/ywx9/ywlib.git"
 
 
 def parse_args() -> argparse.Namespace:

@@ -26,6 +26,8 @@
 
 ### 1. テンプレートから新しいプロジェクトを作成
 
+[`bootstrap.py`](/tools/bootstrap.py)をローカルに用意してください。
+
 ```bash
 python bootstrap.py my_project
 cd my_project
