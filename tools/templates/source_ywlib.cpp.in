@@ -1,0 +1,6 @@
+#include <ywlib>
+
+int main() {
+  yw::print("Hello, World!");
+  return 0;
+}

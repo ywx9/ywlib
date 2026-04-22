@@ -1,0 +1,6 @@
+#include <ywxlib>
+
+int main() {
+  yw::ok(L"Hello, World!", L"Greeting");
+  return 0;
+}

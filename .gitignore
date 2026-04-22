@@ -13,3 +13,6 @@
 !ywlib/yw/**
 !ywlib/ywx/
 !ywlib/ywx/**
+
+__pycache__/
+*.py[cod]

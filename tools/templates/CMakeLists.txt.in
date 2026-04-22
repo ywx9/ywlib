@@ -1,83 +1,39 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(__PROJECT_NAME__ LANGUAGES CXX)
+project(@PROJECT_NAME@ LANGUAGES CXX)
 
-option(SHOW_CONSOLE "Build executable as console application" ON)
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(YOUR_APP_NAME "__PROJECT_NAME__" CACHE STRING "Application / library output name")
-
-set(YOUR_APP_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/source.cpp
-)
-
-set(YOUR_APP_INCLUDE_DIRS
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/ywlib
-)
-
-set(YOUR_APP_LIBRARIES
-)
-
-set(YOUR_APP_COMPILE_FEATURES
-    cxx_std_23
-)
-
-set(YOUR_APP_COMPILE_DEFINITIONS
-)
-
-if (WIN32)
-    list(APPEND YOUR_APP_COMPILE_DEFINITIONS
-        UNICODE
-        _UNICODE
-    )
+if("@TARGET_TYPE@" STREQUAL "dll")
+  add_library(${PROJECT_NAME} SHARED @SOURCE_FILE@)
+else()
+  add_executable(${PROJECT_NAME} @SOURCE_FILE@)
 endif()
 
-set(YOUR_APP_COMPILE_OPTIONS
+set_target_properties(${PROJECT_NAME} PROPERTIES
+  OUTPUT_NAME "@PROJECT_NAME@"
 )
 
-if (WIN32)
-    list(APPEND YOUR_APP_LIBRARIES
-        d2d1
-        d3d11
-        d3dcompiler
-        dwrite
-        dxgi
-        imm32
-        windowscodecs
-    )
+target_include_directories(${PROJECT_NAME} PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/ywlib
+)
 
-    # XAudio2 は環境差があるため選択式にしておく
-    set(YOUR_XAUDIO2_LIBRARY "xaudio2" CACHE STRING "XAudio2 import library name")
-    list(APPEND YOUR_APP_LIBRARIES
-        ${YOUR_XAUDIO2_LIBRARY}
-    )
+if("@LIBRARY@" STREQUAL "ywxlib")
+  target_compile_definitions(${PROJECT_NAME} PRIVATE
+    UNICODE
+    _UNICODE
+  )
+
+  target_link_libraries(${PROJECT_NAME} PRIVATE
+    d2d1
+    d3d11
+    d3dcompiler
+    dwrite
+    dxgi
+    imm32
+    windowscodecs
+    xaudio2_9
+  )
 endif()
-
-set(YWLIB_OBJECT_TARGET ywlib_object)
-
-add_library(${YWLIB_OBJECT_TARGET} OBJECT ${YOUR_APP_SOURCES})
-
-target_include_directories(${YWLIB_OBJECT_TARGET}
-    PUBLIC
-        ${YOUR_APP_INCLUDE_DIRS}
-)
-
-target_compile_features(${YWLIB_OBJECT_TARGET}
-    PUBLIC
-        ${YOUR_APP_COMPILE_FEATURES}
-)
-
-target_compile_definitions(${YWLIB_OBJECT_TARGET}
-    PUBLIC
-        ${YOUR_APP_COMPILE_DEFINITIONS}
-)
-
-target_compile_options(${YWLIB_OBJECT_TARGET}
-    PUBLIC
-        ${YOUR_APP_COMPILE_OPTIONS}
-)
-
-target_link_libraries(${YWLIB_OBJECT_TARGET}
-    PUBLIC
-        ${YOUR_APP_LIBRARIES}
-)

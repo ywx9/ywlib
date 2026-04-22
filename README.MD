@@ -48,18 +48,31 @@ This script will:
 
 ```
 .
-├─ CMakeLists.txt
 ├─ .clang-format
+├─ .gitignore
+├─ .vscode/
+│  └─ settings.json (generated locally, ignored by git)
+├─ build/ (generated locally, ignored by git)
+│  ├─ build outputs (.exe, .dll)
+│  ├─ exe/ (locating Makefile and other files for building .exe)
+│  └─ dll/ (locating Makefile and other files for building .dll)
 ├─ tools/
-│  ├─ init_vscode.py
+│  ├─ build_dll.py
+│  ├─ build.py
+│  ├─ gen_umbrella.py
+│  ├─ init.py
+│  ├─ new_project.py
 │  └─ templates/
-│     └─ main.cpp.in
+│     ├─ CMakeLists.txt.in
+│     ├─ settings.json.in
+│     └─ source.cpp.in
 ├─ ywlib/
 │  ├─ yw/     (core headers)
 │  ├─ ywx/    (Windows / DirectX headers)
-│  ├─ ywlib   (generated umbrella header)
-│  └─ ywxlib  (generated umbrella header)
-└─ main.cpp   (generated locally, ignored by git)
+│  ├─ ywlib   (generated umbrella header; #include yw/*.h)
+│  └─ ywxlib  (generated umbrella header; #include ywlib, ywx/*.h)
+├─ source.cpp     (generated locally, ignored by git)
+└─ CMakeLists.txt (generated locally, ignored by git)
 ```
 
 ## Build
