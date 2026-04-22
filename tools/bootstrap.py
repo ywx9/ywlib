@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 
@@ -60,10 +62,19 @@ def render_template(template_text: str, values: dict[str, str]) -> str:
     return result
 
 
+def _handle_remove_readonly(func, path, exc_info) -> None:
+    ex = exc_info[1]
+    if not isinstance(ex, PermissionError):
+        raise ex
+
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
 def remove_git_dir(project_dir: Path) -> None:
     git_dir = project_dir / ".git"
     if git_dir.exists():
-        shutil.rmtree(git_dir)
+        shutil.rmtree(git_dir, onerror=_handle_remove_readonly)
 
 
 def create_project_json(project_dir: Path, project_name: str) -> None:
@@ -112,7 +123,8 @@ def main() -> int:
     print("Next steps:")
     print("  1. Edit project.json")
     print("  2. Run: python tools/init.py")
-    print("  3. Run: python tools/build.py")
+    print("  3. Edit source file")
+    print("  4. Run: python tools/build.py")
 
     return 0
 
