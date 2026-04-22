@@ -1,142 +1,138 @@
-# ywlib template
+# ywlib / ywxlib Project Template
 
-This repository is a **template project** that provides a minimal C++ build environment
-and the core library **ywlib**.
+`ywlib` / `ywxlib` を利用する C++23 プロジェクト向けのテンプレートです。
+`project.json` を編集し、`tools/init.py` と `tools/build.py` を実行するだけで、最小構成のプロジェクトを作成できます。
 
-- `ywlib/yw` : platform-independent core
-- `ywlib/ywx`: Windows / DirectX specific code
-- Users are expected to freely add their own source files on top of this template.
+## できること
 
-This repository intentionally tracks **only the core library and tools**.
-User code (such as `main.cpp`) is generated locally and not committed.
+- `ywlib` を使った通常の C++ プロジェクト作成
+- `ywxlib` を使った Windows / DirectX アプリケーション作成
+- `exe` / `dll` ターゲットの切り替え
+- CMake / VS Code 設定の自動生成
+- umbrella header (`ywlib`, `ywxlib`) の自動生成
+- `compile_commands.json` を使った IntelliSense 対応
 
----
+## 必要環境
 
-## Requirements
+- Python 3
+- Git
+- CMake
+- C++23 対応コンパイラ
+- VS Code（任意）
 
-- CMake 3.20+
-- C++20 or later compiler
-  - Windows: w64devkit (MinGW-w64)
-  - Linux: GCC or Clang
-- Python 3 (for initialization scripts)
+`ywxlib` を使う場合は、Windows 上で DirectX 関連ライブラリを利用できる環境が必要です。
 
----
+## クイックスタート
 
-## Initialization
+### 1. テンプレートから新しいプロジェクトを作成
 
-After cloning the repository, run the initialization script:
+```bash
+python bootstrap.py my_project
+cd my_project
+```
+
+### 2. 設定を反映
 
 ```bash
 python tools/init.py
 ```
 
-This script will:
-
-1. Configure the project with CMake
-
-2. Generate `compile_commands.json`
-
-3. Create `.vscode/settings.json`
-
-4. Create `main.cpp` if it does not exist
-
-5. Create `CMakeLists.txt` if it does not exist
-
-6. Generate umbrella headers (`ywlib`, `ywxlib`)
-
-## Project Structure (simplified)
-
-```
-.
-├─ .clang-format
-├─ .gitignore
-├─ .vscode/
-│  └─ settings.json (generated locally, ignored by git)
-├─ build/ (generated locally, ignored by git)
-│  ├─ build outputs (.exe, .dll)
-│  ├─ exe/ (locating Makefile and other files for building .exe)
-│  └─ dll/ (locating Makefile and other files for building .dll)
-├─ tools/
-│  ├─ build_dll.py
-│  ├─ build.py
-│  ├─ gen_umbrella.py
-│  ├─ init.py
-│  ├─ new_project.py
-│  └─ templates/
-│     ├─ CMakeLists.txt.in
-│     ├─ settings.json.in
-│     └─ source.cpp.in
-├─ ywlib/
-│  ├─ yw/     (core headers)
-│  ├─ ywx/    (Windows / DirectX headers)
-│  ├─ ywlib   (generated umbrella header; #include yw/*.h)
-│  └─ ywxlib  (generated umbrella header; #include ywlib, ywx/*.h)
-├─ source.cpp     (generated locally, ignored by git)
-└─ CMakeLists.txt (generated locally, ignored by git)
-```
-
-## Build
-
-### Configure
-
-```bash
-python tools/init.py
-```
-
-### Compile
-
-Use the build script:
+### 3. ビルド
 
 ```bash
 python tools/build.py
 ```
 
-### Run
+## 日常的に使うコマンド
+
+### 設定を再生成する
 
 ```bash
-build/app
+python tools/init.py
 ```
 
-The executable name is defined at the top of `CMakeLists.txt`.
+次のような場合に実行します。
 
-## Design Philosophy
+- 初回セットアップ時
+- `project.json` を変更した後
+- `CMakeLists.txt` や `.vscode/settings.json` を再生成したいとき
+- `build/` を作り直したいとき
 
-### Error Handling Design
+### ビルドする
 
-ywlib adopts a layered approach to error handling in order to balance
-clarity, performance, and usability.
+```bash
+python tools/build.py
+```
 
-At the core level, functions that may fail at runtime return
-`yw::result<T>` (or `yw::status` for value-less operations).
-This includes failures caused by I/O, external input, resource acquisition,
-or environment-dependent conditions.
-Errors are treated as values and must be handled explicitly.
+`build/compile_commands.json` が存在しない場合は、内部で `tools/init.py` が実行されます。
 
-Functions that are guaranteed not to fail by design return plain values,
-references, or `void`.
-For cases where a value may or may not exist but no detailed error information
-is required, pointer types or `std::optional` are used instead of `result`.
+## `project.json`
 
-To improve diagnostics, ywlib uses `std::source_location` to record both:
-- the call site where an operation was requested, and
-- the failure site where the error actually occurred.
+`project.json` は、このテンプレートの設定ファイルです。
 
-The call site is captured via a default argument, while the failure site is
-captured at the point of error creation.
-This design provides precise and low-overhead error context without imposing
-runtime cost on successful paths.
+例:
 
-## Notes
+```json
+{
+  "project_name": "my_project",
+  "source_file": "source.cpp",
+  "target_type": "exe",
+  "library": "ywlib"
+}
+```
 
-- `main.cpp` is intentionally ignored by git.
+### 設定項目
 
-- Users are free to add any additional source files or directories.
+#### `project_name`
 
-- Generated files such as `compile_commands.json` and umbrella headers are recreated automatically.
+出力ファイル名や CMake のターゲット名に使われるプロジェクト名です。
 
-- Formatting is controlled by `.clang-format`.
+#### `source_file`
 
-## License
+エントリポイントとなるソースファイル名です。
+既定値は `source.cpp` です。
 
-This project is provided as a template.<br>
-You may use, modify, and redistribute it freely.
+#### `target_type`
+
+出力形式を指定します。
+
+- `exe`
+- `dll`
+
+#### `library`
+
+使用するライブラリを指定します。
+
+- `ywlib`
+- `ywxlib`
+
+## ディレクトリ構成
+
+```text
+.
+├─ .clang-format
+├─ .gitignore
+├─ project.json
+├─ source.cpp
+├─ CMakeLists.txt
+├─ .vscode/
+│  └─ settings.json
+├─ build/
+├─ tools/
+│  ├─ init.py
+│  ├─ build.py
+│  ├─ _common.py
+│  ├─ _project.py
+│  ├─ _gen_umbrella.py
+│  └─ templates/
+│     ├─ project.json.in
+│     ├─ CMakeLists.txt.in
+│     ├─ settings.json.in
+│     ├─ source_ywlib.cpp.in
+│     └─ source_ywxlib.cpp.in
+└─ ywlib/
+   ├─ yw/
+   ├─ ywx/
+   ├─ ywlib
+   └─ ywxlib
+```
