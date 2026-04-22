@@ -160,6 +160,8 @@ public:
   float4 position{}; // position of camera body
 
   explicit operator bool() const noexcept { return static_cast<bool>(_bitmap); }
+  explicit operator ::ID2D1Bitmap1*&() & noexcept { return static_cast<::ID2D1Bitmap1*&>(_bitmap); }
+  explicit operator ::ID2D1Bitmap1*() const& noexcept { return static_cast<::ID2D1Bitmap1*>(_bitmap); }
 
   viewport() noexcept = default;
 

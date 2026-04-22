@@ -189,6 +189,10 @@ template<typename T> requires(!is_void<T>)
 inline void assume(std::expected<void, yw::error_trace>&& res, const source& src = {}) {
   if (!res) std::exit(print_error("Assumption failed", res.error(), src));
 }
+
+template<typename T> requires (!is_void<T> && !specialization_of<T, std::expected>)
+[[nodiscard]] T&& assume(T&& value) { return static_cast<T&&>(value); }
+
 } // namespace yw
 
 //////////////////////////////////////// MARK: std::formatter

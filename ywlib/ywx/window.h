@@ -38,6 +38,10 @@ public:
       const auto left = (wr.right - wr.left - cr.right) / 2;
       const auto top = wr.bottom - wr.top - cr.bottom - left;
       margin = int4(left, top, left, left);
+      // Update size if the actual client area is larger than requested
+      if (uint32_t(cr.right) > size.x || uint32_t(cr.bottom) > size.y) {
+        size = uint2(cr.right, cr.bottom);
+      }
       return {};
     }
 
@@ -187,21 +191,52 @@ public:
 public:
   virtual ~window() noexcept override { destroy(); }
   explicit window() noexcept = default;
+  window(const window&) = delete;
+  window& operator=(const window&) = delete;
+  window(window&& other) noexcept : ui::unknown(std::move(other)) {}
+  window& operator=(window&& other) noexcept {
+    if (this != &other) ui::unknown::operator=(std::move(other));
+    return *this;
+  }
 
   /// \param Pos If not specified, the window will be centered on the screen.
-  window(std::optional<int2> Pos, uint2 Size, style Style = style::regular, bool Show = true) {
-    _id = system::uis.add(std::make_unique<slot>());
-    const auto wsp = system::slot_address<window>(_id);
-    if (!wsp) throw std::runtime_error("failed to create window slot");
-    if (auto res = wsp->initialize(_id, Pos, Size, Style); !res) {
-      system::uis.erase(_id);
-      throw unexpected_error(res.error());
+private:
+  static std::expected<window, error_trace> _create_internal(
+    std::optional<int2> Pos, uint2 Size, style Style, bool Show) {
+    window w{};
+    w._id = system::uis.add(std::make_unique<slot>());
+    const auto wsp = system::slot_address<window>(w._id);
+    if (!wsp) return unexpected_error(errors::operation_failed, "failed to create window slot");
+    if (auto res = wsp->initialize(w._id, Pos, Size, Style); !res) {
+      system::uis.erase(w._id);
+      return unexpected_error(res.error());
     }
-    system::primal_windows.push_back(_id);
-    if (!Show) return;
-    ::ShowWindow(wsp->hwnd, SW_SHOW);
-    ::SetForegroundWindow(wsp->hwnd);
-    ::SetActiveWindow(wsp->hwnd);
+    system::primal_windows.push_back(w._id);
+    if (Show) {
+      ::ShowWindow(wsp->hwnd, SW_SHOW);
+      ::SetForegroundWindow(wsp->hwnd);
+      ::SetActiveWindow(wsp->hwnd);
+    }
+    return std::move(w);
+  }
+
+public:
+  /// Opens a window with specified position, size, style, and visibility.
+  static std::expected<window, error_trace> open(
+    int2 Pos, uint2 Size, style Style = style::regular, bool Show = true) {
+    return _create_internal(Pos, Size, Style, Show);
+  }
+
+  /// Opens a window with specified size, style, and visibility. Position is centered.
+  static std::expected<window, error_trace> open(
+    uint2 Size, style Style = style::regular, bool Show = true) {
+    return _create_internal(std::nullopt, Size, Style, Show);
+  }
+
+  /// Opens a window with specified style and visibility. Position is centered, size is minimal.
+  static std::expected<window, error_trace> open(
+    style Style = style::regular, bool Show = true) {
+    return _create_internal(std::nullopt, uint2(10, 10), Style, Show);
   }
 
   explicit operator bool() const noexcept;
@@ -310,22 +345,26 @@ public:
     } else return unexpected_error(errors::invalid_operation, "window slot not found");
   }
 
-  virtual void destroy() noexcept {
-    if (const auto wsp = system::slot_address<window>(_id)) ::DestroyWindow(wsp->hwnd);
+  std::expected<void, error_trace> destroy() noexcept {
+    if (const auto wsp = system::slot_address<window>(_id)) {
+      ::DestroyWindow(wsp->hwnd);
+      return {};
+    } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
   }
 
-  void screenshot(const std::filesystem::path& PngPath, bool WriteUI = false) {
+  std::expected<void, error_trace> screenshot(const std::filesystem::path& PngPath, bool WriteUI = false) {
     if (const auto wsp = system::slot_address<window>(_id)) {
       if (!WriteUI) {
-        wsp->rendertarget.save_as_png(PngPath);
-        return;
+        if (auto res = wsp->rendertarget.save_as_png(PngPath); !res) return unexpected_error(res.error());
+        return {};
       }
 
-      if ((wsp->dirty || wsp->messy) && wsp->layout_id)
-        if (auto res = wsp->draw_layout_bitmap(); !res) return;
+      if ((wsp->dirty || wsp->messy) && wsp->layout_id) {
+        if (auto res = wsp->draw_layout_bitmap(); !res) return unexpected_error(res.error());
+      }
 
       auto rt_copy_res = bitmap::create(wsp->rendertarget);
-      if (!rt_copy_res) return;
+      if (!rt_copy_res) return unexpected_error(rt_copy_res.error());
       auto rt_copy = std::move(*rt_copy_res);
 
       if (auto res = bitmap::create(wsp->size)) {
@@ -333,10 +372,11 @@ public:
         if (auto d = composed.begin_draw(color(0.0f, 0.0f, 0.0f, 0.0f))) {
           draw_bitmap({}, float2(wsp->size), rt_copy);
           draw_bitmap({}, float2(wsp->size), wsp->layout_bitmap);
-        } else return;
-        composed.save_as_png(PngPath);
-      }
-    }
+        } else return unexpected_error(d.error());
+        if (auto res = composed.save_as_png(PngPath); !res) return unexpected_error(res.error());
+      } else return unexpected_error(res.error());
+      return {};
+    } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
   }
 };
 

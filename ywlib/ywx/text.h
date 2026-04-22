@@ -12,7 +12,7 @@ class text {
   IDWriteTextFormat* _text_format() const { return static_cast<IDWriteTextFormat*>(_p.get()); }
 
 public:
-  /// 文字列を直接操作するためのハンドラ。デストラクト時にレイアウトに反映する。
+  /// 文字列を直接操作するためのハンドラ。破棄時にレイアウトに反映する。
   class handle {
     friend class text;
     text* _p = nullptr;
@@ -49,6 +49,17 @@ public:
 
   friend class handle;
 
+  /// 共通の初期化処理を行うプライベート関数
+  std::expected<void, error_trace> _initialize_layout(IDWriteTextFormat* TextFormat) {
+    auto hr = dwrite.factory()->CreateTextLayout(_text.data(), UINT(_text.size()), TextFormat, 0, 0, &_p.get());
+    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", int32_t(hr));
+    _p->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+    if (auto hr = _p->GetMetrics(&_metrics); FAILED(hr))
+      return unexpected_error(errors::operation_failed, "GetMetrics failed", int32_t(hr));
+    _p->SetMaxWidth(_metrics.width);
+    return {};
+  }
+
   text() noexcept = default;
   explicit operator bool() const noexcept { return static_cast<bool>(_p); }
   explicit operator IDWriteTextFormat*() const& noexcept { return _text_format(); }
@@ -60,34 +71,25 @@ public:
     return *this;
   }
 
+  /// デフォルトのtext_formatを使用して`text`オブジェクトを作成する。
   template<stringable S> static std::expected<text, error_trace> create(S&& Text) {
     if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
     text t{};
     t._text = unicode<wchar_t>(static_cast<S&&>(Text));
-    auto hr =
-      dwrite.factory()->CreateTextLayout(t._text.data(), UINT(t._text.size()), dwrite.text_format(), 0, 0, &t._p.get());
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", int32_t(hr));
-    t._p->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-    if (auto hr = t._p->GetMetrics(&t._metrics); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "GetMetrics failed", int32_t(hr));
-    t._p->SetMaxWidth(t._metrics.width);
+    if (auto res = t._initialize_layout(dwrite.text_format()); !res) return unexpected_error(res.error());
     return std::move(t);
   }
 
+  /// 指定したtext_formatを使用して`text`オブジェクトを作成する。
   template<stringable S> static std::expected<text, error_trace> create(S&& Text, const text_format_like auto& Format) {
     if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
     text t{};
     t._text = unicode<wchar_t>(static_cast<S&&>(Text));
-    auto hr = dwrite.factory()->CreateTextLayout(
-      t._text.data(), UINT(t._text.size()), static_cast<IDWriteTextFormat*>(Format), 0, 0, &t._p.get());
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", int32_t(hr));
-    t._p->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-    if (auto hr = t._p->GetMetrics(&t._metrics); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "GetMetrics failed", int32_t(hr));
-    t._p->SetMaxWidth(t._metrics.width);
+    if (auto res = t._initialize_layout(static_cast<IDWriteTextFormat*>(Format)); !res) return unexpected_error(res.error());
     return std::move(t);
   }
 
+  /// 指定したフォント情報を使用して`text`オブジェクトを作成する。
   template<stringable S> static std::expected<text, error_trace> create(
     S&& Text, null_terminated<wchar_t> FontName, std::optional<float> FontSize = {},
     std::optional<yw::font_weight> FontWeight = {}, std::optional<yw::font_style> FontStyle = {},
@@ -103,14 +105,9 @@ public:
       FontName.data(), nullptr, DWRITE_FONT_WEIGHT(*FontWeight), DWRITE_FONT_STYLE(*FontStyle),
       DWRITE_FONT_STRETCH(*FontStretch), *FontSize, L"", &tf.get());
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int32_t(hr));
-    tf->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
     text t{};
     t._text = unicode<wchar_t>(static_cast<S&&>(Text));
-    hr = dwrite.factory()->CreateTextLayout(t._text.data(), UINT(t._text.size()), tf.get(), 0, 0, &t._p.get());
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", int32_t(hr));
-    if (auto hr = t._p->GetMetrics(&t._metrics); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "GetMetrics failed", int32_t(hr));
-    t._p->SetMaxWidth(t._metrics.width);
+    if (auto res = t._initialize_layout(tf.get()); !res) return unexpected_error(res.error());
     return std::move(t);
   }
 
@@ -122,11 +119,15 @@ public:
     if (auto res = internal::get_font_name(_text_format()); !res) return {};
     else return std::move(*res);
   }
+
   float font_size() const { return _p ? _text_format()->GetFontSize() : 0.0f; }
+
   yw::font_weight font_weight() const {
     return _p ? yw::font_weight(_text_format()->GetFontWeight()) : yw::font_weight{};
   }
+
   yw::font_style font_style() const { return _p ? yw::font_style(_text_format()->GetFontStyle()) : yw::font_style{}; }
+
   yw::font_stretch font_stretch() const {
     return _p ? yw::font_stretch(_text_format()->GetFontStretch()) : yw::font_stretch{};
   }
@@ -134,11 +135,12 @@ public:
   yw::text_alignment text_alignment() const {
     return _p ? yw::text_alignment(_text_format()->GetTextAlignment()) : yw::text_alignment{};
   }
+
   void text_alignment(yw::text_alignment Align) {
     if (_p) _text_format()->SetTextAlignment(static_cast<DWRITE_TEXT_ALIGNMENT>(Align));
   }
 
-  std::expected<void, error_trace> font_conf(
+  std::expected<void, error_trace> set_font(
     null_terminated<wchar_t> name = {}, std::optional<float> size = {}, std::optional<yw::font_weight> weight = {},
     std::optional<yw::font_style> style = {}, std::optional<yw::font_stretch> stretch = {}) {
     if (!_p) return unexpected_error(errors::operation_failed, "Text layout not initialized");
@@ -168,8 +170,8 @@ public:
     BOOL is_inside = FALSE, is_trailing = FALSE;
     auto hr = _p->HitTestPoint(point.x, point.y, &is_inside, &is_trailing, &metrics);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "HitTestPoint failed", int32_t(hr));
-    return yw::tuple<uint32_t, float2>{metrics.textPosition + uint32_t(trailing && is_trailing),
-                                       float2(metrics.width, metrics.height)};
+    return yw::tuple<uint32_t, float2>{
+      metrics.textPosition + uint32_t(trailing && is_trailing), float2(metrics.width, metrics.height)};
   }
 
   /// returns text position at the specified point
@@ -220,18 +222,14 @@ inline std::expected<void, error_trace> text::handle::_update() {
   auto tfp = static_cast<IDWriteTextFormat*>(*_p);
   if (!tfp && !(tfp = dwrite.text_format()))
     return unexpected_error(errors::operation_failed, "text format is not available");
-  auto hr = dwrite.factory()->CreateTextLayout(_p->_text.data(), UINT32(_p->_text.size()), tfp, 0, 0, &_p->_p.get());
-  if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", int32_t(hr));
-  _p->_p->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-  if (auto hr = _p->_p->GetMetrics(&_p->_metrics); FAILED(hr))
-    return unexpected_error(errors::operation_failed, "GetMetrics failed", int32_t(hr));
-  _p->_p->SetMaxWidth(_p->_metrics.width);
+  if (auto res = _p->_initialize_layout(tfp); !res) return unexpected_error(res.error());
   _p = nullptr;
   return {};
 }
 
-//////////////////////////////////////// \note 描画
+//////////////////////////////////////// MARK: 描画関数
 
+/// `text`を指定した位置に、そのサイズのまま描画する
 inline std::expected<void, error_trace> draw_text(float2 Pos, const text& Text) {
   if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
@@ -241,6 +239,7 @@ inline std::expected<void, error_trace> draw_text(float2 Pos, const text& Text) 
   return {};
 }
 
+/// `text`を指定した位置に、クリッピング矩形内で描画する
 /// draws `Text` at `Pos`, clipping to the rectangle `[Pos, Pos + Size)`
 inline std::expected<void, error_trace> draw_text(float2 Pos, float2 Size, const text& Text) {
   if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
@@ -254,6 +253,7 @@ inline std::expected<void, error_trace> draw_text(float2 Pos, float2 Size, const
   return {};
 }
 
+/// `text`を指定した位置に、クリッピング矩形内で描画する
 /// draws `Text` at `Pos`, clipping to the rectangle `[ClipPos, ClipPos + ClipSize)`
 inline std::expected<void, error_trace> draw_text(float2 Pos, float2 ClipPos, float2 ClipSize, const text& Text) {
   if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());

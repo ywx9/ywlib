@@ -3,6 +3,8 @@
 
 namespace yw {
 
+template<typename Bitmap> concept bitmap_like = castable_to<Bitmap, ID2D1Bitmap1*>;
+
 class bitmap {
 public:
   static constexpr auto dxgiformat = DXGI_FORMAT_B8G8R8A8_UNORM;
