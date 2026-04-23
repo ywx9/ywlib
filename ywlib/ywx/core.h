@@ -15,12 +15,22 @@ namespace yw {
 
 //////////////////////////////////////// MARK: ok/yes
 
-inline bool ok(null_terminated<wchar_t> Text, null_terminated<wchar_t> Title = L"Confirmation") {
-  return ::MessageBoxW(nullptr, Text.data(), Title.data(), MB_OK) == IDOK;
+inline bool ok(
+  null_terminated<wchar_t> Text, null_terminated<wchar_t> Title = L"Confirmation", bool topmost = false,
+  bool modal = false) {
+  UINT flags = MB_OK;
+  if (topmost) flags |= MB_TOPMOST;
+  if (modal) flags |= MB_TASKMODAL;
+  return ::MessageBoxW(nullptr, Text.data(), Title.data(), flags) == IDOK;
 }
 
-inline bool yes(null_terminated<wchar_t> Text, null_terminated<wchar_t> Title = L"Confirmation") {
-  return ::MessageBoxW(nullptr, Text.data(), Title.data(), MB_YESNO) == IDYES;
+inline bool yes(
+  null_terminated<wchar_t> Text, null_terminated<wchar_t> Title = L"Confirmation", bool topmost = false,
+  bool modal = false) {
+  UINT flags = MB_YESNO;
+  if (topmost) flags |= MB_TOPMOST;
+  if (modal) flags |= MB_TASKMODAL;
+  return ::MessageBoxW(nullptr, Text.data(), Title.data(), flags) == IDYES;
 }
 
 //////////////////////////////////////// MARK: print_fallback
@@ -145,8 +155,9 @@ public:
   std::expected<void, error_trace> initialize() {
     if (p.initialized) return {};
     const D3D_FEATURE_LEVEL _levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
-    auto hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, _levels,
-      _countof(_levels), D3D11_SDK_VERSION, &p.device, nullptr, &p.context);
+    auto hr = D3D11CreateDevice(
+      nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, _levels, _countof(_levels),
+      D3D11_SDK_VERSION, &p.device, nullptr, &p.context);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "D3D11CreateDevice failed", int32_t(hr));
     D3D11_BLEND_DESC blend_desc{};
     blend_desc.RenderTarget[0].BlendEnable = TRUE;
@@ -337,8 +348,9 @@ public:
       DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory1), reinterpret_cast<IUnknown**>(&p.factory));
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "DWriteCreateFactory failed", int32_t(hr));
     // Creates default text format.
-    hr = p.factory->CreateTextFormat(L"", nullptr, DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
-      DWRITE_FONT_STRETCH_NORMAL, 16.0f, L"", &p.text_format);
+    hr = p.factory->CreateTextFormat(
+      L"", nullptr, DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 16.0f, L"",
+      &p.text_format);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int32_t(hr));
     // p.text_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
     // p.text_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
