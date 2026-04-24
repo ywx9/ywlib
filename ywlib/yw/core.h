@@ -415,6 +415,45 @@ constexpr C* utos(C* dest, uint64_t u) {
 }
 } // namespace internal
 
+//////////////////////////////////////// MARK: vtos
+
+template<char_type C, size_t N> constexpr std::basic_string<C> _ascii_string(const char (&s)[N]) {
+  std::basic_string<C> r(N, '\0');
+  for (size_t i = 0; i < N; ++i) r[i] = static_cast<C>(s[i]);
+  return r;
+}
+
+template<char_type C> constexpr std::basic_string<C> bool_to_string(bool value) {
+  return value ? _ascii_string<C>("true") : _ascii_string<C>("false");
+}
+
+constexpr std::string bool_to_string(bool value) { return bool_to_string<char>(value); }
+
+template<char_type C> constexpr std::basic_string<C> uint_to_string(uint_type auto value) {
+  auto u = static_cast<uint64_t>(value);
+  unsigned keta = 0;
+  for (auto u_ = u; u_ != 0; u_ /= 10) ++keta;
+  std::basic_string<C> result(keta, '\0');
+  for (auto p = result.data() + keta; u != 0; u /= 10) *(--p) = static_cast<C>('0' + (u % 10));
+  return result;
+}
+
+constexpr std::string uint_to_string(uint_type auto value) { return uint_to_string<char>(value); }
+
+template<char_type C> constexpr std::basic_string<C> int_to_string(integral auto value) {
+  if constexpr (uint_type<decltype(value)>) return uint_to_string<C>(value);
+  const bool minus = value < 0;
+  auto u = static_cast<uint64_t>(minus ? -value : value);
+  unsigned keta = 0;
+  for (auto u_ = u; u_ != 0; u_ /= 10) ++keta;
+  std::basic_string<C> result(keta + minus, '\0');
+  if (minus) result[0] = '-';
+  for (auto p = result.data() + result.size(); u != 0; u /= 10) *(--p) = static_cast<C>('0' + (u % 10));
+  return result;
+}
+
+constexpr std::string int_to_string(integral auto value) { return int_to_string<char>(value); }
+
 //////////////////////////////////////// MARK: GET
 
 template<typename T> inline constexpr size_t extent = select_type<requires {
@@ -640,10 +679,20 @@ struct source {
     return a.file == b.file && a.func == b.func && a.line == b.line && a.column == b.column;
   }
 
+  constexpr std::string to_string() const {
+    if (std::is_constant_evaluated()) {
+      auto line_s = uint_to_string(line);
+      auto column_s = uint_to_string(column);
+      std::string r;
+      r.reserve(file.size() + 1 + line_s.size() + 1 + column_s.size() + 5 + func.size());
+      r += file, r += '(', r += line_s, r += ',', r += column_s, r += ") in ", r += func;
+      return r;
+    } else return std::format("{}({},{}) in {}", file, line, column, func);
+  }
+
   constexpr uint64_t unique_id() const noexcept {
     constexpr uint64_t basis = 14695981039346656037ull;
     constexpr uint64_t prime = 1099511628211ull;
-
     auto hash = [](std::string_view s) {
       uint64_t h = basis;
       for (char c : s) { h ^= uint8_t(c), h *= prime; }
@@ -660,10 +709,7 @@ namespace std {
 template<typename C> struct formatter<yw::source, C> {
   formatter<basic_string<C>, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::source& src, auto& ctx) const {
-    auto s = std::format("{}({},{}) in {}", src.file, src.line, src.column, src.func);
-    return fmt.format(yw::unicode<C>(move(s)), ctx);
-  }
+  auto format(const yw::source& src, auto& ctx) const { return fmt.format(yw::unicode<C>(src.to_string()), ctx); }
 };
 } // namespace std
 
@@ -680,8 +726,10 @@ public:
   constexpr null_terminated(const std::basic_string<C>& str) : _data(std::in_place_index_t<1>{}, str) {}
   constexpr null_terminated(std::basic_string<C>&& str) : _data(std::in_place_index_t<0>{}, std::move(str)) {}
   constexpr null_terminated(const std::basic_string<C>&& str) : _data(std::in_place_index_t<0>{}, std::move(str)) {}
+
   template<typename S> requires _is_array<S> constexpr null_terminated(const S& a)
     : _data(std::in_place_index_t<1>{}, std::basic_string_view<C>(a, std::char_traits<C>::length(a))) {}
+
   template<stringable S> requires(!_is_array<S>) constexpr null_terminated(S&& s) : _data() {
     if constexpr (different_from<iter_value_t<S>, C>) _data.template emplace<0>(unicode<C>(static_cast<S&&>(s)));
     else _data.template emplace<0>(std::basic_string<C>(std::basic_string_view<C>(static_cast<S&&>(s))));

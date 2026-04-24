@@ -3,96 +3,113 @@
 
 namespace yw {
 
-//////////////////////////////////////// MARK: errors
-
-enum class errors : uint32_t {
-  success = 0,
-  invalid_argument,  // part of `invalid_operation`; ex) argument out of range
-  invalid_file,      // unexpected file format
-  invalid_operation, // wrong use of API; ex) file_handle::write called on read-only file
-  operation_failed,  // unexpected error from system or library
-  not_initialized,   // part of `invalid_operation`; system/object is not initialized
-  rendering_during_drawing,
-  drawing_during_rendering,
-};
-
-//////////////////////////////////////// MARK: error_text
-
-inline constexpr auto error_text = [](errors e) -> std::string_view {
-  if (e == errors::success) return "success";
-  else if (e == errors::invalid_argument) return "invalid argument";
-  else if (e == errors::invalid_file) return "invalid file format";
-  else if (e == errors::invalid_operation) return "invalid operation";
-  else if (e == errors::operation_failed) return "operation failed";
-  else if (e == errors::not_initialized) return "not-initialized object or system is accessed";
-  else if (e == errors::rendering_during_drawing) return "3D rendering function called during 2D drawing";
-  else if (e == errors::drawing_during_rendering) return "2D drawing function called during 3D rendering";
-  else return "unknown error";
-};
-
 //////////////////////////////////////// MARK: error
 
 struct error {
-  errors code;
+  /// error type defined by `define_error`
+  struct {
+    const char* name;
+    uint64_t id;
+    constexpr bool operator==(const auto& other) const noexcept
+      requires same_as<remove_cvref<decltype(*this)>, remove_cvref<decltype(other)>> {
+      return id == other.id;
+    }
+  } type;
+
   int32_t system_code;
   uint64_t position;
   null_terminated<char> message;
   mutable bool handled{true};
 
-  ~error() noexcept {
-    try {
-      if (code != errors::success && !handled) {
-        print("unhandled error destroyed");
-        yw::print.err(to_string());
-      }
-    } catch (...) {} // noexcept destructor
-  }
+  constexpr ~error() noexcept;
+  constexpr error() noexcept;
+  constexpr error(const error& e);
+  constexpr error(error&& e) noexcept;
+  constexpr error& operator=(const error& e);
+  constexpr error& operator=(error&& e) noexcept;
 
-  error() noexcept : code(errors::success), system_code(0), position(uint64_t(-1)), message() {}
+  explicit constexpr error(
+    decltype(error::type) e, null_terminated<char> msg = {}, int32_t sys_code = 0,
+    uint64_t pos = uint64_t(-1)) noexcept;
 
-  error(const error& e)
-    : code(e.code), system_code(e.system_code), position(e.position), message(e.message),
-      handled(code == errors::success) {}
+  explicit constexpr operator bool() const noexcept;
 
-  error& operator=(const error& e) {
-    code = e.code;
-    system_code = e.system_code;
-    position = e.position;
-    message = e.message;
-    handled = (code == errors::success);
-    return *this;
-  }
-
-  error(error&& e) noexcept
-    : code(std::exchange(e.code, errors::success)), system_code(std::exchange(e.system_code, 0)),
-      position(std::exchange(e.position, uint64_t(-1))), message(std::move(e.message)),
-      handled(std::exchange(e.handled, true)) {}
-
-  error& operator=(error&& e) noexcept {
-    code = std::exchange(e.code, errors::success);
-    system_code = std::exchange(e.system_code, 0);
-    position = std::exchange(e.position, uint64_t(-1));
-    message = std::move(e.message);
-    handled = std::exchange(e.handled, true);
-    return *this;
-  }
-
-  explicit error(errors e, null_terminated<char> msg = {}, int32_t sys_code = 0, uint64_t pos = uint64_t(-1)) noexcept
-    : code(e), system_code(sys_code), message(std::move(msg)), position(pos), handled(e == errors::success) {}
-
-  explicit operator bool() const noexcept { return code != errors::success; }
-
-  std::string to_string() const {
-    std::string s;
-    if (!message.empty()) {
-      if (system_code == 0) s = std::format("{}", message);
-      else s = std::format("{} (code={})", message, system_code);
-    } else if (system_code != 0) s = std::format("error code={}", system_code);
-    if (position != uint64_t(-1)) s += std::format("\n  input offset={}", position);
+  constexpr std::string to_string() const {
     handled = true;
-    return s;
+    if (!std::is_constant_evaluated()) {
+      if (position != uint64_t(-1)) {
+        if (!message.empty()) {
+          if (system_code == 0) return std::format("{}: {} (offset={})", type.name, message, position);
+          else return std::format("{}: {} (code={}, offset={})", type.name, message, system_code, position);
+        } else if (system_code != 0) return std::format("{} (code={}, offset={})", type.name, system_code, position);
+        else return std::format("{} (offset={})", type.name, position);
+      } else {
+        if (!message.empty()) {
+          if (system_code == 0) return std::format("{}: {}", type.name, message);
+          else return std::format("{}: {} (code={})", type.name, message, system_code);
+        } else if (system_code != 0) return std::format("{} (code={})", type.name, system_code);
+        else return type.name;
+      }
+    } else return type.name; // C++26以降でないとconstexpr formatが使えないため簡易に
   }
 };
+
+//////////////////////////////////////// MARK: define_error macro
+
+/// adds new error definition in namespace yw::errors
+#define define_error(error_name)                                                                       \
+  namespace errors {                                                                                   \
+  inline constexpr decltype(::yw::error::type) error_name = {#error_name, ::yw::source().unique_id()}; \
+  }
+
+define_error(success);
+define_error(invalid_argument);
+define_error(invalid_operation);
+define_error(operation_failed);
+define_error(not_initialized);
+
+constexpr error::~error() noexcept {
+  try {
+    if (type != errors::success && !handled && !std::is_constant_evaluated()) {
+      print("unhandled error destroyed");
+      yw::print.err(to_string());
+    }
+  } catch (...) {} // noexcept destructor
+}
+
+constexpr error::error() noexcept : type(errors::success), system_code(0), position(uint64_t(-1)), message() {}
+
+constexpr error::error(const error& e)
+  : type(e.type), system_code(e.system_code), position(e.position), message(e.message),
+    handled(type == errors::success) {}
+
+constexpr error& error::operator=(const error& e) {
+  type = e.type;
+  system_code = e.system_code;
+  position = e.position;
+  message = e.message;
+  handled = (type == errors::success);
+  return *this;
+}
+
+constexpr error::error(error&& e) noexcept
+  : type(std::exchange(e.type, errors::success)), system_code(std::exchange(e.system_code, 0)),
+    position(std::exchange(e.position, uint64_t(-1))), message(std::move(e.message)),
+    handled(std::exchange(e.handled, true)) {}
+
+constexpr error& error::operator=(error&& e) noexcept {
+  type = std::exchange(e.type, errors::success);
+  system_code = std::exchange(e.system_code, 0);
+  position = std::exchange(e.position, uint64_t(-1));
+  message = std::move(e.message);
+  handled = std::exchange(e.handled, true);
+  return *this;
+}
+
+constexpr error::error(decltype(error::type) e, null_terminated<char> msg, int32_t sys_code, uint64_t pos) noexcept
+  : type(e), system_code(sys_code), message(std::move(msg)), position(pos), handled(e == errors::success) {}
+
+constexpr error::operator bool() const noexcept { return type != errors::success; }
 
 ////////////////////////////// MARK: error_trace
 
@@ -101,36 +118,39 @@ public:
   yw::error error;
   std::vector<source> frames;
 
-  ~error_trace() noexcept {
+  constexpr ~error_trace() noexcept {
     try {
-      if (error && !error.handled) {
+      if (error && !error.handled && !std::is_constant_evaluated()) {
         print("unhandled error_trace destroyed");
         yw::print.err(to_string());
       }
     } catch (...) {} // noexcept destructor
   }
 
-  error_trace() = default;
-  error_trace(const error_trace& e) = default;
-  error_trace& operator=(const error_trace& e) = default;
-  error_trace(error_trace&&) = default;
-  error_trace& operator=(error_trace&&) = default;
+  constexpr error_trace() = default;
+  constexpr error_trace(const error_trace& e) = default;
+  constexpr error_trace& operator=(const error_trace& e) = default;
+  constexpr error_trace(error_trace&&) = default;
+  constexpr error_trace& operator=(error_trace&&) = default;
 
-  error_trace(yw::error err, const source& src = {}) : error(std::move(err)) {
+  constexpr error_trace(yw::error err, const source& src = {}) : error(std::move(err)) {
     frames.reserve(8);
     frames.push_back(src);
   }
 
-  explicit operator bool() const noexcept { return bool(error); }
+  explicit constexpr operator bool() const noexcept { return bool(error); }
 
-  error_trace& push(const source& src = {}) & {
+  constexpr error_trace& push(const source& src = {}) & {
     frames.push_back(src);
     return *this;
   }
 
-  std::string to_string() const {
+  constexpr std::string to_string() const {
     auto s = error.to_string();
-    for (const auto& src : frames) s += std::format("\n  at {}", src);
+    if (std::is_constant_evaluated()) {
+      for (const auto& src : frames) s += "\n  at " + src.to_string();
+    } else
+      for (const auto& src : frames) s += std::format("\n  at {}", src);
     return s;
   }
 };
@@ -139,7 +159,8 @@ public:
 
 /// creates `std::unexpected<error_trace>` with given information.
 inline std::unexpected<error_trace> unexpected_error(
-  errors e, null_terminated<char> msg, int32_t sys_code = 0, uint64_t pos = uint64_t(-1), const source& src = {}) {
+  decltype(error::type) e, null_terminated<char> msg, int32_t sys_code = 0, uint64_t pos = uint64_t(-1),
+  const source& src = {}) {
   return std::unexpected<error_trace>(error_trace(yw::error(e, std::move(msg), sys_code, pos), src));
 }
 
@@ -161,37 +182,29 @@ inline std::expected<void, error_trace> check_error(std::expected<void, error_tr
   return {};
 }
 
-//////////////////////////////////////// MARK: print_error
-
-inline constexpr struct {
-  /// prints error message and error trace to standard error output.
-  template<stringable S> static int operator()(S&& message, const error_trace& err, const source& src = {}) {
-    print.err(format("{}\n at {}\n{}", err.to_string(), src, message));
-    return err.error.code == errors::success ? 0 : err.error.system_code;
-  }
-
-  /// prints error message and error trace to standard error output.
-  template<stringable S> static int operator()(const error_trace& err, const source& src = {}) {
-    return operator()(error_text(err.error.code), err, src);
-  }
-} print_error;
-
 //////////////////////////////////////// MARK: assume
 
 /// returns value if `res` is valid; otherwise prints error and exits.
 template<typename T> requires(!is_void<T>)
 [[nodiscard]] T assume(std::expected<T, yw::error_trace>&& res, const source& src = {}) {
-  if (!res) std::exit(print_error("Assumption failed", res.error(), src));
+  if (!res) {
+    print.err(format("Assumption failed\n{}\n  at {}", res.error(), src));
+    std::exit(res.error().error.system_code);
+  }
   return std::move(*res);
 }
 
 /// checks if `res` is valid; if not, prints error and exits.
 inline void assume(std::expected<void, yw::error_trace>&& res, const source& src = {}) {
-  if (!res) std::exit(print_error("Assumption failed", res.error(), src));
+  if (!res) {
+    print.err(format("Assumption failed\n{}\n  at {}", res.error(), src));
+    std::exit(res.error().error.system_code);
+  }
 }
 
-template<typename T> requires (!is_void<T> && !specialization_of<T, std::expected>)
-[[nodiscard]] T&& assume(T&& value) { return static_cast<T&&>(value); }
+template<typename T> requires(!is_void<T> && !specialization_of<T, std::expected>) [[nodiscard]] T&& assume(T&& value) {
+  return static_cast<T&&>(value);
+}
 
 } // namespace yw
 

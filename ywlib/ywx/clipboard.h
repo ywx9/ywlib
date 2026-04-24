@@ -157,17 +157,17 @@ public:
         if (auto hdr = static_cast<const BITMAPV5HEADER*>(::GlobalLock(*h))) {
           if (hdr->bV5Size < sizeof(BITMAPV5HEADER)) {
             ::GlobalUnlock(*h);
-            return unexpected_error(errors::invalid_file, "invalid BITMAPV5HEADER size");
+            return unexpected_error(errors::invalid_argument, "invalid BITMAPV5HEADER size");
           }
           if (hdr->bV5BitCount != 32) {
             ::GlobalUnlock(*h);
-            return unexpected_error(errors::invalid_file, "clipboard image is not 32bpp");
+            return unexpected_error(errors::invalid_argument, "clipboard image is not 32bpp");
           }
           const int32_t w = hdr->bV5Width;
           const int32_t hgt = hdr->bV5Height;
           if (w <= 0 || hgt == 0) {
             ::GlobalUnlock(*h);
-            return unexpected_error(errors::invalid_file, "invalid image size");
+            return unexpected_error(errors::invalid_argument, "invalid image size");
           }
           const uint32_t width = static_cast<uint32_t>(w);
           const uint32_t height = static_cast<uint32_t>(hgt > 0 ? hgt : -hgt);

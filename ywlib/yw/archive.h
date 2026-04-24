@@ -31,6 +31,10 @@
  *   - フッタのファイル先頭からのオフセット(8)
  */
 
+namespace yw {
+define_error(archive_invalid_format);
+}
+
 namespace yw::archive {
 
 template<integral T> static constexpr T _to_le(T a) noexcept {
@@ -74,7 +78,7 @@ class handle {
 public:
   /// creates `archive`
   static std::expected<handle, error_trace> create(const std::filesystem::path& p, open_mode mode) {
-    const auto e = errors::invalid_file;
+    const auto e = yw::errors::archive_invalid_format;
     const open_mode fh_mode = mode == open_mode::append ? open_mode::update_or_create : mode;
     auto fh = yw::open(p, fh_mode);
     if (!fh) return unexpected_error(fh.error());
@@ -154,7 +158,7 @@ public:
 
   /// closes the archive
   std::expected<void, error_trace> close() {
-    if (!is_open()) return unexpected_error(errors::not_initialized, "not initialized");
+    if (!is_open()) return unexpected_error(yw::errors::not_initialized, "not initialized");
     if (auto res = flush(); !res) return unexpected_error(res.error());
     if (auto res = _fh.close(); !res) return unexpected_error(res.error());
     _entries.clear();
@@ -172,7 +176,7 @@ public:
 
   /// reads the data of an entry by index
   std::expected<std::vector<std::byte>, error_trace> read(size_t index) {
-    if (index >= _entries.size()) return unexpected_error(errors::invalid_argument, "index out of range");
+    if (index >= _entries.size()) return unexpected_error(yw::errors::invalid_argument, "index out of range");
     const auto& e = _entries[index];
     if (auto res = _fh.seek(int64_t(e.data_offset)); !res) return unexpected_error(res.error());
     std::vector<std::byte> data(e.data_length);
@@ -185,12 +189,12 @@ public:
     const std::string_view sv(name);
     for (size_t i = 0; i < _entries.size(); ++i)
       if (_entries[i].name == sv) return read(i);
-    return unexpected_error(errors::invalid_argument, "entry not found");
+    return unexpected_error(yw::errors::invalid_argument, "entry not found");
   }
 
   /// verifies the CRC32 of an entry by index
   std::expected<bool, error_trace> verify(size_t index) {
-    if (index >= _entries.size()) return unexpected_error(errors::invalid_argument, "index out of range");
+    if (index >= _entries.size()) return unexpected_error(yw::errors::invalid_argument, "index out of range");
     const auto& e = _entries[index];
     if (auto res = _fh.seek(int64_t(e.data_offset)); !res) return unexpected_error(res.error());
     uint32_t crc = 0xFFFFFFFF;
@@ -213,14 +217,14 @@ public:
     const std::string_view sv(name);
     for (size_t i = 0; i < _entries.size(); ++i)
       if (_entries[i].name == sv) return verify(i);
-    return unexpected_error(errors::invalid_argument, "entry not found");
+    return unexpected_error(yw::errors::invalid_argument, "entry not found");
   }
 
   /// flushes the archive footer
   std::expected<void, error_trace> flush() {
     if (_mode != open_mode::create_always && _mode != open_mode::create_new && _mode != open_mode::update_existing &&
         _mode != open_mode::update_or_create)
-      return unexpected_error(errors::invalid_operation, "archive not opened in write mode");
+      return unexpected_error(yw::errors::invalid_operation, "archive not opened in write mode");
     if (auto res = _fh.seek(int64_t(_footer_offset)); !res) return unexpected_error(res.error());
     footer f{_to_le(footer_magic), _to_le(static_cast<uint32_t>(_entries.size()))};
     if (auto res = _fh.write_trivial(f); !res) return unexpected_error(res.error());
@@ -236,7 +240,7 @@ public:
   /// removes the last `n` entries from the archive
   std::expected<void, error_trace> remove(size_t n) {
     if (n == npos) n = _entries.size();
-    else if (n > _entries.size()) return unexpected_error(errors::invalid_argument, "n exceeds entry count");
+    else if (n > _entries.size()) return unexpected_error(yw::errors::invalid_argument, "n exceeds entry count");
     if (n == 0) {
       _footer_offset = _entry_offset;
       _entries.clear();
@@ -249,13 +253,13 @@ public:
 
   /// appends a new entry to the archive
   std::expected<void, error_trace> append(stringable<char> auto&& name, const void* data, size_t data_length) {
-    if (!data && data_length) return unexpected_error(errors::invalid_argument, "null data pointer");
+    if (!data && data_length) return unexpected_error(yw::errors::invalid_argument, "null data pointer");
     const std::string_view sv(name);
     if (sv.size() == 0 || sv.size() > max_name_size)
-      return unexpected_error(errors::invalid_argument, "archive: invalid entry name length");
+      return unexpected_error(yw::errors::invalid_argument, "archive: invalid entry name length");
     if (_mode != open_mode::create_always && _mode != open_mode::create_new && _mode != open_mode::update_existing &&
         _mode != open_mode::update_or_create)
-      return unexpected_error(errors::invalid_operation, "archive not opened in write mode");
+      return unexpected_error(yw::errors::invalid_operation, "archive not opened in write mode");
     if (auto res = _fh.seek(int64_t(_footer_offset)); !res) return unexpected_error(res.error());
     header h;
     h.magic = _to_le(entry_magic);
@@ -291,7 +295,7 @@ inline std::expected<handle, error_trace> open(const std::filesystem::path& path
 inline std::expected<void, error_trace> pack(const std::filesystem::path& src_path,
   const std::filesystem::path& dst_path, open_mode mode = open_mode::create_always) {
   if (!std::filesystem::is_directory(src_path))
-    return unexpected_error(errors::invalid_argument, "source path is not a directory");
+    return unexpected_error(yw::errors::invalid_argument, "source path is not a directory");
   auto archive = handle::create(dst_path, mode);
   if (!archive) return unexpected_error(archive.error());
   for (const auto& entry : std::filesystem::recursive_directory_iterator(src_path)) {
