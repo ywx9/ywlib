@@ -9,11 +9,13 @@ namespace yw {
 enum class open_mode { unknown, read_existing, update_existing, create_always, create_new, append, update_or_create };
 enum class seek_whence { begin = SEEK_SET, current = SEEK_CUR, end = SEEK_END };
 
+namespace errors {
 define_error(file_invalid_mode);
 define_error(file_not_initialized);
 define_error(file_invalid_buffer);
 define_error(file_open_failed);
 define_error(file_operation_failed);
+}
 
 class file_handle;
 

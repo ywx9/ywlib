@@ -58,15 +58,15 @@ struct error {
 
 /// adds new error definition in namespace yw::errors
 #define define_error(error_name)                                                                       \
-  namespace errors {                                                                                   \
-  inline constexpr decltype(::yw::error::type) error_name = {#error_name, ::yw::source().unique_id()}; \
-  }
+  inline constexpr decltype(::yw::error::type) error_name = {#error_name, ::yw::source().unique_id()};
 
+namespace errors {
 define_error(success);
 define_error(invalid_argument);
 define_error(invalid_operation);
 define_error(operation_failed);
 define_error(not_initialized);
+}
 
 constexpr error::~error() noexcept {
   try {
@@ -171,6 +171,10 @@ inline std::unexpected<error_trace> unexpected_error(error_trace& e, const sourc
 
 /// adds source information (default is current location) to error trace and returns `std::unexpected<error_trace>`.
 inline std::unexpected<error_trace> unexpected_error(std::unexpected<error_trace>& e, const source& src = {}) {
+  e.error().push(src);
+  return std::move(e);
+}
+inline std::unexpected<error_trace> unexpected_error(std::unexpected<error_trace>&& e, const source& src = {}) {
   e.error().push(src);
   return std::move(e);
 }
