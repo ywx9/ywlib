@@ -186,6 +186,23 @@ inline std::expected<void, error_trace> check_error(std::expected<void, error_tr
   return {};
 }
 
+//////////////////////////////////////// MARK: fatal_error
+
+[[noreturn]] inline void fatal_error(const error_trace& e, const source& src = {}) {
+  print_fallback.err(format("Fatal error at {}\n{}", src, e));
+  std::exit(e.error.system_code);
+}
+
+[[noreturn]] inline void fatal_error(const error& e, const source& src = {}) {
+  print_fallback.err(format("Fatal error at {}\n{}", src, e));
+  std::exit(e.system_code);
+}
+
+[[noreturn]] inline void fatal_error(decltype(errors::success) e, null_terminated<char> msg, const source& src = {}) {
+  print_fallback.err(format("Fatal error at {}\n{}", src, error(e, std::move(msg))));
+  std::exit(1);
+}
+
 //////////////////////////////////////// MARK: assume
 
 /// returns value if `res` is valid; otherwise prints error and exits.

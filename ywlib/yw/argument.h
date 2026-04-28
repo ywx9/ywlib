@@ -8,509 +8,622 @@
 #endif
 
 /**
- * \note
- * On Windows, command-line arguments are obtained from the OS
- * (GetCommandLineW + CommandLineToArgvW) and converted to UTF-8.
- * The C runtime's argc/argv are not used as the authoritative source.
+ * \note コマンドライン引数について
+ * Windows では GetCommandLineW + CommandLineToArgvW を使用する。
+ * これは、環境の影響を最小限に抑えて UTF-8 に変換するためである。
+ *
+ * \note コマンドライン引数に関するエラー処理について
+ * 以下の3種に分別して考える
+ *  - 定義エラー: エラー情報を表示してfatal_errorで終了させる。
+ *  - 引数エラー: --helpを表示した上でfatal_errorで終了させる。
+ *  - 使用エラー: エラー情報を表示してfatal_errorで終了させる。
  */
 
 namespace yw::errors {
-define_error(argument_invalid_declaration);
+define_error(argument_invalid_definition);
+define_error(argument_invalid_argument);
 define_error(argument_invalid_usage);
 } // namespace yw::errors
 
-// namespace yw::test {
-
-// inline class {
-// public:
-//   class handle {
-//   public:
-//     struct slot {
-//       std::string name;
-//       std::string metavar;
-//       std::string description;
-//       std::vector<std::string> aliases;
-//       bool required = false;
-//       bool multiple = false;
-//       bool has_value = false;
-//       bool specified = false;
-//       bool is_option = false;
-//     };
-//     using slotid = typename slotset<slot>::slotid;
-
-//   protected:
-//     slotid id;
-//     source pos;
-
-//     handle(slotid id, const source& s) : id(id), pos(s) {}
-//     handle(const handle&) = delete;
-//     handle(handle&& other) noexcept : id(std::exchange(other.id, {})), pos(other.pos) {}
-
-//     template<derived_from<handle> Handle, int Type> static Handle initialize(std::string Name, const source& _);
-//     template<derived_from<handle> Handle> Handle& metavar(std::string Metavar);
-//     template<derived_from<handle> Handle> Handle& description(std::string Description);
-//     template<derived_from<handle> Handle> Handle& alias(std::string Alias);
-//     template<derived_from<handle> Handle> Handle& required(bool Required);
-//     template<derived_from<handle> Handle> Handle& multiple(bool Multiple);
-//     template<derived_from<handle> Handle, typename T> Handle& default_value(T DefaultValue);
-//     bool has_value() const;
-//     bool specified() const;
-//     static std::unexpected<error_trace> error(decltype(errors::success) e, const source& _) {
-//       return unexpected_error(e, {}, 0, npos, _);
-//     }
-//   };
-
-//   class flag_handle;
-//   friend class flag_handle;
-
-//   template<typename T> class option_handle;
-//   template<typename T> friend class option_handle;
-
-//   template<typename T> class positional_handle;
-//   template<typename T> friend class positional_handle;
-
-// private:
-//   slotset<handle::slot> slots;
-//   std::unordered_map<std::string, handle::slotid> name_map;
-//   std::string _name;
-//   unsigned _positional_count = 0;
-//   bool _parsed = false;
-
-// public:
-//   std::string description;
-//   std::string epilog;
-
-//   flag_handle flag(std::string Name, const source& _ = {});
-//   template<typename T> option_handle<T> option(std::string Name, const source& _ = {});
-//   template<typename T> positional_handle<T> positional(const source& _ = {});
-
-//   std::expected<void, error_trace> parse(int argc, char** argv);
-// } argument;
-
-// //////////////////////////////////////// MARK: argument.slots
-
-// template<derived_from<decltype(argument)::handle> Handle, int Type>
-// Handle decltype(argument)::handle::initialize(std::string Name, const source& _) {
-//   if constexpr (Type) {
-//     if (Name.empty() || Name == "-" || Name == "--" || !Name.starts_with("-"))
-//       throw handle::error(errors::argument_invalid_option_name, _);
-//   }
-//   const auto id = argument.slots.add(std::make_unique<typename Handle::slot>());
-//   const auto sp = static_cast<typename Handle::slot*>(argument.slots.get(id));
-//   if (!sp) throw handle::error(errors::operation_failed, _);
-//   sp->name = std::move(Name);
-//   sp->is_option = Type == 2;
-//   const auto [it, b] = argument.name_map.emplace(sp->name, id);
-//   if (!b) throw handle::error(errors::argument_duplicate_option, _);
-//   return Handle(id, _);
-// }
-
-// template<derived_from<decltype(argument)::handle> Handle>
-// Handle& decltype(argument)::handle::metavar(std::string Metavar) {
-//   const auto sp = static_cast<typename Handle::slot*>(argument.slots.get(id));
-//   if (!sp) throw handle::error(errors::argument_unknown_option, pos);
-//   sp->metavar = std::move(Metavar);
-//   return static_cast<Handle&>(*this);
-// }
-
-// template<derived_from<decltype(argument)::handle> Handle>
-// Handle& decltype(argument)::handle::description(std::string Description) {
-//   const auto sp = static_cast<typename Handle::slot*>(argument.slots.get(id));
-//   if (!sp) throw handle::error(errors::argument_unknown_option, pos);
-//   sp->description = std::move(Description);
-//   return static_cast<Handle&>(*this);
-// }
-
-// template<derived_from<decltype(argument)::handle> Handle> Handle& decltype(argument)::handle::alias(std::string Alias) {
-//   if (Alias.empty() || Alias == "-" || Alias == "--" || !Alias.starts_with("-"))
-//     throw handle::error(errors::argument_invalid_option_name, pos);
-//   const auto sp = static_cast<typename Handle::slot*>(argument.slots.get(id));
-//   if (!sp) throw handle::error(errors::argument_unknown_option, pos);
-//   sp->aliases.push_back(std::move(Alias));
-//   const auto& alias_name = sp->aliases.back();
-//   const auto [it, b] = argument.name_map.emplace(alias_name, id);
-//   if (!b) throw handle::error(errors::argument_duplicate_option, pos);
-//   return static_cast<Handle&>(*this);
-// }
-
-// template<derived_from<decltype(argument)::handle> Handle> Handle& decltype(argument)::handle::required(bool Required) {
-//   const auto sp = static_cast<typename Handle::slot*>(argument.slots.get(id));
-//   if (!sp) throw handle::error(errors::argument_unknown_option, pos);
-//   sp->required = Required;
-//   return static_cast<Handle&>(*this);
-// }
-
-// template<derived_from<decltype(argument)::handle> Handle> Handle& decltype(argument)::handle::multiple(bool Multiple) {
-//   const auto sp = static_cast<typename Handle::slot*>(argument.slots.get(id));
-//   if (!sp) throw handle::error(errors::argument_unknown_option, pos);
-//   sp->multiple = Multiple;
-//   return static_cast<Handle&>(*this);
-// }
-
-// template<derived_from<decltype(argument)::handle> Handle, typename T>
-// Handle& decltype(argument)::handle::default_value(T DefaultValue) {
-//   const auto sp = static_cast<typename Handle::slot*>(argument.slots.get(id));
-//   if (!sp) throw handle::error(errors::argument_unknown_option, pos);
-//   sp->default_value = std::move(DefaultValue);
-//   sp->has_value = true;
-//   return static_cast<Handle&>(*this);
-// }
-
-// inline bool decltype(argument)::handle::has_value() const {
-//   const auto sp = static_cast<const slot*>(argument.slots.get(id));
-//   if (!sp) throw handle::error(errors::argument_unknown_option, pos);
-//   return sp->has_value;
-// }
-
-// inline bool decltype(argument)::handle::specified() const {
-//   const auto sp = static_cast<const slot*>(argument.slots.get(id));
-//   if (!sp) throw handle::error(errors::argument_unknown_option, pos);
-//   return sp->specified;
-// }
-
-// //////////////////////////////////////// MARK: argument.flag
-
-// class decltype(argument)::flag_handle : public decltype(argument)::handle {
-//   friend decltype(argument);
-//   flag_handle(slotid id, const source& _) : decltype(argument)::handle(id, _) {}
-
-// public:
-//   struct slot : public decltype(argument)::handle::slot {
-//     bool value = false;
-//   };
-
-//   auto& description(std::string Description) { return handle::description<flag_handle>(std::move(Description)); }
-//   auto& alias(std::string Alias) { return handle::alias<flag_handle>(std::move(Alias)); }
-//   auto& short_name(char ShortName) { return alias(std::string({'-', ShortName})); }
-//   bool specified() const { return handle::specified(); }
-//   bool has_value() const { return true; }
-
-//   bool value() const {
-//     if (!argument._parsed) throw handle::error(errors::argument_not_parsed, pos);
-//     const auto sp = static_cast<const slot*>(argument.slots.get(id));
-//     if (!sp) throw handle::error(errors::argument_unknown_option, pos);
-//     return sp->value;
-//   }
-// };
-
-// inline decltype(argument)::flag_handle decltype(argument)::flag(std::string Name, const source& _) {
-//   return handle::initialize<flag_handle, 1>(std::move(Name), _);
-// }
-
-// //////////////////////////////////////// MARK: argument.option
-
-// template<typename T> class decltype(argument)::option_handle : public decltype(argument)::handle {
-//   friend decltype(argument);
-//   option_handle(slotid id, const source& _) : decltype(argument)::handle(id, _) {}
-
-// public:
-//   struct slot : public decltype(argument)::handle::slot {
-//     std::optional<T> default_value;
-//     std::vector<T> values;
-//   };
-
-//   auto& metavar(std::string Metavar) { return handle::metavar<option_handle<T>>(std::move(Metavar)); }
-//   auto& description(std::string Description) { return handle::description<option_handle<T>>(std::move(Description)); }
-//   auto& alias(std::string Alias) { return handle::alias<option_handle<T>>(std::move(Alias)); }
-//   auto& short_name(char ShortName) { return alias(std::string({'-', ShortName})); }
-//   auto& required(bool Required = true) { return handle::required<option_handle<T>>(Required); }
-//   auto& multiple(bool Multiple = true) { return handle::multiple<option_handle<T>>(Multiple); }
-//   auto& default_value(T DefaultValue) { return handle::default_value<option_handle<T>>(std::move(DefaultValue)); }
-
-//   bool specified() const { return handle::specified(); }
-//   bool has_value() const { return handle::has_value(); }
-
-//   const T& value() const {
-//     if (!argument._parsed) throw handle::error(errors::argument_not_parsed, pos);
-//     const auto sp = static_cast<const slot*>(argument.slots.get(id));
-//     if (!sp) throw handle::error(errors::argument_unknown_option, pos);
-//     if (sp->specified) return sp->values.front();
-//     if (sp->has_value) return *sp->default_value;
-//     throw handle::error(errors::argument_missing_value, pos);
-//   }
-
-//   const auto& values() const {
-//     if (!argument._parsed) throw handle::error(errors::argument_not_parsed, pos);
-//     const auto sp = static_cast<const slot*>(argument.slots.get(id));
-//     if (!sp) throw handle::error(errors::argument_unknown_option, pos);
-//     return sp->values;
-//   }
-// };
-
-// template<typename T>
-// decltype(argument)::option_handle<T> decltype(argument)::option(std::string Name, const source& _) {
-//   return handle::initialize<option_handle<T>, 2>(std::move(Name), _);
-// }
-
-// //////////////////////////////////////// MARK: argument.positional
-
-// template<typename T> class decltype(argument)::positional_handle : public decltype(argument)::handle {
-//   friend decltype(argument);
-//   positional_handle(slotid id, const source& _) : decltype(argument)::handle(id, _) {}
-
-// public:
-//   struct slot : public decltype(argument)::handle::slot {
-//     std::optional<T> default_value;
-//     std::optional<T> value;
-//   };
-
-//   auto& metavar(std::string Metavar) { return handle::metavar<positional_handle>(std::move(Metavar)); }
-//   auto& description(std::string Description) { return handle::description<positional_handle>(std::move(Description)); }
-//   auto& required(bool Required = true) { return handle::required<positional_handle>(Required); }
-//   auto& default_value(T DefaultValue) { return handle::default_value<positional_handle>(std::move(DefaultValue)); }
-
-//   bool specified() const { return handle::specified(); }
-//   bool has_value() const { return handle::has_value(); }
-
-//   const T& value() const {
-//     if (!argument._parsed) throw handle::error(errors::argument_not_parsed, pos);
-//     const auto sp = static_cast<const slot*>(argument.slots.get(id));
-//     if (!sp) throw handle::error(errors::argument_unknown_option, pos);
-//     if (sp->specified) return *sp->value;
-//     if (sp->has_value) return *sp->default_value;
-//     throw handle::error(errors::argument_missing_value, pos);
-//   }
-// };
-
-// template<typename T> decltype(argument)::positional_handle<T> decltype(argument)::positional(const source& _) {
-//   return handle::initialize<positional_handle<T>, 0>(uint_to_string(_positional_count++), _);
-// }
-
-// //////////////////////////////////////// MARK: helper for parsing
-
-// namespace internal {
-
-// inline std::expected<std::vector<std::string>, error_trace> collect_argv(
-//   int argc, char** argv, std::string& program_name) {
-//   std::vector<std::string> args;
-// #if defined(_WIN32) || defined(_WIN64)
-//   int c = 0;
-//   auto v = ::CommandLineToArgvW(::GetCommandLineW(), &c);
-//   if (!v) return unexpected_error(errors::operation_failed, "CommandLineToArgvW failed", int(::GetLastError()));
-//   args.reserve(static_cast<size_t>(c));
-//   for (int i = 0; i < c; ++i) args.emplace_back(unicode<char>(std::wstring_view(v[i])));
-//   ::LocalFree(v);
-// #else
-//   args.reserve(static_cast<size_t>(argc));
-//   for (int i = 0; i < argc; ++i) args.emplace_back(argv[i]);
-// #endif
-//   if (!args.empty()) program_name = unicode<char>(std::filesystem::path(args.front()).stem().native());
-//   return args;
-// }
-
-// inline bool is_option_token(const std::string_view tok) { return tok.size() > 1 && tok[0] == '-'; }
-
-// inline std::optional<tuple<std::string_view, std::string_view>> split_eq(std::string_view tok) {
-//   if (auto i = tok.find('='); i == std::string_view::npos) return std::nullopt;
-//   else if (i == 0) return std::nullopt;
-//   else return tuple<std::string_view, std::string_view>{tok.substr(0, i), tok.substr(i + 1)};
-// }
-
-// inline bool is_negative_number_token(std::string_view tok) {
-//   if (tok.size() < 2 || tok[0] != '-') return false;
-//   return is_digit(tok[1]) || tok[1] == '.';
-// }
-// } // namespace internal
-
-// //////////////////////////////////////// MARK: argument.parse
-
-// inline std::expected<void, error_trace> decltype(argument)::parse(int argc, char** argv) {
-//   if (argument._parsed) return unexpected_error(errors::argument_already_parsed, {});
-//   auto args = internal::collect_argv(argc, argv, argument._name);
-//   if (!args) return unexpected_error(args.error());
-//   bool after_double_dash = false;
-//   size_t positional_index = 0;
-//   for (size_t i = 1; i < args->size(); ++i) {
-//     const std::string_view tok = (*args)[i];
-//     if (!after_double_dash && tok == "--") {
-//       after_double_dash = true;
-//       continue;
-//     }
-//     if (!after_double_dash && internal::is_option_token(tok)) {
-//       std::string_view name = tok, value{};
-//       bool specified = false;
-//       if (auto kv = internal::split_eq(tok)) {
-//         name = kv->first;
-//         value = kv->second;
-//         specified = true;
-//       }
-//       auto it = argument.name_map.find(std::string(name));
-//       if (it == argument.name_map.end())
-//         return unexpected_error(errors::argument_unknown_option, format("Unknown option: {}", name));
-//       const auto sp = argument.slots.get(it->second);
-//       if (!sp) return unexpected_error(errors::argument_unknown_option, format("Unknown option: {}", name));
-//       if (sp->is_option) {
-//         if (!specified && i + 1 < args->size()) {
-//           const auto next = (*args)[i + 1];
-//           if (!detail::is_option_token(next) || detail::is_negative_number_token(next)) {
-//             value = next;
-//             specified = true;
-//             ++i;
-//           }
-//         }
-//         if (!specified) return unexpected_error(errors::argument_missing_value, name);
-//         sp->specified = true;
-//       } else if (specified) return unexpected_error(errors::argument_unexpected_value, name);
-//       continue;
-//     }
-//   }
-// }
-// } // namespace yw::test
-
 namespace yw::argument {
 
-/// used in help text
-inline std::string description, epilog;
+/// name of application used in help text. This is overwritten in parsing.
+inline std::string name;
+
+/// description of application used in help text
+inline std::string description;
+
+/// epilog (ex: example usage) of application used in help text
+inline std::string epilog;
+
+//////////////////////////////////////// MARK: converter
 
 template<typename T> struct converter {
-  static std::expected<T, error_trace> convert(std::string_view) {
-    return unexpected_error(errors::argument_invalid_usage, "Invalid value for argument");
+  static std::expected<T, error_trace> operator()(std::string_view) {
+    return unexpected_error(errors::argument_invalid_argument, "Invalid value for argument");
   }
 };
 
 template<> struct converter<std::string> {
-  static std::expected<std::string, error_trace> convert(std::string_view value) { return std::string(value); }
+  static std::expected<std::string, error_trace> operator()(std::string_view value) { return std::string(value); }
 };
 
 template<> struct converter<bool> {
-  static std::expected<bool, error_trace> convert(std::string_view value) {
+  static std::expected<bool, error_trace> operator()(std::string_view value) {
     if (value == "1" || value == "true" || value == "on" || value == "yes") return true;
     if (value == "0" || value == "false" || value == "off" || value == "no") return false;
-    return unexpected_error(errors::argument_invalid_usage, format("Invalid bool: {}", value));
+    return unexpected_error(errors::argument_invalid_argument, format("Invalid bool: {}", value));
   }
+  static std::expected<std::string, error_trace> operator()(bool value) { return value ? "true" : "false"; }
 };
 
 template<typename T> requires(integral<T> && !is_bool<T>) struct converter<T> {
-  static std::expected<T, error_trace> convert(std::string_view value) {
+  static std::expected<T, error_trace> operator()(std::string_view value) {
     T out{};
     const auto* b = value.data();
     const auto* e = b + value.size();
     const auto r = std::from_chars(b, e, out);
     if (r.ec != std::errc() || r.ptr != e)
-      return unexpected_error(errors::argument_invalid_usage, format("Invalid integer: {}", value));
+      return unexpected_error(errors::argument_invalid_argument, format("Invalid integer: {}", value));
     return out;
   }
+  static std::expected<std::string, error_trace> operator()(T value) { return std::to_string(value); }
 };
 
 template<typename T> requires(float_type<T>) struct converter<T> {
-  static std::expected<T, error_trace> convert(std::string_view value) {
+  static std::expected<T, error_trace> operator()(std::string_view value) {
     std::string s(value);
     char* end = nullptr;
     errno = 0;
     const auto v = std::strtold(s.c_str(), &end);
     if (errno != 0 || end != s.c_str() + s.size())
-      return unexpected_error(errors::argument_invalid_usage, format("Invalid number: {}", value));
+      return unexpected_error(errors::argument_invalid_argument, format("Invalid number: {}", value));
     return static_cast<T>(v);
   }
+  static std::expected<std::string, error_trace> operator()(T value) { return std::to_string(value); }
 };
+
+//////////////////////////////////////// MARK: handle
 
 class handle {
 public:
-  enum class type : uint8_t { positional, option, flag };
-
-  struct slot {
-    std::string name;
-    std::string metavar;
-    std::string description;
-    std::vector<std::string> aliases;
-    handle::type type;
-    bool required = false;
-    bool multiple = false;
-    bool has_value = false;
-  };
-
+  enum class type : uint8_t { flag, option, positional };
+  struct slot;
+  class flag;
+  template<typename T> class option;
+  template<typename T> class positional;
   using slotid = slotset<slot>::slotid;
 
 protected:
-  inline static bool _parsed = false;
-  inline static slotset<slot> _slots;
-  inline static std::vector<slotid> _positionals;
-
   slotid id;
-  yw::source source; // エラー時に宣言位置を示すため
-
-  handle(slotid Id, yw::source Src) : id(Id), source(Src) {}
-
-  template<typename Mp> void set_helper(Mp Member, member_type<Mp> Value) {
-    if (const auto sp = _slots.get(id)) sp->*Member = std::move(Value);
-  }
-
-  void metavar(std::string Metavar) { set_helper(&slot::metavar, std::move(Metavar)); }
-  void description(std::string Desc) { set_helper(&slot::description, std::move(Desc)); }
-  void alias(std::string Alias) { set_helper(&slot::aliases, std::vector<std::string>{std::move(Alias)}); }
-  void required(bool Required) { set_helper(&slot::required, Required); }
-  void multiple(bool Multiple) { set_helper(&slot::multiple, Multiple); }
-
-public:
-  template<typename T> class positional;
-  template<typename T> class option;
-  class flag;
+  handle(slotid Id) : id(Id) {}
 };
 
+struct handle::slot {
+  slotid id;
+  std::string key;
+  std::string metavar;
+  std::string description;
+  handle::type type;
+  bool required = false;
+  bool multiple = false;
+  bool specified = false;
+  virtual ~slot() = default;
+  virtual std::expected<void, error_trace> parse_value(std::string_view) {
+    return unexpected_error(errors::argument_invalid_argument, "Invalid value for argument");
+  }
+  virtual std::optional<std::string> default_value_string() const { return std::nullopt; }
+};
+
+namespace internal {
+inline static bool parsed = false;
+inline static slotset<handle::slot> slots;
+inline static std::unordered_map<std::string, handle::slotid> name_map;
+inline static std::vector<handle::slotid> positionals;
+} // namespace internal
+
+//////////////////////////////////////// MARK: positional
+
 template<typename T> class handle::positional : public handle {
+  positional(slotid Id) : handle(Id) {}
+
 public:
   struct slot : handle::slot {
     std::optional<T> value;
     std::optional<T> default_value;
+
+    static std::expected<positional, error_trace> create(std::string Metavar) {
+      const auto id = internal::slots.add(std::make_unique<slot>());
+      const auto sp = dynamic_cast<slot*>(internal::slots.get(id));
+      if (!sp) return unexpected_error(errors::operation_failed, "Failed to create positional slot");
+      sp->id = id;
+      sp->key = uint_to_string(internal::positionals.size());
+      sp->metavar = std::move(Metavar);
+      sp->type = handle::type::positional;
+      internal::positionals.push_back(id);
+      return positional(id);
+    }
+
+    static slot& get(slotid Id) {
+      const auto sp = dynamic_cast<slot*>(internal::slots.get(Id));
+      if (!sp) fatal_error(errors::operation_failed, "Failed to get positional slot");
+      return *sp;
+    }
+
+    std::expected<void, error_trace> parse_value(std::string_view Value) override {
+      if (auto res = converter<T>{}(Value); !res) {
+        yw::error& e = res.error().error;
+        e.message = format("{} at #{}", e.message, key);
+        return unexpected_error(res.error());
+      } else value = std::move(*res);
+      specified = true;
+      return {};
+    }
+
+    std::optional<std::string> default_value_string() const override {
+      if (default_value.has_value()) {
+        if (auto res = converter<T>{}(*default_value); res) return *res;
+        else return std::nullopt;
+      } else return std::nullopt;
+    }
   };
 
-  auto& description(std::string Desc) { return handle::description(Desc), *this; }
-  auto& required(bool Required) { return handle::required(Required), *this; }
+  auto& description(std::string Desc) { return slot::get(id).description = std::move(Desc), *this; }
+  auto& required(bool Required) { return slot::get(id).required = Required, *this; }
+  auto& default_value(T Value) { return slot::get(id).default_value = std::move(Value), *this; }
 
   const auto& value() const {
-    const auto sp = static_cast<slot*>(handle::_slots.get(id));
-    if (sp && _parsed) {
-      if (sp->value.has_value()) return *sp->value;
-      if (sp->default_value.has_value()) return *sp->default_value;
-    }
-    throw unexpected_error(errors::argument_invalid_usage, "No value available");
+    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    auto& s = slot::get(id);
+    if (s.specified) return *s.value;
+    if (!s.default_value.has_value()) fatal_error(errors::argument_invalid_usage, "No value available");
+    return *s.default_value;
+  }
+
+  bool has_value() const {
+    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    auto& s = slot::get(id);
+    return s.specified || s.default_value.has_value();
+  }
+
+  bool specified() const {
+    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    return slot::get(id).specified;
   }
 };
 
+template<typename T> handle::positional<T> positional(std::string Metavar) {
+  auto res = handle::positional<T>::slot::create(std::move(Metavar));
+  if (!res) fatal_error(res.error());
+  return std::move(*res);
+}
+
+//////////////////////////////////////// MARK: option
+
 template<typename T> class handle::option : public handle {
+  option(slotid Id) : handle(Id) {}
+
 public:
   struct slot : handle::slot {
     std::vector<T> values;
     std::optional<T> default_value;
+
+    static std::expected<option, error_trace> create(std::string Key) {
+      const auto id = internal::slots.add(std::make_unique<slot>());
+      const auto [it, b] = internal::name_map.emplace(Key, id);
+      if (!b) return unexpected_error(errors::argument_invalid_definition, format("Duplicate key: {}", Key));
+      const auto sp = dynamic_cast<slot*>(internal::slots.get(id));
+      if (!sp) return unexpected_error(errors::operation_failed, "Failed to create option slot");
+      sp->id = id;
+      sp->key = std::move(Key);
+      sp->type = handle::type::option;
+      return option(id);
+    }
+
+    static slot& get(slotid Id) {
+      const auto sp = dynamic_cast<slot*>(internal::slots.get(Id));
+      if (!sp) fatal_error(errors::operation_failed, "Failed to get option slot");
+      return *sp;
+    }
+
+    std::expected<void, error_trace> parse_value(std::string_view Value) override {
+      if (auto res = converter<T>{}(Value); !res) {
+        yw::error& e = res.error().error;
+        e.message = format("{} as '{}'", e.message, key);
+        return unexpected_error(res.error());
+      } else if (multiple || values.empty()) values.push_back(std::move(*res));
+      specified = true;
+      return {};
+    }
+
+    std::optional<std::string> default_value_string() const override {
+      if (default_value.has_value()) {
+        if (auto res = converter<T>{}(*default_value); res) return *res;
+        else return std::nullopt;
+      } else return std::nullopt;
+    }
   };
 
-  auto& metavar(std::string Metavar) { return handle::metavar(Metavar), *this; }
-  auto& description(std::string Desc) { return handle::description(Desc), *this; }
-  auto& alias(std::string Alias) { return handle::alias(Alias), *this; }
-  auto& required(bool Required) { return handle::required(Required), *this; }
-  auto& multiple(bool Multiple) { return handle::multiple(Multiple), *this; }
+  auto& metavar(std::string Metavar) { return slot::get(id).metavar = std::move(Metavar), *this; }
+  auto& description(std::string Desc) { return slot::get(id).description = std::move(Desc), *this; }
+  auto& required(bool Required) { return slot::get(id).required = Required, *this; }
+  auto& multiple(bool Multiple) { return slot::get(id).multiple = Multiple, *this; }
+  auto& default_value(T Value) { return slot::get(id).default_value = std::move(Value), *this; }
+
+  auto& alias(std::string Alias) {
+    const auto [it, b] = internal::name_map.emplace(Alias, id);
+    if (!b) fatal_error(errors::argument_invalid_definition, format("Duplicate key: {}", Alias));
+    return *this;
+  }
 
   const auto& value() const {
-    const auto sp = static_cast<slot*>(handle::_slots.get(id));
-    if (sp && _parsed) {
-      if (!sp->values.empty()) return sp->values.front();
-      if (sp->default_value.has_value()) return *sp->default_value;
-    }
-    throw unexpected_error(errors::argument_invalid_usage, "No value available");
+    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    auto& s = slot::get(id);
+    if (s.specified) return s.values.front();
+    if (!s.default_value.has_value()) fatal_error(errors::argument_invalid_usage, "No value available");
+    return *s.default_value;
   }
 
   const auto& values() const {
-    const auto sp = static_cast<slot*>(handle::_slots.get(id));
-    if (sp && _parsed) return sp->values;
-    throw unexpected_error(errors::argument_invalid_usage, "No values available");
+    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    return slot::get(id).values;
+  }
+
+  bool has_value() const {
+    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    const auto& s = slot::get(id);
+    return s.specified || s.default_value.has_value();
+  }
+
+  bool specified() const {
+    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    return slot::get(id).specified;
   }
 };
+
+template<typename T> handle::option<T> option(std::string Name) {
+  auto res = handle::option<T>::slot::create(std::move(Name));
+  if (!res) fatal_error(res.error());
+  return std::move(*res);
+}
+
+//////////////////////////////////////// MARK: flag
 
 class handle::flag : public handle {
-public:
-  using slot = handle::slot;
+  flag(slotid Id) : handle(Id) {}
 
-  auto& description(std::string Desc) { return handle::description(Desc), *this; }
-  auto& alias(std::string Alias) { return handle::alias(Alias), *this; }
+public:
+  struct slot : handle::slot {
+    static std::expected<flag, error_trace> create(std::string Key) {
+      const auto id = internal::slots.add(std::make_unique<slot>());
+      const auto [it, b] = internal::name_map.emplace(Key, id);
+      if (!b) return unexpected_error(errors::argument_invalid_definition, format("Duplicate key: {}", Key));
+      const auto sp = dynamic_cast<slot*>(internal::slots.get(id));
+      if (!sp) return unexpected_error(errors::operation_failed, "Failed to create flag slot");
+      sp->id = id;
+      sp->key = std::move(Key);
+      sp->type = handle::type::flag;
+      return flag(id);
+    }
+
+    static slot& get(slotid Id) {
+      const auto sp = dynamic_cast<slot*>(internal::slots.get(Id));
+      if (!sp) fatal_error(errors::operation_failed, "Failed to get flag slot");
+      return *sp;
+    }
+
+    std::expected<void, error_trace> parse_value(std::string_view value) override { return {}; }
+  };
+
+  auto& description(std::string Desc) { return slot::get(id).description = std::move(Desc), *this; }
+
+  auto& alias(std::string Alias) {
+    const auto [it, b] = internal::name_map.emplace(Alias, id);
+    if (!b) fatal_error(errors::argument_invalid_definition, format("Duplicate key: {}", Alias));
+    return *this;
+  }
 
   bool value() const {
-    const auto sp = static_cast<slot*>(handle::_slots.get(id));
-    if (sp && _parsed) return sp->has_value;
-    throw unexpected_error(errors::argument_invalid_usage, "No value available");
+    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    return slot::get(id).specified;
   }
+
+  bool has_value() const {
+    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    return true;
+  }
+
+  bool specified() const { return value(); }
 };
 
-template<typename T> inline handle::positional<T> positional(std::string Metavar) {
-  const auto id = handle::_slots
+inline handle::flag flag(std::string Name) {
+  auto res = handle::flag::slot::create(std::move(Name));
+  if (!res) fatal_error(res.error());
+  return std::move(*res);
+}
+
+//////////////////////////////////////// MARK: print_help
+
+namespace internal {
+inline std::string default_option_metavar(std::string_view key) {
+  while (!key.empty() && key.front() == '-') key.remove_prefix(1);
+  std::string out;
+  out.reserve(key.size());
+  for (const char c : key) {
+    if (c == '-') out.push_back('_');
+    else out.push_back(char(std::toupper(static_cast<unsigned char>(c))));
+  }
+  return out.empty() ? "VALUE" : out;
+}
+} // namespace internal
+
+inline void print_help() {
+  const std::string app_name = name.empty() ? "app" : name;
+
+  auto default_option_metavar = [](std::string_view key) {
+    while (!key.empty() && key.front() == '-') key.remove_prefix(1);
+
+    std::string out;
+    out.reserve(key.size());
+
+    for (const char c : key) {
+      if (c == '-') out.push_back('_');
+      else out.push_back(char(std::toupper(static_cast<unsigned char>(c))));
+    }
+
+    return out.empty() ? std::string("VALUE") : out;
+  };
+
+  auto display_metavar = [&](const handle::slot& slot) {
+    if (!slot.metavar.empty()) return slot.metavar;
+
+    if (slot.type == handle::type::option) { return default_option_metavar(slot.key); }
+
+    if (slot.type == handle::type::positional) { return std::string("ARG"); }
+
+    return std::string{};
+  };
+
+  auto names_of = [](const handle::slot& slot) {
+    std::vector<std::string> names;
+    names.push_back(slot.key);
+    std::vector<std::string> aliases;
+    for (const auto& [name, id] : internal::name_map)
+      if (id == slot.id && name != slot.key) aliases.push_back(name);
+    std::ranges::sort(aliases);
+    names.insert(names.end(), aliases.begin(), aliases.end());
+    return names;
+  };
+
+  auto primary_usage_name = [](const handle::slot& slot) { return slot.key; };
+
+  auto option_usage = [&](const handle::slot& slot) {
+    std::string s = primary_usage_name(slot);
+    if (slot.type == handle::type::option) {
+      s += " ";
+      s += display_metavar(slot);
+    }
+    if (slot.multiple) s = "[" + s + "]...";
+    else if (!slot.required) s = "[" + s + "]";
+    return s;
+  };
+
+  auto option_lhs = [&](const handle::slot& slot) {
+    const auto names = names_of(slot);
+    std::string lhs;
+    for (const auto& n : names) {
+      if (!lhs.empty()) lhs += ", ";
+      lhs += n;
+    }
+    if (lhs.empty()) lhs = slot.key;
+    if (slot.type == handle::type::option) {
+      lhs += " ";
+      lhs += display_metavar(slot);
+    }
+    return lhs;
+  };
+
+  auto append_note = [](std::string& rhs, std::string_view note) {
+    if (!rhs.empty()) rhs += " ";
+    rhs += note;
+  };
+
+  auto detail_text = [&](const handle::slot& slot) {
+    std::string rhs;
+    if (!slot.description.empty()) { rhs += slot.description; }
+    if (slot.required) { append_note(rhs, "(required)"); }
+    if (slot.multiple) { append_note(rhs, "(multiple)"); }
+    if (auto dv = slot.default_value_string(); dv.has_value()) append_note(rhs, format("(default: {})", *dv));
+    return rhs;
+  };
+
+  auto print_entry = [](std::string_view lhs, std::string_view rhs) {
+    if (rhs.empty()) print("  {}", lhs);
+    else print("  {:<24} {}", lhs, rhs);
+  };
+
+  if (!name.empty()) print("{}", name);
+  if (!description.empty()) print("{}", description);
+  if (!name.empty() || !description.empty()) print("");
+
+  std::string usage = format("Usage: {}", app_name);
+
+  for (const auto& slot : internal::slots) {
+    if (slot.type == handle::type::positional) continue;
+    usage += " ";
+    usage += option_usage(slot);
+  }
+
+  for (const auto pid : internal::positionals) {
+    const auto* p = internal::slots.get(pid);
+    if (!p) continue;
+
+    const auto mv = display_metavar(*p);
+
+    if (p->required) usage += format(" {}", mv);
+    else usage += format(" [{}]", mv);
+  }
+
+  print("{}", usage);
+
+  bool has_value_options = false;
+  for (const auto& slot : internal::slots) {
+    if (slot.type == handle::type::option) {
+      has_value_options = true;
+      break;
+    }
+  }
+
+  if (has_value_options) { print("Note: Options with values may be written as either --key VALUE or --key=VALUE."); }
+
+  print("");
+
+  print("Options:");
+  print_entry("--help, -h", "Show this help message and exit");
+
+  for (const auto& slot : internal::slots) {
+    if (slot.type == handle::type::positional) continue;
+
+    const auto lhs = option_lhs(slot);
+    const auto rhs = detail_text(slot);
+    print_entry(lhs, rhs);
+  }
+
+  if (!internal::positionals.empty()) {
+    print("");
+    print("Positional arguments:");
+
+    for (const auto pid : internal::positionals) {
+      const auto* p = internal::slots.get(pid);
+      if (!p) continue;
+
+      const auto lhs = display_metavar(*p);
+      const auto rhs = detail_text(*p);
+      print_entry(lhs, rhs);
+    }
+  }
+
+  if (!epilog.empty()) {
+    print("");
+    print("{}", epilog);
+  }
+}
+
+//////////////////////////////////////// MARK: parse helper
+
+namespace internal {
+
+inline std::expected<std::vector<std::string>, error_trace> collect_argv(
+  int argc, char** argv, std::string& program_name) {
+  std::vector<std::string> args;
+#if defined(_WIN32) || defined(_WIN64)
+  int c = 0;
+  auto v = ::CommandLineToArgvW(::GetCommandLineW(), &c);
+  if (!v) return unexpected_error(errors::operation_failed, "CommandLineToArgvW failed", int(::GetLastError()));
+  args.reserve(static_cast<size_t>(c));
+  for (int i = 0; i < c; ++i) args.emplace_back(unicode<char>(std::wstring_view(v[i])));
+  ::LocalFree(v);
+#else
+  args.reserve(static_cast<size_t>(argc));
+  for (int i = 0; i < argc; ++i) args.emplace_back(argv[i]);
+#endif
+  if (!args.empty() && name.empty()) program_name = unicode<char>(std::filesystem::path(args.front()).stem().native());
+  return args;
+}
+
+inline bool is_option_token(const std::string_view tok) { return tok.size() > 1 && tok[0] == '-'; }
+
+inline std::optional<std::pair<std::string_view, std::string_view>> split_eq(std::string_view tok) {
+  if (auto i = tok.find('='); i == std::string_view::npos) return std::nullopt;
+  else if (i == 0) return std::nullopt;
+  else return std::pair<std::string_view, std::string_view>{tok.substr(0, i), tok.substr(i + 1)};
+}
+
+inline bool is_negative_number_token(std::string_view tok) {
+  return !(tok.size() < 2 || tok[0] != '-') && (is_digit(tok[1]) || tok[1] == '.');
+}
+
+inline void argument_error(null_terminated<char> msg) {
+  print_help();
+  fatal_error(errors::argument_invalid_argument, msg);
+}
+} // namespace internal
+
+//////////////////////////////////////// MARK: parse
+
+inline void parse(int argc, char** argv) {
+  //-- 初実行の確認
+  if (internal::parsed) fatal_error(errors::argument_invalid_usage, "Arguments have already been parsed");
+  //-- 引数解釈
+  auto args = internal::collect_argv(argc, argv, argument::name);
+  if (!args) fatal_error(args.error());
+
+  bool after_double_dash = false; // "--"以降の引数はすべてpositionalとして扱う
+  size_t positional_index = 0;    // positionalの数を数える
+
+  for (size_t i = 1; i < args->size(); ++i) {
+    const std::string_view tok = (*args)[i];
+    if (!after_double_dash && tok == "--") { // 最初の"--"を検出
+      after_double_dash = true;
+      continue;
+    }
+    if (!after_double_dash && internal::is_option_token(tok)) { // optionらしいものを発見
+      //-- いったんtoken全体をkey値としておく(--key value想定)
+      std::string_view key = tok;
+      std::string_view value{};
+      bool specified = false;
+      //-- token内に"="が含まれているなら、key=valueに分割
+      if (auto kv = internal::split_eq(tok)) {
+        key = kv->first;
+        value = kv->second;
+        specified = true;
+      }
+      //-- 宣言されたkeyか確認
+      auto it = internal::name_map.find(std::string(key));
+      if (it == internal::name_map.end()) {
+        if (key == "--help" || key == "-h") {
+          print_help();
+          std::exit(0);
+        }
+        internal::argument_error(format("Unknown option: {}", key));
+      }
+      const auto sp = internal::slots.get(it->second);
+      if (!sp) internal::argument_error(format("Unknown option: {}", key));
+      //-- optionの場合はvalueが必須
+      if (sp->type == handle::type::option) {
+        //-- --key=valueでないなら次を確認
+        if (!specified && i + 1 < args->size()) {
+          const auto next = (*args)[i + 1];
+          if (!internal::is_option_token(next) || internal::is_negative_number_token(next))
+            value = next, specified = true, ++i;
+        }
+        if (!specified) internal::argument_error(format("Missing value for option: {}", key));
+        if (auto res = sp->parse_value(value); !res) print_help(), fatal_error(res.error());
+      } else if (specified) //-- flagの場合はvalueがあってはならない
+        internal::argument_error(format("Unexpected value for flag: {}", key));
+      else sp->specified = true; //-- flagがあったことはspecified==trueで表現する
+      continue;
+    }
+    //-- positionalの場合
+    if (positional_index < internal::positionals.size()) {
+      const auto sp = internal::slots.get(internal::positionals[positional_index]);
+      if (!sp) internal::argument_error(format("Unknown, positional argument: {}", tok));
+      if (auto res = sp->parse_value(tok); !res) fatal_error(res.error());
+      ++positional_index;
+    } else internal::argument_error(format("Unexpected positional argument: {}", tok));
+  }
+  //-- requiredのチェック
+  bool missing = false;
+  std::string missing_message = "Missing required options";
+  for (const auto& slot : internal::slots) {
+    if (slot.required && !slot.specified) {
+      if (!missing) {
+        missing = true;
+        missing_message += format(": {}", slot.key);
+      } else missing_message += format(", {}", slot.key);
+    }
+  }
+  if (missing) internal::argument_error(missing_message);
+  internal::parsed = true;
 }
 } // namespace yw::argument

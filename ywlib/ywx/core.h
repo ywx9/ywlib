@@ -33,25 +33,6 @@ inline bool yes(
   return ::MessageBoxW(nullptr, Text.data(), Title.data(), flags) == IDYES;
 }
 
-//////////////////////////////////////// MARK: print_fallback
-
-/// prints formatted string and shows message box as fallback
-inline constexpr auto print_fallback = []<typename S, typename... Ts>(S&& fmt, Ts&&... as) {
-  const auto s = format(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
-  print(s);
-  ok(s, L"Message");
-};
-
-/// prints error message and shows message box as fallback
-/// \return system error code
-inline constexpr auto print_error_fallback = //
-  []<stringable S>(S&& message, const error_trace& err, const source& src = {}) -> int {
-  const auto s = format("{}\n  at {}\n{}", err, src, message);
-  print.err(s);
-  ok(s, L"Error");
-  return err.error.system_code;
-};
-
 //////////////////////////////////////// MARK: unexpected_win32_error
 
 inline std::unexpected<error_trace> unexpected_win32_error(const char* msg, const source& src = {}) {

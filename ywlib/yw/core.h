@@ -430,6 +430,7 @@ template<char_type C> constexpr std::basic_string<C> bool_to_string(bool value) 
 constexpr std::string bool_to_string(bool value) { return bool_to_string<char>(value); }
 
 template<char_type C> constexpr std::basic_string<C> uint_to_string(uint_type auto value) {
+  if (value == 0) return std::basic_string<C>(1, C('0'));
   auto u = static_cast<uint64_t>(value);
   unsigned keta = 0;
   for (auto u_ = u; u_ != 0; u_ /= 10) ++keta;
@@ -663,6 +664,28 @@ inline constexpr struct {
     operator()();
   }
 } print;
+
+//////////////////////////////////////// MARK: print_fallback
+
+/// prints formatted string and shows message box as fallback
+struct {
+  template<typename S, typename... Ts> static void operator()(S&& fmt, Ts&&... as) {
+    const auto s = format(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
+    print(s);
+#ifdef _WIN32
+    const auto ws = unicode<wchar_t>(s);
+    ::MessageBoxW(nullptr, ws.data(), L"Message", MB_OK | MB_TOPMOST | MB_TASKMODAL);
+#endif
+  }
+  template<typename S, typename... Ts> static void err(S&& fmt, Ts&&... as) {
+    const auto s = format(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
+    print.err(s);
+#ifdef _WIN32
+    const auto ws = unicode<wchar_t>(s);
+    ::MessageBoxW(nullptr, ws.data(), L"Error", MB_OK | MB_TOPMOST | MB_ICONERROR | MB_TASKMODAL);
+#endif
+  }
+} print_fallback;
 } // namespace yw
 
 //////////////////////////////////////// MARK: source

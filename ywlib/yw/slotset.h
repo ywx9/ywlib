@@ -7,6 +7,54 @@ namespace yw {
 
 template<typename T> class slotset {
 public:
+  template<bool Const> class _iterator {
+    friend class slotset;
+    template<bool> friend class _iterator;
+
+    using _owner_type = select_type<Const, const slotset*, slotset*>;
+    _owner_type _owner = nullptr;
+    uint32_t _index = 0;
+    _iterator(_owner_type owner, const uint32_t index) noexcept : _owner(owner), _index(index) { _skip_empty(); }
+    void _skip_empty() noexcept {
+      if (!_owner) return;
+      while (_index < _owner->_slots.size() && !_owner->_slots[_index].pointer) _index++;
+    }
+
+  public:
+    using iterator_category = std::forward_iterator_tag;
+    using value_type = T;
+    using difference_type = std::ptrdiff_t;
+    using pointer = select_type<Const, const T*, T*>;
+    using reference = select_type<Const, const T&, T&>;
+
+    _iterator() = default;
+    template<bool C = Const>
+    _iterator(const _iterator<false>& it) noexcept requires(C) : _owner(it._owner), _index(it._index) {}
+
+    reference operator*() const noexcept { return *_owner->_slots[_index].pointer; }
+    pointer operator->() const noexcept { return _owner->_slots[_index].pointer.get(); }
+
+    _iterator& operator++() noexcept {
+      _index++;
+      _skip_empty();
+      return *this;
+    }
+
+    _iterator operator++(int) noexcept {
+      const auto old = *this;
+      ++(*this);
+      return old;
+    }
+
+    template<bool A, bool B>
+    friend bool operator==(const _iterator<A>& a, const _iterator<B>& b) noexcept {
+      return a._owner == b._owner && a._index == b._index;
+    }
+  };
+
+  using iterator = _iterator<false>;
+  using const_iterator = _iterator<true>;
+
   struct slot {
     std::unique_ptr<T> pointer{};
     uint32_t generation = 1, next_free = uint32_t(-1);
@@ -91,5 +139,10 @@ public:
     _slots.clear();
     _free_head = uint32_t(-1);
   }
+
+  iterator begin() noexcept { return iterator(this, 0); }
+  iterator end() noexcept { return iterator(this, uint32_t(_slots.size())); }
+  const_iterator begin() const noexcept { return const_iterator(this, 0); }
+  const_iterator end() const noexcept { return const_iterator(this, uint32_t(_slots.size())); }
 };
 } // namespace yw

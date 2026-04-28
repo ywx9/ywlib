@@ -31,7 +31,7 @@
  *   - フッタのファイル先頭からのオフセット(8)
  */
 
-namespace yw {
+namespace yw::errors {
 define_error(archive_invalid_format);
 }
 
