@@ -1,5 +1,4 @@
 #pragma once
-#include "ywx/background.h"
 #include "ywx/text.h"
 #include "ywx/ui_control.h"
 
@@ -9,10 +8,7 @@ class label : public control {
 public:
   class slot : public control::slot {
   public:
-    yw::background background = colors::white;
-    color border_color = colors::black;
-    float border_width = 1.0f;
-    float4 padding = float4::fill(5.0f);
+    float4 padding = float4::fill(4.0f);
 
     yw::text text = assume(yw::text::create(L""));
     color text_color = colors::black;
@@ -30,13 +26,12 @@ public:
       min_size = vapply_r<float2>(yw::max, min_size, float2());
       const auto inner = text.size() + padding.xy() + padding.zw();
       size = vapply_r<float2>(yw::max, min_size, inner, size * constrained);
+      update_geometry();
     }
 
     virtual void draw() const override {
       if (!visible) return;
-      draw_background(pos, size, background);
-      brush.color(border_color);
-      draw_round_rectangle(pos, size, radius, border_width);
+      draw_background();
       brush.color(text_color);
       const auto tsz = text.size() + padding.xy() + padding.zw();
       auto extra = size - tsz;
@@ -68,9 +63,6 @@ public:
   label(derived_from<unknown> auto& Layout) {
     if (auto res = create_control<label>(Layout)) _id = *res;
   }
-
-  const auto& background() const { return unsafe_get(&slot::background); }
-  void background(yw::background bg) { safe_set(&slot::background, std::move(bg)); }
 
   const auto& border_color() const { return unsafe_get(&slot::border_color); }
   void border_color(const color& c) { safe_set(&slot::border_color, c); }
@@ -108,3 +100,32 @@ public:
   void on_wheel(function<void, event::wheel> cb) { safe_set(&slot::on_wheel, std::move(cb)); }
 };
 } // namespace yw::ui
+
+#include "ywx/ui_frame.h"
+
+namespace yw::ui {
+
+class label_new : public frame {
+public:
+  /// Frameless label for composite controls (including label itself)
+  class part : public control_new {
+  public:
+    struct slot : public control_new::slot {
+      yw::text text = assume(yw::text::create(L""));
+      color text_color = colors::black;
+      ui::alignment text_alignment = ui::alignment::center;
+    };
+
+    using control_new::operator bool;
+    part() noexcept = default;
+    part(derived_from<unknown> auto& Layout) {
+      if (auto res = create_control<part>(Layout)) _id = *res;
+      else fatal_error(res.error());
+    }
+  };
+
+  struct slot : public frame::slot {
+    part text;
+  };
+};
+}

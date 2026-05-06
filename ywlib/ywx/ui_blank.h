@@ -12,5 +12,11 @@ public:
   blank(derived_from<unknown> auto& Layout) noexcept {
     if (auto res = create_control<blank>(Layout)) _id = *res;
   }
+
+private:
+  using control::background;
+  using control::border_color;
+  using control::border_width;
+  using control::geometry;
 };
 } // namespace yw::ui

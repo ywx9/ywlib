@@ -1,5 +1,4 @@
 #pragma once
-#include "ywx/background.h"
 #include "ywx/ui_control.h"
 #include <cmath>
 
@@ -80,10 +79,7 @@ public:
     }
 
   public:
-    yw::background background = colors::white;
-    color border_color = colors::black;
-    float border_width = 1.0f;
-    float4 padding{8.0f, 8.0f, 8.0f, 8.0f};
+    float4 padding = float4::fill(4.0f);
 
     color track_color = color(0.82f, 0.82f, 0.82f, 1.0f);
     color fill_color = color(0.25f, 0.48f, 0.95f, 1.0f);
@@ -141,14 +137,12 @@ public:
       const float2 prefer = vertical ? float2(32.0f, 120.0f) : float2(120.0f, 32.0f);
       const auto inner = prefer + padding.xy() + padding.zw();
       size = vapply_r<float2>(yw::max, min_size, inner, size * constrained);
+      update_geometry();
     }
 
     virtual void draw() const override {
       if (!visible) return;
-
-      draw_background(pos, size, background);
-      brush.color(border_color);
-      draw_round_rectangle(pos, size, radius, border_width);
+      draw_background();
 
       const auto tp = track_pos();
       const auto ts = track_size();
@@ -254,9 +248,6 @@ public:
   slider(derived_from<unknown> auto& Layout) {
     if (auto res = create_control<slider>(Layout)) _id = *res;
   }
-
-  const auto& background() const { return unsafe_get(&slot::background); }
-  void background(yw::background bg) { safe_set(&slot::background, std::move(bg)); }
 
   const auto& border_color() const { return unsafe_get(&slot::border_color); }
   void border_color(const color& c) { safe_set(&slot::border_color, c); }

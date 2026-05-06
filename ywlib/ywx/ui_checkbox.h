@@ -13,10 +13,7 @@ class checkbox : public control {
 public:
   class slot : public control::slot {
   public:
-    yw::background background = colors::white;
-    color border_color = colors::black;
-    float border_width = 1.0f;
-    float4 padding = float4::fill(10.0f);
+    float4 padding = float4::fill(4.0f);
 
     yw::icon box = assume(svgpath::create(default_icon_size, box_path));
     color box_fill_color = colors::transparent;
@@ -29,7 +26,7 @@ public:
     float mark_stroke_width = 1.0f;
 
     float2 icon_size = default_icon_size;
-    float icon_offset = 5.0f;
+    float icon_offset = 4.0f;
     bool checked{};
 
     yw::text text = assume(yw::text::create(L""));
@@ -59,13 +56,12 @@ public:
       const auto inner_x = icon_size.x + icon_offset + tsz.x + padding.x + padding.z;
       const auto inner = float2(inner_x, yw::max(icon_size.y, tsz.y) + padding.y + padding.w);
       size = vapply_r<float2>(yw::max, min_size, inner, size * constrained);
+      update_geometry();
     }
 
     virtual void draw() const override {
       if (!visible) return;
-      draw_background(pos, size, background);
-      brush.color(border_color);
-      draw_round_rectangle(pos, size, radius, border_width);
+      draw_background();
 
       const auto tsz = text.size();
       const auto content_h = yw::max(icon_size.y, tsz.y);
@@ -142,9 +138,6 @@ public:
   checkbox(derived_from<unknown> auto& Layout) {
     if (auto res = create_control<checkbox>(Layout)) _id = *res;
   }
-
-  const auto& background() const { return unsafe_get(&slot::background); }
-  void background(yw::background bg) { safe_set(&slot::background, std::move(bg)); }
 
   const auto& border_color() const { return unsafe_get(&slot::border_color); }
   void border_color(const color& c) { safe_set(&slot::border_color, c); }

@@ -8,10 +8,7 @@ class button : public control {
 public:
   class slot : public control::slot {
   public:
-    yw::background background = colors::white;
-    color border_color = colors::black;
-    float border_width = 1.0f;
-    float4 padding = float4::fill(5.0f);
+    float4 padding = float4::fill(4.0f);
 
     yw::text text = assume(yw::text::create(L""));
     color text_color = colors::black;
@@ -35,13 +32,12 @@ public:
       min_size = vapply_r<float2>(yw::max, min_size, float2());
       const auto inner = text.size() + padding.xy() + padding.zw();
       size = vapply_r<float2>(yw::max, min_size, inner, size * constrained);
+      update_geometry();
     }
 
     virtual void draw() const override {
       if (!visible) return;
-      draw_background(pos, size, background);
-      brush.color(border_color);
-      draw_round_rectangle(pos, size, radius, border_width);
+      draw_background();
       brush.color(text_color);
       const auto tsz = text.size() + padding.xy() + padding.zw();
       draw_text(pos + padding.xy() + (size - tsz) * 0.5f, text);
@@ -102,9 +98,6 @@ public:
     if (auto res = create_control<button>(Layout)) _id = *res;
   }
 
-  const auto& background() const { return unsafe_get(&slot::background); }
-  void background(yw::background bg) { safe_set(&slot::background, std::move(bg)); }
-
   const auto& border_color() const { return unsafe_get(&slot::border_color); }
   void border_color(const color& c) { safe_set(&slot::border_color, c); }
 
@@ -143,3 +136,13 @@ public:
   void on_wheel(function<void, event::wheel> f) { safe_set(&slot::on_wheel, std::move(f)); }
 };
 } // namespace yw::ui
+
+
+namespace yw::ui {
+
+class button_new : public label_new {
+public:
+  struct slot : public label_new::slot {
+  };
+};
+}

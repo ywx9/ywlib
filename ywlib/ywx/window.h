@@ -39,9 +39,7 @@ public:
       const auto top = wr.bottom - wr.top - cr.bottom - left;
       margin = int4(left, top, left, left);
       // Update size if the actual client area is larger than requested
-      if (uint32_t(cr.right) > size.x || uint32_t(cr.bottom) > size.y) {
-        size = uint2(cr.right, cr.bottom);
-      }
+      if (uint32_t(cr.right) > size.x || uint32_t(cr.bottom) > size.y) { size = uint2(cr.right, cr.bottom); }
       return {};
     }
 
@@ -62,7 +60,7 @@ public:
     bitmap rendertarget{};
     bitmap layout_bitmap{};
     comptr<IDXGISwapChain1> swapchain{};
-    yw::background background = colors::white;
+      std::variant<yw::color, yw::bitmap> background = colors::white;
     ui::slotid layout_id{};
     ui::slotid focused_control{};
     ui::slotid hovered_control{};
@@ -90,7 +88,8 @@ public:
 
     virtual ~slot() noexcept override { ::DestroyWindow(hwnd); }
 
-    std::expected<void, error_trace> initialize(ui::slotid Id, std::optional<int2> Pos, uint2 Size, window::style Style) {
+    std::expected<void, error_trace> initialize(
+      ui::slotid Id, std::optional<int2> Pos, uint2 Size, window::style Style) {
       id = Id, style = Style, size = Size;
       if (auto res = _create_window(); !res) return unexpected_error(res.error());
       if (auto res = _calculate_margin(); !res) return unexpected_error(res.error());
@@ -132,7 +131,14 @@ public:
         else return unexpected_error(res.error());
       }
       if (auto d = layout_bitmap.begin_draw(colors::transparent)) {
-        if (!drawn) draw_background({}, float2(size), background);
+          if (!drawn) {
+            if (std::holds_alternative<yw::color>(background)) {
+              brush.color(std::get<yw::color>(background));
+              fill_rectangle({}, float2(size));
+            } else if (const auto& bmp = std::get<yw::bitmap>(background); bmp) {
+              draw_bitmap({}, float2(size), bmp);
+            }
+          }
         if (messy) {
           lsp->update_layout({}, float2(size));
           lsp->draw();
@@ -222,20 +228,17 @@ private:
 
 public:
   /// Opens a window with specified position, size, style, and visibility.
-  static std::expected<window, error_trace> open(
-    int2 Pos, uint2 Size, style Style = style::regular, bool Show = true) {
+  static std::expected<window, error_trace> open(int2 Pos, uint2 Size, style Style = style::regular, bool Show = true) {
     return _create_internal(Pos, Size, Style, Show);
   }
 
   /// Opens a window with specified size, style, and visibility. Position is centered.
-  static std::expected<window, error_trace> open(
-    uint2 Size, style Style = style::regular, bool Show = true) {
+  static std::expected<window, error_trace> open(uint2 Size, style Style = style::regular, bool Show = true) {
     return _create_internal(std::nullopt, Size, Style, Show);
   }
 
   /// Opens a window with specified style and visibility. Position is centered, size is minimal.
-  static std::expected<window, error_trace> open(
-    style Style = style::regular, bool Show = true) {
+  static std::expected<window, error_trace> open(style Style = style::regular, bool Show = true) {
     return _create_internal(std::nullopt, uint2(10, 10), Style, Show);
   }
 
@@ -273,13 +276,20 @@ public:
   }
 
   const auto& background() const { return unsafe_get(&slot::background); }
-  std::expected<void, error_trace> background(yw::background bg) {
+    std::expected<void, error_trace> background(yw::color c) {
     if (auto wsp = system::slot_address<window>(_id)) {
-      wsp->background = std::move(bg);
+        wsp->background = c;
       wsp->dirty = true;
       return {};
     } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
   }
+      std::expected<void, error_trace> background(yw::bitmap bmp) {
+        if (auto wsp = system::slot_address<window>(_id)) {
+          wsp->background = std::move(bmp);
+          wsp->dirty = true;
+          return {};
+        } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
+      }
 
   const bool& visible() const { return unsafe_get(&slot::visible); }
   std::expected<void, error_trace> visible(bool Visible) const {
@@ -339,17 +349,21 @@ public:
       wsp->dirty = true;
       wsp->drawn = true;
       if (auto d = wsp->rendertarget.begin_draw()) {
-        draw_background({}, float2(wsp->size), wsp->background);
+          const auto& bg = wsp->background;
+          if (std::holds_alternative<yw::color>(bg)) {
+            brush.color(std::get<yw::color>(bg));
+            fill_rectangle({}, float2(wsp->size));
+          } else if (const auto& bmp = std::get<yw::bitmap>(bg); bmp) {
+            draw_bitmap({}, float2(wsp->size), bmp);
+          }
         return std::move(d);
       } else return unexpected_error(d.error());
     } else return unexpected_error(errors::invalid_operation, "window slot not found");
   }
 
   std::expected<void, error_trace> destroy() noexcept {
-    if (const auto wsp = system::slot_address<window>(_id)) {
-      ::DestroyWindow(wsp->hwnd);
-      return {};
-    } else return unexpected_error(errors::operation_failed, "Failed to access window slot.");
+    if (const auto wsp = system::slot_address<window>(_id)) ::DestroyWindow(wsp->hwnd);
+    return {};
   }
 
   std::expected<void, error_trace> screenshot(const std::filesystem::path& PngPath, bool WriteUI = false) {
@@ -396,4 +410,4 @@ inline void ui::control::slot::hover_event(event::hover Event) {
       system::tooltip.show(pos + w->pos + w->margin.xy(), size, tooltip);
   } else if (Event.leave()) system::tooltip.hide();
 }
-} // namespace yw::ui
+} // namespace yw

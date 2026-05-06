@@ -30,6 +30,7 @@ public:
           get<V>(inner) += get<V>(area);
         }
       size = vapply_r<float2>(yw::max, min_size, inner, size * constrained);
+      update_geometry();
     }
 
     template<bool V> void update_layout(float2 Pos, float2 Area) {
@@ -56,13 +57,15 @@ public:
           csp->update_layout(pos + offset, sz);
           get<V>(offset) += get<V>(sz);
         }
+      update_geometry();
     }
 
   public:
-    yw::background background = colors::transparent;
-    color border_color = colors::transparent;
-    float border_width = 1.0f;
-    float4 padding = float4::fill(5.0f);
+    slot() {
+      background = colors::transparent;
+      border_color = colors::transparent;
+    }
+    float4 padding = float4::fill(4.0f);
 
     std::vector<slotid> controls{};
 
@@ -118,9 +121,7 @@ public:
 
     virtual void draw() const override {
       if (!visible) return;
-      draw_background(pos, size, background);
-      brush.color(border_color);
-      draw_round_rectangle(pos, size, radius, border_width);
+      draw_background();
       for (const auto& cid : controls)
         if (const auto csp = system::slot_address<control>(cid)) csp->draw();
     }
@@ -131,9 +132,6 @@ public:
   layout(derived_from<unknown> auto& Layout) {
     if (auto res = create_control<layout>(Layout)) _id = *res;
   }
-
-  const auto& background() const { return unsafe_get(&slot::background); }
-  void background(yw::background bg) { safe_set(&slot::background, std::move(bg)); }
 
   const auto& border_color() const { return unsafe_get(&slot::border_color); }
   void border_color(const color& c) { safe_set(&slot::border_color, c); }
@@ -169,10 +167,11 @@ template<size_t Columns> class grid_layout : public control {
 public:
   class slot : public control::slot {
   public:
-    yw::background background = colors::transparent;
-    color border_color = colors::transparent;
-    float border_width = 1.0f;
-    float4 padding = float4::fill(5.0f);
+    slot() {
+      background = colors::transparent;
+      border_color = colors::transparent;
+    }
+    float4 padding = float4::fill(4.0f);
 
     std::vector<vector<slotid, Columns>> rows{};
     size_t attach_count{};
@@ -255,6 +254,7 @@ public:
     virtual void update_size() noexcept override {
       min_size = yw::min(min_size, float2::fill(0.0f));
       size = calculate_size();
+      update_geometry();
     }
 
     virtual void update_layout(float2 Pos, float2 Area) override {
@@ -296,13 +296,12 @@ public:
           }
         yoff += height;
       }
+      update_geometry();
     }
 
     virtual void draw() const override {
       if (!visible) return;
-      draw_background(pos, size, background);
-      brush.color(border_color);
-      draw_round_rectangle(pos, size, radius, border_width);
+      draw_background();
       for (const auto& row : rows)
         for (const auto& cid : row)
           if (const auto csp = system::slot_address<control>(cid)) csp->draw();
@@ -314,9 +313,6 @@ public:
   grid_layout(derived_from<unknown> auto& Layout) {
     if (auto res = create_control<grid_layout<Columns>>(Layout)) _id = *res;
   }
-
-  const auto& background() const { return unsafe_get(&slot::background); }
-  void background(yw::background bg) { safe_set(&slot::background, std::move(bg)); }
 
   const auto& border_color() const { return unsafe_get(&slot::border_color); }
   void border_color(const color& c) { safe_set(&slot::border_color, c); }

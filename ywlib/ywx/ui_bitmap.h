@@ -1,5 +1,4 @@
 #pragma once
-#include "ywx/background.h"
 #include "ywx/bitmap.h"
 #include "ywx/ui_control.h"
 
@@ -9,10 +8,7 @@ template<bitmap_like T> class bitmap : public control {
 public:
   class slot : public control::slot {
   public:
-    yw::background background = colors::white;
-    color border_color = colors::black;
-    float border_width = 1.0f;
-    float4 padding = float4::fill(5.0f);
+    float4 padding = float4::fill(4.0f);
 
     T image{};
     ui::alignment image_alignment = ui::alignment::center;
@@ -36,13 +32,12 @@ public:
       min_size = vapply_r<float2>(yw::max, min_size, float2());
       const auto inner = image_size() + padding.xy() + padding.zw();
       size = vapply_r<float2>(yw::max, min_size, inner, size * constrained);
+      update_geometry();
     }
 
     virtual void draw() const override {
       if (!visible) return;
-      draw_background(pos, size, background);
-      brush.color(border_color);
-      draw_round_rectangle(pos, size, radius, border_width);
+      draw_background();
 
       const auto p = static_cast<ID2D1Bitmap1*>(image);
       if (!p) return;
@@ -87,9 +82,6 @@ public:
     }
   }
 
-  const auto& background() const { return unsafe_get(&slot::background); }
-  void background(yw::background bg) { safe_set(&slot::background, std::move(bg)); }
-
   const auto& border_color() const { return unsafe_get(&slot::border_color); }
   void border_color(const color& c) { safe_set(&slot::border_color, c); }
 
@@ -112,4 +104,6 @@ public:
   const auto& on_wheel() const { return unsafe_get(&slot::on_wheel); }
   void on_wheel(function<void, event::wheel> cb) { safe_set(&slot::on_wheel, std::move(cb)); }
 };
+
+template<derived_from<unknown> Ctrl, bitmap_like T> bitmap(Ctrl& layout, T&& image) -> bitmap<T>;
 } // namespace yw::ui

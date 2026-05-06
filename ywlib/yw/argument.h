@@ -169,7 +169,7 @@ public:
   };
 
   auto& description(std::string Desc) { return slot::get(id).description = std::move(Desc), *this; }
-  auto& required(bool Required) { return slot::get(id).required = Required, *this; }
+  auto& required(bool Required = true) { return slot::get(id).required = Required, *this; }
   auto& default_value(T Value) { return slot::get(id).default_value = std::move(Value), *this; }
 
   const auto& value() const {
@@ -246,8 +246,8 @@ public:
 
   auto& metavar(std::string Metavar) { return slot::get(id).metavar = std::move(Metavar), *this; }
   auto& description(std::string Desc) { return slot::get(id).description = std::move(Desc), *this; }
-  auto& required(bool Required) { return slot::get(id).required = Required, *this; }
-  auto& multiple(bool Multiple) { return slot::get(id).multiple = Multiple, *this; }
+  auto& required(bool Required = true) { return slot::get(id).required = Required, *this; }
+  auto& multiple(bool Multiple = true) { return slot::get(id).multiple = Multiple, *this; }
   auto& default_value(T Value) { return slot::get(id).default_value = std::move(Value), *this; }
 
   auto& alias(std::string Alias) {

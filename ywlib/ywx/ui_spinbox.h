@@ -1,5 +1,4 @@
 #pragma once
-#include "ywx/background.h"
 #include "ywx/text.h"
 #include "ywx/ui_control.h"
 #include <cmath>
@@ -56,10 +55,7 @@ public:
     }
 
   public:
-    yw::background background = colors::white;
-    color border_color = colors::black;
-    float border_width = 1.0f;
-    float4 padding{8.0f, 6.0f, 8.0f, 6.0f};
+    float4 padding{5.0f, 5.0f, 5.0f, 5.0f};
 
     color text_color = colors::black;
     yw::text text = assume(yw::text::create(L"0"));
@@ -112,12 +108,35 @@ public:
       min_size = vapply_r<float2>(yw::max, min_size, float2());
       const auto inner = text.size() + padding.xy() + padding.zw() + float2(button_width, 0.0f);
       size = vapply_r<float2>(yw::max, min_size, inner, size * constrained);
+      update_geometry();
     }
 
     virtual void draw() const override {
       if (!visible) return;
 
-      draw_background(pos, size, background);
+      ID2D1Geometry* geo = geometry_ptr();
+      bool clipped = false;
+      if (geo) {
+        if (!layer) {
+          const auto hr = d2d.context()->CreateLayer(nullptr, &layer.get());
+          if (FAILED(hr)) geo = nullptr;
+        }
+        if (geo && layer) {
+          const D2D1_LAYER_PARAMETERS params =
+            D2D1::LayerParameters(D2D1::InfiniteRect(), geo, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+          d2d.context()->PushLayer(params, layer.get());
+          clipped = true;
+        }
+      }
+
+      if (std::holds_alternative<color>(background)) {
+        brush.color(std::get<color>(background));
+        if (geo) d2d.context()->FillGeometry(geo, brush.d2d_brush(), nullptr);
+        else fill_round_rectangle(pos, size, radius);
+      } else {
+        const auto& bmp = std::get<::yw::bitmap>(background);
+        if (bmp) yw::draw_bitmap(pos, size, bmp);
+      }
 
       const auto x_sep = pos.x + size.x - button_width;
       const auto half_h = size.y * 0.5f;
@@ -133,9 +152,6 @@ public:
       brush.color(button_border_color);
       draw_line(float2(x_sep, pos.y), float2(x_sep, pos.y + size.y), 1.0f);
       draw_line(float2(x_sep, pos.y + half_h), float2(pos.x + size.x, pos.y + half_h), 1.0f);
-
-      brush.color(border_color);
-      draw_round_rectangle(pos, size, radius, border_width);
 
       brush.color(text_color);
       const auto tsz = text.size();
@@ -156,6 +172,14 @@ public:
       draw_line(float2(cx, cy_up - sy), float2(cx + sx, cy_up + sy), 1.5f);
       draw_line(float2(cx - sx, cy_dn - sy), float2(cx, cy_dn + sy), 1.5f);
       draw_line(float2(cx, cy_dn + sy), float2(cx + sx, cy_dn - sy), 1.5f);
+
+      if (clipped) d2d.context()->PopLayer();
+
+      if (border_width > 0.0f) {
+        brush.color(border_color);
+        if (geo) d2d.context()->DrawGeometry(geo, brush.d2d_brush(), border_width, brush.d2d_stroke());
+        else draw_round_rectangle(pos, size, radius, border_width);
+      }
     }
 
     virtual void click_event(event::button e) override {
@@ -236,9 +260,6 @@ public:
   spinbox(derived_from<unknown> auto& Layout) {
     if (auto res = create_control<spinbox>(Layout)) _id = *res;
   }
-
-  const auto& background() const { return unsafe_get(&slot::background); }
-  void background(yw::background bg) { safe_set(&slot::background, std::move(bg)); }
 
   const auto& border_color() const { return unsafe_get(&slot::border_color); }
   void border_color(const color& c) { safe_set(&slot::border_color, c); }

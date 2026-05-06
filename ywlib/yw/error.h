@@ -66,6 +66,7 @@ define_error(invalid_argument);
 define_error(invalid_operation);
 define_error(operation_failed);
 define_error(not_initialized);
+define_error(unreachable);
 }
 
 constexpr error::~error() noexcept {

@@ -56,7 +56,7 @@ template<typename Mp> member_type<Mp>* ui::unknown::safe_get(Mp Member) const no
 template<typename Mp> member_type<Mp>& ui::unknown::unsafe_get(Mp Member) const {
   const auto sp = dynamic_cast<typename class_type<Mp>::slot*>(system::uis.get(_id));
   if (sp) return sp->*Member;
-  else throw std::logic_error("Invalid member access");
+  else fatal_error(errors::unreachable, "Invalid member access");
 }
 
 inline ui::unknown::operator bool() const noexcept { return system::uis.contains(_id); }

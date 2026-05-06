@@ -1,5 +1,4 @@
 #pragma once
-#include "ywx/background.h"
 #include "ywx/text.h"
 #include "ywx/ui_control.h"
 #include <cmath>
@@ -36,10 +35,7 @@ public:
     }
 
   public:
-    yw::background background = colors::white;
-    color border_color = colors::black;
-    float border_width = 1.0f;
-    float4 padding{4.0f, 4.0f, 4.0f, 4.0f};
+    float4 padding = float4::fill(4.0f);
 
     color track_color = color(0.86f, 0.86f, 0.86f, 1.0f);
     color fill_color = color(0.20f, 0.55f, 0.95f, 1.0f);
@@ -77,14 +73,13 @@ public:
       const float2 prefer{160.0f, 28.0f};
       const auto inner = prefer + padding.xy() + padding.zw();
       size = vapply_r<float2>(yw::max, min_size, inner, size * constrained);
+      update_geometry();
     }
 
     virtual void draw() const override {
       if (!visible) return;
 
-      draw_background(pos, size, background);
-      brush.color(border_color);
-      draw_round_rectangle(pos, size, radius, border_width);
+      draw_background();
 
       const auto cp = pos + padding.xy();
       const auto cs = vapply_r<float2>(yw::max, float2(), size - padding.xy() - padding.zw());
@@ -111,9 +106,6 @@ public:
   progressbar(derived_from<unknown> auto& Layout) {
     if (auto res = create_control<progressbar>(Layout)) _id = *res;
   }
-
-  const auto& background() const { return unsafe_get(&slot::background); }
-  void background(yw::background bg) { safe_set(&slot::background, std::move(bg)); }
 
   const auto& border_color() const { return unsafe_get(&slot::border_color); }
   void border_color(const color& c) { safe_set(&slot::border_color, c); }

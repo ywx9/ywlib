@@ -124,6 +124,22 @@ inline std::expected<void, error_trace> fill_ellipse(float2 center, float2 radiu
   return {};
 }
 
+//////////////////////////////////////// MARK: draw/fill_geometry
+
+template<typename Geometry> concept geometry_like = castable_to<Geometry, ID2D1Geometry*>;
+
+inline std::expected<void, error_trace> draw_geometry(geometry_like auto geometry, float1 border_width = 1.0f) {
+  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
+  d2d.context()->DrawGeometry(geometry, brush.d2d_brush(), border_width.x, brush.d2d_stroke());
+  return {};
+}
+
+inline std::expected<void, error_trace> fill_geometry(geometry_like auto geometry) {
+  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
+  d2d.context()->FillGeometry(geometry, brush.d2d_brush(), nullptr);
+  return {};
+}
+
 //////////////////////////////////////// MARK: render
 
 inline std::expected<void, error_trace> set_primitive_topology_pointlist() {
