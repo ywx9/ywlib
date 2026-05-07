@@ -410,4 +410,13 @@ inline void ui::control::slot::hover_event(event::hover Event) {
       system::tooltip.show(pos + w->pos + w->margin.xy(), size, tooltip);
   } else if (Event.leave()) system::tooltip.hide();
 }
+
+inline void ui::control_new::slot::hover_event(event::hover Event) {
+  if (enabled && on_hover) on_hover(Event);
+  if (tooltip.empty()) return;
+  if (Event.enter()) {
+    if (const auto w = system::slot_address<window>(window_id))
+      system::tooltip.show(pos + w->pos + w->margin.xy(), size, tooltip);
+  } else if (Event.leave()) system::tooltip.hide();
+}
 } // namespace yw

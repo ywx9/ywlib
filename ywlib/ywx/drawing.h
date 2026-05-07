@@ -140,6 +140,18 @@ inline std::expected<void, error_trace> fill_geometry(geometry_like auto geometr
   return {};
 }
 
+//////////////////////////////////////// MARK: draw_text
+
+template<typename TextFormat> concept text_format_like = castable_to<TextFormat, IDWriteTextFormat*>;
+template<typename TextLayout> concept text_layout_like = castable_to<TextLayout, IDWriteTextLayout*>;
+
+inline std::expected<void, error_trace> draw_text(float2 Pos, text_layout_like auto Layout) {
+  if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
+  if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
+  d2d.context()->DrawTextLayout(D2D1::Point2F(Pos.x, Pos.y), Layout, brush.d2d_brush());
+  return {};
+}
+
 //////////////////////////////////////// MARK: render
 
 inline std::expected<void, error_trace> set_primitive_topology_pointlist() {

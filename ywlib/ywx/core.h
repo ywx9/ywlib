@@ -107,6 +107,15 @@ public:
     if (p) p->Release();
     p = nullptr;
   }
+
+  /// releases the current COM pointer and takes ownership of the new pointer
+  void reset(Com* ptr) noexcept {
+    if (p) p->Release();
+    p = ptr;
+  }
+
+  explicit operator Com*&() & { return p; }
+  explicit operator Com*() const & { return p; }
 };
 
 //////////////////////////////////////// MARK: d3d
@@ -307,6 +316,59 @@ public:
 
 //////////////////////////////////////// MARK: dwrite
 
+enum class font_weight : uint16_t {
+  thin = DWRITE_FONT_WEIGHT_THIN,
+  extra_light = DWRITE_FONT_WEIGHT_EXTRA_LIGHT,
+  ultra_light = DWRITE_FONT_WEIGHT_ULTRA_LIGHT,
+  light = DWRITE_FONT_WEIGHT_LIGHT,
+  semi_light = DWRITE_FONT_WEIGHT_SEMI_LIGHT,
+  normal = DWRITE_FONT_WEIGHT_NORMAL,
+  regular = DWRITE_FONT_WEIGHT_REGULAR,
+  medium = DWRITE_FONT_WEIGHT_MEDIUM,
+  demi_bold = DWRITE_FONT_WEIGHT_DEMI_BOLD,
+  semi_bold = DWRITE_FONT_WEIGHT_SEMI_BOLD,
+  bold = DWRITE_FONT_WEIGHT_BOLD,
+  extra_bold = DWRITE_FONT_WEIGHT_EXTRA_BOLD,
+  ultra_bold = DWRITE_FONT_WEIGHT_ULTRA_BOLD,
+  black = DWRITE_FONT_WEIGHT_BLACK,
+  heavy = DWRITE_FONT_WEIGHT_HEAVY,
+  extra_black = DWRITE_FONT_WEIGHT_EXTRA_BLACK,
+  ultra_black = DWRITE_FONT_WEIGHT_ULTRA_BLACK
+};
+
+enum class font_style : uint8_t {
+  normal = DWRITE_FONT_STYLE_NORMAL,
+  italic = DWRITE_FONT_STYLE_ITALIC,
+  oblique = DWRITE_FONT_STYLE_OBLIQUE
+};
+
+enum class font_stretch : uint8_t {
+  undefined = DWRITE_FONT_STRETCH_UNDEFINED,
+  ultra_condensed = DWRITE_FONT_STRETCH_ULTRA_CONDENSED,
+  extra_condensed = DWRITE_FONT_STRETCH_EXTRA_CONDENSED,
+  condensed = DWRITE_FONT_STRETCH_CONDENSED,
+  semi_condensed = DWRITE_FONT_STRETCH_SEMI_CONDENSED,
+  normal = DWRITE_FONT_STRETCH_NORMAL,
+  medium = DWRITE_FONT_STRETCH_MEDIUM,
+  semi_expanded = DWRITE_FONT_STRETCH_SEMI_EXPANDED,
+  expanded = DWRITE_FONT_STRETCH_EXPANDED,
+  extra_expanded = DWRITE_FONT_STRETCH_EXTRA_EXPANDED,
+  ultra_expanded = DWRITE_FONT_STRETCH_ULTRA_EXPANDED
+};
+
+struct font_config {
+  std::optional<std::wstring> name = std::nullopt;
+  std::optional<float> size = std::nullopt;
+  std::optional<font_weight> weight = std::nullopt;
+  std::optional<font_style> style = std::nullopt;
+  std::optional<font_stretch> stretch = std::nullopt;
+
+  static const font_config default_;
+};
+
+inline const font_config font_config::default_{
+  L""s, 16.0f, font_weight::normal, font_style::normal, font_stretch::normal};
+
 inline class {
   struct pointers {
     IDWriteFactory1* factory{};
@@ -329,12 +391,14 @@ public:
       DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory1), reinterpret_cast<IUnknown**>(&p.factory));
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "DWriteCreateFactory failed", int32_t(hr));
     // Creates default text format.
-    hr = p.factory->CreateTextFormat(
-      L"", nullptr, DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 16.0f, L"",
-      &p.text_format);
+    hr = p.factory->CreateTextFormat( //
+      font_config::default_.name->c_str(), nullptr, //
+      DWRITE_FONT_WEIGHT(*font_config::default_.weight), //
+      DWRITE_FONT_STYLE(*font_config::default_.style), //
+      DWRITE_FONT_STRETCH(*font_config::default_.stretch), //
+      font_config::default_.size.value_or(16.0f), L"", &p.text_format);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int32_t(hr));
-    // p.text_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-    // p.text_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+    p.text_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
     p.initialized = true;
     return {};
   }

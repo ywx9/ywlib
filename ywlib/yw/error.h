@@ -199,9 +199,9 @@ inline std::expected<void, error_trace> check_error(std::expected<void, error_tr
   std::exit(e.system_code);
 }
 
-[[noreturn]] inline void fatal_error(decltype(errors::success) e, null_terminated<char> msg, const source& src = {}) {
-  print_fallback.err(format("Fatal error at {}\n{}", src, error(e, std::move(msg))));
-  std::exit(1);
+[[noreturn]] inline void fatal_error(decltype(errors::success) e, null_terminated<char> msg, int32_t sys_code = 0, const source& src = {}) {
+  print_fallback.err(format("Fatal error at {}\n{}", src, error(e, std::move(msg), sys_code)));
+  std::exit(sys_code);
 }
 
 //////////////////////////////////////// MARK: assume

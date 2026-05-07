@@ -101,31 +101,42 @@ public:
 };
 } // namespace yw::ui
 
-#include "ywx/ui_frame.h"
+#include "ywx/ui_control.h"
+#include "ywx/uip_base.h"
+#include "ywx/uip_text.h"
 
 namespace yw::ui {
 
-class label_new : public frame {
+class label_new : public control_new {
 public:
-  /// Frameless label for composite controls (including label itself)
-  class part : public control_new {
-  public:
-    struct slot : public control_new::slot {
-      yw::text text = assume(yw::text::create(L""));
-      color text_color = colors::black;
-      ui::alignment text_alignment = ui::alignment::center;
-    };
+  struct slot : public control_new::slot {
+    part::base base;
+    part::text text;
+    float2 offset{};
+    ui::alignment alignment = ui::alignment::center; //
 
-    using control_new::operator bool;
-    part() noexcept = default;
-    part(derived_from<unknown> auto& Layout) {
-      if (auto res = create_control<part>(Layout)) _id = *res;
-      else fatal_error(res.error());
+    virtual std::expected<void, error_trace> draw() const {
+      /// \note base.background -> text -> base.border
+      if (!visible) return {};
+      if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
+      ID2D1Geometry* geo = geometry.get();
+      if (!geo) return unexpected_error(errors::invalid_operation, "geometry not set");
+      brush.color(base.background_color);
+      d2d.context()->FillGeometry(geo, brush.d2d_brush(), nullptr);
+      const D2D1_LAYER_PARAMETERS params =
+            D2D1::LayerParameters(D2D1::InfiniteRect(), geo, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+      d2d.context()->PushLayer(params, nullptr);
+      if (base.background_image) draw_bitmap(pos, size, base.background_image, base.background_image_opacity);
+      float2 text_origin = pos;
+      const float coeff[] = {0.5f, 1.0f, 0.0f};
+      text_origin.x += (size.x - text.layout_size().x) * coeff[int(alignment) & 0b11] + offset.x;
+      text_origin.y += (size.y - text.layout_size().y) * coeff[(int(alignment) >> 2) & 0b11] + offset.y;
+      brush.color(text.font_color);
+      draw_text(text_origin, text.text_layout.get());
+      d2d.context()->PopLayer();
+      brush.color(base.border_color);
+      draw_geometry(geo, base.border_width);
     }
-  };
-
-  struct slot : public frame::slot {
-    part text;
   };
 };
 }

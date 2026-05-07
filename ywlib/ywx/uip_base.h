@@ -4,11 +4,12 @@
 namespace yw::ui::part {
 
 struct base {
-  float2 radius = float2::fill(control_new::slot::default_value);
   color background_color = colors::white;
   yw::bitmap background_image; // optional
+  float background_image_opacity = 1.0f;
   color border_color = colors::black;
   float border_width = 1.0f;
+  comptr<ID2D1Geometry> geometry;
 
   class handle {
     friend class base;
@@ -16,9 +17,6 @@ struct base {
     handle(base& Ref) noexcept : _p(&Ref) {}
 
   public:
-    const float2& radius() const { return _p->radius; }
-    handle& radius(float2 Radius) { return _p->radius = Radius, *this; }
-
     const color& background_color() const { return _p->background_color; }
     handle& background_color(color Color) { return _p->background_color = Color, *this; }
 

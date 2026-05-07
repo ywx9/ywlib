@@ -26,46 +26,6 @@ enum class paragraph_alignment : uint8_t {
   center = DWRITE_PARAGRAPH_ALIGNMENT_CENTER
 };
 
-enum class font_stretch : uint8_t {
-  undefined = DWRITE_FONT_STRETCH_UNDEFINED,
-  ultra_condensed = DWRITE_FONT_STRETCH_ULTRA_CONDENSED,
-  extra_condensed = DWRITE_FONT_STRETCH_EXTRA_CONDENSED,
-  condensed = DWRITE_FONT_STRETCH_CONDENSED,
-  semi_condensed = DWRITE_FONT_STRETCH_SEMI_CONDENSED,
-  normal = DWRITE_FONT_STRETCH_NORMAL,
-  medium = DWRITE_FONT_STRETCH_MEDIUM,
-  semi_expanded = DWRITE_FONT_STRETCH_SEMI_EXPANDED,
-  expanded = DWRITE_FONT_STRETCH_EXPANDED,
-  extra_expanded = DWRITE_FONT_STRETCH_EXTRA_EXPANDED,
-  ultra_expanded = DWRITE_FONT_STRETCH_ULTRA_EXPANDED
-};
-
-enum class font_style : uint8_t {
-  normal = DWRITE_FONT_STYLE_NORMAL,
-  italic = DWRITE_FONT_STYLE_ITALIC,
-  oblique = DWRITE_FONT_STYLE_OBLIQUE
-};
-
-enum class font_weight : uint16_t {
-  thin = DWRITE_FONT_WEIGHT_THIN,
-  extra_light = DWRITE_FONT_WEIGHT_EXTRA_LIGHT,
-  ultra_light = DWRITE_FONT_WEIGHT_ULTRA_LIGHT,
-  light = DWRITE_FONT_WEIGHT_LIGHT,
-  semi_light = DWRITE_FONT_WEIGHT_SEMI_LIGHT,
-  normal = DWRITE_FONT_WEIGHT_NORMAL,
-  regular = DWRITE_FONT_WEIGHT_REGULAR,
-  medium = DWRITE_FONT_WEIGHT_MEDIUM,
-  demi_bold = DWRITE_FONT_WEIGHT_DEMI_BOLD,
-  semi_bold = DWRITE_FONT_WEIGHT_SEMI_BOLD,
-  bold = DWRITE_FONT_WEIGHT_BOLD,
-  extra_bold = DWRITE_FONT_WEIGHT_EXTRA_BOLD,
-  ultra_bold = DWRITE_FONT_WEIGHT_ULTRA_BOLD,
-  black = DWRITE_FONT_WEIGHT_BLACK,
-  heavy = DWRITE_FONT_WEIGHT_HEAVY,
-  extra_black = DWRITE_FONT_WEIGHT_EXTRA_BLACK,
-  ultra_black = DWRITE_FONT_WEIGHT_ULTRA_BLACK
-};
-
 enum class text_draw_option : uint8_t { no = 0b00, wrap = 0b01, clip = 0b10, wrap_clip = 0b11 };
 using text_draw_options = flags<text_draw_option>;
 
@@ -96,8 +56,7 @@ public:
 
   text_format() noexcept = default;
 
-  text_format(text_format&& other) noexcept
-    : _p(std::exchange(other._p, {})), _draw_options(other._draw_options) {}
+  text_format(text_format&& other) noexcept : _p(std::exchange(other._p, {})), _draw_options(other._draw_options) {}
 
   text_format& operator=(text_format&& other) noexcept {
     if (this == &other) return *this;

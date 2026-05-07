@@ -11,8 +11,8 @@ public:
   public:
     slotset<slot>::slotid id{};
     virtual ~slot() noexcept {}
-    virtual bool attach(slotset<slot>::slotid child_id) { return false; }
-    virtual void detach(slotset<slot>::slotid child_id) {}
+    virtual bool attach_child(slotset<slot>::slotid child_id) { return false; }
+    virtual void detach_child(slotset<slot>::slotid child_id) {}
   };
 
 protected:
