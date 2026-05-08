@@ -23,6 +23,26 @@ protected:
 public:
   struct slot : public unknown::slot {
     part::core core;
+    bool visible = true;
+
+    virtual bool focusable() { return false; }
+
+    /// messy 時の前処理として各コントロールの size を必要最小サイズに設定する関数
+    virtual void ensure_minimum_size() { core.size = core.minimum_size(); }
+
+    /// messy 時の最終処理として各コントロールの size と pos を確定する関数
+    /// \note 引数はレイアウトが提供する描画領域。この中に余白込みで配置する
+    virtual void update_layout(float2 Pos, float2 Size) { core.update_layout(Pos, Size); }
+
+    /// 設定済みの pos, size に従ってコントロールを描画する
+    virtual void draw() {}
+
+    /// TABキーによるフォーカス移動を処理する関数
+    virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) {
+      if (Focused == id) Found = true;
+      else if (Found && visible && focusable()) return id;
+      return {};
+    }
   };
 
   auto&& core() {

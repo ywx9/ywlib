@@ -13,13 +13,6 @@ struct text_hit_test_result {
   float2 caret_pos;
 };
 
-enum class text_alignment : uint8_t {
-  left = DWRITE_TEXT_ALIGNMENT_LEADING,
-  right = DWRITE_TEXT_ALIGNMENT_TRAILING,
-  center = DWRITE_TEXT_ALIGNMENT_CENTER,
-  justified = DWRITE_TEXT_ALIGNMENT_JUSTIFIED
-};
-
 enum class paragraph_alignment : uint8_t {
   top = DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
   bottom = DWRITE_PARAGRAPH_ALIGNMENT_FAR,

@@ -10,10 +10,21 @@ public:
     part::border border;
     part::text text;
 
-    void set_window_id() {
+    std::expected<void, error_trace> initialize() {
       background.window_id = core.window_id;
       border.window_id = core.window_id;
       text.window_id = core.window_id;
+      if (auto res = text.initialize(); !res) return unexpected_error(res.error());
+      return {};
+    }
+
+    virtual void draw() override {
+      if (!visible) return;
+      brush.color(background.color);
+      fill_geometry(core.geometry.get());
+      d2d.context()->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), core.geometry.get()), nullptr);
+      if (background.image) draw_bitmap(core.pos, core.size, background.image, background.image_opacity);
+      text.draw(core.pos, core.size);
     }
   };
 

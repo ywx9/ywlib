@@ -21,7 +21,7 @@ public:
     window::style style{};
     std::wstring title{};
     bitmap rendertarget{};
-    bitmap layout_bitmap{};
+    bitmap ui_bitmap{};
     comptr<IDXGISwapChain1> swapchain{};
     ui::slotid layout_id{};
     ui::slotid focused_control{};
@@ -35,6 +35,7 @@ public:
     bool tracking = false;
     bool manually_drawn = false;
 
+    ui::part::background background;
     ui::part::focus_ring focus_ring;
 
     function<bool> on_close;
@@ -67,18 +68,87 @@ public:
         const auto left = (wr.right - wr.left - cr.right) / 2;
         const auto top = wr.bottom - wr.top - cr.bottom - left;
         margin = int4(left, top, left, left);
-        // Update size if the actual client area is larger than requested
-        if (uint32_t(cr.right) > size.x || uint32_t(cr.bottom) > size.y) { size = uint2(cr.right, cr.bottom); }
-        return {};
+        // 指定されたサイズがstyleで必要な最小以下だった場合は修正する
+        if (uint32_t(cr.right) > size.x) size.x = cr.right;
+        if (uint32_t(cr.bottom) > size.y) size.y = cr.bottom;
       }
-
-      if (auto res = _calculate_margin(); !res) return unexpected_error(res.error());
-      if (!Pos) {
-        const auto sz = int2(Size) + margin.xy() + margin.zw();
-        pos = (int2(desktop_client_size()) - sz) / 2;
-      } else pos = *Pos;
-      if (auto res = _set_position(); !res) return unexpected_error(res.error());
+      const auto sz = int2(size) + margin.xy() + margin.zw();
+      pos = Pos.value_or((int2(desktop_client_size()) - sz) / 2);
+      if (!::SetWindowPos(hwnd, nullptr, pos.x, pos.y, sz.x, sz.y, SWP_NOZORDER))
+        return unexpected_win32_error("SetWindowPos failed");
       return {};
+    }
+
+    std::expected<void, error_trace> update_ui() {
+      const auto lsp = system::slot_address<ui::control>(layout_id);
+      if (!lsp) return unexpected_error(errors::operation_failed, "Missing layout");
+      if (messy) { // messyだけの処理
+        lsp->ensure_minimum_size();
+        lsp->update_layout({}, lsp->core.size);
+        if (size.x < lsp->core.size.x || size.y < lsp->core.size.y) {
+          size = vapply_r<int2>(yw::max, size, lsp->core.size);
+          ::SetWindowPos(hwnd, nullptr, 0, 0, size.x, size.y, SWP_NOZORDER | SWP_NOMOVE);
+        }
+      } else if (!dirty) return {};
+      // 以降 messy と dirty の共通処理
+      if (!ui_bitmap || ui_bitmap.size() != size) {
+        if (auto res = bitmap::create(size)) ui_bitmap = std::move(*res);
+        else return unexpected_error(res.error());
+      }
+      if (auto d = ui_bitmap.begin_draw(colors::transparent)) lsp->draw();
+      else return unexpected_error(d.error());
+      messy = dirty = false;
+      return {};
+    }
+
+    std::expected<void, error_trace> draw() {
+      if (size.x <= 0 || size.y <= 0) return {};
+      if (!rendertarget || rendertarget.size() != size) {
+        rendertarget = {};
+        ui_bitmap = {};
+        if (swapchain) {
+          if (const auto hr = swapchain->ResizeBuffers(0, size.x, size.y, DXGI_FORMAT_UNKNOWN, 0); FAILED(hr))
+            return unexpected_error(errors::operation_failed, "Failed to resize swapchain buffers", int(hr));
+        } else {
+          if (auto res = dxgi.initialize(); !res) return unexpected_error(res.error());
+          auto desc = DXGI_SWAP_CHAIN_DESC1(size.x, size.y, bitmap::dxgiformat, false, DXGI_SAMPLE_DESC(1, 0), {}, 2);
+          desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT, desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+          const auto hr = dxgi.factory()->CreateSwapChainForHwnd(d3d.device(), hwnd, &desc, 0, 0, &swapchain.get());
+          if (FAILED(hr)) return unexpected_error(errors::operation_failed, "Failed to create swapchain", int(hr));
+        }
+        if (auto res = bitmap::create(swapchain.get())) rendertarget = std::move(*res);
+        else return unexpected_error(res.error());
+        if (auto res = bitmap::create(size)) ui_bitmap = std::move(*res);
+        else return unexpected_error(res.error());
+        if (auto res = update_ui(); !res) return unexpected_error(res.error());
+        manually_drawn = false;
+      }
+      auto d = rendertarget.begin_draw();
+      if (!d) return unexpected_error(d.error());
+      if (!manually_drawn) {
+        brush.color(background.color);
+        fill_rectangle({}, size);
+        if (background.image) draw_bitmap({}, size, background.image, background.image_opacity);
+      }
+      draw_bitmap({}, ui_bitmap);
+      manually_drawn = false;
+      return {};
+    }
+
+    virtual bool attach_child(ui::slotid Child) override {
+      if (const auto lsp = system::slot_address<ui::control>(layout_id)) return lsp->attach_child(Child);
+      return true;
+    }
+
+    virtual void detach_child(ui::slotid Child) override {
+      if (const auto lsp = system::slot_address<ui::control>(layout_id)) lsp->detach_child(Child);
+    }
+
+    void next_tab_stop(bool Forward) {
+      if (const auto lsp = system::slot_address<ui::control>(layout_id)) {
+        bool found = !focused_control;
+        focused_control = lsp->next_tab_stop(focused_control, Forward, found);
+      }
     }
   };
 };

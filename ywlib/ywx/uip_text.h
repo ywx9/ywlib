@@ -5,9 +5,9 @@ namespace yw::ui::part {
 
 struct text {
   std::wstring string = L"";
-  font_config font_config = yw::font_config::default_;
+  font_config font = yw::font_config::default_;
   text_alignment alignment = yw::text_alignment::left;
-  color font_color = colors::black;
+  color color = colors::black;
   float2 layout_size{};
   comptr<IDWriteTextLayout> text_layout;
 
@@ -18,7 +18,7 @@ struct text {
     std::wstring font_name(n, L'\0');
     if (const auto hr = tfp->GetFontFamilyName(font_name.data(), n + 1); FAILED(hr))
       return unexpected_error(errors::operation_failed, "GetFontFamilyName failed", int(hr));
-    font_config.name = std::move(font_name);
+    font.name = std::move(font_name);
     return {};
   }
 
@@ -36,11 +36,11 @@ struct text {
     {
       IDWriteTextFormat* tfp;
       const auto hr = dwrite.factory()->CreateTextFormat( //
-        fc.name.value_or(*font_config.name).c_str(), nullptr, //
-        static_cast<DWRITE_FONT_WEIGHT>(fc.weight.value_or(*font_config.weight)), //
-        static_cast<DWRITE_FONT_STYLE>(fc.style.value_or(*font_config.style)), //
-        static_cast<DWRITE_FONT_STRETCH>(fc.stretch.value_or(*font_config.stretch)), //
-        fc.size.value_or(*font_config.size), L"", &tfp);
+        fc.name.value_or(*font.name).c_str(), nullptr, //
+        static_cast<DWRITE_FONT_WEIGHT>(fc.weight.value_or(*font.weight)), //
+        static_cast<DWRITE_FONT_STYLE>(fc.style.value_or(*font.style)), //
+        static_cast<DWRITE_FONT_STRETCH>(fc.stretch.value_or(*font.stretch)), //
+        fc.size.value_or(*font.size), L"", &tfp);
       if (FAILED(hr) || !tfp) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int(hr));
       tfp->SetTextAlignment(static_cast<DWRITE_TEXT_ALIGNMENT>(alignment));
       {
@@ -50,10 +50,10 @@ struct text {
         text_layout.reset(tlp);
       }
     }
-    if (fc.weight.has_value()) font_config.weight = *fc.weight;
-    if (fc.style.has_value()) font_config.style = *fc.style;
-    if (fc.stretch.has_value()) font_config.stretch = *fc.stretch;
-    if (fc.size.has_value()) font_config.size = *fc.size;
+    if (fc.weight.has_value()) font.weight = *fc.weight;
+    if (fc.style.has_value()) font.style = *fc.style;
+    if (fc.stretch.has_value()) font.stretch = *fc.stretch;
+    if (fc.size.has_value()) font.size = *fc.size;
     if (fc.name.has_value())
       if (auto res = update_font_name(); !res) fatal_error(res.error());
     if (auto res = update_layout_size(); !res) fatal_error(res.error());
@@ -62,18 +62,18 @@ struct text {
   std::expected<void, error_trace> initialize() {
     if (text_layout) return {};
     if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
-    font_config.size = font_config.size.value_or(16.0f);
-    font_config.weight = font_config.weight.value_or(font_weight::normal);
-    font_config.style = font_config.style.value_or(font_style::normal);
-    font_config.stretch = font_config.stretch.value_or(font_stretch::normal);
+    font.size = font.size.value_or(16.0f);
+    font.weight = font.weight.value_or(font_weight::normal);
+    font.style = font.style.value_or(font_style::normal);
+    font.stretch = font.stretch.value_or(font_stretch::normal);
     {
       IDWriteTextFormat* tfp = nullptr;
       const auto hr = dwrite.factory()->CreateTextFormat( //
-        font_config.name.value_or(L"").c_str(), nullptr, //
-        static_cast<DWRITE_FONT_WEIGHT>(*font_config.weight), //
-        static_cast<DWRITE_FONT_STYLE>(*font_config.style), //
-        static_cast<DWRITE_FONT_STRETCH>(*font_config.stretch), //
-        *font_config.size, L"", &tfp);
+        font.name.value_or(L"").c_str(), nullptr, //
+        static_cast<DWRITE_FONT_WEIGHT>(*font.weight), //
+        static_cast<DWRITE_FONT_STYLE>(*font.style), //
+        static_cast<DWRITE_FONT_STRETCH>(*font.stretch), //
+        *font.size, L"", &tfp);
       if (FAILED(hr) || !tfp) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int(hr));
       tfp->SetTextAlignment(static_cast<DWRITE_TEXT_ALIGNMENT>(alignment));
       {
@@ -108,50 +108,50 @@ struct text {
       return *this;
     }
 
-    const std::wstring& font_name() const { return _p->font_config.name.value_or(L""); }
+    const std::wstring& font_name() const { return _p->font.name.value_or(L""); }
     handle& font_name(std::wstring Name) {
       if (auto res = _p->initialize(); !res) fatal_error(res.error());
       if (auto res = _p->set_font_config({std::move(Name)}); !res) fatal_error(res.error());
       return *this;
     }
 
-    float font_size() const { return _p->font_config.size.value_or(16.0f); }
+    float font_size() const { return _p->font.size.value_or(16.0f); }
     handle& font_size(float1 Size) {
       if (auto res = _p->initialize(); !res) fatal_error(res.error());
       if (auto res = _p->set_font_config({{}, Size.x}); !res) fatal_error(res.error());
       return *this;
     }
 
-    font_weight font_weight() const { return _p->font_config.weight.value_or(font_weight::normal); }
+    font_weight font_weight() const { return _p->font.weight.value_or(font_weight::normal); }
     handle& font_weight(yw::font_weight Weight) {
       if (auto res = _p->initialize(); !res) fatal_error(res.error());
       if (auto res = _p->set_font_config({{}, {}, Weight}); !res) fatal_error(res.error());
       return *this;
     }
 
-    font_style font_style() const { return _p->font_config.style.value_or(font_style::normal); }
+    font_style font_style() const { return _p->font.style.value_or(font_style::normal); }
     handle& font_style(yw::font_style Style) {
       if (auto res = _p->initialize(); !res) fatal_error(res.error());
       if (auto res = _p->set_font_config({{}, {}, {}, Style}); !res) fatal_error(res.error());
       return *this;
     }
 
-    font_stretch font_stretch() const { return _p->font_config.stretch.value_or(font_stretch::normal); }
+    font_stretch font_stretch() const { return _p->font.stretch.value_or(font_stretch::normal); }
     handle& font_stretch(yw::font_stretch Stretch) {
       if (auto res = _p->initialize(); !res) fatal_error(res.error());
       if (auto res = _p->set_font_config({{}, {}, {}, {}, Stretch}); !res) fatal_error(res.error());
       return *this;
     }
 
-    yw::font_config font() const { return _p->font_config; }
+    yw::font_config font() const { return _p->font; }
     handle& font(yw::font_config Config) {
       if (auto res = _p->initialize(); !res) fatal_error(res.error());
       if (auto res = _p->set_font_config(std::move(Config)); !res) fatal_error(res.error());
       return *this;
     }
 
-    color font_color() const { return _p->font_color; }
-    handle& font_color(color Color) { return _p->font_color = Color, *this; }
+    color font_color() const { return _p->color; }
+    handle& font_color(color Color) { return _p->color = Color, *this; }
 
     yw::text_alignment alignment() const { return _p->alignment; }
     handle& alignment(yw::text_alignment Alignment) { return _p->alignment = Alignment, *this; }
