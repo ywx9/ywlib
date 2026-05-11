@@ -22,9 +22,12 @@ public:
       if (!visible) return;
       brush.color(background.color);
       fill_geometry(core.geometry.get());
-      d2d.context()->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), core.geometry.get()), nullptr);
+      d2d.push_layer(core.geometry.get());
       if (background.image) draw_bitmap(core.pos, core.size, background.image, background.image_opacity);
       text.draw(core.pos, core.size);
+      d2d.pop_layer();
+      brush.color(border.color);
+      draw_geometry(core.geometry.get());
     }
   };
 
@@ -32,48 +35,48 @@ public:
   label() noexcept = default;
 
   static std::expected<label, error_trace> create(derived_from<unknown> auto& Layout) {
-    if (auto res = system::create_control<label>(Layout)) {
+    if (auto res = create_control<label>(Layout)) {
       label lbl;
       lbl._id = *res;
       if (const auto csp = system::slot_address<label>(lbl._id)) {
-        csp->set_window_id();
+        if (auto res = csp->initialize(); !res) return unexpected_error(res.error());
         csp->make_dirty();
       } else return unexpected_error(errors::operation_failed, "missing slot");
       return lbl;
     } else return unexpected_error(res.error());
   }
 
-  auto&& background() {
+  auto background() {
     const auto csp = system::slot_address<label>(_id);
     if (!csp) fatal_error(errors::invalid_operation, "Invalid slot address");
     return csp->background.handle();
   }
 
-  const auto&& background() const {
+  const auto background() const {
     const auto csp = system::slot_address<label>(_id);
     if (!csp) fatal_error(errors::invalid_operation, "Invalid slot address");
     return csp->background.handle();
   }
 
-  auto&& border() {
+  auto border() {
     const auto csp = system::slot_address<label>(_id);
     if (!csp) fatal_error(errors::invalid_operation, "Invalid slot address");
     return csp->border.handle();
   }
 
-  const auto&& border() const {
+  const auto border() const {
     const auto csp = system::slot_address<label>(_id);
     if (!csp) fatal_error(errors::invalid_operation, "Invalid slot address");
     return csp->border.handle();
   }
 
-  auto&& text() {
+  auto text() {
     const auto csp = system::slot_address<label>(_id);
     if (!csp) fatal_error(errors::invalid_operation, "Invalid slot address");
     return csp->text.handle();
   }
 
-  const auto&& text() const {
+  const auto text() const {
     const auto csp = system::slot_address<label>(_id);
     if (!csp) fatal_error(errors::invalid_operation, "Invalid slot address");
     return csp->text.handle();

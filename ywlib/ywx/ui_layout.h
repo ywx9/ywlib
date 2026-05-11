@@ -26,22 +26,78 @@ public:
           get<!Vertical>(internal) = yw::max(get<!Vertical>(internal), get<!Vertical>(csp->core.size));
           get<Vertical>(internal) += get<Vertical>(csp->core.size + csp->core.margin.xy() + csp->core.margin.zw());
         }
-      size = vapply_r<float2>(yw::max, core.min_size, internal, core.required_size * core.constrained);
+      core.size = vapply_r<float2>(yw::max, core.min_size, internal, core.required_size * core.constrained);
     }
 
     virtual void update_layout(float2 Pos, float2 Size) override {
-      const auto minimum_sz = core.size;
-      core.update_layout(Pos, Size);
-      const auto extra = core.size - minimum_sz;
-      unsigned uc_count = 0;
+      const auto minimum_sz = core.size; // ensure_minimum_size で決まった最小サイズ
+      core.update_layout(Pos, Size);     // 実際に渡された描画領域を元に pos, size を再計算
+      const auto extra = core.size - minimum_sz; // 余ったスペース
+
+      unsigned uc_count = 0; // 非拘束な子コントロールの数
+      for (const auto& cid : controls)
+        if (const auto csp = system::slot_address<control>(cid)) uc_count += !get<Vertical>(csp->core.constrained);
+      float2 extra_per_uc{};
+      float2 off{};
+      get<Vertical>(extra_per_uc) = uc_count ? get<Vertical>(extra) / uc_count : 0.0f;
+      for (const auto& cid : controls)
+        if (const auto csp = system::slot_address<control>(cid)) {
+          float2 area = csp->area() + extra_per_uc * (int2(1, 1) - csp->core.constrained);
+          csp->update_layout(off, area);
+          get<Vertical>(off) += get<Vertical>(area);
+        }
+    }
+
+    virtual void draw() override {
+      if (!visible) return;
+      brush.color(background.color);
+      fill_geometry(core.geometry.get());
+      d2d.push_layer(core.geometry.get());
+      if (background.image) draw_bitmap(core.pos, core.size, background.image, background.image_opacity);
+      for (const auto& cid : controls)
+        if (const auto csp = system::slot_address<control>(cid)) csp->draw();
+      d2d.pop_layer();
+      brush.color(border.color);
+      draw_geometry(core.geometry.get());
+    }
+
+    virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) override {
       for (const auto& cid : controls)
         if (const auto csp = system::slot_address<control>(cid))
-          uc_count += !yw::get<Vertical>(csp->core.constrained);
-      const float extra_per_uc = uc_count ? get<Vertical>(extra) / uc_count : 0.0f;
+          if (const auto next = csp->next_tab_stop(Focused, Forward, Found)) return next;
+      return {};
+    }
 
+    virtual bool attach_child(slotid Child) override {
+      controls.push_back(Child);
+      make_messy();
+      return true;
+    }
+
+    virtual void detach_child(slotid Child) override {
+      controls.erase(std::remove(controls.begin(), controls.end(), Child), controls.end());
+      make_messy();
     }
   };
+
+  using control::operator bool;
+  layout() noexcept = default;
+
+  static std::expected<layout, error_trace> create(derived_from<unknown> auto& Layout) {
+    if (auto res = create_control<layout>(Layout)) {
+      layout lyt;
+      lyt._id = *res;
+      if (const auto csp = system::slot_address<layout>(lyt._id)) {
+        csp->set_window_id();
+        csp->make_dirty();
+      } else return unexpected_error(errors::operation_failed, "missing slot");
+      return lyt;
+    } else return unexpected_error(res.error());
+  }
 };
+
+using horizontal_layout = layout<false>;
+using vertical_layout = layout<true>;
 }
 
 // /// vertical layout

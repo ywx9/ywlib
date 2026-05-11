@@ -1,6 +1,7 @@
 #pragma once
 #include "ywx/bitmap.h"
-#include "ywx/text_layout.h"
+#include "ywx/uip_text.h"
+#include "ywx/uip_window.h"
 
 /// \note
 /// コントロールに重なるようにツールチップウィンドウを表示すると、
@@ -9,6 +10,28 @@
 /// ツールチップはコントロールの外側に表示することを決定した。
 
 namespace yw::system {
+
+struct tooltip {
+  ui::part::window core;
+  ui::part::text text;
+
+  std::expected<void, error_trace> initialize() {
+    core.style = WS_POPUP;
+    core.ex_style = WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT;
+    if (auto res = core.initialize(); !res) return unexpected_error(res.error());
+    if (auto res = text.initialize(); !res) return unexpected_error(res.error());
+    return {};
+  }
+
+  std::expected<void, error_trace> update_window_size() {
+    if (auto res = initialize(); !res) return unexpected_error(res.error());
+    const auto sz = int2(text.layout_size()) + int2::fill(ui::arbitrary_value);
+    if (auto res = core.resize(sz); !res) return unexpected_error(res.error());
+    return {};
+  }
+
+  std::expected<void, error_trace>
+} tooltip;
 
 inline class {
   HWND _hwnd{};

@@ -1,5 +1,6 @@
 #pragma once
-#include "ui_parts.h"
+#include "ywx/ui_parts.h"
+#include "ywx/event.h"
 
 namespace yw::ui {
 
@@ -24,6 +25,15 @@ public:
   struct slot : public unknown::slot {
     part::core core;
     bool visible = true;
+    bool enabled = true;
+    bool dying = false;
+
+    std::wstring tooltip{};
+    function<void, event::hover> on_hover;
+
+    float2 area() const noexcept { return core.area(); }
+    void make_messy() const noexcept;
+    void make_dirty() const noexcept;
 
     virtual bool focusable() { return false; }
 
@@ -43,15 +53,28 @@ public:
       else if (Found && visible && focusable()) return id;
       return {};
     }
+
+    virtual float2 ime_position() const { return {}; };
+    virtual void ime_insert_text(std::wstring_view) {}
+
+    virtual void char_event(wchar_t c) {}
+    virtual void click_event(event::button e) {}
+    virtual void button_event(event::button e) {}
+    virtual void drag_event(event::drag e) {}
+    virtual bool focus_event(bool) { return false; }
+    virtual void hover_event(event::hover Event);
+    virtual bool key_event(event::key e) { return false; }
+    virtual void move_event(event::move e) {}
+    virtual void wheel_event(event::wheel e) {}
   };
 
-  auto&& core() {
+  auto core() {
     const auto csp = system::slot_address<control>(_id);
     if (!csp) fatal_error(errors::invalid_operation, "Invalid slot address");
     return csp->core.handle();
   }
 
-  const auto&& core() const {
+  const auto core() const {
     const auto csp = system::slot_address<control>(_id);
     if (!csp) fatal_error(errors::invalid_operation, "Invalid slot address");
     return csp->core.handle();

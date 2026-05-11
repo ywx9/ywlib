@@ -52,30 +52,31 @@ inline uint2 desktop_client_size() {
 //////////////////////////////////////// MARK: wclass
 
 inline class {
-  bool _initialized{};
-  HINSTANCE _hinstance{};
-  std::wstring _name{};
+  struct contents {
+    bool initialized = false;
+    HINSTANCE hinstance{};
+    std::wstring name = L"ywlib_window_class"s;
+  } c;
 
 public:
   static LRESULT __stdcall proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 
   std::expected<void, error_trace> initialize() {
-    if (_initialized) return {};
-    _hinstance = ::GetModuleHandleW(nullptr);
-    _name = L"ywlib_window_class";
+    if (c.initialized) return {};
+    c.hinstance = ::GetModuleHandleW(nullptr);
     WNDCLASSW wc{};
     wc.style = CS_DBLCLKS;
     wc.lpfnWndProc = proc;
-    wc.hInstance = _hinstance;
+    wc.hInstance = c.hinstance;
     wc.hCursor = ::LoadCursorW(nullptr, IDC_ARROW);
-    wc.lpszClassName = _name.data();
+    wc.lpszClassName = c.name.data();
     if (!::RegisterClassW(&wc)) return unexpected_win32_error("RegisterClassW failed");
-    _initialized = true;
+    c.initialized = true;
     return {};
   }
 
-  HINSTANCE hinstance() const noexcept { return _hinstance; }
-  const std::wstring& name() const noexcept { return _name; }
+  HINSTANCE hinstance() const noexcept { return c.hinstance; }
+  const std::wstring& name() const noexcept { return c.name; }
 } wclass;
 
 //////////////////////////////////////// MARK: comptr
@@ -312,6 +313,18 @@ public:
   ID2D1Factory1* factory() { return p.factory; }
   ID2D1Device* device() { return p.device; }
   ID2D1DeviceContext* context() { return p.context; }
+
+  std::expected<void, error_trace> push_layer(ID2D1Geometry* Geometry) {
+    if (auto res = initialize(); !res) return unexpected_error(res.error());
+    context()->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), Geometry), nullptr);
+    return {};
+  }
+
+  std::expected<void, error_trace> pop_layer() {
+    if (auto res = initialize(); !res) return unexpected_error(res.error());
+    context()->PopLayer();
+    return {};
+  }
 } d2d;
 
 //////////////////////////////////////// MARK: dwrite
