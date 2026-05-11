@@ -116,7 +116,7 @@ public:
   }
 
   explicit operator Com*&() & { return p; }
-  explicit operator Com*() const & { return p; }
+  explicit operator Com*() const& { return p; }
 };
 
 //////////////////////////////////////// MARK: d3d
@@ -326,6 +326,86 @@ public:
     return {};
   }
 } d2d;
+
+//////////////////////////////////////// MARK: brush
+
+inline class {
+  struct contents {
+    ID2D1SolidColorBrush* solid_brush{};
+    ID2D1StrokeStyle* stroke_style{};
+    ID2D1StrokeStyle* dashed_stroke_style{};
+    bool dashed = false;
+    bool initialized = false;
+
+    ~contents() {
+      if (dashed_stroke_style) dashed_stroke_style->Release();
+      if (stroke_style) stroke_style->Release();
+      if (solid_brush) solid_brush->Release();
+      initialized = false;
+    }
+  } c{};
+
+public:
+  /// initializes brush if it hasn't been initialized yet.
+  std::expected<void, error_trace> initialize() {
+    if (c.initialized) return {};
+    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
+    if (auto hr = d2d.context()->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black), &c.solid_brush); FAILED(hr))
+      return unexpected_error(errors::operation_failed, "CreateSolidColorBrush failed", int32_t(hr));
+    D2D1_STROKE_STYLE_PROPERTIES stroke_style_props{};
+    stroke_style_props.startCap = D2D1_CAP_STYLE_ROUND;
+    stroke_style_props.endCap = D2D1_CAP_STYLE_ROUND;
+    stroke_style_props.dashCap = D2D1_CAP_STYLE_ROUND;
+    stroke_style_props.lineJoin = D2D1_LINE_JOIN_ROUND;
+    stroke_style_props.miterLimit = 10.0f;
+    if (auto hr = d2d.factory()->CreateStrokeStyle(&stroke_style_props, nullptr, 0, &c.stroke_style); FAILED(hr))
+      return unexpected_error(errors::operation_failed, "CreateStrokeStyle failed", int32_t(hr));
+    stroke_style_props.dashStyle = D2D1_DASH_STYLE_DASH;
+    if (auto hr = d2d.factory()->CreateStrokeStyle(&stroke_style_props, nullptr, 0, &c.dashed_stroke_style); FAILED(hr))
+      return unexpected_error(errors::operation_failed, "CreateStrokeStyle (dashed) failed", int32_t(hr));
+    c.initialized = true;
+    return {};
+  }
+
+  /// gets current color of brush.
+  yw::color color() {
+    if (auto res = initialize(); !res) fatal_error(res.error());
+    return std::bit_cast<yw::color>(c.solid_brush->GetColor());
+  }
+
+  /// sets color of brush.
+  void color(const yw::color& Color) {
+    if (auto res = initialize(); !res) fatal_error(res.error());
+    c.solid_brush->SetColor(reinterpret_cast<const D2D1_COLOR_F*>(&Color));
+  }
+
+  /// checks if brush is dashed.
+  bool dashed() {
+    if (auto res = initialize(); !res) fatal_error(res.error());
+    return c.dashed;
+  }
+
+  /// sets whether brush is dashed.
+  /// \note Note that the effect of this style change will continue until explicitly switched.
+  void dashed(bool Dashed = true) {
+    if (auto res = initialize(); !res) fatal_error(res.error());
+    c.dashed = Dashed;
+  }
+
+  /// gets underlying Direct2D solid color brush.
+  /// \note Do not call `Release()` on the returned pointer.
+  ID2D1SolidColorBrush* d2d_brush() {
+    if (auto res = initialize(); !res) fatal_error(res.error());
+    return c.solid_brush;
+  }
+
+  /// gets underlying Direct2D stroke style.
+  /// \note Do not call `Release()` on the returned pointer.
+  ID2D1StrokeStyle* d2d_stroke() {
+    if (auto res = initialize(); !res) fatal_error(res.error());
+    return c.dashed ? c.dashed_stroke_style : c.stroke_style;
+  }
+} brush;
 
 //////////////////////////////////////// MARK: dwrite
 

@@ -36,7 +36,7 @@ public:
     _state = state::running;
 
     for (const auto& wid : system::primal_windows)
-      if (const auto wsp = system::slot_address<window>(wid); wsp && wsp->visible && (wsp->dirty || wsp->messy)) {
+      if (const auto wsp = system::slot_address<window>(wid); wsp && wsp->visible) {
         if (auto res = wsp->draw_layout_bitmap(); !res) {
           last_error = std::move(res.error().push());
           return _state = state::error, false;

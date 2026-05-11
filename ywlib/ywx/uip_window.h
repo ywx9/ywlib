@@ -19,6 +19,7 @@ struct window {
 
   int2 area() const noexcept { return size + margin.xy() + margin.zw(); }
 
+  /// `window_id`, `style`, and `ex_style` must be set before calling this function.
   std::expected<void, error_trace> initialize() {
     if (hwnd) return {};
     if (auto res = wclass.initialize(); !res) return unexpected_error(res.error());

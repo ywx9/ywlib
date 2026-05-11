@@ -1,5 +1,5 @@
 #pragma once
-#include "ywx/brush.h"
+#include "ywx/core.h"
 
 namespace yw {
 
