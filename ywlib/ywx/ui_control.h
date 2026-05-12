@@ -2,6 +2,10 @@
 #include "ywx/event.h"
 #include "ywx/unknown.h"
 
+namespace yw::errors {
+define_error(ui_invalid_slotid);
+}
+
 namespace yw::ui {
 
 inline constexpr float arbitrary_value = 4.0f;
@@ -19,6 +23,43 @@ enum class alignment {
   right_bottom = 0b1010,
 };
 
+struct part_base {
+  slotid control_id{};
+  bool view_changed = false;
+  bool geometry_changed = false;
+  bool layout_changed = false;
+
+  void make_dirty() const {
+    if (const auto csp = system::slot_address<unknown>(control_id)) csp->make_dirty();
+  }
+  void make_moved() const {
+    if (const auto csp = system::slot_address<unknown>(control_id)) csp->make_moved();
+  }
+  void make_messy() const {
+    if (const auto csp = system::slot_address<unknown>(control_id)) csp->make_messy();
+  }
+
+  template<typename Part> class handle {
+  protected:
+    Part* _p = nullptr;
+    handle(Part& Ref) : _p(&Ref) {}
+
+  public:
+    ~handle() {
+      if (!_p) return;
+      if (_p->layout_changed) _p->make_messy();
+      else if (_p->geometry_changed) _p->make_moved();
+      else if (_p->view_changed) _p->make_dirty();
+      _p->view_changed = _p->geometry_changed = _p->layout_changed = false;
+    }
+    handle(handle&& Other) noexcept : _p(std::exchange(Other._p, nullptr)) {}
+    handle& operator=(handle&& Other) noexcept {
+      if (this != &Other) _p = std::exchange(Other._p, nullptr);
+      return *this;
+    }
+  };
+};
+
 class control : public unknown {
 protected:
   template<derived_from<control> Ctrl>
@@ -26,15 +67,14 @@ protected:
     const auto lid = Layout.id();
     const auto lsp = system::slot_address<unknown::slot>(lid);
     if (!lsp) return unexpected_error(errors::operation_failed, "Failed to access layout slot");
+    if (const auto msg = lsp->attachable(); msg) return unexpected_error(errors::operation_failed, msg);
     const auto cid = system::uis.add(std::make_unique<typename Ctrl::slot>());
     const auto csp = system::slot_address<Ctrl>(cid);
     if (!csp) return unexpected_error(errors::operation_failed, "Failed to create control slot");
-    if (!lsp->attach(cid)) {
-      system::uis.erase(cid);
-      return unexpected_error(errors::operation_failed, "Failed to attach control slot to layout");
-    }
-    csp->owner_window_id = lsp->owner_window_id;
-    csp->owner_layout_id = lid;
+    lsp->attach(cid);
+    csp->id = cid;
+    csp->layout_id = lid;
+    csp->window_id = lsp->window_id;
     return cid;
   }
 
@@ -42,11 +82,7 @@ protected:
 
 public:
   struct slot : public unknown::slot {
-    slotid owner_window_id{};
-    slotid owner_layout_id{};
-
-    struct core {
-      slotid control_id{};
+    struct core : public part_base {
       float4 margin = float4::fill(arbitrary_value);
       float2 min_size = float2::fill(arbitrary_value * 2);
       float2 required_size{};
@@ -58,11 +94,74 @@ public:
       comptr<ID2D1Geometry> geometry{};
       ui::alignment alignment = ui::alignment::center;
       vector<bool, 2> constrained{false, false};
-      bool view_changed = false;
-      bool geometry_changed = false;
-      bool layout_changed = false;
 
-      void reset_change_flags() { view_changed = geometry_changed = layout_changed = false; }
+      class handle : public part_base::handle<core> {
+        friend struct core;
+        using part_base::handle<core>::handle;
+
+      public:
+        const auto& margin() const { return _p->margin; }
+        auto& margin(float4 Margin) {
+          _p->margin = Margin;
+          _p->layout_changed = true;
+          return *this;
+        }
+
+        const auto& min_size() const { return _p->min_size; }
+        auto& min_size(float2 MinSize) {
+          _p->min_size = vapply_r<float2>(yw::max, float2(), MinSize);
+          _p->layout_changed = true;
+          return *this;
+        }
+
+        const auto& pos() const { return _p->pos; }
+
+        const auto& size() const { return _p->size; }
+        auto& size(std::optional<float2> Size) {
+          if (Size) {
+            _p->constrained = {true, true};
+            _p->required_size = *Size;
+          } else _p->constrained = {false, false};
+          _p->layout_changed = true;
+          return *this;
+        }
+
+        const auto& width() const { return _p->size.x; }
+        auto& width(std::optional<float> Width) {
+          if (Width) {
+            _p->constrained.x = true;
+            _p->required_size.x = *Width;
+          } else _p->constrained.x = false;
+          _p->layout_changed = true;
+          return *this;
+        }
+
+        const auto& height() const { return _p->size.y; }
+        auto& height(std::optional<float> Height) {
+          if (Height) {
+            _p->constrained.y = true;
+            _p->required_size.y = *Height;
+          } else _p->constrained.y = false;
+          _p->layout_changed = true;
+          return *this;
+        }
+
+        const auto& radius() const { return _p->radius; }
+        auto& radius(float2 Radius) {
+          _p->radius = Radius;
+          _p->geometry_changed = true;
+          return *this;
+        }
+
+        const auto& alignment() const { return _p->alignment; }
+        auto& alignment(ui::alignment Alignment) {
+          _p->alignment = Alignment;
+          _p->geometry_changed = true;
+          return *this;
+        }
+      };
+
+      handle handle() noexcept { return *this; }
 
       std::expected<void, error_trace> update_geometry() {
         if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
@@ -92,84 +191,6 @@ public:
       bool hittest(float2 Pt) const noexcept {
         return Pt.x >= pos.x && Pt.x <= pos.x + size.x && Pt.y >= pos.y && Pt.y <= pos.y + size.y;
       }
-
-      class handle {
-        friend struct core;
-        core* _p = nullptr;
-        handle(core& Ref) : _p(&Ref) {}
-
-      public:
-        ~handle() {
-          if (!_p) return;
-          if (_p->layout_changed) {
-            if (const auto csp = system::slot_address<control>(_p->control_id)) csp->make_messy();
-          } else if (_p->geometry_changed) {
-            _p->update_geometry();
-            if (const auto csp = system::slot_address<control>(_p->control_id)) csp->make_dirty();
-          } else if (_p->view_changed)
-            if (const auto csp = system::slot_address<control>(_p->control_id)) csp->make_dirty();
-          _p->view_changed = _p->geometry_changed = _p->layout_changed = false;
-        }
-
-        handle(handle&& Other) noexcept : _p(std::exchange(Other._p, nullptr)) {}
-        handle& operator=(handle&& Other) noexcept {
-          if (this != &Other) _p = std::exchange(Other._p, nullptr);
-          return *this;
-        }
-
-        const auto& margin() const { return _p->margin; }
-        auto& margin(float4 Margin) {
-          _p->margin = Margin, _p->layout_changed = true;
-          return *this;
-        }
-
-        const auto& min_size() const { return _p->min_size; }
-        auto& min_size(float2 MinSize) {
-          _p->min_size = vapply_r<float2>(yw::max, float2(), MinSize);
-          _p->layout_changed = true;
-          return *this;
-        }
-
-        const auto& pos() const { return _p->pos; }
-
-        const auto& size() const { return _p->size; }
-        auto& size(std::optional<float> width, std::optional<float> height) {
-          if (_p->constrained.x = width.has_value()) _p->required_size.x = *width;
-          if (_p->constrained.y = height.has_value()) _p->required_size.y = *height;
-          _p->layout_changed = true;
-          return *this;
-        }
-
-        const auto& width() const { return _p->size.x; }
-        auto& width(std::optional<float> Width) {
-          if (_p->constrained.x = Width.has_value()) _p->required_size.x = *Width;
-          _p->layout_changed = true;
-          return *this;
-        }
-
-        const auto& height() const { return _p->size.y; }
-        auto& height(std::optional<float> Height) {
-          if (_p->constrained.y = Height.has_value()) _p->required_size.y = *Height;
-          _p->layout_changed = true;
-          return *this;
-        }
-
-        const auto& radius() const { return _p->radius; }
-        auto& radius(float2 Radius) {
-          _p->radius = Radius;
-          _p->geometry_changed = true;
-          return *this;
-        }
-
-        const auto& alignment() const { return _p->alignment; }
-        auto& alignment(ui::alignment Alignment) {
-          _p->alignment = Alignment;
-          _p->geometry_changed = true;
-          return *this;
-        }
-      };
-
-      handle handle() noexcept { return *this; }
     } core;
 
     bool visible = true;
@@ -179,37 +200,36 @@ public:
     std::wstring tooltip{};
     function<void, event::hover> on_hover;
 
-    float2 area() const noexcept { return core.area(); }
+    //-- override仮想関数定義 --//
 
     virtual void make_dirty() override {
-      if (const auto wsp = system::slot_address<unknown>(owner_window_id)) wsp->make_dirty();
+      if (const auto wsp = system::slot_address<unknown>(window_id)) wsp->make_dirty();
+    }
+
+    virtual void make_moved() override {
+      if (auto res = core.update_geometry(); !res) {
+        print_fallback.err("Failed to update geometry:\n{}", res.error());
+        return;
+      }
+      if (const auto wsp = system::slot_address<unknown>(window_id)) wsp->make_dirty();
     }
 
     virtual void make_messy() override {
-      if (const auto wsp = system::slot_address<unknown>(owner_window_id)) wsp->make_messy();
+      if (const auto wsp = system::slot_address<unknown>(window_id)) wsp->make_messy();
     }
 
-    virtual bool focusable() { return false; }
+    //-- 仮想関数定義 --//
 
-    /// messy 時の前処理として各コントロールの size を必要最小サイズに設定する関数
+    virtual bool focusable() const { return false; }
     virtual void ensure_minimum_size() { core.size = core.minimum_size(); }
-
-    /// messy 時の最終処理として各コントロールの size と pos を確定する関数
-    /// \note 引数はレイアウトが提供する描画領域。この中に余白込みで配置する
     virtual void update_layout(float2 Pos, float2 Size) { core.update_layout(Pos, Size); }
-
-    /// 設定済みの pos, size に従ってコントロールを描画する
     virtual void draw() {}
-
-    /// TABキーによるフォーカス移動を処理する関数
-    virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) {
+    virtual slotid hittest(float2 Point) const { return core.hittest(Point) ? id : slotid{}; }
+    virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) const {
+      /// \note 以下はレイアウト以外のコントロールで共通化可能な実装。
+      /// \note フォーカスを受けないコントロールなら即`return {}`するように`override`した方が良い。
       if (Focused == id) Found = true;
       else if (Found && visible && focusable()) return id;
-      return {};
-    }
-
-    virtual slotid hittest(float2 Point) {
-      if (core.hittest(Point)) return id;
       return {};
     }
 
@@ -229,13 +249,13 @@ public:
 
   auto core() {
     const auto csp = system::slot_address<control>(_id);
-    if (!csp) fatal_error(errors::invalid_operation, "Invalid slot address");
+    if (!csp) fatal_error(errors::ui_invalid_slotid);
     return csp->core.handle();
   }
 
   const auto core() const {
     const auto csp = system::slot_address<control>(_id);
-    if (!csp) fatal_error(errors::invalid_operation, "Invalid slot address");
+    if (!csp) fatal_error(errors::ui_invalid_slotid);
     return csp->core.handle();
   }
 };

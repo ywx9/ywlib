@@ -1,24 +1,32 @@
 #pragma once
 #include "ywx/ui_parts.h"
 
-namespace yw::ui::part {
+namespace yw::ui::parts {
 
 //////////////////////////////////////// MARK: text
 
-struct text {
-  slotid control_id{};
+struct text : public part_base {
   std::wstring string = L"";
   font_config font = yw::font_config::default_;
   text_alignment alignment = yw::text_alignment::left;
   ui::alignment block_alignment = ui::alignment::center;
   yw::color color = colors::black;
+  float4 padding = float4::fill(arbitrary_value);
   float2 layout_size{};
-  float2 offset{};
   comptr<IDWriteTextLayout> text_layout;
-  bool view_changed = false;
+  bool text_layout_changed = false;
+  bool text_alignment_changed = false;
+
+  void apply_font_defaults() {
+    font.name = font.name.value_or(L"");
+    font.size = font.size.value_or(16.0f);
+    font.weight = font.weight.value_or(font_weight::normal);
+    font.style = font.style.value_or(font_style::normal);
+    font.stretch = font.stretch.value_or(font_stretch::normal);
+  }
 
   std::expected<void, error_trace> update_font_name() {
-    if (auto res = initialize(); !res) return unexpected_error(res.error());
+    if (!text_layout) return unexpected_error(errors::not_initialized, "Not initialized");
     IDWriteTextFormat* tfp = static_cast<IDWriteTextFormat*>(text_layout.get());
     const auto n = tfp->GetFontFamilyNameLength();
     std::wstring font_name(n, L'\0');
@@ -29,7 +37,7 @@ struct text {
   }
 
   std::expected<void, error_trace> update_layout_size() {
-    if (auto res = initialize(); !res) return unexpected_error(res.error());
+    if (!text_layout) return unexpected_error(errors::not_initialized, "Not initialized");
     DWRITE_TEXT_METRICS metrics;
     if (const auto hr = text_layout->GetMetrics(&metrics); FAILED(hr))
       return unexpected_error(errors::operation_failed, "GetMetrics failed", int(hr));
@@ -37,60 +45,54 @@ struct text {
     return {};
   }
 
-  std::expected<void, error_trace> set_font_config(const yw::font_config& fc) {
-    if (auto res = initialize(); !res) return unexpected_error(res.error());
-    {
-      IDWriteTextFormat* tfp;
-      const auto hr = dwrite.factory()->CreateTextFormat( //
-        fc.name.value_or(*font.name).c_str(), nullptr, //
-        static_cast<DWRITE_FONT_WEIGHT>(fc.weight.value_or(*font.weight)), //
-        static_cast<DWRITE_FONT_STYLE>(fc.style.value_or(*font.style)), //
-        static_cast<DWRITE_FONT_STRETCH>(fc.stretch.value_or(*font.stretch)), //
-        fc.size.value_or(*font.size), L"", &tfp);
-      if (FAILED(hr) || !tfp) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int(hr));
-      tfp->SetTextAlignment(static_cast<DWRITE_TEXT_ALIGNMENT>(alignment));
-      {
-        IDWriteTextLayout* tlp = nullptr;
-        const auto hr = dwrite.factory()->CreateTextLayout(string.c_str(), UINT(string.size()), tfp, 1e6, 1e6, &tlp);
-        if (FAILED(hr) || !tlp) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", int(hr));
-        text_layout.reset(tlp);
-      }
-    }
-    if (fc.weight.has_value()) font.weight = *fc.weight;
-    if (fc.style.has_value()) font.style = *fc.style;
-    if (fc.stretch.has_value()) font.stretch = *fc.stretch;
-    if (fc.size.has_value()) font.size = *fc.size;
-    if (fc.name.has_value())
-      if (auto res = update_font_name(); !res) fatal_error(res.error());
-    if (auto res = update_layout_size(); !res) fatal_error(res.error());
+  std::expected<void, error_trace> apply_text_alignment() {
+    if (!text_layout) return {};
+    if (const auto hr = text_layout->SetTextAlignment(static_cast<DWRITE_TEXT_ALIGNMENT>(alignment)); FAILED(hr))
+      return unexpected_error(errors::operation_failed, "SetTextAlignment failed", int(hr));
+    return {};
   }
 
-  std::expected<void, error_trace> initialize() {
-    if (text_layout) return {};
+  std::expected<void, error_trace> rebuild_text_layout() {
     if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
-    font.size = font.size.value_or(16.0f);
-    font.weight = font.weight.value_or(font_weight::normal);
-    font.style = font.style.value_or(font_style::normal);
-    font.stretch = font.stretch.value_or(font_stretch::normal);
+    apply_font_defaults();
     {
-      IDWriteTextFormat* tfp = nullptr;
-      const auto hr = dwrite.factory()->CreateTextFormat( //
-        font.name.value_or(L"").c_str(), nullptr, //
-        static_cast<DWRITE_FONT_WEIGHT>(*font.weight), //
-        static_cast<DWRITE_FONT_STYLE>(*font.style), //
-        static_cast<DWRITE_FONT_STRETCH>(*font.stretch), //
-        *font.size, L"", &tfp);
+      comptr<IDWriteTextFormat> tfp{};
+      const auto hr = dwrite.factory()->CreateTextFormat(
+        font.name->c_str(), nullptr, static_cast<DWRITE_FONT_WEIGHT>(*font.weight),
+        static_cast<DWRITE_FONT_STYLE>(*font.style), static_cast<DWRITE_FONT_STRETCH>(*font.stretch), *font.size, L"",
+        &tfp.get());
       if (FAILED(hr) || !tfp) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int(hr));
       tfp->SetTextAlignment(static_cast<DWRITE_TEXT_ALIGNMENT>(alignment));
       {
         IDWriteTextLayout* tlp = nullptr;
-        const auto hr = dwrite.factory()->CreateTextLayout(string.c_str(), UINT(string.size()), tfp, 1e6, 1e6, &tlp);
+        const auto hr =
+          dwrite.factory()->CreateTextLayout(string.c_str(), UINT(string.size()), tfp.get(), 1e6, 1e6, &tlp);
         if (FAILED(hr) || !tlp) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", int(hr));
         text_layout.reset(tlp);
       }
     }
     if (auto res = update_font_name(); !res) return unexpected_error(res.error());
     if (auto res = update_layout_size(); !res) return unexpected_error(res.error());
+    return {};
+  }
+
+  std::expected<void, error_trace> set_font_config(const yw::font_config& fc) {
+    if (fc.name.has_value()) font.name = *fc.name;
+    if (fc.weight.has_value()) font.weight = *fc.weight;
+    if (fc.style.has_value()) font.style = *fc.style;
+    if (fc.stretch.has_value()) font.stretch = *fc.stretch;
+    if (fc.size.has_value()) font.size = *fc.size;
+    return {};
+  }
+
+  std::expected<void, error_trace> initialize() {
+    if (text_layout_changed || !text_layout) {
+      if (auto res = rebuild_text_layout(); !res) return unexpected_error(res.error());
+    } else if (text_alignment_changed) {
+      if (auto res = apply_text_alignment(); !res) return unexpected_error(res.error());
+    } else return {};
+    text_layout_changed = text_alignment_changed = false;
+    return {};
   }
 
   std::expected<void, error_trace> draw() {
@@ -103,7 +105,8 @@ struct text {
     if (!text_layout) return unexpected_error(errors::not_initialized, "Not initialized");
     static const float c[] = {0.5f, 0.0f, 1.0f};
     const auto cc = float2(c[unsigned(block_alignment) % 3], c[(unsigned(block_alignment) / 3) % 3]);
-    const auto origin = Pos + (Size - layout_size) * cc + offset;
+    float2 area = layout_size + padding.xy() + padding.zw();
+    const auto origin = Pos + (Size - area) * cc;
     brush.color(color);
     if (auto res = draw_text(origin, text_layout.get()); !res) return unexpected_error(res.error());
     return {};
@@ -144,74 +147,80 @@ struct text {
     return rects;
   }
 
-  class handle {
+  class handle : public part_base::handle<text> {
     friend struct text;
-    text* _p = nullptr;
-    handle(text& Ref) : _p(&Ref) {}
+    using part_base::handle<text>::handle;
 
   public:
-    ~handle() noexcept {
-      if (_p && _p->view_changed) {
-        if (const auto csp = system::slot_address<control>(_p->control_id)) csp->make_dirty();
+    ~handle() {
+      if (!_p) return;
+      if (_p->text_layout_changed) {
+        if (auto res = _p->rebuild_text_layout(); !res) fatal_error(res.error());
+        _p->view_changed = true;
+      } else if (_p->text_alignment_changed) {
+        if (auto res = _p->apply_text_alignment(); !res) fatal_error(res.error());
+        _p->view_changed = true;
       }
+      _p->text_layout_changed = _p->text_alignment_changed = false;
     }
 
-    handle(handle&& Other) noexcept : _p(std::exchange(Other._p, nullptr)) {}
-    handle& operator=(handle&& Other) noexcept {
-      if (this != &Other) _p = std::exchange(Other._p, nullptr);
-      return *this;
-    }
-
-    const std::wstring& string() const { return _p->string; }
-    handle& string(std::wstring Text) {
-      if (auto res = _p->initialize(); !res) fatal_error(res.error());
-      {
-        IDWriteTextLayout* tlp = nullptr;
-        IDWriteTextFormat* tfp = static_cast<IDWriteTextFormat*>(_p->text_layout.get());
-        const auto hr = dwrite.factory()->CreateTextLayout(Text.c_str(), UINT(Text.size()), tfp, 1e6, 1e6, &tlp);
-        if (FAILED(hr) || !tlp) fatal_error(errors::operation_failed, "CreateTextLayout failed", int(hr));
-        _p->text_layout.reset(tlp);
-      }
+    const auto& string() const { return _p->string; }
+    auto& string(std::wstring Text) {
       _p->string = std::move(Text);
-      if (auto res = _p->update_layout_size(); !res) fatal_error(res.error());
-      _p->view_changed = true;
+      _p->text_layout_changed = true;
       return *this;
     }
 
-    yw::font_config font() const { return _p->font; }
-    handle& font(yw::font_config Config) {
-      if (auto res = _p->initialize(); !res) fatal_error(res.error());
+    const auto& font() const { return _p->font; }
+    auto& font(yw::font_config Config) {
       if (auto res = _p->set_font_config(std::move(Config)); !res) fatal_error(res.error());
-      _p->view_changed = true;
+      _p->text_layout_changed = true;
       return *this;
     }
 
-    const std::wstring& font_name() const { return *_p->font.name; }
-    handle& font_name(std::wstring Name) { return font({Name}); }
+    const auto& font_name() const { return *_p->font.name; }
+    auto& font_name(std::wstring Name) { return font({Name}); }
 
-    float font_size() const { return *_p->font.size; }
-    handle& font_size(float1 Size) { return font({{}, Size.x}); }
+    const auto& font_size() const { return *_p->font.size; }
+    auto& font_size(float1 Size) { return font({{}, Size.x}); }
 
-    font_weight font_weight() const { return *_p->font.weight; }
-    handle& font_weight(yw::font_weight Weight) { return font({{}, {}, Weight}); }
+    const auto& font_weight() const { return *_p->font.weight; }
+    auto& font_weight(yw::font_weight Weight) { return font({{}, {}, Weight}); }
 
-    font_style font_style() const { return *_p->font.style; }
-    handle& font_style(yw::font_style Style) { return font({{}, {}, {}, Style}); }
+    const auto& font_style() const { return *_p->font.style; }
+    auto& font_style(yw::font_style Style) { return font({{}, {}, {}, Style}); }
 
-    font_stretch font_stretch() const { return *_p->font.stretch; }
-    handle& font_stretch(yw::font_stretch Stretch) { return font({{}, {}, {}, {}, Stretch}); }
+    const auto& font_stretch() const { return *_p->font.stretch; }
+    auto& font_stretch(yw::font_stretch Stretch) { return font({{}, {}, {}, {}, Stretch}); }
 
     const auto& color() const { return _p->color; }
     auto& color(yw::color Color) { return _p->color = Color, _p->view_changed = true, *this; }
 
+    const auto& padding() const { return _p->padding; }
+    auto& padding(float4 Padding) {
+      _p->padding = Padding;
+      _p->view_changed = true;
+      return *this;
+    }
+
     const auto& alignment() const { return _p->alignment; }
-    auto& alignment(yw::text_alignment Alignment) { return _p->alignment = Alignment, _p->view_changed = true, *this; }
+    auto& alignment(yw::text_alignment Alignment) {
+      _p->alignment = Alignment;
+      _p->text_alignment_changed = true;
+      return *this;
+    }
 
-    const auto& layout_size() const { return _p->layout_size; }
+    const auto& block_alignment() const { return _p->block_alignment; }
+    auto& block_alignment(ui::alignment BlockAlignment) {
+      _p->block_alignment = BlockAlignment;
+      _p->view_changed = true;
+      return *this;
+    }
 
+    float2 layout_size() const { return _p->layout_size + _p->padding.xy() + _p->padding.zw(); }
     IDWriteTextLayout* text_layout() const { return _p->text_layout.get(); }
   };
 
   handle handle() noexcept { return *this; }
 };
-}
+} // namespace yw::ui::parts

@@ -9,11 +9,15 @@ public:
   class slot {
   public:
     slotset<slot>::slotid id{};
+    slotset<slot>::slotid layout_id{};
+    slotset<slot>::slotid window_id{};
     virtual ~slot() noexcept {}
-    virtual bool attach_child(slotset<slot>::slotid Child) { return false; }
-    virtual void detach_child(slotset<slot>::slotid Child) {}
-    virtual void make_dirty() {}
-    virtual void make_messy() {}
+    virtual const char* attachable() const { return "Non-attachable control"; }
+    virtual void attach(slotset<slot>::slotid Child) {}
+    virtual void detach(slotset<slot>::slotid Child) {}
+    virtual void make_dirty() {} /// UIレイアウトの再描画フラグを立てる (ジオメトリ、レイアウトは再利用)
+    virtual void make_moved() {} /// UIコントロールのジオメトリ更新フラグを立てる (レイアウトは再利用)
+    virtual void make_messy() {} /// UIレイアウトの再計算フラグを立てる
   };
 
 protected:

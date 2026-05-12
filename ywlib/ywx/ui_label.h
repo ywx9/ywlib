@@ -7,17 +7,11 @@ namespace yw::ui {
 class label : public control {
 public:
   struct slot : public control::slot {
-    part::background background;
-    part::border border;
-    part::text text;
+    parts::background background;
+    parts::border border;
+    parts::text text;
 
-    std::expected<void, error_trace> initialize() {
-      background.owner_window_id = core.owner_window_id;
-      border.owner_window_id = core.owner_window_id;
-      text.owner_window_id = core.owner_window_id;
-      if (auto res = text.initialize(); !res) return unexpected_error(res.error());
-      return {};
-    }
+    //-- override仮想関数定義 --//
 
     virtual void draw() override {
       if (!visible) return;
@@ -27,24 +21,25 @@ public:
       if (background.image) draw_bitmap(core.pos, core.size, background.image, background.image_opacity);
       text.draw(core.pos, core.size);
       d2d.pop_layer();
-      brush.color(border.color);
-      draw_geometry(core.geometry.get());
+      border.draw(core.geometry.get());
     }
+
+    virtual slotid next_tab_stop(slotid, bool, bool&) const override { return {}; }
   };
 
   using control::operator bool;
   label() noexcept = default;
 
   static std::expected<label, error_trace> add(derived_from<unknown> auto& Layout) {
-    if (auto res = create_control<label>(Layout)) {
-      label lbl;
-      lbl._id = *res;
-      if (const auto csp = system::slot_address<label>(lbl._id)) {
-        if (auto res = csp->initialize(); !res) return unexpected_error(res.error());
-        make_dirty();
-      } else return unexpected_error(errors::operation_failed, "missing slot");
-      return lbl;
-    } else return unexpected_error(res.error());
+    label lbl;
+    if (auto res = create_control<label>(Layout)) lbl._id = *res;
+    else return unexpected_error(res.error());
+    if (const auto csp = system::slot_address<label>(lbl._id)) {
+      csp->background.control_id = lbl._id;
+      csp->border.control_id = lbl._id;
+      csp->text.control_id = lbl._id;
+    } else return unexpected_error(errors::operation_failed, "missing slot");
+    return lbl;
   }
 
   auto background() {
