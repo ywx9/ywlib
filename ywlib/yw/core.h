@@ -575,7 +575,9 @@ inline constexpr struct {
     if constexpr (same_as<T, std::filesystem::path>) {
       if constexpr (same_as<std::filesystem::path::value_type, char>) return std::string(a.native());
       else return unicode<char>(a.native());
-    } else if constexpr (char_type<T> && different_from<T, char>) return unicode<char>(std::basic_string_view<T>(&a));
+    } else if constexpr (!stringable<T> && is_pointer<remove_ref<T>>)
+      return std::format("{}", static_cast<const void*>(a));
+    else if constexpr (char_type<T> && different_from<T, char>) return unicode<char>(std::basic_string_view<T>(&a));
     else return std::format("{}", a);
   }
 
@@ -596,6 +598,12 @@ inline constexpr struct {
         else return a;
       };
       return operator()(static_cast<S&&>(fmt), _to_string(as)...);
+    } else if constexpr (((!stringable<Ts> && is_pointer<remove_ref<Ts>>) || ...)) {
+      constexpr auto _to_hex = []<typename T>(const T& a) -> decltype(auto) {
+        if constexpr (!stringable<T> && is_pointer<remove_ref<T>>) return static_cast<const void*>(a);
+        else return a;
+      };
+      return operator()(static_cast<S&&>(fmt), _to_hex(as)...);
     } else if constexpr (((stringable<Ts> && different_from<iter_value_t<Ts>, C>) || ...)) {
       constexpr auto _covert = []<typename S2>(const S2& s) -> decltype(auto) {
         using C2 = iter_value_t<S2>;

@@ -12,16 +12,7 @@ class drawing {
   drawing& operator=(const drawing&) = delete;
 
 public:
-  ~drawing() {
-    if (!_active) return;
-    _active = false;
-    if (d2d_drawing()) {
-      if (auto hr = d2d.context()->EndDraw(); FAILED(hr))
-        print_fallback("drawing failed (code={}) that starts at {}", hr, _source);
-      d2d.context()->SetTarget(nullptr);
-    } else if (d3d_drawing()) d3d.context()->OMSetRenderTargets(0, nullptr, nullptr);
-    _rendertarget = std::monostate{};
-  }
+  ~drawing() noexcept { close(); }
 
   drawing() noexcept = default;
   drawing(drawing&& other) : _source(other._source), _active(std::exchange(other._active, false)) {}
@@ -34,11 +25,11 @@ public:
   }
 
   static std::expected<drawing, error_trace> create(ID2D1Image* rendertarget, const source& src) {
-    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-    if (_rendertarget.index() != 0) {
-      if (d2d_drawing()) return unexpected_error(errors::invalid_operation, "another d2d rendertarget already set");
-      else return unexpected_error(errors::invalid_operation, "d3d rendertarget already set");
+    if (!not_drawing()) {
+      if (d2d_drawing()) return unexpected_error(errors::invalid_operation, "already begun d2d drawing");
+      else return unexpected_error(errors::invalid_operation, "already begun d3d drawing");
     } else if (rendertarget == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
+    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
     _rendertarget = rendertarget;
     d2d.context()->SetTarget(rendertarget);
     d2d.context()->BeginDraw();
@@ -46,17 +37,23 @@ public:
   }
 
   static std::expected<drawing, error_trace> create(ID3D11RenderTargetView* rtv, const source& src) {
-    if (_rendertarget.index() != 0) return unexpected_error(errors::invalid_operation, "rendertarget already set");
-    if (rtv == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
+    if (!not_drawing()) {
+      if (d2d_drawing()) return unexpected_error(errors::invalid_operation, "already begun d2d drawing");
+      else return unexpected_error(errors::invalid_operation, "already begun d3d drawing");
+    } else if (rtv == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
     if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     _rendertarget = rtv;
     d3d.context()->OMSetRenderTargets(1, &rtv, nullptr);
     return drawing(src);
   }
 
-  static std::expected<drawing, error_trace> create(ID3D11RenderTargetView* rtv, ID3D11DepthStencilView* dsv, const source& src) {
-    if (_rendertarget.index() != 0) return unexpected_error(errors::invalid_operation, "rendertarget already set");
-    if (rtv == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
+  static std::expected<drawing, error_trace> create(
+    ID3D11RenderTargetView* rtv, ID3D11DepthStencilView* dsv, const source& src) {
+    if (!not_drawing()) {
+      if (d2d_drawing()) return unexpected_error(errors::invalid_operation, "already begun d2d drawing");
+      else return unexpected_error(errors::invalid_operation, "already begun d3d drawing");
+    } else if (rtv == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
+    else if (dsv == nullptr) return unexpected_error(errors::invalid_argument, "null depth stencil view");
     if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     _rendertarget = rtv;
     d3d.context()->OMSetRenderTargets(1, &rtv, dsv);
@@ -66,6 +63,19 @@ public:
   static bool d2d_drawing() { return _rendertarget.index() == 1; }
   static bool d3d_drawing() { return _rendertarget.index() == 2; }
   static bool not_drawing() { return _rendertarget.index() == 0; }
+
+  void close() noexcept {
+    try {
+      if (!_active) return;
+      _active = false;
+      if (d2d_drawing()) {
+        if (const auto hr = d2d.context()->EndDraw(); FAILED(hr))
+          print_fallback.err("drawing failed (code={}) that starts at {}", hr, _source);
+        d2d.context()->SetTarget(nullptr);
+      } else if (d3d_drawing()) d3d.context()->OMSetRenderTargets(0, nullptr, nullptr);
+      _rendertarget = std::monostate{};
+    } catch (...) { print_fallback.err("unknown error occurred while closing drawing that starts at {}", _source); }
+  }
 };
 
 //////////////////////////////////////// MARK: draw line

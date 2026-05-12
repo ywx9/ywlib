@@ -1,155 +1,12 @@
 #pragma once
-#include "ywx/ui_unknown.h"
-
-namespace yw::ui {
-/// 特に意味を持たない初期値
-inline constexpr float arbitrary_value = 4.0f;
-
-/// コントロールの配置を指定する列挙型
-enum class alignment {
-  center = 0b0000,
-  left = 0b0001,
-  right = 0b0010,
-  top = 0b0100,
-  bottom = 0b1000,
-  left_top = 0b0101,
-  left_bottom = 0b1001,
-  right_top = 0b0110,
-  right_bottom = 0b1010,
-};
-
-using slotid = slotset<ui::unknown::slot>::slotid;
-} // namespace yw::ui
+#include "ywx/ui_control.h"
 
 namespace yw::ui::part {
-
-void make_dirty(slotid Window) noexcept;
-void make_messy(slotid Window) noexcept;
-
-struct core {
-  slotid window_id{};
-  float4 margin = float4::fill(arbitrary_value);
-  float2 min_size = float2::fill(arbitrary_value * 2);
-  float2 required_size{};
-  float2 provided_pos{};
-  float2 provided_size{};
-  float2 pos{};
-  float2 size{};
-  float2 radius = float2::fill(arbitrary_value);
-  comptr<ID2D1Geometry> geometry{};
-  ui::alignment alignment = ui::alignment::center;
-  vector<bool, 2> constrained{false, false};
-  bool view_changed = false;
-  bool geometry_changed = false;
-  bool layout_changed = false;
-
-  void reset_change_flags() { view_changed = geometry_changed = layout_changed = false; }
-
-  std::expected<void, error_trace> update_geometry() {
-    ID2D1RoundedRectangleGeometry* rrgp = nullptr;
-    D2D1_ROUNDED_RECT rr{D2D1_RECT_F(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
-    if (const auto hr = d2d.factory()->CreateRoundedRectangleGeometry(&rr, &rrgp); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "Failed to create geometry", int32_t(hr));
-    geometry.reset(rrgp);
-    return {};
-  }
-
-  std::expected<void, error_trace> update_layout(float2 Pos, float2 Size) {
-    provided_pos = Pos, provided_size = Size;
-    static const float c[] = {0.5f, 0.0f, 1.0f};
-    const float2 cc = {c[unsigned(alignment) % 3], c[(unsigned(alignment) / 3) % 3]};
-    pos = Pos + margin.xy();
-    auto sz = Size - (margin.xy() + margin.zw());
-    size = size * constrained + sz * (int2(1, 1) - constrained);
-    pos += (sz - size) * cc;
-    if (auto res = update_geometry(); !res) return unexpected_error(res.error());
-    return {};
-  }
-
-  float2 minimum_size() const noexcept { return vapply_r<float2>(yw::max, min_size, required_size * constrained); }
-  float2 area() const noexcept { return size + margin.xy() + margin.zw(); }
-
-  class handle {
-    friend struct core;
-    core* _p = nullptr;
-    handle(core& Ref) : _p(&Ref) {}
-
-  public:
-    ~handle() {
-      if (!_p) return;
-      if (_p->layout_changed) make_messy(_p->window_id);
-      else if (_p->geometry_changed) {
-        _p->update_geometry();
-        make_dirty(_p->window_id);
-      } else if (_p->view_changed) make_dirty(_p->window_id);
-      _p->reset_change_flags();
-    }
-
-    handle(handle&& Other) noexcept : _p(std::exchange(Other._p, nullptr)) {}
-    handle& operator=(handle&& Other) noexcept {
-      if (this != &Other) _p = std::exchange(Other._p, nullptr);
-      return *this;
-    }
-
-    const auto& margin() const { return _p->margin; }
-    auto& margin(float4 Margin) {
-      _p->margin = Margin, _p->layout_changed = true;
-      return *this;
-    }
-
-    const auto& min_size() const { return _p->min_size; }
-    auto& min_size(float2 MinSize) {
-      _p->min_size = vapply_r<float2>(yw::max, float2(), MinSize);
-      _p->layout_changed = true;
-      return *this;
-    }
-
-    const auto& pos() const { return _p->pos; }
-
-    const auto& size() const { return _p->size; }
-    auto& size(std::optional<float> width, std::optional<float> height) {
-      if (_p->constrained.x = width.has_value()) _p->required_size.x = *width;
-      if (_p->constrained.y = height.has_value()) _p->required_size.y = *height;
-      _p->layout_changed = true;
-      return *this;
-    }
-
-    const auto& width() const { return _p->size.x; }
-    auto& width(std::optional<float> Width) {
-      if (_p->constrained.x = Width.has_value()) _p->required_size.x = *Width;
-      _p->layout_changed = true;
-      return *this;
-    }
-
-    const auto& height() const { return _p->size.y; }
-    auto& height(std::optional<float> Height) {
-      if (_p->constrained.y = Height.has_value()) _p->required_size.y = *Height;
-      _p->layout_changed = true;
-      return *this;
-    }
-
-    const auto& radius() const { return _p->radius; }
-    auto& radius(float2 Radius) {
-      _p->radius = Radius;
-      _p->geometry_changed = true;
-      return *this;
-    }
-
-    const auto& alignment() const { return _p->alignment; }
-    auto& alignment(ui::alignment Alignment) {
-      _p->alignment = Alignment;
-      _p->geometry_changed = true;
-      return *this;
-    }
-  };
-
-  handle handle() noexcept { return *this; }
-};
 
 //////////////////////////////////////// MARK: background
 
 struct background {
-  slotid window_id{};
+  slotid control_id{};
   color color = colors::white;
   yw::bitmap image{}; // optional
   float image_opacity = 1.0f;
@@ -162,7 +19,9 @@ struct background {
 
   public:
     ~handle() noexcept {
-      if (_p && _p->view_changed) make_dirty(_p->window_id), _p->view_changed = false;
+      if (_p && _p->view_changed)
+        if (const auto csp = system::slot_address<control>(_p->control_id)) csp->make_dirty();
+      _p->view_changed = false;
     }
 
     handle(handle&& Other) noexcept : _p(std::exchange(Other._p, nullptr)) {}
@@ -187,9 +46,10 @@ struct background {
 //////////////////////////////////////// MARK: border
 
 struct border {
-  slotid window_id{};
+  slotid control_id{};
   color color = colors::black;
   float width = 1.0f;
+  bool dashed = false;
   bool view_changed = false;
 
   class handle {
@@ -199,7 +59,9 @@ struct border {
 
   public:
     ~handle() noexcept {
-      if (_p && _p->view_changed) make_dirty(_p->window_id), _p->view_changed = false;
+      if (_p && _p->view_changed)
+        if (const auto csp = system::slot_address<control>(_p->control_id)) csp->make_dirty();
+      _p->view_changed = false;
     }
 
     handle(handle&& Other) noexcept : _p(std::exchange(Other._p, nullptr)) {}
@@ -213,45 +75,9 @@ struct border {
 
     const auto& width() const { return _p->width; }
     auto& width(float Width) { return _p->width = Width, _p->view_changed = true, *this; }
-  };
 
-  handle handle() noexcept { return *this; }
-};
-
-//////////////////////////////////////// MARK: focus_ring
-
-struct focus_ring {
-  slotid window_id{};
-  yw::color color = yw::color(0.0f, 0.0f, 1.0f, 0.5f);
-  float offset = 3.0f;
-  float width = 1.0f;
-  bool view_changed = false;
-
-  class handle {
-    friend struct focus_ring;
-    focus_ring* _p = nullptr;
-    handle(focus_ring& Ref) : _p(&Ref) {}
-
-  public:
-    ~handle() noexcept {
-      if (_p && _p->view_changed) make_dirty(_p->window_id), _p->view_changed = false;
-    }
-
-    handle(handle&& Other) noexcept : _p(std::exchange(Other._p, nullptr)) {}
-    handle& operator=(handle&& Other) noexcept {
-      if (this != &Other) _p = std::exchange(Other._p, nullptr);
-      return *this;
-    }
-
-    const auto& color() const { return _p->color; }
-    auto& color(yw::color Color) { return _p->color = Color, _p->view_changed = true, *this; }
-
-    const auto& offset() const { return _p->offset; }
-    auto& offset(float1 Offset) { return _p->offset = Offset.x, _p->view_changed = true, *this; }
-
-    const auto& width() const { return _p->width; }
-    auto& width(float1 Width) { return _p->width = Width.x, _p->view_changed = true, *this; }
-
+    const auto& dashed() const { return _p->dashed; }
+    auto& dashed(bool Dashed) { return _p->dashed = Dashed, _p->view_changed = true, *this; }
   };
 
   handle handle() noexcept { return *this; }
@@ -260,7 +86,7 @@ struct focus_ring {
 //////////////////////////////////////// MARK: scrollbar
 
 template<bool Vertical> struct scrollbar {
-  slotid window_id{};
+  slotid control_id{};
   color track_color = colors::darkgray;
   color thumb_color = colors::gray;
   color border_color = colors::black;
@@ -325,8 +151,10 @@ template<bool Vertical> struct scrollbar {
   public:
     ~handle() noexcept {
       if (!_p) return;
-      if (_p->layout_changed) make_messy(_p->window_id);
-      else if (_p->view_changed) make_dirty(_p->window_id);
+      if (_p->layout_changed) {
+        if (const auto csp = system::slot_address<control>(_p->control_id)) csp->make_messy();
+      } else if (_p->view_changed)
+        if (const auto csp = system::slot_address<control>(_p->control_id)) csp->make_dirty();
       _p->layout_changed = _p->view_changed = false;
     }
 

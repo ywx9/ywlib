@@ -120,6 +120,6 @@ namespace std {
 template<> struct formatter<yw::key> {
   formatter<std::string_view> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::key& k, auto& ctx) const { return fmt.format(key_name(k), ctx); }
+  auto format(const yw::key& k, auto& ctx) const { return fmt.format(k.name(), ctx); }
 };
 } // namespace std

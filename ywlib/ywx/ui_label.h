@@ -1,5 +1,6 @@
 #pragma once
 #include "ywx/ui_control.h"
+#include "ywx/uip_text.h"
 
 namespace yw::ui {
 
@@ -11,9 +12,9 @@ public:
     part::text text;
 
     std::expected<void, error_trace> initialize() {
-      background.window_id = core.window_id;
-      border.window_id = core.window_id;
-      text.window_id = core.window_id;
+      background.owner_window_id = core.owner_window_id;
+      border.owner_window_id = core.owner_window_id;
+      text.owner_window_id = core.owner_window_id;
       if (auto res = text.initialize(); !res) return unexpected_error(res.error());
       return {};
     }
@@ -34,13 +35,13 @@ public:
   using control::operator bool;
   label() noexcept = default;
 
-  static std::expected<label, error_trace> create(derived_from<unknown> auto& Layout) {
+  static std::expected<label, error_trace> add(derived_from<unknown> auto& Layout) {
     if (auto res = create_control<label>(Layout)) {
       label lbl;
       lbl._id = *res;
       if (const auto csp = system::slot_address<label>(lbl._id)) {
         if (auto res = csp->initialize(); !res) return unexpected_error(res.error());
-        csp->make_dirty();
+        make_dirty();
       } else return unexpected_error(errors::operation_failed, "missing slot");
       return lbl;
     } else return unexpected_error(res.error());

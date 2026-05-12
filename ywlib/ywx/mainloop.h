@@ -1,11 +1,8 @@
 #pragma once
-#include "ywx/ime.h"
-#include "ywx/ui_layout.h"
+// #include "ywx/ime.h"
 #include "ywx/window.h"
 
 namespace yw {
-
-namespace system {} // namespace system
 
 //////////////////////////////////////// MARK: mainloop
 
@@ -36,8 +33,16 @@ public:
     _state = state::running;
 
     for (const auto& wid : system::primal_windows)
-      if (const auto wsp = system::slot_address<window>(wid); wsp && wsp->visible) {
-        if (auto res = wsp->draw_layout_bitmap(); !res) {
+      if (const auto wsp = system::slot_address<window>(wid)) {
+        if (auto res = wsp->update_ui_layout(); !res) {
+          last_error = std::move(res.error().push());
+          return _state = state::error, false;
+        }
+        if (auto res = wsp->draw_ui_layout(); !res) {
+          last_error = std::move(res.error().push());
+          return _state = state::error, false;
+        }
+        if (auto res = wsp->draw(); !res) {
           last_error = std::move(res.error().push());
           return _state = state::error, false;
         }
@@ -53,10 +58,11 @@ public:
     }
 
     for (const auto& wid : system::primal_windows)
-      if (const auto wsp = system::slot_address<window>(wid); wsp && wsp->visible) {
-        wsp->draw();
-        wsp->swapchain->Present(0, 0);
-      }
+      if (const auto wsp = system::slot_address<window>(wid))
+        if (auto res = wsp->update_ui_layout(); !res) {
+          last_error = std::move(res.error().push());
+          return _state = state::error, false;
+        }
     fps = 1.0 / (spf = _timer.lap());
     return _state == state::running;
   }
@@ -70,49 +76,31 @@ public:
 namespace internal {
 inline void wm_size(window::slot& ws, WPARAM, LPARAM lp) {
   if (ws.resizing) return;
-  ws.size.x = LOWORD(lp);
-  ws.size.y = HIWORD(lp);
-  if (auto res = ws.resize_rendertarget(ws.size); !res) {
-    mainloop.last_error = std::move(res.error().push());
-    return;
-  }
-  auto lsp = system::slot_address<ui::layout>(ws.layout_id);
-  if (!lsp) {
-    ws.layout_id = system::uis.add(std::make_unique<ui::layout::slot>());
-    lsp = dynamic_cast<ui::layout::slot*>(system::uis.get(ws.layout_id));
-    if (!lsp) {
-      mainloop.last_error = unexpected_error(errors::operation_failed, "Failed to create root layout.").error();
-      return;
-    }
-    lsp->id = ws.layout_id;
-    lsp->window_id = ws.id;
-    lsp->margin = {};
-  }
-  // lsp->size = float2(ws.size);
-  ws.messy = true;
+  ws.core.size = int2(LOWORD(lp), HIWORD(lp));
+  if (auto res = ws.core.resize_rt(); !res) mainloop.last_error = std::move(res.error().push());
 }
 
 inline void wm_mousemove(window::slot& ws, WPARAM wp, LPARAM lp) {
   if (!ws.tracking) {
-    TRACKMOUSEEVENT tme{sizeof(TRACKMOUSEEVENT), TME_LEAVE, ws.hwnd, 0};
+    TRACKMOUSEEVENT tme{sizeof(TRACKMOUSEEVENT), TME_LEAVE, ws.core.hwnd, 0};
     ::TrackMouseEvent(&tme);
     ws.tracking = true;
   }
   const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(lp & 0xFFFFFFFF));
   const auto old_global_pt = system::cursor_pos;
   system::cursor_pos = local_pt;
-  ::ClientToScreen(ws.hwnd, reinterpret_cast<POINT*>(&system::cursor_pos));
+  ::ClientToScreen(ws.core.hwnd, reinterpret_cast<POINT*>(&system::cursor_pos));
   system::cursor_delta = system::cursor_pos - old_global_pt;
   const auto pt = float2(local_pt);
   if (const auto fcsp = system::slot_address<ui::control>(ws.focused_control)) {
     fcsp->move_event(event::move(local_pt, system::cursor_delta));
     const bool c = (wp & MK_CONTROL) == MK_CONTROL, s = (wp & MK_SHIFT) == MK_SHIFT, a = (wp & MK_ALT) == MK_ALT;
-    if ((wp & MK_LBUTTON) == MK_LBUTTON) fcsp->drag_event(event::drag(local_pt, key::lbutton, c, s, a));
-    else if ((wp & MK_RBUTTON) == MK_RBUTTON) fcsp->drag_event(event::drag(local_pt, key::rbutton, c, s, a));
-    else if ((wp & MK_MBUTTON) == MK_MBUTTON) fcsp->drag_event(event::drag(local_pt, key::mbutton, c, s, a));
+    if ((wp & MK_LBUTTON) == MK_LBUTTON) fcsp->drag_event(event::drag(local_pt, keys::lbutton, c, s, a));
+    else if ((wp & MK_RBUTTON) == MK_RBUTTON) fcsp->drag_event(event::drag(local_pt, keys::rbutton, c, s, a));
+    else if ((wp & MK_MBUTTON) == MK_MBUTTON) fcsp->drag_event(event::drag(local_pt, keys::mbutton, c, s, a));
   }
   ui::slotid new_hcid{};
-  if (const auto lsp = system::slot_address<ui::layout>(ws.layout_id)) new_hcid = lsp->hit_test(pt);
+  if (const auto csp = system::slot_address<ui::control>(ws.control_id)) new_hcid = csp->hittest(pt);
   if (ws.hovered_control) {
     if (ws.hovered_control != new_hcid) {
       if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control))
@@ -129,7 +117,8 @@ inline void wm_mousemove(window::slot& ws, WPARAM wp, LPARAM lp) {
 }
 
 inline void wm_mouseleave(window::slot& ws, WPARAM wp, LPARAM lp) {
-  const auto local_pt = ws.cursor_pos();
+  auto local_pt = system::cursor_pos;
+  ::ScreenToClient(ws.core.hwnd, reinterpret_cast<POINT*>(&local_pt));
   ws.tracking = false;
   if (ws.hovered_control) {
     if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control))
@@ -139,7 +128,8 @@ inline void wm_mouseleave(window::slot& ws, WPARAM wp, LPARAM lp) {
 }
 
 inline void wm_mousewheel(window::slot& ws, WPARAM wp, LPARAM lp, bool horizontal) {
-  const auto local_pt = ws.cursor_pos();
+  auto local_pt = system::cursor_pos;
+  ::ScreenToClient(ws.core.hwnd, reinterpret_cast<POINT*>(&local_pt));
   const auto delta = static_cast<short>(GET_WHEEL_DELTA_WPARAM(wp));
   const bool c = (GET_KEYSTATE_WPARAM(wp) & MK_CONTROL) == MK_CONTROL;
   const bool s = (GET_KEYSTATE_WPARAM(wp) & MK_SHIFT) == MK_SHIFT;
@@ -151,17 +141,17 @@ inline void wm_mousewheel(window::slot& ws, WPARAM wp, LPARAM lp, bool horizonta
 inline void wm_keydown(window::slot& ws, WPARAM wp, LPARAM lp) {
   if (wp == VK_TAB) {
     if (const auto fsp = system::slot_address<ui::control>(ws.focused_control)) fsp->focus_event(false);
-    const bool shift = is_key_down(key::shift);
+    const bool shift = keys::shift.pressed();
     ws.next_tab_stop(!shift);
-    ws.dirty = true;
+    ws.core.dirty = true;
   } else if (wp == VK_ESCAPE) {
     if (const auto fsp = system::slot_address<ui::control>(ws.focused_control)) fsp->focus_event(false);
     ws.focused_control = {};
-    ws.dirty = true;
+    ws.core.dirty = true;
   } else {
-    const auto c = is_key_down(key::ctrl);
-    const auto s = is_key_down(key::shift);
-    const auto a = is_key_down(key::alt);
+    const auto c = keys::ctrl.pressed();
+    const auto s = keys::shift.pressed();
+    const auto a = keys::alt.pressed();
     const auto first = (lp & (1u << 30)) == 0;
     const auto e = event::key(key(wp), c, s, a, true, first);
     bool handled = false;
@@ -172,9 +162,9 @@ inline void wm_keydown(window::slot& ws, WPARAM wp, LPARAM lp) {
 
 template<key K, bool DBL = false> void wm_button_down(window::slot& ws, WPARAM wp, LPARAM lp) {
   const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(uint_cast(lp)));
-  if (ws.capture_count++ == 0) ::SetCapture(ws.hwnd);
+  // if (ws.capture_count++ == 0) ::SetCapture(ws.hwnd);
   // ws.captured_key = K;
-  ws.dirty = true;
+  ws.core.dirty = true;
   const bool c = (wp & MK_CONTROL) == MK_CONTROL;
   const bool s = (wp & MK_SHIFT) == MK_SHIFT;
   const bool a = (wp & MK_ALT) == MK_ALT;
@@ -196,8 +186,8 @@ template<key K, bool DBL = false> void wm_button_down(window::slot& ws, WPARAM w
 
 template<key K, bool DBL = false> void wm_button_up(window::slot& ws, WPARAM wp, LPARAM lp) {
   const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(uint_cast(lp)));
-  ws.capture_count = yw::max(0, ws.capture_count - 1);
-  if (ws.capture_count == 0) ::ReleaseCapture();
+  // ws.capture_count = yw::max(0, ws.capture_count - 1);
+  // if (ws.capture_count == 0) ::ReleaseCapture();
   const bool c = (wp & MK_CONTROL) == MK_CONTROL;
   const bool s = (wp & MK_SHIFT) == MK_SHIFT;
   const bool a = (wp & MK_ALT) == MK_ALT;
@@ -206,7 +196,7 @@ template<key K, bool DBL = false> void wm_button_up(window::slot& ws, WPARAM wp,
     ccsp->button_event(event::button(local_pt, K, c, s, a, false, DBL));
   }
   ws.captured_control = {};
-  ws.dirty = true;
+  ws.core.dirty = true;
 }
 } // namespace internal
 
@@ -214,7 +204,7 @@ template<key K, bool DBL = false> void wm_button_up(window::slot& ws, WPARAM wp,
 
 inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   const auto wsid = std::bit_cast<ui::slotid>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-  auto wsp = system::slot_address<window::slot>(wsid);
+  auto wsp = system::slot_address<window>(wsid);
   if (!wsp) return ::DefWindowProcW(hwnd, msg, wp, lp);
 
   switch (msg) {
@@ -225,9 +215,9 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
 
   case WM_KEYDOWN: internal::wm_keydown(*wsp, wp, lp); return 0;
   case WM_KEYUP: {
-    const auto c = is_key_down(key::ctrl);
-    const auto s = is_key_down(key::shift);
-    const auto a = is_key_down(key::alt);
+    const auto c = keys::ctrl.pressed();
+    const auto s = keys::shift.pressed();
+    const auto a = keys::alt.pressed();
     const auto e = event::key(key(wp), c, s, a, false, false);
     bool handled = false;
     if (const auto p = system::slot_address<ui::control>(wsp->focused_control)) handled = p->key_event(e);
@@ -241,38 +231,37 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
 
     //////////////////////////////////// MARK: ボタンイベント
 
-  case WM_LBUTTONDOWN: internal::wm_button_down<key::lbutton>(*wsp, wp, lp); return 0;
-  case WM_LBUTTONUP: internal::wm_button_up<key::lbutton>(*wsp, wp, lp); return 0;
+  case WM_LBUTTONDOWN: internal::wm_button_down<keys::lbutton>(*wsp, wp, lp); return 0;
+  case WM_LBUTTONUP: internal::wm_button_up<keys::lbutton>(*wsp, wp, lp); return 0;
 
-  case WM_RBUTTONDOWN: internal::wm_button_down<key::rbutton>(*wsp, wp, lp); return 0;
-  case WM_RBUTTONUP: internal::wm_button_up<key::rbutton>(*wsp, wp, lp); return 0;
-
-  case WM_MBUTTONDOWN: internal::wm_button_down<key::mbutton>(*wsp, wp, lp); return 0;
-  case WM_MBUTTONUP: internal::wm_button_up<key::mbutton>(*wsp, wp, lp); return 0;
+  case WM_RBUTTONDOWN: internal::wm_button_down<keys::rbutton>(*wsp, wp, lp); return 0;
+  case WM_RBUTTONUP: internal::wm_button_up<keys::rbutton>(*wsp, wp, lp); return 0;
+  case WM_MBUTTONDOWN: internal::wm_button_down<keys::mbutton>(*wsp, wp, lp); return 0;
+  case WM_MBUTTONUP: internal::wm_button_up<keys::mbutton>(*wsp, wp, lp); return 0;
 
   case WM_XBUTTONDOWN:
-    if (HIWORD(wp) == XBUTTON1) internal::wm_button_down<key::xbutton1>(*wsp, wp, lp);
-    else internal::wm_button_down<key::xbutton2>(*wsp, wp, lp);
+    if (HIWORD(wp) == XBUTTON1) internal::wm_button_down<keys::xbutton1>(*wsp, wp, lp);
+    else internal::wm_button_down<keys::xbutton2>(*wsp, wp, lp);
     return 0;
   case WM_XBUTTONUP:
-    if (HIWORD(wp) == XBUTTON1) internal::wm_button_up<key::xbutton1>(*wsp, wp, lp);
-    else internal::wm_button_up<key::xbutton2>(*wsp, wp, lp);
+    if (HIWORD(wp) == XBUTTON1) internal::wm_button_up<keys::xbutton1>(*wsp, wp, lp);
+    else internal::wm_button_up<keys::xbutton2>(*wsp, wp, lp);
     return 0;
 
-  case WM_LBUTTONDBLCLK: internal::wm_button_down<key::lbutton, true>(*wsp, wp, lp); return 0;
-  case WM_RBUTTONDBLCLK: internal::wm_button_down<key::rbutton, true>(*wsp, wp, lp); return 0;
-
+  case WM_LBUTTONDBLCLK: internal::wm_button_down<keys::lbutton, true>(*wsp, wp, lp); return 0;
+  case WM_RBUTTONDBLCLK: internal::wm_button_down<keys::rbutton, true>(*wsp, wp, lp); return 0;
   case WM_KILLFOCUS:
     wsp->captured_control = {};
     // wsp->captured_key = {};
-    wsp->capture_count = 0;
+    // wsp->capture_count = 0;
     ::ReleaseCapture();
     return 0;
 
   case WM_SIZE: internal::wm_size(*wsp, wp, lp); return 0;
 
   case WM_MOVE:
-    wsp->pos = int2(static_cast<int16_t>(LOWORD(lp)), static_cast<int16_t>(HIWORD(lp))) - wsp->margin.xy();
+    wsp->core.pos =
+      int2(static_cast<int16_t>(LOWORD(lp)), static_cast<int16_t>(HIWORD(lp))) - wsp->core.frame_thickness.xy();
     return 0;
 
   case WM_ENTERSIZEMOVE: wsp->resizing = true; return 0;
@@ -283,79 +272,79 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
       const auto cx = static_cast<uint16_t>(yw::max(0L, static_cast<long>(cr.right - cr.left)));
       const auto cy = static_cast<uint16_t>(yw::max(0L, static_cast<long>(cr.bottom - cr.top)));
       internal::wm_size(*wsp, 0, MAKELPARAM(cx, cy));
-    } else internal::wm_size(*wsp, 0, MAKELPARAM(wsp->size.x, wsp->size.y));
+    } else internal::wm_size(*wsp, 0, MAKELPARAM(wsp->core.size.x, wsp->core.size.y));
     return 0;
 
     ////////////////////////////////////// MARK: IME
 
-  case WM_IME_SETCONTEXT: lp &= ~ISC_SHOWUICOMPOSITIONWINDOW; return ::DefWindowProcW(hwnd, msg, wp, lp);
+    // case WM_IME_SETCONTEXT: lp &= ~ISC_SHOWUICOMPOSITIONWINDOW; return ::DefWindowProcW(hwnd, msg, wp, lp);
 
-  case WM_IME_STARTCOMPOSITION: {
-    system::ime.hide();
-    system::ime.reset_state();
-    // 必要なら edit 側の通常キャレットを消す
-    return 0;
-  }
+    // case WM_IME_STARTCOMPOSITION: {
+    //   system::ime.hide();
+    //   system::ime.reset_state();
+    //   // 必要なら edit 側の通常キャレットを消す
+    //   return 0;
+    // }
 
-  case WM_IME_COMPOSITION:
-    if (const auto fcsp = system::slot_address<ui::control>(wsp->focused_control); !fcsp) system::ime.hide();
-    else if (HIMC himc = ::ImmGetContext(hwnd); !himc) system::ime.hide();
-    else {
-      if (lp & GCS_COMPSTR) {
-        if (auto bytes = ::ImmGetCompositionStringW(himc, GCS_COMPSTR, nullptr, 0); bytes > 0) {
-          std::wstring s(bytes / sizeof(wchar_t), L'\0');
-          ::ImmGetCompositionStringW(himc, GCS_COMPSTR, s.data(), bytes);
-          system::ime.update_text(s);
-        } else system::ime.update_text(L"");
-      }
-      if (lp & GCS_COMPATTR) {
-        std::vector<uint8_t> attrs;
-        if (auto bytes = ::ImmGetCompositionStringW(himc, GCS_COMPATTR, nullptr, 0); bytes > 0) {
-          attrs.resize(static_cast<size_t>(bytes));
-          ::ImmGetCompositionStringW(himc, GCS_COMPATTR, attrs.data(), bytes);
-        }
-        system::ime.update_attrs(attrs);
-      }
-      if (lp & GCS_CURSORPOS) {
-        LONG pos = ::ImmGetCompositionStringW(himc, GCS_CURSORPOS, nullptr, 0);
-        system::ime.update_cursor_pos(pos);
-      }
-      if (lp & GCS_RESULTSTR) {
-        if (auto bytes = ::ImmGetCompositionStringW(himc, GCS_RESULTSTR, nullptr, 0); bytes > 0) {
-          std::wstring s(bytes / sizeof(wchar_t), L'\0');
-          ::ImmGetCompositionStringW(himc, GCS_RESULTSTR, s.data(), bytes);
-          fcsp->ime_insert_text(s);
-        }
-      }
-      const auto local_caret_pos = fcsp->ime_position();
-      COMPOSITIONFORM comp_form{};
-      comp_form.dwStyle = CFS_POINT;
-      comp_form.ptCurrentPos.x = LONG(local_caret_pos.x);
-      comp_form.ptCurrentPos.y = LONG(local_caret_pos.y);
-      ::ImmSetCompositionWindow(himc, &comp_form);
+    // case WM_IME_COMPOSITION:
+    //   if (const auto fcsp = system::slot_address<ui::control>(wsp->focused_control); !fcsp) system::ime.hide();
+    //   else if (HIMC himc = ::ImmGetContext(hwnd); !himc) system::ime.hide();
+    //   else {
+    //     if (lp & GCS_COMPSTR) {
+    //       if (auto bytes = ::ImmGetCompositionStringW(himc, GCS_COMPSTR, nullptr, 0); bytes > 0) {
+    //         std::wstring s(bytes / sizeof(wchar_t), L'\0');
+    //         ::ImmGetCompositionStringW(himc, GCS_COMPSTR, s.data(), bytes);
+    //         system::ime.update_text(s);
+    //       } else system::ime.update_text(L"");
+    //     }
+    //     if (lp & GCS_COMPATTR) {
+    //       std::vector<uint8_t> attrs;
+    //       if (auto bytes = ::ImmGetCompositionStringW(himc, GCS_COMPATTR, nullptr, 0); bytes > 0) {
+    //         attrs.resize(static_cast<size_t>(bytes));
+    //         ::ImmGetCompositionStringW(himc, GCS_COMPATTR, attrs.data(), bytes);
+    //       }
+    //       system::ime.update_attrs(attrs);
+    //     }
+    //     if (lp & GCS_CURSORPOS) {
+    //       LONG pos = ::ImmGetCompositionStringW(himc, GCS_CURSORPOS, nullptr, 0);
+    //       system::ime.update_cursor_pos(pos);
+    //     }
+    //     if (lp & GCS_RESULTSTR) {
+    //       if (auto bytes = ::ImmGetCompositionStringW(himc, GCS_RESULTSTR, nullptr, 0); bytes > 0) {
+    //         std::wstring s(bytes / sizeof(wchar_t), L'\0');
+    //         ::ImmGetCompositionStringW(himc, GCS_RESULTSTR, s.data(), bytes);
+    //         fcsp->ime_insert_text(s);
+    //       }
+    //     }
+    //     const auto local_caret_pos = fcsp->ime_position();
+    //     COMPOSITIONFORM comp_form{};
+    //     comp_form.dwStyle = CFS_POINT;
+    //     comp_form.ptCurrentPos.x = LONG(local_caret_pos.x);
+    //     comp_form.ptCurrentPos.y = LONG(local_caret_pos.y);
+    //     ::ImmSetCompositionWindow(himc, &comp_form);
 
-      CANDIDATEFORM cand_form{};
-      cand_form.dwIndex = 0;
-      cand_form.dwStyle = CFS_CANDIDATEPOS;
-      cand_form.ptCurrentPos.x = LONG(local_caret_pos.x);
-      cand_form.ptCurrentPos.y = LONG(local_caret_pos.y);
-      ::ImmSetCandidateWindow(himc, &cand_form);
+    //     CANDIDATEFORM cand_form{};
+    //     cand_form.dwIndex = 0;
+    //     cand_form.dwStyle = CFS_CANDIDATEPOS;
+    //     cand_form.ptCurrentPos.x = LONG(local_caret_pos.x);
+    //     cand_form.ptCurrentPos.y = LONG(local_caret_pos.y);
+    //     ::ImmSetCandidateWindow(himc, &cand_form);
 
-      ::ImmReleaseContext(hwnd, himc);
+    //     ::ImmReleaseContext(hwnd, himc);
 
-      system::ime.update_window_size();
-      system::ime.draw();
-      const auto global_caret_pos = wsp->pos + wsp->margin.xy() + int2(local_caret_pos);
-      if (system::ime.window_size().x > 1) system::ime.show(global_caret_pos);
-      else system::ime.hide();
-    }
-    return 0;
+    //     system::ime.update_window_size();
+    //     system::ime.draw();
+    //     const auto global_caret_pos = wsp->pos + wsp->margin.xy() + int2(local_caret_pos);
+    //     if (system::ime.window_size().x > 1) system::ime.show(global_caret_pos);
+    //     else system::ime.hide();
+    //   }
+    //   return 0;
 
-  case WM_IME_ENDCOMPOSITION:
-    system::ime.hide();
-    system::ime.reset_state();
-    // 必要なら edit 側の通常キャレットを戻す
-    return 0;
+    // case WM_IME_ENDCOMPOSITION:
+    //   system::ime.hide();
+    //   system::ime.reset_state();
+    //   // 必要なら edit 側の通常キャレットを戻す
+    //   return 0;
 
     //////////////////////////////////// MARK: 終了処理
 
@@ -365,12 +354,12 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     return 0;
 
   case WM_NCDESTROY:
-    system::uis.erase(wsp->layout_id);
+    system::uis.erase(wsp->control_id);
     const auto id = wsp->id;
     system::uis.erase(id);
     std::erase(system::primal_windows, id);
     ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-    if (system::primal_windows.empty()) { ::PostQuitMessage(0); }
+    if (system::primal_windows.empty()) ::PostQuitMessage(0);
     break;
   }
   return ::DefWindowProcW(hwnd, msg, wp, lp);

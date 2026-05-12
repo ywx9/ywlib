@@ -6,7 +6,7 @@ namespace yw::ui::part {
 //////////////////////////////////////// MARK: text
 
 struct text {
-  slotid window_id{};
+  slotid control_id{};
   std::wstring string = L"";
   font_config font = yw::font_config::default_;
   text_alignment alignment = yw::text_alignment::left;
@@ -151,7 +151,9 @@ struct text {
 
   public:
     ~handle() noexcept {
-      if (_p && _p->view_changed) make_dirty(_p->window_id), _p->view_changed = false;
+      if (_p && _p->view_changed) {
+        if (const auto csp = system::slot_address<control>(_p->control_id)) csp->make_dirty();
+      }
     }
 
     handle(handle&& Other) noexcept : _p(std::exchange(Other._p, nullptr)) {}

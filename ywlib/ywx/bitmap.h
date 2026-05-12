@@ -23,6 +23,7 @@ public:
   explicit operator ::ID2D1Bitmap1*&() & noexcept { return _bitmap.get(); }
   explicit operator ::ID2D1Bitmap1*() const& noexcept { return _bitmap.get(); }
 
+  /// creates empty bitmap with specified size
   static std::expected<bitmap, error_trace> create(uint2 size) {
     if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
     comptr<::ID2D1Bitmap1> bmp;
@@ -31,6 +32,7 @@ public:
     return bitmap(std::move(bmp), size);
   }
 
+  /// creates bitmap from image file
   static std::expected<bitmap, error_trace> create(const std::filesystem::path& p) {
     if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
     if (auto res = wic.initialize(); !res) return unexpected_error(res.error());
@@ -57,6 +59,7 @@ public:
     return bitmap(std::move(bmp), size);
   }
 
+  /// creates bitmap for rendertarget from swapchain
   static std::expected<bitmap, error_trace> create(IDXGISwapChain1* swapchain) {
     if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
     DXGI_SWAP_CHAIN_DESC1 scdesc{};
@@ -74,6 +77,7 @@ public:
     return bitmap(std::move(bmp), size);
   }
 
+  /// copies bitmap from another
   static std::expected<bitmap, error_trace> create(const bitmap& source) {
     if (!source) return unexpected_error(errors::invalid_argument, "source bitmap not initialized");
     if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
@@ -81,7 +85,6 @@ public:
     comptr<::ID2D1Bitmap1> bmp;
     auto hr = d2d.context()->CreateBitmap(D2D1_SIZE_U{size.x, size.y}, nullptr, 0, &properties, &bmp.get());
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBitmap failed", int32_t(hr));
-    // Copy pixel data from source to new bitmap
     D2D1_RECT_U rect{0, 0, size.x, size.y};
     D2D1_POINT_2U pt{0, 0};
     hr = bmp->CopyFromBitmap(&pt, source._bitmap.get(), &rect);
