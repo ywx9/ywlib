@@ -65,7 +65,7 @@ protected:
   template<derived_from<control> Ctrl>
   static std::expected<slotid, error_trace> create_control(derived_from<unknown> auto& Layout) {
     const auto lid = Layout.id();
-    const auto lsp = system::slot_address<unknown::slot>(lid);
+    const auto lsp = system::slot_address<unknown>(lid);
     if (!lsp) return unexpected_error(errors::operation_failed, "Failed to access layout slot");
     if (const auto msg = lsp->attachable(); msg) return unexpected_error(errors::operation_failed, msg);
     const auto cid = system::uis.add(std::make_unique<typename Ctrl::slot>());
