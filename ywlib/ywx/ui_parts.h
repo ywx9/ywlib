@@ -79,7 +79,7 @@ struct border : public part_base {
   void draw(ID2D1Geometry* Geometry) const {
     brush.color(color);
     brush.dashed(dashed);
-    draw_geometry(Geometry);
+    draw_geometry(Geometry, width);
     brush.dashed(false);
   }
 };

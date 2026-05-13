@@ -200,7 +200,7 @@ public:
     std::wstring tooltip{};
     function<void, event::hover> on_hover;
 
-    //-- override仮想関数定義 --//
+    //-- override functions --//
 
     virtual void make_dirty() override {
       if (const auto wsp = system::slot_address<unknown>(window_id)) wsp->make_dirty();
@@ -218,7 +218,7 @@ public:
       if (const auto wsp = system::slot_address<unknown>(window_id)) wsp->make_messy();
     }
 
-    //-- 仮想関数定義 --//
+    //-- virtual functions --//
 
     virtual bool focusable() const { return false; }
     virtual void ensure_minimum_size() { core.size = core.minimum_size(); }
@@ -257,6 +257,32 @@ public:
     const auto csp = system::slot_address<control>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
     return csp->core.handle();
+  }
+
+  const auto& tooltip() const {
+    const auto csp = system::slot_address<control>(_id);
+    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    return csp->tooltip;
+  }
+
+  auto& tooltip(std::wstring Text) {
+    const auto csp = system::slot_address<control>(_id);
+    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    csp->tooltip = std::move(Text);
+    return *this;
+  }
+
+  const auto& on_hover() const {
+    const auto csp = system::slot_address<control>(_id);
+    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    return csp->on_hover;
+  }
+
+  auto& on_hover(function<void, event::hover> Handler) {
+    const auto csp = system::slot_address<control>(_id);
+    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    csp->on_hover = std::move(Handler);
+    return *this;
   }
 };
 } // namespace yw::ui

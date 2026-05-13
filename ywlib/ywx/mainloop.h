@@ -80,6 +80,19 @@ inline void wm_size(window::slot& ws, WPARAM, LPARAM lp) {
   if (auto res = ws.resize_rendertarget(); !res) mainloop.last_error = std::move(res.error().push());
 }
 
+inline void wm_getminmaxinfo(window::slot& ws, LPARAM lp) {
+  auto* mmi = reinterpret_cast<MINMAXINFO*>(lp);
+  if (!mmi) return;
+  if (const auto csp = system::slot_address<ui::control>(ws.control_id)) {
+    csp->ensure_minimum_size();
+    const auto minimum_area = vapply_r<int2>(yw::ceil, csp->core.area());
+    const auto frame_area = ws.frame_thickness.xy() + ws.frame_thickness.zw();
+    const auto minimum_track = minimum_area + frame_area;
+    mmi->ptMinTrackSize.x = LONG(yw::max(int2(1, 1).x, minimum_track.x));
+    mmi->ptMinTrackSize.y = LONG(yw::max(int2(1, 1).y, minimum_track.y));
+  }
+}
+
 inline void wm_mousemove(window::slot& ws, WPARAM wp, LPARAM lp) {
   if (!ws.tracking) {
     TRACKMOUSEEVENT tme{sizeof(TRACKMOUSEEVENT), TME_LEAVE, ws.hwnd, 0};
@@ -263,6 +276,7 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     ::ReleaseCapture();
     return 0;
 
+  case WM_GETMINMAXINFO: internal::wm_getminmaxinfo(*wsp, lp); return 0;
   case WM_SIZE: internal::wm_size(*wsp, wp, lp); return 0;
 
   case WM_MOVE:
@@ -273,12 +287,14 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
   case WM_ENTERSIZEMOVE: wsp->resizing = true; return 0;
 
   case WM_EXITSIZEMOVE:
+    print("previous size: {}", wsp->size);
     wsp->resizing = false;
     if (RECT cr{}; ::GetClientRect(hwnd, &cr)) {
       const auto cx = static_cast<uint16_t>(yw::max(0L, static_cast<long>(cr.right - cr.left)));
       const auto cy = static_cast<uint16_t>(yw::max(0L, static_cast<long>(cr.bottom - cr.top)));
       internal::wm_size(*wsp, 0, MAKELPARAM(cx, cy));
     } else internal::wm_size(*wsp, 0, MAKELPARAM(wsp->size.x, wsp->size.y));
+    print("new size: {}", wsp->size);
     return 0;
 
     ////////////////////////////////////// MARK: IME

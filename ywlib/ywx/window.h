@@ -1,4 +1,5 @@
 #pragma once
+#include "ywx/tooltip.h"
 #include "ywx/ui_parts.h"
 
 namespace yw {
@@ -66,6 +67,8 @@ public:
       }
       if (auto res = bitmap::create(swapchain.get())) rendertarget = std::move(*res);
       else return unexpected_error(res.error());
+      manually_drawn = false;
+      messy = true;
       return {};
     }
 
@@ -131,10 +134,13 @@ public:
       if (!messy) return {};
       if (const auto csp = system::slot_address<ui::control>(control_id)) {
         csp->ensure_minimum_size();
-        csp->update_layout({}, csp->core.size);
-        if (size.x < csp->core.size.x || size.y < csp->core.size.y) {
-          size = vapply_r<int2>(yw::max, size, csp->core.size);
-          if (!::SetWindowPos(hwnd, nullptr, 0, 0, size.x, size.y, SWP_NOZORDER | SWP_NOMOVE))
+        const auto minimum_area = csp->core.area();
+        const auto available_area = vapply_r<float2>(yw::max, float2(size), minimum_area);
+        csp->update_layout({}, available_area);
+        if (size.x < minimum_area.x || size.y < minimum_area.y) {
+          size = vapply_r<int2>(yw::max, size, vapply_r<int2>(yw::ceil, minimum_area));
+          const auto area = size + frame_thickness.xy() + frame_thickness.zw();
+          if (!::SetWindowPos(hwnd, nullptr, 0, 0, area.x, area.y, SWP_NOZORDER | SWP_NOMOVE))
             return unexpected_win32_error("SetWindowPos failed");
         }
       }
@@ -179,16 +185,22 @@ public:
       return {};
     }
 
-    //-- overrides --//
+    //-- override functions --//
 
     virtual const char* attachable() const override {
       if (control_id) return "No more controls can be attached to this window";
       else return nullptr;
     }
 
-    virtual void attach(ui::slotid Child) override { control_id = Child; }
+    virtual void attach(ui::slotid Child) override {
+      control_id = Child;
+      make_messy();
+    }
     virtual void detach(ui::slotid Child) override {
-      if (control_id == Child) system::uis.erase(std::exchange(control_id, {}));
+      if (control_id == Child) {
+        system::uis.erase(std::exchange(control_id, {}));
+        make_messy();
+      }
     }
 
     void make_dirty() override { dirty = true; }
@@ -320,4 +332,13 @@ public:
     return {};
   }
 };
+
+inline void ui::control::slot::hover_event(event::hover Event) {
+  if (enabled && on_hover) on_hover(Event);
+  if (tooltip.empty()) return;
+  if (Event.enter()) {
+    if (const auto w = system::slot_address<window>(window_id))
+      system::tooltip.show(core.pos + w->pos + w->frame_thickness.xy(), core.size, tooltip);
+  } else if (Event.leave()) system::tooltip.hide();
+}
 } // namespace yw

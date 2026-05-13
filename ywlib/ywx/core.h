@@ -366,15 +366,27 @@ public:
 
   void release() noexcept { c.release(); }
 
-  yw::color color() { return std::bit_cast<yw::color>(c.solid_brush->GetColor()); }
-  void color(const yw::color& Color) { c.solid_brush->SetColor(reinterpret_cast<const D2D1_COLOR_F*>(&Color)); }
+  yw::color color() {
+    if (auto res = initialize(); !res) fatal_error(res.error());
+    return std::bit_cast<yw::color>(c.solid_brush->GetColor());
+  }
+  void color(const yw::color& Color) {
+    if (auto res = initialize(); !res) fatal_error(res.error());
+    c.solid_brush->SetColor(reinterpret_cast<const D2D1_COLOR_F*>(&Color));
+  }
   bool dashed() { return c.dashed; }
 
   /// \note Note that the effect of this style change will continue until explicitly switched.
   void dashed(bool Dashed = true) { c.dashed = Dashed; }
 
-  ID2D1SolidColorBrush* d2d_brush() { return c.solid_brush; }
-  ID2D1StrokeStyle* d2d_stroke() { return c.dashed ? c.dashed_stroke_style : c.stroke_style; }
+  ID2D1SolidColorBrush* d2d_brush() {
+    if (auto res = initialize(); !res) fatal_error(res.error());
+    return c.solid_brush;
+  }
+  ID2D1StrokeStyle* d2d_stroke() {
+    if (auto res = initialize(); !res) fatal_error(res.error());
+    return c.dashed ? c.dashed_stroke_style : c.stroke_style;
+  }
 } brush;
 
 //////////////////////////////////////// MARK: dwrite

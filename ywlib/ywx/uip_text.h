@@ -17,6 +17,8 @@ struct text : public part_base {
   bool text_layout_changed = false;
   bool text_alignment_changed = false;
 
+  float2 area() const noexcept { return layout_size + padding.xy() + padding.zw(); }
+
   void apply_font_defaults() {
     font.name = font.name.value_or(L"");
     font.size = font.size.value_or(16.0f);
@@ -95,18 +97,12 @@ struct text : public part_base {
     return {};
   }
 
-  std::expected<void, error_trace> draw() {
-    if (!text_layout) return unexpected_error(errors::not_initialized, "Not initialized");
-    if (auto res = draw_text({}, text_layout.get()); !res) return unexpected_error(res.error());
-    return {};
-  }
-
   std::expected<void, error_trace> draw(float2 Pos, float2 Size) {
     if (!text_layout) return unexpected_error(errors::not_initialized, "Not initialized");
     static const float c[] = {0.5f, 0.0f, 1.0f};
     const auto cc = float2(c[unsigned(block_alignment) % 3], c[(unsigned(block_alignment) / 3) % 3]);
     float2 area = layout_size + padding.xy() + padding.zw();
-    const auto origin = Pos + (Size - area) * cc;
+    const auto origin = Pos + (Size - area) * cc + padding.xy();
     brush.color(color);
     if (auto res = draw_text(origin, text_layout.get()); !res) return unexpected_error(res.error());
     return {};
@@ -156,7 +152,7 @@ struct text : public part_base {
       if (!_p) return;
       if (_p->text_layout_changed) {
         if (auto res = _p->rebuild_text_layout(); !res) fatal_error(res.error());
-        _p->view_changed = true;
+        _p->layout_changed = true;
       } else if (_p->text_alignment_changed) {
         if (auto res = _p->apply_text_alignment(); !res) fatal_error(res.error());
         _p->view_changed = true;
@@ -199,7 +195,7 @@ struct text : public part_base {
     const auto& padding() const { return _p->padding; }
     auto& padding(float4 Padding) {
       _p->padding = Padding;
-      _p->view_changed = true;
+      _p->layout_changed = true;
       return *this;
     }
 
@@ -217,7 +213,7 @@ struct text : public part_base {
       return *this;
     }
 
-    float2 layout_size() const { return _p->layout_size + _p->padding.xy() + _p->padding.zw(); }
+    float2 layout_size() const { return _p->layout_size; }
     IDWriteTextLayout* text_layout() const { return _p->text_layout.get(); }
   };
 

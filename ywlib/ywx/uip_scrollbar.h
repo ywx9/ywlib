@@ -61,6 +61,7 @@ template<bool Vertical> struct scrollbar : public part_base {
   class handle : public part_base::handle<scrollbar<Vertical>> {
     template<bool V> friend struct scrollbar;
     using part_base::handle<scrollbar<Vertical>>::handle;
+    using part_base::handle<scrollbar<Vertical>>::_p;
 
   public:
     const auto& track_color() const { return _p->track_color; }
