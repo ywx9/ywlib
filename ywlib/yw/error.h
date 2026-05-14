@@ -158,6 +158,10 @@ public:
 
 //////////////////////////////////////// MARK: unexpected_error
 
+inline std::unexpected<error_trace> unexpected_error(decltype(error::type) e, const source& src = {}) {
+  return std::unexpected<error_trace>(error_trace(yw::error(e, e.name, 0, npos), src));
+}
+
 /// creates `std::unexpected<error_trace>` with given information.
 inline std::unexpected<error_trace> unexpected_error(
   decltype(error::type) e, null_terminated<char> msg, int32_t sys_code = 0, uint64_t pos = uint64_t(-1),

@@ -198,7 +198,7 @@ public:
     bool dying = false;
 
     std::wstring tooltip{};
-    function<void, event::hover> on_hover;
+    function<void, events::hover> on_hover;
 
     //-- override functions --//
 
@@ -237,14 +237,14 @@ public:
     virtual void ime_insert_text(std::wstring_view) {}
 
     virtual void char_event(wchar_t c) {}
-    virtual void click_event(event::button e) {}
-    virtual void button_event(event::button e) {}
-    virtual void drag_event(event::drag e) {}
+    virtual void click_event(events::button e) {}
+    virtual void button_event(events::button e) {}
+    virtual void drag_event(events::drag e) {}
     virtual bool focus_event(bool) { return false; }
-    virtual void hover_event(event::hover Event);
-    virtual bool key_event(event::key e) { return false; }
-    virtual void move_event(event::move e) {}
-    virtual void wheel_event(event::wheel e) {}
+    virtual void hover_event(events::hover Event);
+    virtual bool key_event(events::key e) { return false; }
+    virtual void move_event(events::move e) {}
+    virtual void wheel_event(events::wheel e) {}
   };
 
   auto core() {
@@ -278,7 +278,7 @@ public:
     return csp->on_hover;
   }
 
-  auto& on_hover(function<void, event::hover> Handler) {
+  auto& on_hover(function<void, events::hover> Handler) {
     const auto csp = system::slot_address<control>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
     csp->on_hover = std::move(Handler);

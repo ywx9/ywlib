@@ -1,7 +1,7 @@
 #pragma once
 #include "ywx/key.h"
 
-namespace yw::event {
+namespace yw::events {
 
 //////////////////////////////////////// MARK: event::button
 
@@ -73,21 +73,21 @@ static_assert(sizeof(wheel) <= 8);
 
 namespace std {
 
-template<typename C> struct formatter<decltype(yw::event::hover::type), C> {
+template<typename C> struct formatter<decltype(yw::events::hover::type), C> {
   formatter<basic_string_view<C>, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(decltype(yw::event::hover::type) value, auto& ctx) const {
-    if (value == decltype(yw::event::hover::type)::enter) return fmt.format("enter", ctx);
-    if (value == decltype(yw::event::hover::type)::leave) return fmt.format("leave", ctx);
-    if (value == decltype(yw::event::hover::type)::move) return fmt.format("move", ctx);
+  auto format(decltype(yw::events::hover::type) value, auto& ctx) const {
+    if (value == decltype(yw::events::hover::type)::enter) return fmt.format("enter", ctx);
+    if (value == decltype(yw::events::hover::type)::leave) return fmt.format("leave", ctx);
+    if (value == decltype(yw::events::hover::type)::move) return fmt.format("move", ctx);
     return fmt.format("unknown", ctx);
   }
 };
 
-template<typename C> struct formatter<yw::event::hover, C> {
+template<typename C> struct formatter<yw::events::hover, C> {
   formatter<basic_string<C>, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(yw::event::hover value, auto& ctx) const {
+  auto format(yw::events::hover value, auto& ctx) const {
     const auto s = std::format("hover(pos: {}, type: {})", value.pos, value.type);
     return fmt.format(s, ctx);
   }

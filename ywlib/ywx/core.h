@@ -55,7 +55,7 @@ inline uint2 desktop_client_size() {
 inline class {
   struct contents {
     HINSTANCE hinstance{};
-    std::wstring name = L"ywlib_window_class"s;
+    const wchar_t* name = L"ywlib_window_class";
     bool initialized = false;
   } c;
 
@@ -70,14 +70,14 @@ public:
     wc.lpfnWndProc = proc;
     wc.hInstance = c.hinstance;
     wc.hCursor = ::LoadCursorW(nullptr, IDC_ARROW);
-    wc.lpszClassName = c.name.data();
+    wc.lpszClassName = c.name;
     if (!::RegisterClassW(&wc)) return unexpected_win32_error("RegisterClassW failed");
     c.initialized = true;
     return {};
   }
 
   HINSTANCE hinstance() const noexcept { return c.hinstance; }
-  const std::wstring& name() const noexcept { return c.name; }
+  const wchar_t* name() const noexcept { return c.name; }
 } wclass;
 
 //////////////////////////////////////// MARK: comptr
@@ -90,7 +90,7 @@ template<typename Com> class comptr {
 public:
   explicit operator bool() const { return p != nullptr; }
   Com* operator->() const { return p; }
-  bool operator==(Com* other) { return p == other; }
+  bool operator==(Com* other) const { return p == other; }
   ~comptr() {
     if (p) p->Release();
     p = nullptr;

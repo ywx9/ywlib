@@ -106,26 +106,26 @@ inline void wm_mousemove(window::slot& ws, WPARAM wp, LPARAM lp) {
   system::cursor_delta = system::cursor_pos - old_global_pt;
   const auto pt = float2(local_pt);
   if (const auto fcsp = system::slot_address<ui::control>(ws.focused_control)) {
-    fcsp->move_event(event::move(local_pt, system::cursor_delta));
+    fcsp->move_event(events::move(local_pt, system::cursor_delta));
     const bool c = (wp & MK_CONTROL) == MK_CONTROL, s = (wp & MK_SHIFT) == MK_SHIFT, a = (wp & MK_ALT) == MK_ALT;
-    if ((wp & MK_LBUTTON) == MK_LBUTTON) fcsp->drag_event(event::drag(local_pt, keys::lbutton, c, s, a));
-    else if ((wp & MK_RBUTTON) == MK_RBUTTON) fcsp->drag_event(event::drag(local_pt, keys::rbutton, c, s, a));
-    else if ((wp & MK_MBUTTON) == MK_MBUTTON) fcsp->drag_event(event::drag(local_pt, keys::mbutton, c, s, a));
+    if ((wp & MK_LBUTTON) == MK_LBUTTON) fcsp->drag_event(events::drag(local_pt, keys::lbutton, c, s, a));
+    else if ((wp & MK_RBUTTON) == MK_RBUTTON) fcsp->drag_event(events::drag(local_pt, keys::rbutton, c, s, a));
+    else if ((wp & MK_MBUTTON) == MK_MBUTTON) fcsp->drag_event(events::drag(local_pt, keys::mbutton, c, s, a));
   }
   ui::slotid new_hcid{};
   if (const auto csp = system::slot_address<ui::control>(ws.control_id)) new_hcid = csp->hittest(pt);
   if (ws.hovered_control) {
     if (ws.hovered_control != new_hcid) {
       if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control))
-        hcsp->hover_event(event::hover(local_pt, event::hover::type::leave));
+        hcsp->hover_event(events::hover(local_pt, events::hover::type::leave));
       ws.hovered_control = new_hcid;
       if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control))
-        hcsp->hover_event(event::hover(local_pt, event::hover::type::enter));
+        hcsp->hover_event(events::hover(local_pt, events::hover::type::enter));
     } else if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control))
-      hcsp->hover_event(event::hover(local_pt, event::hover::type::move));
+      hcsp->hover_event(events::hover(local_pt, events::hover::type::move));
   } else if (const auto hcsp = system::slot_address<ui::control>(new_hcid)) {
     ws.hovered_control = new_hcid;
-    hcsp->hover_event(event::hover(local_pt, event::hover::type::enter));
+    hcsp->hover_event(events::hover(local_pt, events::hover::type::enter));
   }
 }
 
@@ -135,7 +135,7 @@ inline void wm_mouseleave(window::slot& ws, WPARAM wp, LPARAM lp) {
   ws.tracking = false;
   if (ws.hovered_control) {
     if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control))
-      hcsp->hover_event(event::hover(local_pt, event::hover::type::leave));
+      hcsp->hover_event(events::hover(local_pt, events::hover::type::leave));
     ws.hovered_control = {};
   }
 }
@@ -148,7 +148,7 @@ inline void wm_mousewheel(window::slot& ws, WPARAM wp, LPARAM lp, bool horizonta
   const bool s = (GET_KEYSTATE_WPARAM(wp) & MK_SHIFT) == MK_SHIFT;
   const bool a = (::GetKeyState(VK_MENU) & 0x8000) != 0;
   if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control))
-    hcsp->wheel_event(event::wheel(local_pt, delta, horizontal, c, s, a));
+    hcsp->wheel_event(events::wheel(local_pt, delta, horizontal, c, s, a));
 }
 
 inline void wm_keydown(window::slot& ws, WPARAM wp, LPARAM lp) {
@@ -172,7 +172,7 @@ inline void wm_keydown(window::slot& ws, WPARAM wp, LPARAM lp) {
     const auto s = keys::shift.pressed();
     const auto a = keys::alt.pressed();
     const auto first = (lp & (1u << 30)) == 0;
-    const auto e = event::key(key(wp), c, s, a, true, first);
+    const auto e = events::key(key(wp), c, s, a, true, first);
     bool handled = false;
     if (const auto p = system::slot_address<ui::control>(ws.focused_control)) handled = p->key_event(e);
     if (!handled && ws.on_keydown) ws.on_keydown(e);
@@ -190,7 +190,7 @@ template<key K, bool DBL = false> void wm_button_down(window::slot& ws, WPARAM w
   if (const auto fcsp = system::slot_address<ui::control>(ws.focused_control)) {
     if (ws.focused_control == ws.hovered_control) {
       ws.captured_control = fcsp->id;
-      fcsp->button_event(event::button(local_pt, K, c, s, a, true, DBL));
+      fcsp->button_event(events::button(local_pt, K, c, s, a, true, DBL));
       return;
     }
     ws.focused_control = {};
@@ -198,7 +198,7 @@ template<key K, bool DBL = false> void wm_button_down(window::slot& ws, WPARAM w
   }
   if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control)) {
     ws.captured_control = hcsp->id;
-    hcsp->button_event(event::button(local_pt, K, c, s, a, true, DBL));
+    hcsp->button_event(events::button(local_pt, K, c, s, a, true, DBL));
     ws.focused_control = (hcsp->focus_event(true) ? hcsp->id : ui::slotid());
   } else ws.captured_control = {}, ws.focused_control = {};
 }
@@ -211,8 +211,8 @@ template<key K, bool DBL = false> void wm_button_up(window::slot& ws, WPARAM wp,
   const bool s = (wp & MK_SHIFT) == MK_SHIFT;
   const bool a = (wp & MK_ALT) == MK_ALT;
   if (const auto ccsp = system::slot_address<ui::control>(ws.captured_control)) {
-    if (ws.captured_control == ws.hovered_control) ccsp->click_event(event::button(local_pt, K, c, s, a, false, DBL));
-    ccsp->button_event(event::button(local_pt, K, c, s, a, false, DBL));
+    if (ws.captured_control == ws.hovered_control) ccsp->click_event(events::button(local_pt, K, c, s, a, false, DBL));
+    ccsp->button_event(events::button(local_pt, K, c, s, a, false, DBL));
   }
   ws.captured_control = {};
   ws.dirty = true;
@@ -237,7 +237,7 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     const auto c = keys::ctrl.pressed();
     const auto s = keys::shift.pressed();
     const auto a = keys::alt.pressed();
-    const auto e = event::key(key(wp), c, s, a, false, false);
+    const auto e = events::key(key(wp), c, s, a, false, false);
     bool handled = false;
     if (const auto p = system::slot_address<ui::control>(wsp->focused_control)) handled = p->key_event(e);
     if (!handled && wsp->on_keyup) wsp->on_keyup(e);
