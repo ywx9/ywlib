@@ -11,6 +11,13 @@ public:
     slotset<slot>::slotid id{};
     slotset<slot>::slotid layout_id{};
     slotset<slot>::slotid window_id{};
+    bool setter_fence = false;
+
+    class setter {
+      slot* _p;
+    };
+
+
     virtual ~slot() noexcept {}
     virtual const char* attachable() const { return "Non-attachable control"; }
     virtual void attach(slotset<slot>::slotid Child) {}
