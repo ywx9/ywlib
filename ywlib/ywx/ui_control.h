@@ -1,64 +1,12 @@
 #pragma once
 #include "ywx/event.h"
-#include "ywx/unknown.h"
+#include "ywx/ui_parts.h"
 
 namespace yw::errors {
 define_error(ui_invalid_slotid);
 }
 
 namespace yw::ui {
-
-inline constexpr float arbitrary_value = 4.0f;
-using slotid = slotset<unknown::slot>::slotid;
-
-enum class alignment {
-  center = 0b0000,
-  left = 0b0001,
-  right = 0b0010,
-  top = 0b0100,
-  bottom = 0b1000,
-  left_top = 0b0101,
-  left_bottom = 0b1001,
-  right_top = 0b0110,
-  right_bottom = 0b1010,
-};
-
-struct part_base {
-  slotid control_id{};
-  bool view_changed = false;
-  bool geometry_changed = false;
-  bool layout_changed = false;
-
-  void make_dirty() const {
-    if (const auto csp = system::slot_address<unknown>(control_id)) csp->make_dirty();
-  }
-  void make_moved() const {
-    if (const auto csp = system::slot_address<unknown>(control_id)) csp->make_moved();
-  }
-  void make_messy() const {
-    if (const auto csp = system::slot_address<unknown>(control_id)) csp->make_messy();
-  }
-
-  template<typename Part> class handle {
-  protected:
-    Part* _p = nullptr;
-    handle(Part& Ref) : _p(&Ref) {}
-
-  public:
-    ~handle() {
-      if (!_p) return;
-      if (_p->layout_changed) _p->make_messy();
-      else if (_p->geometry_changed) _p->make_moved();
-      else if (_p->view_changed) _p->make_dirty();
-      _p->view_changed = _p->geometry_changed = _p->layout_changed = false;
-    }
-    handle(handle&& Other) noexcept : _p(std::exchange(Other._p, nullptr)) {}
-    handle& operator=(handle&& Other) noexcept {
-      if (this != &Other) _p = std::exchange(Other._p, nullptr);
-      return *this;
-    }
-  };
-};
 
 class control : public unknown {
 protected:
@@ -82,7 +30,10 @@ protected:
 
 public:
   struct slot : public unknown::slot {
-    struct core : public part_base {
+    slotid layout_id{};
+    slotid window_id{};
+
+    struct core : public parts::part_base {
       float4 margin = float4::fill(arbitrary_value);
       float2 min_size = float2::fill(arbitrary_value * 2);
       float2 required_size{};
@@ -95,9 +46,9 @@ public:
       ui::alignment alignment = ui::alignment::center;
       vector<bool, 2> constrained{false, false};
 
-      class handle : public part_base::handle<core> {
+      class handle : public parts::part_base::handle<core> {
         friend struct core;
-        using part_base::handle<core>::handle;
+        using parts::part_base::handle<core>::handle;
 
       public:
         const auto& margin() const { return _p->margin; }
@@ -202,20 +153,26 @@ public:
 
     //-- override functions --//
 
-    virtual void make_dirty() override {
-      if (const auto wsp = system::slot_address<unknown>(window_id)) wsp->make_dirty();
+    virtual std::expected<void, error_trace> make_dirty() override {
+      const auto wsp = system::slot_address<unknown>(window_id);
+      if (!wsp) return unexpected_error(errors::ui_invalid_slotid);
+      wsp->make_dirty();
+      return {};
     }
 
-    virtual void make_moved() override {
-      if (auto res = core.update_geometry(); !res) {
-        print_fallback.err("Failed to update geometry:\n{}", res.error());
-        return;
-      }
-      if (const auto wsp = system::slot_address<unknown>(window_id)) wsp->make_dirty();
+    virtual std::expected<void, error_trace> make_moved() override {
+      if (auto res = core.update_geometry(); !res) return unexpected_error(res.error());
+      const auto wsp = system::slot_address<unknown>(window_id);
+      if (!wsp) return unexpected_error(errors::ui_invalid_slotid);
+      wsp->make_dirty();
+      return {};
     }
 
-    virtual void make_messy() override {
-      if (const auto wsp = system::slot_address<unknown>(window_id)) wsp->make_messy();
+    virtual std::expected<void, error_trace> make_messy() override {
+      const auto wsp = system::slot_address<unknown>(window_id);
+      if (!wsp) return unexpected_error(errors::ui_invalid_slotid);
+      wsp->make_messy();
+      return {};
     }
 
     //-- virtual functions --//

@@ -9,22 +9,14 @@ public:
   class slot {
   public:
     slotset<slot>::slotid id{};
-    slotset<slot>::slotid layout_id{};
-    slotset<slot>::slotid window_id{};
-    bool setter_fence = false;
-
-    class setter {
-      slot* _p;
-    };
-
 
     virtual ~slot() noexcept {}
-    virtual const char* attachable() const { return "Non-attachable control"; }
-    virtual void attach(slotset<slot>::slotid Child) {}
-    virtual void detach(slotset<slot>::slotid Child) {}
-    virtual void make_dirty() {} /// UIレイアウトの再描画フラグを立てる (ジオメトリ、レイアウトは再利用)
-    virtual void make_moved() {} /// UIコントロールのジオメトリ更新フラグを立てる (レイアウトは再利用)
-    virtual void make_messy() {} /// UIレイアウトの再計算フラグを立てる
+    virtual std::expected<void, error_trace> attachable() const = 0;
+    virtual std::expected<void, error_trace> attach(slotset<slot>::slotid Child) = 0;
+    virtual std::expected<void, error_trace> detach(slotset<slot>::slotid Child) = 0;
+    virtual std::expected<void, error_trace> make_dirty() = 0;
+    virtual std::expected<void, error_trace> make_moved() = 0;
+    virtual std::expected<void, error_trace> make_messy() = 0;
   };
 
 protected:
@@ -43,6 +35,24 @@ public:
   explicit operator bool() const noexcept;
   const slotset<slot>::slotid& id() const noexcept { return _id; }
 };
+
+namespace ui {
+
+inline constexpr float arbitrary_value = 4.0f;
+using slotid = slotset<unknown::slot>::slotid;
+
+enum class alignment {
+  center = 0b0000,
+  left = 0b0001,
+  right = 0b0010,
+  top = 0b0100,
+  bottom = 0b1000,
+  left_top = 0b0101,
+  left_bottom = 0b1001,
+  right_top = 0b0110,
+  right_bottom = 0b1010,
+};
+}
 
 namespace system {
 short2 cursor_pos{};

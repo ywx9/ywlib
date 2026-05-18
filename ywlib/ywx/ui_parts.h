@@ -1,7 +1,47 @@
 #pragma once
 #include "ywx/ui_control.h"
+#include "ywx/unknown.h"
 
 namespace yw::ui::parts {
+
+//////////////////////////////////////// MARK: part_base
+
+struct part_base {
+  slotid control_id{};
+  bool view_changed = false;
+  bool geometry_changed = false;
+  bool layout_changed = false;
+
+  void make_dirty() const {
+    if (const auto csp = system::slot_address<unknown>(control_id)) csp->make_dirty();
+  }
+  void make_moved() const {
+    if (const auto csp = system::slot_address<unknown>(control_id)) csp->make_moved();
+  }
+  void make_messy() const {
+    if (const auto csp = system::slot_address<unknown>(control_id)) csp->make_messy();
+  }
+
+  template<typename Part> class handle {
+  protected:
+    Part* _p = nullptr;
+    handle(Part& Ref) : _p(&Ref) {}
+
+  public:
+    ~handle() {
+      if (!_p) return;
+      if (_p->layout_changed) _p->make_messy();
+      else if (_p->geometry_changed) _p->make_moved();
+      else if (_p->view_changed) _p->make_dirty();
+      _p->view_changed = _p->geometry_changed = _p->layout_changed = false;
+    }
+    handle(handle&& Other) noexcept : _p(std::exchange(Other._p, nullptr)) {}
+    handle& operator=(handle&& Other) noexcept {
+      if (this != &Other) _p = std::exchange(Other._p, nullptr);
+      return *this;
+    }
+  };
+};
 
 //////////////////////////////////////// MARK: background
 
