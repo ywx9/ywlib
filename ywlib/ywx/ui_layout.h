@@ -7,24 +7,26 @@ template<bool Vertical> class layout : public control {
 public:
   struct slot : public control::slot {
     parts::background background{.color = colors::transparent};
-    parts::border border{.color = colors::red};
+    parts::border border{.color = colors::transparent};
 
     std::vector<slotid> controls{};
     float4 padding = float4::fill(arbitrary_value);
 
-    //-- override functions --//
+    //-- overrides --//
 
-    virtual const char* attachable() const { return nullptr; }
+    virtual std::expected<void, error_trace> attachable() const override { return {}; }
 
-    virtual void attach(slotid Child) override {
+    virtual std::expected<void, error_trace> attach(slotid Child) override {
       controls.push_back(Child);
       make_messy();
+      return {};
     }
 
-    virtual void detach(slotid Child) override {
+    virtual std::expected<void, error_trace> detach(slotid Child) override {
       controls.erase(std::remove(controls.begin(), controls.end(), Child), controls.end());
       system::uis.erase(Child);
       make_messy();
+      return {};
     }
 
     virtual void ensure_minimum_size() override {
@@ -61,8 +63,8 @@ public:
         }
     }
 
-    virtual void draw() override {
-      if (!visible) return;
+    virtual std::expected<void, error_trace> draw() override {
+      if (!visible) return {};
       brush.color(background.color);
       fill_geometry(core.geometry.get());
       d2d.push_layer(core.geometry.get());
@@ -71,6 +73,7 @@ public:
         if (const auto csp = system::slot_address<control>(cid)) csp->draw();
       d2d.pop_layer();
       border.draw(core.geometry.get());
+      return {};
     }
 
     virtual slotid hittest(float2 Pt) const override {

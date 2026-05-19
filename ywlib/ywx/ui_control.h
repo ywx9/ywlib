@@ -1,6 +1,5 @@
 #pragma once
 #include "ywx/event.h"
-#include "ywx/ui_parts.h"
 
 namespace yw::errors {
 define_error(ui_invalid_slotid);
@@ -10,23 +9,34 @@ namespace yw::ui {
 
 class control : public unknown {
 protected:
-  template<derived_from<control> Ctrl>
-  static std::expected<slotid, error_trace> create_control(derived_from<unknown> auto& Layout) {
-    const auto lid = Layout.id();
+  template<derived_from<control> Ctrl, derived_from<unknown> Layout>
+  static std::expected<slotid, error_trace> create_control(Layout& layout) {
+    const auto lid = layout.id();
     const auto lsp = system::slot_address<unknown>(lid);
     if (!lsp) return unexpected_error(errors::operation_failed, "Failed to access layout slot");
-    if (const auto msg = lsp->attachable(); msg) return unexpected_error(errors::operation_failed, msg);
+    if (auto res = lsp->attachable(); !res) return unexpected_error(res.error());
     const auto cid = system::uis.add(std::make_unique<typename Ctrl::slot>());
     const auto csp = system::slot_address<Ctrl>(cid);
     if (!csp) return unexpected_error(errors::operation_failed, "Failed to create control slot");
     lsp->attach(cid);
     csp->id = cid;
     csp->layout_id = lid;
-    csp->window_id = lsp->window_id;
+    csp->window_id = lsp->get_window_id();
     return cid;
   }
 
   control() noexcept = default;
+
+  template<typename Mp> const auto& unsafe_get(Mp mp) const {
+    const auto csp = dynamic_cast<class_type<Mp>*>(system::uis.get(_id));
+    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    return csp->*mp;
+  }
+  template<typename Mp, typename T> void unsafe_set(Mp mp, T&& value) {
+    const auto csp = dynamic_cast<class_type<Mp>*>(system::uis.get(_id));
+    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    csp->*mp = static_cast<T&&>(value);
+  }
 
 public:
   struct slot : public unknown::slot {
@@ -151,7 +161,9 @@ public:
     std::wstring tooltip{};
     function<void, events::hover> on_hover;
 
-    //-- override functions --//
+    //-- overrides --//
+
+    virtual slotid get_window_id() const override { return window_id; }
 
     virtual std::expected<void, error_trace> make_dirty() override {
       const auto wsp = system::slot_address<unknown>(window_id);
@@ -180,7 +192,7 @@ public:
     virtual bool focusable() const { return false; }
     virtual void ensure_minimum_size() { core.size = core.minimum_size(); }
     virtual void update_layout(float2 Pos, float2 Size) { core.update_layout(Pos, Size); }
-    virtual void draw() {}
+    virtual std::expected<void, error_trace> draw() = 0;
     virtual slotid hittest(float2 Point) const { return core.hittest(Point) ? id : slotid{}; }
     virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) const {
       /// \note 以下はレイアウト以外のコントロールで共通化可能な実装。
@@ -197,7 +209,7 @@ public:
     virtual void click_event(events::button e) {}
     virtual void button_event(events::button e) {}
     virtual void drag_event(events::drag e) {}
-    virtual bool focus_event(bool) { return false; }
+    virtual void focus_event(bool) {}
     virtual void hover_event(events::hover Event);
     virtual bool key_event(events::key e) { return false; }
     virtual void move_event(events::move e) {}

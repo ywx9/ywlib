@@ -1,5 +1,5 @@
 #pragma once
-#include "ywx/ui_control.h"
+#include "ywx/core.h"
 
 namespace yw {
 

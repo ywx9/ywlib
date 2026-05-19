@@ -3,6 +3,10 @@
 
 namespace yw {
 
+namespace errors{
+define_error(ui_not_attachable);
+}
+
 class unknown {
   /// \note window と control で共有する基底クラス
 public:
@@ -11,9 +15,10 @@ public:
     slotset<slot>::slotid id{};
 
     virtual ~slot() noexcept {}
-    virtual std::expected<void, error_trace> attachable() const = 0;
-    virtual std::expected<void, error_trace> attach(slotset<slot>::slotid Child) = 0;
-    virtual std::expected<void, error_trace> detach(slotset<slot>::slotid Child) = 0;
+    virtual slotset<slot>::slotid get_window_id() const = 0;
+    virtual std::expected<void, error_trace> attachable() const { return unexpected_error(errors::ui_not_attachable); }
+    virtual std::expected<void, error_trace> attach(slotset<slot>::slotid Child) { return {}; }
+    virtual std::expected<void, error_trace> detach(slotset<slot>::slotid Child) { return {}; }
     virtual std::expected<void, error_trace> make_dirty() = 0;
     virtual std::expected<void, error_trace> make_moved() = 0;
     virtual std::expected<void, error_trace> make_messy() = 0;
@@ -22,6 +27,7 @@ public:
 protected:
   slotset<slot>::slotid _id{};
   unknown() noexcept = default;
+  unknown(slotset<slot>::slotid Id) : _id(Id) {}
 
 public:
   virtual ~unknown() noexcept {}

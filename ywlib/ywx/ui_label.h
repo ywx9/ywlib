@@ -15,8 +15,8 @@ public:
 
     //-- overrides --//
 
-    virtual void draw() override {
-      if (!visible) return;
+    virtual std::expected<void, error_trace> draw() override {
+      if (!visible) return {};
       brush.color(background.color);
       fill_geometry(core.geometry.get());
       d2d.push_layer(core.geometry.get());
@@ -24,6 +24,7 @@ public:
       text.draw(core.pos, core.size);
       d2d.pop_layer();
       border.draw(core.geometry.get());
+      return {};
     }
 
     virtual void ensure_minimum_size() {

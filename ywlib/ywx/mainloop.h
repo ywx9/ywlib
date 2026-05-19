@@ -33,12 +33,12 @@ public:
     _state = state::running;
 
     for (const auto& wid : system::primal_windows)
-      if (const auto wsp = system::slot_address<window>(wid)) {
-        if (auto res = wsp->update_ui_layout(); !res) {
+      if (const auto wsp = system::slot_address<window::handle<window::type::unknown>>(wid)) {
+        if (auto res = wsp->update_controllayer(); !res) {
           last_error = std::move(res.error().push());
           return _state = state::error, false;
         }
-        if (auto res = wsp->draw_ui_layout(); !res) {
+        if (auto res = wsp->draw_controllayer(); !res) {
           last_error = std::move(res.error().push());
           return _state = state::error, false;
         }
@@ -58,8 +58,8 @@ public:
     }
 
     for (const auto& wid : system::primal_windows)
-      if (const auto wsp = system::slot_address<window>(wid))
-        if (auto res = wsp->update_ui_layout(); !res) {
+      if (const auto wsp = system::slot_address<window::handle<window::type::unknown>>(wid))
+        if (auto res = wsp->update_controllayer(); !res) {
           last_error = std::move(res.error().push());
           return _state = state::error, false;
         }
@@ -74,26 +74,30 @@ public:
 // //////////////////////////////////////// MARK: internal::wm_mousemove
 
 namespace internal {
-inline void wm_size(window::slot& ws, WPARAM, LPARAM lp) {
+inline void wm_size(window::handle<window::type::unknown>::slot& ws, WPARAM, LPARAM lp) {
   if (ws.resizing) return;
   ws.size = int2(LOWORD(lp), HIWORD(lp));
-  if (auto res = ws.resize_rendertarget(); !res) mainloop.last_error = std::move(res.error().push());
+  ws.messy = true;
+  if (auto res = ws.resize_rendertarget(); !res) {
+    mainloop.last_error = std::move(res.error().push());
+    return;
+  }
 }
 
-inline void wm_getminmaxinfo(window::slot& ws, LPARAM lp) {
+inline void wm_getminmaxinfo(window::handle<window::type::unknown>::slot& ws, LPARAM lp) {
   auto* mmi = reinterpret_cast<MINMAXINFO*>(lp);
   if (!mmi) return;
-  if (const auto csp = system::slot_address<ui::control>(ws.control_id)) {
+  if (const auto csp = system::slot_address<ui::control>(ws.child_control)) {
     csp->ensure_minimum_size();
     const auto minimum_area = vapply_r<int2>(yw::ceil, csp->core.area());
     const auto frame_area = ws.frame_thickness.xy() + ws.frame_thickness.zw();
     const auto minimum_track = minimum_area + frame_area;
-    mmi->ptMinTrackSize.x = LONG(yw::max(int2(1, 1).x, minimum_track.x));
-    mmi->ptMinTrackSize.y = LONG(yw::max(int2(1, 1).y, minimum_track.y));
+    mmi->ptMinTrackSize.x = LONG(minimum_track.x);
+    mmi->ptMinTrackSize.y = LONG(minimum_track.y);
   }
 }
 
-inline void wm_mousemove(window::slot& ws, WPARAM wp, LPARAM lp) {
+inline void wm_mousemove(window::handle<window::type::unknown>::slot& ws, WPARAM wp, LPARAM lp) {
   if (!ws.tracking) {
     TRACKMOUSEEVENT tme{sizeof(TRACKMOUSEEVENT), TME_LEAVE, ws.hwnd, 0};
     ::TrackMouseEvent(&tme);
@@ -113,7 +117,7 @@ inline void wm_mousemove(window::slot& ws, WPARAM wp, LPARAM lp) {
     else if ((wp & MK_MBUTTON) == MK_MBUTTON) fcsp->drag_event(events::drag(local_pt, keys::mbutton, c, s, a));
   }
   ui::slotid new_hcid{};
-  if (const auto csp = system::slot_address<ui::control>(ws.control_id)) new_hcid = csp->hittest(pt);
+  if (const auto csp = system::slot_address<ui::control>(ws.child_control)) new_hcid = csp->hittest(pt);
   if (ws.hovered_control) {
     if (ws.hovered_control != new_hcid) {
       if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control))
@@ -129,7 +133,7 @@ inline void wm_mousemove(window::slot& ws, WPARAM wp, LPARAM lp) {
   }
 }
 
-inline void wm_mouseleave(window::slot& ws, WPARAM wp, LPARAM lp) {
+inline void wm_mouseleave(window::handle<window::type::unknown>::slot& ws, WPARAM wp, LPARAM lp) {
   auto local_pt = system::cursor_pos;
   ::ScreenToClient(ws.hwnd, reinterpret_cast<POINT*>(&local_pt));
   ws.tracking = false;
@@ -140,7 +144,7 @@ inline void wm_mouseleave(window::slot& ws, WPARAM wp, LPARAM lp) {
   }
 }
 
-inline void wm_mousewheel(window::slot& ws, WPARAM wp, LPARAM lp, bool horizontal) {
+inline void wm_mousewheel(window::handle<window::type::unknown>::slot& ws, WPARAM wp, LPARAM lp, bool horizontal) {
   auto local_pt = system::cursor_pos;
   ::ScreenToClient(ws.hwnd, reinterpret_cast<POINT*>(&local_pt));
   const auto delta = static_cast<short>(GET_WHEEL_DELTA_WPARAM(wp));
@@ -151,11 +155,11 @@ inline void wm_mousewheel(window::slot& ws, WPARAM wp, LPARAM lp, bool horizonta
     hcsp->wheel_event(events::wheel(local_pt, delta, horizontal, c, s, a));
 }
 
-inline void wm_keydown(window::slot& ws, WPARAM wp, LPARAM lp) {
+inline void wm_keydown(window::handle<window::type::unknown>::slot& ws, WPARAM wp, LPARAM lp) {
   if (wp == VK_TAB) {
     if (const auto fsp = system::slot_address<ui::control>(ws.focused_control)) fsp->focus_event(false);
     const bool shift = keys::shift.pressed();
-    if (const auto csp = system::slot_address<ui::control>(ws.control_id)) {
+    if (const auto csp = system::slot_address<ui::control>(ws.child_control)) {
       bool found = ws.focused_control == ui::slotid{};
       auto next = csp->next_tab_stop(ws.focused_control, !shift, found);
       if (next != ws.focused_control) {
@@ -179,7 +183,8 @@ inline void wm_keydown(window::slot& ws, WPARAM wp, LPARAM lp) {
   }
 }
 
-template<key K, bool DBL = false> void wm_button_down(window::slot& ws, WPARAM wp, LPARAM lp) {
+template<key K, bool DBL = false>
+void wm_button_down(window::handle<window::type::unknown>::slot& ws, WPARAM wp, LPARAM lp) {
   const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(uint_cast(lp)));
   // if (ws.capture_count++ == 0) ::SetCapture(ws.hwnd);
   // ws.captured_key = K;
@@ -199,11 +204,12 @@ template<key K, bool DBL = false> void wm_button_down(window::slot& ws, WPARAM w
   if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control)) {
     ws.captured_control = hcsp->id;
     hcsp->button_event(events::button(local_pt, K, c, s, a, true, DBL));
-    ws.focused_control = (hcsp->focus_event(true) ? hcsp->id : ui::slotid());
+    ws.focused_control = (hcsp->focusable() ? hcsp->id : ui::slotid());
   } else ws.captured_control = {}, ws.focused_control = {};
 }
 
-template<key K, bool DBL = false> void wm_button_up(window::slot& ws, WPARAM wp, LPARAM lp) {
+template<key K, bool DBL = false>
+void wm_button_up(window::handle<window::type::unknown>::slot& ws, WPARAM wp, LPARAM lp) {
   const auto local_pt = std::bit_cast<short2>(static_cast<uint32_t>(uint_cast(lp)));
   // ws.capture_count = yw::max(0, ws.capture_count - 1);
   // if (ws.capture_count == 0) ::ReleaseCapture();
@@ -223,7 +229,7 @@ template<key K, bool DBL = false> void wm_button_up(window::slot& ws, WPARAM wp,
 
 inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   const auto wsid = std::bit_cast<ui::slotid>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-  auto wsp = system::slot_address<window>(wsid);
+  auto wsp = system::slot_address<window::handle<window::type::unknown>>(wsid);
   if (!wsp) return ::DefWindowProcW(hwnd, msg, wp, lp);
 
   switch (msg) {
@@ -280,21 +286,17 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
   case WM_SIZE: internal::wm_size(*wsp, wp, lp); return 0;
 
   case WM_MOVE:
-    wsp->pos =
-      int2(static_cast<int16_t>(LOWORD(lp)), static_cast<int16_t>(HIWORD(lp))) - wsp->frame_thickness.xy();
+    wsp->pos = int2(static_cast<int16_t>(LOWORD(lp)), static_cast<int16_t>(HIWORD(lp))) - wsp->frame_thickness.xy();
     return 0;
 
   case WM_ENTERSIZEMOVE: wsp->resizing = true; return 0;
 
   case WM_EXITSIZEMOVE:
-    print("previous size: {}", wsp->size);
     wsp->resizing = false;
-    if (RECT cr{}; ::GetClientRect(hwnd, &cr)) {
-      const auto cx = static_cast<uint16_t>(yw::max(0L, static_cast<long>(cr.right - cr.left)));
-      const auto cy = static_cast<uint16_t>(yw::max(0L, static_cast<long>(cr.bottom - cr.top)));
-      internal::wm_size(*wsp, 0, MAKELPARAM(cx, cy));
-    } else internal::wm_size(*wsp, 0, MAKELPARAM(wsp->size.x, wsp->size.y));
-    print("new size: {}", wsp->size);
+    if (RECT cr{}; !::GetClientRect(hwnd, &cr)) {
+      mainloop.last_error = std::move(unexpected_win32_error("GetClientRect failed").error());
+      return 0;
+    } else if (wsp->size != int2(cr.right, cr.bottom)) internal::wm_size(*wsp, 0, MAKELPARAM(cr.right, cr.bottom));
     return 0;
 
     ////////////////////////////////////// MARK: IME
@@ -376,7 +378,7 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     return 0;
 
   case WM_NCDESTROY:
-    system::uis.erase(wsp->control_id);
+    system::uis.erase(wsp->child_control);
     const auto id = wsp->id;
     system::uis.erase(id);
     std::erase(system::primal_windows, id);

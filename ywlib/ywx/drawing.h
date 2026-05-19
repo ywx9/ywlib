@@ -64,17 +64,18 @@ public:
   static bool d3d_drawing() { return _rendertarget.index() == 2; }
   static bool not_drawing() { return _rendertarget.index() == 0; }
 
-  void close() noexcept {
+  std::expected<void, error_trace> close() noexcept {
     try {
-      if (!_active) return;
+      if (!_active) return {};
       _active = false;
       if (d2d_drawing()) {
         if (const auto hr = d2d.context()->EndDraw(); FAILED(hr))
-          print_fallback.err("drawing failed (code={}) that starts at {}", hr, _source);
+          return unexpected_error(errors::operation_failed, "EndDraw failed", int(hr));
         d2d.context()->SetTarget(nullptr);
       } else if (d3d_drawing()) d3d.context()->OMSetRenderTargets(0, nullptr, nullptr);
       _rendertarget = std::monostate{};
-    } catch (...) { print_fallback.err("unknown error occurred while closing drawing that starts at {}", _source); }
+    } catch (...) { return unexpected_error(errors::operation_failed, "unknown error occurred while closing drawing"); }
+    return {};
   }
 };
 
