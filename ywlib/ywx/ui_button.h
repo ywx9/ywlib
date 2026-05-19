@@ -8,18 +8,21 @@ public:
   class slot : public label::slot {
   public:
     color pressed_overlay_color = color(0, 0, 0, 0.5f);
+    key captured_key{};
+    bool pressed = false;
 
     function<void, bool> on_focus;
     function<void, key> on_click;
 
-    key captured_key{};
-    bool is_pushed() const {
-      return captured_key == keys::lbutton || captured_key == keys::enter || captured_key == keys::space;
-    }
-
     //-- overrides --//
 
     virtual bool focusable() const override { return true; }
+
+    virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) const override {
+      if (Focused == id) Found = true;
+      else if (Found && visible) return id;
+      return {};
+    }
 
     virtual std::expected<void, error_trace> draw() override {
       if (!visible) return {};
@@ -28,8 +31,10 @@ public:
       d2d.push_layer(core.geometry.get());
       if (background.image) draw_bitmap(core.pos, core.size, background.image, background.image_opacity);
       text.draw(core.pos, core.size);
-      brush.color(pressed_overlay_color);
-      fill_geometry(core.geometry.get());
+      if (pressed) {
+        brush.color(pressed_overlay_color);
+        fill_geometry(core.geometry.get());
+      }
       d2d.pop_layer();
       border.draw(core.geometry.get());
       return {};
@@ -38,22 +43,47 @@ public:
     virtual void click_event(events::button e) override {
       if (enabled && e.code == captured_key) click_action();
       captured_key = {};
+      pressed = false;
     }
 
     virtual void button_event(events::button e) override {
-      if (enabled && e.down) captured_key = e.code;
-      else captured_key = {};
+      if (!enabled) return;
+      if (e.down) {
+        captured_key = e.code;
+        const auto b = e.code == keys::lbutton;
+        if (pressed != b) make_dirty();
+        pressed = b;
+      } else {
+        if (captured_key == e.code) click_action();
+        if (pressed) make_dirty();
+        captured_key = {};
+        pressed = false;
+      }
     }
 
     virtual void focus_event(bool focused) override {
-      if (!focused) captured_key = {};
+      make_dirty();
+      if (!focused) {
+        captured_key = {};
+        pressed = false;
+      }
       if (enabled && on_focus) on_focus(focused);
     }
 
     virtual bool key_event(events::key e) override {
-      if (enabled && e.down) captured_key = e.code;
-      else captured_key = {};
-      return e.code == keys::space || e.code == keys::enter; // spaceとenter以外はwindowでの処理を許す
+      if (!enabled) return false;
+      if (e.down) {
+        captured_key = e.code;
+        const auto b = e.code == keys::enter || e.code == keys::space;
+        if (pressed != b) make_dirty();
+        pressed = b;
+      } else {
+        if (captured_key == e.code) click_action();
+        if (pressed) make_dirty();
+        captured_key = {};
+        pressed = false;
+      }
+      return e.code == keys::space || e.code == keys::enter;
     }
 
     virtual void click_action() {
@@ -68,8 +98,21 @@ public:
 
   using control::operator bool;
   button() noexcept = default;
-  button(derived_from<unknown> auto& Layout) {
-    if (auto res = create_control<button>(Layout)) _id = *res;
+
+  static std::expected<button, error_trace> add(derived_from<unknown> auto& Layout) {
+    button btn;
+    if (auto res = create_control<button>(Layout)) btn._id = *res;
+    else return unexpected_error(res.error());
+    if (const auto csp = system::slot_address<button>(btn._id)) {
+      const auto [bg_color, border_color] = control::get_auto_color();
+      csp->background.control_id = btn._id;
+      csp->background.color = bg_color;
+      csp->border.control_id = btn._id;
+      csp->border.color = border_color;
+      csp->text.control_id = btn._id;
+      csp->text.color = border_color;
+    } else return unexpected_error(errors::ui_invalid_slotid);
+    return btn;
   }
 
   const auto& pressed_overlay_color() const { return unsafe_get(&button::slot::pressed_overlay_color); }

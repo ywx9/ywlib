@@ -17,7 +17,7 @@ struct text : public part_base {
   bool text_layout_changed = false;
   bool text_alignment_changed = false;
 
-  float2 area() const noexcept { return layout_size + padding.xy() + padding.zw(); }
+  float2 bounds() const noexcept { return layout_size + padding.xy() + padding.zw(); }
 
   void apply_font_defaults() {
     font.name = font.name.value_or(L"");
@@ -101,8 +101,7 @@ struct text : public part_base {
     if (!text_layout) return unexpected_error(errors::not_initialized, "Not initialized");
     static const float c[] = {0.5f, 0.0f, 1.0f};
     const auto cc = float2(c[unsigned(block_alignment) % 3], c[(unsigned(block_alignment) / 3) % 3]);
-    float2 area = layout_size + padding.xy() + padding.zw();
-    const auto origin = Pos + (Size - area) * cc + padding.xy();
+    const auto origin = Pos + padding.xy() + (Size - bounds()) * cc;
     brush.color(color);
     if (auto res = draw_text(origin, text_layout.get()); !res) return unexpected_error(res.error());
     return {};
@@ -198,6 +197,8 @@ struct text : public part_base {
       _p->layout_changed = true;
       return *this;
     }
+
+    auto bounds() const { return _p->bounds(); }
 
     const auto& alignment() const { return _p->alignment; }
     auto& alignment(yw::text_alignment Alignment) {

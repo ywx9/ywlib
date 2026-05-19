@@ -151,6 +151,9 @@ public:
         if (auto res = draw_bitmap({}, background.image, background.image_opacity); !res)
           return unexpected_error(res.error());
       if (auto res = draw_bitmap({}, controllayer); !res) return unexpected_error(res.error());
+      if (const auto fcsp = system::slot_address<ui::control>(focused_control)) {
+        if (auto res = fcsp->draw_focus_ring(focus_ring); !res) return unexpected_error(res.error());
+      }
       if (auto res = d->close(); !res) return unexpected_error(res.error());
       if (swapchain) swapchain->Present(0, 0);
       dirty = false;

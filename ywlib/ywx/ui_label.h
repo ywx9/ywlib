@@ -9,8 +9,8 @@ namespace yw::ui {
 class label : public control {
 public:
   struct slot : public control::slot {
-    parts::background background;
-    parts::border border;
+    parts::background background{.color = colors::transparent};
+    parts::border border{.color = colors::transparent};
     parts::text text;
 
     //-- overrides --//
@@ -28,7 +28,7 @@ public:
     }
 
     virtual void ensure_minimum_size() {
-      const float2 inner = text.area() * (int2(1, 1) - core.constrained);
+      const float2 inner = text.bounds() * (int2(1, 1) - core.constrained);
       core.size = vapply_r<float2>(yw::max, core.min_size, core.required_size * core.constrained, inner);
     }
 
@@ -46,7 +46,7 @@ public:
       csp->background.control_id = lbl._id;
       csp->border.control_id = lbl._id;
       csp->text.control_id = lbl._id;
-    } else return unexpected_error(errors::ui_invalid_slotid, "missing slot ");
+    } else return unexpected_error(errors::ui_invalid_slotid);
     return lbl;
   }
 
@@ -86,11 +86,10 @@ public:
     return csp->text.handle();
   }
 
-  /// textの表示サイズにコントロールのサイズを合わせる
   auto& fit_to_text() {
     const auto csp = system::slot_address<label>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    this->core().size(csp->text.area());
+    this->core().size(csp->text.bounds());
     return *this;
   }
 };

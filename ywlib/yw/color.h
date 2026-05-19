@@ -84,11 +84,13 @@ struct color {
       b(static_cast<float>(col.b) / 255.0f), a(static_cast<float>(col.a) / 255.0f) {}
 
   explicit operator rgba() const noexcept {
-    return rgba{static_cast<uint8_t>(r * 255.0f), static_cast<uint8_t>(g * 255.0f), static_cast<uint8_t>(b * 255.0f),
+    return rgba{
+      static_cast<uint8_t>(r * 255.0f), static_cast<uint8_t>(g * 255.0f), static_cast<uint8_t>(b * 255.0f),
       static_cast<uint8_t>(a * 255.0f)};
   }
   explicit operator bgra() const noexcept {
-    return bgra{static_cast<uint8_t>(b * 255.0f), static_cast<uint8_t>(g * 255.0f), static_cast<uint8_t>(r * 255.0f),
+    return bgra{
+      static_cast<uint8_t>(b * 255.0f), static_cast<uint8_t>(g * 255.0f), static_cast<uint8_t>(r * 255.0f),
       static_cast<uint8_t>(a * 255.0f)};
   }
 
@@ -110,6 +112,54 @@ struct color {
   template<uint64_t I> requires(I < 4) constexpr const float& get() const noexcept { return select<I>(r, g, b, a); }
 };
 static_assert(sizeof(color) == 16);
+
+//////////////////////////////////////// MARK: hsl
+
+struct hsl {
+  float h{}; // in radians
+  float s{};
+  float l{};
+  float a{1.0f};
+
+  constexpr hsl() noexcept = default;
+  constexpr hsl(arithmetic auto H, arithmetic auto S, arithmetic auto L, arithmetic auto A) noexcept
+    : h(static_cast<float>(H)), s(static_cast<float>(S)), l(static_cast<float>(L)), a(static_cast<float>(A)) {}
+  constexpr hsl(arithmetic auto H, arithmetic auto S, arithmetic auto L) noexcept : hsl(H, S, L, 1.0f) {}
+
+  static constexpr hsl from_srgb(const color& srgb) noexcept {
+    const auto max = yw::max(srgb.r, srgb.g, srgb.b);
+    const auto min = yw::min(srgb.r, srgb.g, srgb.b);
+    hsl result;
+    result.l = (max + min) / 2.0f;
+    if (max == min) {
+      result.h = 0.0f;
+      result.s = 0.0f;
+    } else {
+      const auto d = max - min;
+      result.s = result.l > 0.5f ? d / (2.0f - max - min) : d / (max + min);
+      if (max == srgb.r) result.h = (srgb.g - srgb.b) / d + (srgb.g < srgb.b ? 6.0f : 0.0f);
+      else if (max == srgb.g) result.h = (srgb.b - srgb.r) / d + 2.0f;
+      else if (max == srgb.b) result.h = (srgb.r - srgb.g) / d + 4.0f;
+      result.h *= yw::pi / 3.0f;
+    }
+    result.a = srgb.a;
+    return result;
+  }
+
+  constexpr color to_srgb() const noexcept {
+    const auto c = (1.0f - std::fabs(2.0f * l - 1.0f)) * s;
+    const auto x = c * (1.0f - std::fabs(std::fmod(h / (yw::pi / 3.0f), 2.0f) - 1.0f));
+    const auto m = l - c / 2.0f;
+    float r{}, g{}, b{};
+    if (h < yw::pi / 3.0f) r = c, g = x, b = 0;
+    else if (h < 2.0f * yw::pi / 3.0f) r = x, g = c, b = 0;
+    else if (h < yw::pi) r = 0, g = c, b = x;
+    else if (h < 4.0f * yw::pi / 3.0f) r = 0, g = x, b = c;
+    else if (h < 5.0f * yw::pi / 3.0f) r = x, g = 0, b = c;
+    else r = c, g = 0, b = x;
+    return color(r + m, g + m, b + m, a);
+  }
+};
 
 //////////////////////////////////////// MARK: oklab
 
@@ -164,11 +214,11 @@ static_assert(sizeof(oklab) == 16);
 struct oklch {
   float l{};
   float c{};
-  float h{};
+  float h{}; // in radians
   float a{1.0f};
   constexpr oklch() noexcept = default;
   constexpr oklch(arithmetic auto L, arithmetic auto C, arithmetic auto H, arithmetic auto A) noexcept
-    : l(L.x), c(C.x), h(H.x), a(A.x) {}
+    : l(static_cast<float>(L)), c(static_cast<float>(C)), h(static_cast<float>(H)), a(static_cast<float>(A)) {}
   constexpr oklch(arithmetic auto L, arithmetic auto C, arithmetic auto H) noexcept : oklch(L, C, H, 1.0f) {}
   constexpr oklch(const oklab& Lab) noexcept
     : l(Lab.l), c(yw::hypot(Lab.a, Lab.b)), h(yw::atan2(Lab.b, Lab.a)), a(Lab.alpha) {}

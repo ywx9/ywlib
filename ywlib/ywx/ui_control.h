@@ -25,6 +25,14 @@ protected:
     return cid;
   }
 
+  /// returns default background and border colors.
+  static tuple<color, color> get_auto_color() noexcept {
+    constexpr float hues[] = {240.0f, 120.0f, 0.0f, 270.0f, 180.0f, 30.0f, 210.0f, 60.0f, 300.0f};
+    static size_t color_index = 0;
+    const float h = hues[color_index++ % arraysize(hues)] / 180.0f * yw::pi;
+    return {hsl(h, 0.5f, 0.9f).to_srgb(), hsl(h, 0.5f, 0.2f).to_srgb()};
+  }
+
   control() noexcept = default;
 
   template<typename Mp> const auto& unsafe_get(Mp mp) const {
@@ -190,9 +198,6 @@ public:
     //-- virtual functions --//
 
     virtual bool focusable() const { return false; }
-    virtual void ensure_minimum_size() { core.size = core.minimum_size(); }
-    virtual void update_layout(float2 Pos, float2 Size) { core.update_layout(Pos, Size); }
-    virtual std::expected<void, error_trace> draw() = 0;
     virtual slotid hittest(float2 Point) const { return core.hittest(Point) ? id : slotid{}; }
     virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) const {
       /// \note 以下はレイアウト以外のコントロールで共通化可能な実装。
@@ -201,6 +206,19 @@ public:
       else if (Found && visible && focusable()) return id;
       return {};
     }
+    virtual std::expected<void, error_trace> draw_focus_ring(const parts::focus_ring& fr) {
+      const auto origin = core.pos - float2::fill(fr.offset);
+      const auto size = core.size + float2::fill(fr.offset * 2.0f);
+      const auto r = core.radius + float2::fill(fr.offset);
+      brush.color(fr.color);
+      if (auto res = draw_round_rectangle(origin, size, r, fr.width); !res) return unexpected_error(res.error());
+      return {};
+    }
+
+    virtual void ensure_minimum_size() { core.size = core.minimum_size(); }
+    virtual void update_layout(float2 Pos, float2 Size) { core.update_layout(Pos, Size); }
+    virtual std::expected<void, error_trace> draw() = 0;
+
 
     virtual float2 ime_position() const { return {}; };
     virtual void ime_insert_text(std::wstring_view) {}
