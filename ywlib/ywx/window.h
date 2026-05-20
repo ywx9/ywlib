@@ -148,7 +148,7 @@ public:
       auto d = rendertarget.begin_draw(background.color);
       if (!d) return unexpected_error(d.error());
       if (background.image)
-        if (auto res = draw_bitmap({}, background.image, background.image_opacity); !res)
+        if (auto res = draw_bitmap({}, size, background.image, background.image_opacity); !res)
           return unexpected_error(res.error());
       if (auto res = draw_bitmap({}, controllayer); !res) return unexpected_error(res.error());
       if (const auto fcsp = system::slot_address<ui::control>(focused_control)) {
@@ -252,6 +252,18 @@ public:
   virtual void close() noexcept override {
     if (const auto wsp = system::slot_address<handle>(_id)) ::DestroyWindow(wsp->hwnd);
     _id = {};
+  }
+
+  uint2 size() const {
+    if (const auto wsp = system::slot_address<handle>(_id)) return wsp->size;
+    return {};
+  }
+
+  std::expected<drawing, error_trace> begin_draw() {
+    const auto wsp = system::slot_address<handle>(_id);
+    if (!wsp) return unexpected_error(errors::ui_invalid_slotid);
+    if (auto d = wsp->rendertarget.begin_draw()) return d;
+    else return unexpected_error(d.error());
   }
 };
 

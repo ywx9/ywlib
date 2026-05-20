@@ -168,7 +168,7 @@ public:
     c.context->OMSetBlendState(c.blend_state, nullptr, 0xffffffff);
     D3D11_RASTERIZER_DESC rasterizer_desc{};
     rasterizer_desc.FillMode = D3D11_FILL_SOLID;
-    rasterizer_desc.CullMode = D3D11_CULL_BACK;
+    rasterizer_desc.CullMode = D3D11_CULL_NONE;
     rasterizer_desc.FrontCounterClockwise = TRUE;
     rasterizer_desc.DepthClipEnable = TRUE;
     hr = c.device->CreateRasterizerState(&rasterizer_desc, &c.rasterizer_state);

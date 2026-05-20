@@ -23,6 +23,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/ywlib
 )
 
+target_compile_options(${PROJECT_NAME} PRIVATE -mavx2)
+
 if("@LIBRARY@" STREQUAL "ywxlib")
   target_compile_definitions(${PROJECT_NAME} PRIVATE
     UNICODE
