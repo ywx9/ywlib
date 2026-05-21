@@ -51,116 +51,7 @@ public:
     slotid layout_id{};
     slotid window_id{};
 
-    struct core : public parts::part_base {
-      float4 margin = float4::fill(arbitrary_value);
-      float2 min_size = float2::fill(arbitrary_value * 2);
-      float2 required_size{};
-      float2 provided_pos{};
-      float2 provided_size{};
-      float2 pos{};
-      float2 size{};
-      float2 radius = float2::fill(arbitrary_value);
-      comptr<ID2D1Geometry> geometry{};
-      ui::alignment alignment = ui::alignment::center;
-      vector<bool, 2> constrained{false, false};
-
-      class handle : public parts::part_base::handle<core> {
-        friend struct core;
-        using parts::part_base::handle<core>::handle;
-
-      public:
-        const auto& margin() const { return _p->margin; }
-        auto& margin(float4 Margin) {
-          _p->margin = Margin;
-          _p->layout_changed = true;
-          return *this;
-        }
-
-        const auto& min_size() const { return _p->min_size; }
-        auto& min_size(float2 MinSize) {
-          _p->min_size = vapply_r<float2>(yw::max, float2(), MinSize);
-          _p->layout_changed = true;
-          return *this;
-        }
-
-        const auto& pos() const { return _p->pos; }
-
-        const auto& size() const { return _p->size; }
-        auto& size(std::optional<float2> Size) {
-          if (Size) {
-            _p->constrained = {true, true};
-            _p->required_size = *Size;
-          } else _p->constrained = {false, false};
-          _p->layout_changed = true;
-          return *this;
-        }
-
-        const auto& width() const { return _p->size.x; }
-        auto& width(std::optional<float> Width) {
-          if (Width) {
-            _p->constrained.x = true;
-            _p->required_size.x = *Width;
-          } else _p->constrained.x = false;
-          _p->layout_changed = true;
-          return *this;
-        }
-
-        const auto& height() const { return _p->size.y; }
-        auto& height(std::optional<float> Height) {
-          if (Height) {
-            _p->constrained.y = true;
-            _p->required_size.y = *Height;
-          } else _p->constrained.y = false;
-          _p->layout_changed = true;
-          return *this;
-        }
-
-        const auto& radius() const { return _p->radius; }
-        auto& radius(float2 Radius) {
-          _p->radius = Radius;
-          _p->geometry_changed = true;
-          return *this;
-        }
-
-        const auto& alignment() const { return _p->alignment; }
-        auto& alignment(ui::alignment Alignment) {
-          _p->alignment = Alignment;
-          _p->geometry_changed = true;
-          return *this;
-        }
-      };
-
-      handle handle() noexcept { return *this; }
-
-      std::expected<void, error_trace> update_geometry() {
-        if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-        ID2D1RoundedRectangleGeometry* rrgp = nullptr;
-        D2D1_ROUNDED_RECT rr{D2D1_RECT_F(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
-        if (const auto hr = d2d.factory()->CreateRoundedRectangleGeometry(&rr, &rrgp); FAILED(hr))
-          return unexpected_error(errors::operation_failed, "Failed to create geometry", int32_t(hr));
-        geometry.reset(rrgp);
-        return {};
-      }
-
-      std::expected<void, error_trace> update_layout(float2 Pos, float2 Size) {
-        provided_pos = Pos, provided_size = Size;
-        static const float c[] = {0.5f, 0.0f, 1.0f};
-        const float2 cc = {c[unsigned(alignment) % 3], c[(unsigned(alignment) / 3) % 3]};
-        pos = Pos + margin.xy();
-        auto sz = Size - (margin.xy() + margin.zw());
-        size = size * constrained + sz * (int2(1, 1) - constrained);
-        pos += (sz - size) * cc;
-        if (auto res = update_geometry(); !res) return unexpected_error(res.error());
-        return {};
-      }
-
-      float2 minimum_size() const noexcept { return vapply_r<float2>(yw::max, min_size, required_size * constrained); }
-      float2 area() const noexcept { return size + margin.xy() + margin.zw(); }
-
-      bool hittest(float2 Pt) const noexcept {
-        return Pt.x >= pos.x && Pt.x <= pos.x + size.x && Pt.y >= pos.y && Pt.y <= pos.y + size.y;
-      }
-    } core;
+    parts::core core{};
 
     bool visible = true;
     bool enabled = true;
@@ -199,13 +90,8 @@ public:
 
     virtual bool focusable() const { return false; }
     virtual slotid hittest(float2 Point) const { return core.hittest(Point) ? id : slotid{}; }
-    virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) const {
-      /// \note 以下はレイアウト以外のコントロールで共通化可能な実装。
-      /// \note フォーカスを受けないコントロールなら即`return {}`するように`override`した方が良い。
-      if (Focused == id) Found = true;
-      else if (Found && visible && focusable()) return id;
-      return {};
-    }
+    virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) const { return {}; }
+
     virtual std::expected<void, error_trace> draw_focus_ring(const parts::focus_ring& fr) {
       const auto origin = core.pos - float2::fill(fr.offset);
       const auto size = core.size + float2::fill(fr.offset * 2.0f);
@@ -216,9 +102,8 @@ public:
     }
 
     virtual void ensure_minimum_size() { core.size = core.minimum_size(); }
-    virtual void update_layout(float2 Pos, float2 Size) { core.update_layout(Pos, Size); }
+    virtual void update_layout(float2 Pos, float2 Size) { core.update_geometry(Pos, Size); }
     virtual std::expected<void, error_trace> draw() = 0;
-
 
     virtual float2 ime_position() const { return {}; };
     virtual void ime_insert_text(std::wstring_view) {}
@@ -237,16 +122,17 @@ public:
   auto core() {
     const auto csp = system::slot_address<control>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->core.handle();
+    return csp->core.set();
   }
 
   const auto core() const {
     const auto csp = system::slot_address<control>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->core.handle();
+    return csp->core.get();
   }
 
   const auto& tooltip() const {
+
     const auto csp = system::slot_address<control>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
     return csp->tooltip;

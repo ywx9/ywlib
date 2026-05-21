@@ -24,6 +24,26 @@ public:
     virtual std::expected<void, error_trace> make_messy() = 0;
   };
 
+  template<typename Handle> class setter {
+  protected:
+    friend Handle;
+    using slot_type = typename Handle::slot;
+    slot_type* _p = nullptr;
+    bool _dirty = false, _moved = false, _messy = false;
+    setter(slot_type* p) : _p(p) {}
+  };
+
+  template<typename Handle> class getter {
+  protected:
+    friend Handle;
+    using slot_type = typename Handle::slot;
+    const slot_type* _p = nullptr;
+    getter(const slot_type* p) : _p(p) {}
+
+  public:
+    const auto& id() const { return _p->id; }
+  };
+
 protected:
   slotset<slot>::slotid _id{};
   unknown() noexcept = default;
@@ -39,7 +59,6 @@ public:
   }
 
   explicit operator bool() const noexcept;
-  const slotset<slot>::slotid& id() const noexcept { return _id; }
 };
 
 namespace ui {

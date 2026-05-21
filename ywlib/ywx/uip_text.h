@@ -5,7 +5,7 @@ namespace yw::ui::parts {
 
 //////////////////////////////////////// MARK: text
 
-struct text : public part_base {
+struct text : public base {
   std::wstring string = L"";
   font_config font = yw::font_config::default_;
   text_alignment alignment = yw::text_alignment::left;
@@ -16,6 +16,83 @@ struct text : public part_base {
   comptr<IDWriteTextLayout> text_layout;
   bool text_layout_changed = false;
   bool text_alignment_changed = false;
+
+  std::expected<void, error_trace> set_font_config(const yw::font_config& fc) {
+    if (fc.name.has_value()) font.name = *fc.name;
+    if (fc.weight.has_value()) font.weight = *fc.weight;
+    if (fc.style.has_value()) font.style = *fc.style;
+    if (fc.stretch.has_value()) font.stretch = *fc.stretch;
+    if (fc.size.has_value()) font.size = *fc.size;
+    return {};
+  }
+
+  class setter : public base::setter<text> {
+  public:
+    ~setter() {
+      if (part.text_layout_changed) {
+        if (auto res = part.rebuild_text_layout(); !res) fatal_error(res.error());
+        part.layout_changed = true;
+      } else if (part.text_alignment_changed) {
+        if (auto res = part.apply_text_alignment(); !res) fatal_error(res.error());
+        part.view_changed = true;
+      }
+      part.text_layout_changed = part.text_alignment_changed = false;
+    }
+
+    auto& string(std::wstring String) {
+      part.string = std::move(String);
+      part.text_layout_changed = true;
+      return *this;
+    }
+    auto& font(const font_config& Font) {
+      part.set_font_config(Font);
+      part.text_layout_changed = true;
+      return *this;
+    }
+    auto& alignment(text_alignment Alignment) {
+      part.alignment = Alignment;
+      part.text_alignment_changed = true;
+      return *this;
+    }
+    auto& block_alignment(ui::alignment BlockAlignment) {
+      part.block_alignment = BlockAlignment;
+      part.text_layout_changed = true;
+      return *this;
+    }
+    auto& color(yw::color Color) {
+      part.color = Color;
+      part.text_layout_changed = true;
+      return *this;
+    }
+    auto& padding(float4 Padding) {
+      part.padding = Padding;
+      part.text_layout_changed = true;
+      return *this;
+    }
+    auto& font_name(std::wstring FontName) { return font({.name = std::move(FontName)}); }
+    auto& font_size(float FontSize) { return font({.size = FontSize}); }
+    auto& font_weight(yw::font_weight FontWeight) { return font({.weight = FontWeight}); }
+    auto& font_style(yw::font_style FontStyle) { return font({.style = FontStyle}); }
+    auto& font_stretch(yw::font_stretch FontStretch) { return font({.stretch = FontStretch}); }
+  };
+
+  class getter : public base::getter<text> {
+  public:
+    const auto& string() const { return part.string; }
+    const auto& font() const { return part.font; }
+    const auto& alignment() const { return part.alignment; }
+    const auto& block_alignment() const { return part.block_alignment; }
+    const auto& color() const { return part.color; }
+    const auto& padding() const { return part.padding; }
+    const auto& font_name() const { return part.font.name; }
+    const auto& font_size() const { return part.font.size; }
+    const auto& font_weight() const { return part.font.weight; }
+    const auto& font_style() const { return part.font.style; }
+    const auto& font_stretch() const { return part.font.stretch; }
+  };
+
+  setter set() { return {*this}; }
+  getter get() const { return {*this}; }
 
   float2 bounds() const noexcept { return layout_size + padding.xy() + padding.zw(); }
 
@@ -141,83 +218,5 @@ struct text : public part_base {
     for (const auto& m : metrics) rects.emplace_back(m.left, m.top, m.width, m.height);
     return rects;
   }
-
-  class handle : public part_base::handle<text> {
-    friend struct text;
-    using part_base::handle<text>::handle;
-
-  public:
-    ~handle() {
-      if (!_p) return;
-      if (_p->text_layout_changed) {
-        if (auto res = _p->rebuild_text_layout(); !res) fatal_error(res.error());
-        _p->layout_changed = true;
-      } else if (_p->text_alignment_changed) {
-        if (auto res = _p->apply_text_alignment(); !res) fatal_error(res.error());
-        _p->view_changed = true;
-      }
-      _p->text_layout_changed = _p->text_alignment_changed = false;
-    }
-
-    const auto& string() const { return _p->string; }
-    auto& string(std::wstring Text) {
-      _p->string = std::move(Text);
-      _p->text_layout_changed = true;
-      return *this;
-    }
-
-    const auto& font() const { return _p->font; }
-    auto& font(yw::font_config Config) {
-      if (auto res = _p->set_font_config(std::move(Config)); !res) fatal_error(res.error());
-      _p->text_layout_changed = true;
-      return *this;
-    }
-
-    const auto& font_name() const { return *_p->font.name; }
-    auto& font_name(std::wstring Name) { return font({Name}); }
-
-    const auto& font_size() const { return *_p->font.size; }
-    auto& font_size(float1 Size) { return font({{}, Size.x}); }
-
-    const auto& font_weight() const { return *_p->font.weight; }
-    auto& font_weight(yw::font_weight Weight) { return font({{}, {}, Weight}); }
-
-    const auto& font_style() const { return *_p->font.style; }
-    auto& font_style(yw::font_style Style) { return font({{}, {}, {}, Style}); }
-
-    const auto& font_stretch() const { return *_p->font.stretch; }
-    auto& font_stretch(yw::font_stretch Stretch) { return font({{}, {}, {}, {}, Stretch}); }
-
-    const auto& color() const { return _p->color; }
-    auto& color(yw::color Color) { return _p->color = Color, _p->view_changed = true, *this; }
-
-    const auto& padding() const { return _p->padding; }
-    auto& padding(float4 Padding) {
-      _p->padding = Padding;
-      _p->layout_changed = true;
-      return *this;
-    }
-
-    auto bounds() const { return _p->bounds(); }
-
-    const auto& alignment() const { return _p->alignment; }
-    auto& alignment(yw::text_alignment Alignment) {
-      _p->alignment = Alignment;
-      _p->text_alignment_changed = true;
-      return *this;
-    }
-
-    const auto& block_alignment() const { return _p->block_alignment; }
-    auto& block_alignment(ui::alignment BlockAlignment) {
-      _p->block_alignment = BlockAlignment;
-      _p->view_changed = true;
-      return *this;
-    }
-
-    float2 layout_size() const { return _p->layout_size; }
-    IDWriteTextLayout* text_layout() const { return _p->text_layout.get(); }
-  };
-
-  handle handle() noexcept { return *this; }
 };
 } // namespace yw::ui::parts

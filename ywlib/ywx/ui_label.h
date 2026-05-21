@@ -53,37 +53,37 @@ public:
   auto background() {
     const auto csp = system::slot_address<label>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->background.handle();
+    return csp->background.set();
   }
 
-  const auto background() const {
+  auto background() const {
     const auto csp = system::slot_address<label>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->background.handle();
+    return csp->background.get();
   }
 
   auto border() {
     const auto csp = system::slot_address<label>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->border.handle();
+    return csp->border.set();
   }
 
-  const auto border() const {
+  auto border() const {
     const auto csp = system::slot_address<label>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->border.handle();
+    return csp->border.get();
   }
 
   auto text() {
     const auto csp = system::slot_address<label>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->text.handle();
+    return csp->text.set();
   }
 
-  const auto text() const {
+  auto text() const {
     const auto csp = system::slot_address<label>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->text.handle();
+    return csp->text.get();
   }
 
   auto& fit_to_text() {
