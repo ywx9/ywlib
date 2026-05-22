@@ -1,7 +1,6 @@
 #pragma once
 #include "ywx/command_manager.h"
-#include "ywx/tooltip.h"
-#include "ywx/ui_control.h"
+#include "ywx/ui_label.h"
 
 namespace yw::window {
 
@@ -92,6 +91,40 @@ public:
 
     //-- functions --//
 
+    std::expected<void, error_trace> set_default_title() {
+      title.resize(MAX_PATH, L'\0');
+      if (const auto n = ::GetModuleFileNameW(nullptr, title.data(), MAX_PATH)) title.resize(n);
+      else return unexpected_error(errors::operation_failed, "GetModuleFileNameW failed");
+      return {};
+    }
+
+    std::expected<void, error_trace> create_window() {
+      if (hwnd) return unexpected_error(errors::invalid_operation, "Window already created");
+      if (auto res = wclass.initialize(); !res) return unexpected_error(res.error());
+      hwnd = ::CreateWindowExW(
+        exstyle, wclass.name(), title.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, 0, 0, wclass.hinstance(), 0);
+      if (!hwnd) return unexpected_error(errors::operation_failed, "CreateWindowExW failed");
+      ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, std::bit_cast<LONG_PTR>(id));
+      return {};
+    }
+
+    std::expected<void, error_trace> calculate_frame_thickness() {
+      RECT wr, cr;
+      if (!::GetWindowRect(hwnd, &wr)) return unexpected_error(errors::operation_failed, "GetWindowRect failed");
+      if (!::GetClientRect(hwnd, &cr)) return unexpected_error(errors::operation_failed, "GetClientRect failed");
+      const auto left = (wr.right - wr.top - cr.right) / 2;
+      frame_thickness = int4(left, wr.bottom - wr.top - cr.bottom - left, left, left);
+      size = int2(cr.right, cr.bottom);
+      pos = int2(wr.left, wr.top);
+      return {};
+    }
+
+    std::expected<void, error_trace> set_window_pos() {
+      if (!::SetWindowPos(hwnd, nullptr, pos.x, pos.y, size.x, size.y, SWP_NOZORDER | SWP_NOACTIVATE))
+        return unexpected_win32_error("SetWindowPos failed");
+      return {};
+    }
+
     std::expected<void, error_trace> resize_rendertarget() {
       /// \note Avoid setting the render target size to zero
       const auto usz = vapply_r<uint2>(yw::max, size, uint2::fill(ui::arbitrary_value));
@@ -122,7 +155,7 @@ public:
         const auto csp = system::slot_address<ui::control>(child_control);
         if (!csp) return unexpected_error(errors::ui_invalid_slotid);
         csp->ensure_minimum_size();
-        const auto new_size = vapply_r<int2>(yw::max, csp->core.area(), size);
+        const auto new_size = vapply_r<int2>(yw::max, csp->core.bounds(), size);
         csp->update_layout({}, new_size);
         if (size != new_size)
           ::SetWindowPos(hwnd, nullptr, 0, 0, new_size.x, new_size.y, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
@@ -159,6 +192,14 @@ public:
       dirty = false;
       return {};
     }
+
+    /// explicitly performs redrawing
+    std::expected<void, error_trace> redraw() {
+      if (auto res = update_controllayer(); !res) return unexpected_error(res.error());
+      if (auto res = draw_controllayer(); !res) return unexpected_error(res.error());
+      if (auto res = draw(); !res) return unexpected_error(res.error());
+      return {};
+    }
   };
 
   virtual ~handle() noexcept { close(); }
@@ -173,18 +214,53 @@ public:
     return *this;
   }
 
+  /// explicitly closes window
   virtual void close() noexcept {
     if (const auto wsp = system::slot_address<handle>(_id)) ::DestroyWindow(wsp->hwnd);
+    _id = {};
   }
 
-  auto background() {
+  std::expected<void, error_trace> show(bool Visible = true) {
     const auto wsp = system::slot_address<handle>(_id);
+    if (!wsp) return unexpected_error(errors::ui_invalid_slotid);
+    if (wsp->visible = Visible) ::ShowWindow(wsp->hwnd, SW_SHOW);
+    else ::ShowWindow(wsp->hwnd, SW_HIDE);
+    return {};
+  }
+  std::expected<void, error_trace> hide() {
+    if (auto res = show(false); !res) return unexpected_error(res.error());
+    return {};
+  }
+
+  std::expected<void, error_trace> pos(int2 Pos) {
+    const auto wsp = system::slot_address<handle>(_id);
+    if (!wsp) return unexpected_error(errors::ui_invalid_slotid);
+    if (::SetWindowPos(wsp->hwnd, nullptr, Pos.x, Pos.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE)) return {};
+    else return unexpected_win32_error("SetWindowPos failed");
+  }
+  std::expected<void, error_trace> pos(int2 Pos, uint2 Size) {
+    const auto wsp = system::slot_address<handle>(_id);
+    if (!wsp) return unexpected_error(errors::ui_invalid_slotid);
+    if (::SetWindowPos(wsp->hwnd, nullptr, Pos.x, Pos.y, Size.x, Size.y, SWP_NOZORDER | SWP_NOACTIVATE)) return {};
+    else return unexpected_win32_error("SetWindowPos failed");
+  }
+
+  template<typename Self> decltype(auto) background(this Self& self) {
+    const auto wsp = system::slot_address<handle>(self._id);
     if (!wsp) fatal_error(errors::ui_invalid_slotid);
-    return wsp->background.handle();
+    if constexpr (!is_const<Self>) return wsp->background.access();
+    else return std::as_const(wsp->background.access());
+  }
+
+  std::expected<void, error_trace> redraw() {
+    const auto wsp = system::slot_address<handle>(_id);
+    if (!wsp) return unexpected_error(errors::ui_invalid_slotid);
+    if (auto res = wsp->redraw(); !res) return unexpected_error(res.error());
+    return {};
   }
 };
 
-//////////////////////////////////////// MARK: standard window
+/// MARK: standard window
 
 template<> struct options<type::standard> {
   /// \note 初期化時の記法の都合により、options<type::unknown>を継承するわけにはいかない
@@ -204,7 +280,6 @@ template<> class handle<type::standard> : public handle<type::unknown> {
 public:
   struct slot : public handle<type::unknown>::slot {
     static std::expected<handle, error_trace> open(options<type::standard> Options) {
-      if (auto res = wclass.initialize(); !res) return unexpected_error(res.error());
       if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
       const auto id = system::uis.add(std::make_unique<handle<type::standard>::slot>());
       const auto wsp = system::slot_address<handle<type::standard>>(id);
@@ -216,32 +291,16 @@ public:
       if (Options.border) wsp->style |= WS_BORDER;
       if (Options.frame) wsp->style |= WS_THICKFRAME;
       if (!Options.title.has_value()) {
-        wsp->title.resize(MAX_PATH, L'\0');
-        const auto n = ::GetModuleFileNameW(nullptr, wsp->title.data(), MAX_PATH);
-        if (n == 0) return unexpected_error(errors::operation_failed, "GetModuleFileNameW failed");
-        wsp->title.resize(n);
+        if (auto res = wsp->set_default_title(); !res) return unexpected_error(res.error());
       } else wsp->title = std::move(*Options.title);
-      const auto hwnd = ::CreateWindowExW(
-        wsp->exstyle, wclass.name(), wsp->title.c_str(), wsp->style, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, 0, 0,
-        wclass.hinstance(), 0);
-      if (!hwnd) return unexpected_error(errors::operation_failed, "CreateWindowExW failed");
-      ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, std::bit_cast<LONG_PTR>(id));
-      wsp->hwnd = hwnd;
-      RECT wr, cr;
-      if (!::GetWindowRect(hwnd, &wr)) return unexpected_error(errors::operation_failed, "GetWindowRect failed");
-      if (!::GetClientRect(hwnd, &cr)) return unexpected_error(errors::operation_failed, "GetClientRect failed");
-      const auto left = (wr.right - wr.top - cr.right) / 2;
-      wsp->frame_thickness = int4(left, wr.bottom - wr.top - cr.bottom - left, left, left);
-      wsp->pos = Options.pos.value_or(int2(wr.left, wr.top));
-      if (!Options.size.has_value()) wsp->size = int2(cr.right, cr.bottom);
-      else wsp->size = vapply_r<int2>(yw::max, *Options.size, int2(cr.right, cr.bottom));
-      ::SetWindowPos(hwnd, nullptr, wsp->pos.x, wsp->pos.y, wsp->size.x, wsp->size.y, SWP_NOZORDER | SWP_NOACTIVATE);
+      if (auto res = wsp->create_window(); !res) return unexpected_error(res.error());
+      if (auto res = wsp->calculate_frame_thickness(); !res) return unexpected_error(res.error());
+      if (Options.pos.has_value()) wsp->pos = *Options.pos;
+      if (Options.size.has_value()) wsp->size = vapply_r<int2>(yw::max, *Options.size, wsp->size);
+      if (auto res = wsp->set_window_pos(); !res) return unexpected_error(res.error());
       /// \note rendertarget and controllayer are getting updated in WM_SIZE
       wsp->messy = true, wsp->manually_drawn = false, wsp->active = true;
-      if (Options.show) {
-        ::ShowWindow(hwnd, SW_SHOW);
-        wsp->visible = true;
-      }
+      if (wsp->visible = Options.show) ::ShowWindow(wsp->hwnd, SW_SHOW);
       system::primal_windows.push_back(id);
       return handle<type::standard>(id);
     }
@@ -265,22 +324,94 @@ public:
     if (auto d = wsp->rendertarget.begin_draw()) return d;
     else return unexpected_error(d.error());
   }
+}; // standard window
+
+/// \note custom window
+
+template<> struct options<type::custom> {
+  std::optional<int2> pos = {};
+  std::optional<uint2> size = {};
+  std::optional<std::wstring> title = {};
+  std::optional<DWORD> style = {};
+  std::optional<DWORD> exstyle = {};
 };
+
+template<> class handle<type::custom> : public handle<type::unknown> {
+  handle(ui::slotid Id) : handle<type::unknown>(Id) {}
+
+public:
+  struct slot : public handle<type::unknown>::slot {
+    static std::expected<handle, error_trace> open(options<type::custom> Options) {
+      if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
+      const auto id = system::uis.add(std::make_unique<handle<type::custom>::slot>());
+      const auto wsp = system::slot_address<handle<type::custom>>(id);
+      if (!wsp) return unexpected_error(errors::ui_invalid_slotid);
+      wsp->id = id;
+      wsp->type = type::custom;
+      wsp->style = Options.style.value_or(WS_OVERLAPPEDWINDOW);
+      wsp->exstyle = Options.exstyle.value_or(WS_EX_ACCEPTFILES);
+      if (!Options.title.has_value()) {
+        if (auto res = wsp->set_default_title(); !res) return unexpected_error(res.error());
+      } else wsp->title = std::move(*Options.title);
+      if (auto res = wsp->create_window(); !res) return unexpected_error(res.error());
+      if (auto res = wsp->calculate_frame_thickness(); !res) return unexpected_error(res.error());
+      if (Options.pos.has_value()) wsp->pos = *Options.pos;
+      if (Options.size.has_value()) wsp->size = vapply_r<int2>(yw::max, *Options.size, wsp->size);
+      if (auto res = wsp->set_window_pos(); !res) return unexpected_error(res.error());
+      /// \note rendertarget and controllayer are getting updated in WM_SIZE
+      wsp->messy = true, wsp->manually_drawn = false, wsp->active = true;
+      wsp->visible = bool(wsp->style & WS_VISIBLE);
+      system::primal_windows.push_back(id);
+      return handle<type::custom>(id);
+    }
+  };
+}; // custom window
+
+/// \note window::open
 
 inline std::expected<handle<type::standard>, error_trace> open(options<type::standard> Options) {
   if (auto res = handle<type::standard>::slot::open(std::move(Options))) return std::move(*res);
+  else return unexpected_error(res.error());
+}
+
+template<type Type> std::expected<handle<Type>, error_trace> open(options<Type> Options) {
+  if (auto res = handle<Type>::slot::open(std::move(Options))) return std::move(*res);
   else return unexpected_error(res.error());
 }
 } // namespace yw::window
 
 namespace yw {
 
+namespace system {
+
+/// shows/hides tooltip window
+std::expected<void, error_trace> show_tooltip(float2 Pos, float2 Size, std::wstring Text) {
+  constexpr DWORD style = WS_POPUP;
+  constexpr DWORD exstyle = WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT;
+  static auto tooltip_window = assume(window::open<window::type::custom>({.style = style, .exstyle = exstyle}));
+  static auto tooltip_label = assume(ui::label::add(tooltip_window));
+  if (Text.empty()) {
+    if (auto res = tooltip_window.hide(); !res) return unexpected_error(res.error());
+    return {};
+  }
+  tooltip_label.text().string(std::move(Text));
+  if (auto res = tooltip_window.pos(Pos, Size); !res) return unexpected_error(res.error());
+  if (auto res = tooltip_window.show(); !res) return unexpected_error(res.error());
+  if (auto res = tooltip_window.redraw(); !res) return unexpected_error(res.error());
+  return {};
+}
+
+window::handle<window::type::unknown>::slot* window_slot_address(ui::slotid WindowId) noexcept {
+  return system::slot_address<window::handle<window::type::unknown>>(WindowId);
+}
+} // namespace system
+
 inline void ui::control::slot::hover_event(events::hover Event) {
   if (enabled && on_hover) on_hover(Event);
   if (tooltip.empty()) return;
   if (Event.enter()) {
     if (const auto w = system::slot_address<window::handle<window::type::unknown>>(window_id))
-      system::tooltip.show(core.pos + w->pos + w->frame_thickness.xy(), core.size, tooltip);
-  } else if (Event.leave()) system::tooltip.hide();
+      system::show_tooltip(core.pos + w->pos + w->frame_thickness.xy(), core.size, tooltip);
+  } else if (Event.leave()) system::show_tooltip({}, {}, {});
 }
 } // namespace yw

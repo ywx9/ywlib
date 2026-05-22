@@ -34,20 +34,19 @@ public:
       for (const auto& cid : controls)
         if (const auto csp = system::slot_address<control>(cid)) {
           csp->ensure_minimum_size();
-          const auto area = csp->core.area();
-          get<!Vertical>(internal) = yw::max(get<!Vertical>(internal), get<!Vertical>(area));
-          get<Vertical>(internal) += get<Vertical>(area);
+          const auto bounds = csp->core.bounds();
+          get<!Vertical>(internal) = yw::max(get<!Vertical>(internal), get<!Vertical>(bounds));
+          get<Vertical>(internal) += get<Vertical>(bounds);
         }
       core.size = vapply_r<float2>(yw::max, core.min_size, internal, core.required_size * core.constrained) +
                   padding.xy() + padding.zw();
     }
 
     virtual void update_layout(float2 Pos, float2 Size) override {
-      const auto minimum_sz = core.size; // ensure_minimum_size で決まった最小サイズを保存
-      core.update_layout(Pos, Size);     // 実際に渡された描画領域を元に pos, size を再計算
-      const auto extra = core.size - minimum_sz; // 余ったスペース
-
-      unsigned uc_count = 0; // 非拘束な子コントロールの数
+      const auto minimum_sz = core.size;
+      core.update_geometry(Pos, Size);
+      const auto extra = core.size - minimum_sz;
+      unsigned uc_count = 0;
       for (const auto& cid : controls)
         if (const auto csp = system::slot_address<control>(cid)) uc_count += !get<Vertical>(csp->core.constrained);
       float2 extra_per_uc{};
@@ -56,7 +55,7 @@ public:
       float width = get<!Vertical>(core.size - padding.xy() - padding.zw());
       for (const auto& cid : controls)
         if (const auto csp = system::slot_address<control>(cid)) {
-          float2 area = csp->core.area() + extra_per_uc * (int2(1, 1) - csp->core.constrained);
+          float2 area = csp->core.bounds() + extra_per_uc * (int2(1, 1) - csp->core.constrained);
           get<!Vertical>(area) = width;
           csp->update_layout(off, area);
           get<Vertical>(off) += get<Vertical>(area);
@@ -65,14 +64,10 @@ public:
 
     virtual std::expected<void, error_trace> draw() override {
       if (!visible) return {};
-      brush.color(background.color);
-      fill_geometry(core.geometry.get());
-      d2d.push_layer(core.geometry.get());
-      if (background.image) draw_bitmap(core.pos, core.size, background.image, background.image_opacity);
+      if (auto res = background.draw(core); !res) return unexpected_error(res.error());
       for (const auto& cid : controls)
         if (const auto csp = system::slot_address<control>(cid)) csp->draw();
-      d2d.pop_layer();
-      border.draw(core.geometry.get());
+      if (auto res = border.draw(core); !res) return unexpected_error(res.error());
       return {};
     }
 

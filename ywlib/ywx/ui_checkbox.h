@@ -1,12 +1,11 @@
 #pragma once
 #include "ywx/ui_control.h"
-#include "ywx/uip_icon.h"
+#include "ywx/uip_checkbox.h"
 #include "ywx/uip_text.h"
 
 namespace yw::ui {
 
 class checkbox : public control {
-  static constexpr float2 default_icon_size = {20.0f, 20.0f};
   static constexpr std::string_view box_path = "M 2 2 L 18 2 L 18 18 L 2 18 Z";
   static constexpr std::string_view mark_path = "M 4 10 L 8 14 L 16 6";
 
@@ -14,12 +13,7 @@ public:
   struct slot : public control::slot {
     parts::background background{.color = colors::transparent};
     parts::border border{.color = colors::transparent};
-    parts::icon box{
-      .data = assume(svgpath::create(default_icon_size, box_path)),
-      .fill_color = colors::white,
-      .size = default_icon_size};
-    parts::icon mark{
-      .data = assume(svgpath::create(default_icon_size, mark_path)), .stroke_width = 2.0f, .size = default_icon_size};
+    parts::checkbox checkbox{};
     parts::text text{.block_alignment = alignment::left};
 
     float4 padding = float4::fill(arbitrary_value);
@@ -32,40 +26,32 @@ public:
 
     key captured_key{};
 
-    float2 icon_bounds() const noexcept { return vapply_r<float2>(yw::max, box.bounds(), mark.bounds()); }
-
     //-- overrides --//
 
     virtual bool focusable() const override { return enabled; }
 
     virtual std::expected<void, error_trace> draw() override {
       if (!visible) return {};
-      brush.color(background.color);
-      fill_geometry(core.geometry.get());
-      d2d.push_layer(core.geometry.get());
-      if (background.image) draw_bitmap(core.pos, core.size, background.image, background.image_opacity);
-      const auto isz = icon_bounds();
-      const auto tsz = text.bounds();
+      if (auto res = background.draw(core); !res) return unexpected_error(res.error());
+      const auto cb_bounds = checkbox.bounds();
+      const auto tx_bounds = text.bounds();
       const float gap = text.string.empty() ? 0.0f : icon_offset;
       const float2 inner = core.size - padding.xy() - padding.zw();
       const float2 icon_origin = core.pos + padding.xy();
-      const float2 icon_area(isz.x, inner.y);
-      if (auto res = box.draw(icon_origin, icon_area); !res) return unexpected_error(res.error());
-      if (checked)
-        if (auto res = mark.draw(icon_origin, icon_area); !res) return unexpected_error(res.error());
-      const float2 text_origin = icon_origin + float2(isz.x + gap, 0.0f);
-      const float2 text_area(inner.x - isz.x - gap, inner.y);
+      const float2 icon_area(cb_bounds.x, inner.y);
+      if (auto res = checkbox.draw(icon_origin, icon_area); !res) return unexpected_error(res.error());
+      const float2 text_origin = icon_origin + float2(cb_bounds.x + gap, 0.0f);
+      const float2 text_area(inner.x - cb_bounds.x - gap, inner.y);
       if (auto res = text.draw(text_origin, text_area); !res) return unexpected_error(res.error());
-      d2d.pop_layer();
-      border.draw(core.geometry.get());
+      if (auto res = border.draw(core); !res) return unexpected_error(res.error());
       return {};
     }
 
     virtual void ensure_minimum_size() override {
-      const auto isz = icon_bounds();
-      const auto tsz = text.bounds();
+      const auto cb_bounds = checkbox.bounds();
+      const auto tx_bounds = text.bounds();
       const float gap = text.string.empty() ? 0.0f : icon_offset;
-      const float2 inner = {isz.x + gap + tsz.x, yw::max(isz.y, tsz.y)};
+      const float2 inner{cb_bounds.x + gap + tx_bounds.x, yw::max(cb_bounds.y, tx_bounds.y)};
       core.size = vapply_r<float2>(
         yw::max, core.min_size, core.required_size * core.constrained, inner + padding.xy() + padding.zw());
     }
@@ -123,71 +109,37 @@ public:
     if (const auto csp = system::slot_address<checkbox>(cb._id)) {
       csp->background.control_id = cb._id;
       csp->border.control_id = cb._id;
-      csp->box.control_id = cb._id;
-      csp->mark.control_id = cb._id;
+      csp->checkbox.control_id = cb._id;
+      csp->checkbox.box.data = assume(svgpath::create(parts::icon::default_size, box_path));
+      csp->checkbox.check.data = assume(svgpath::create(parts::icon::default_size, mark_path));
       csp->text.control_id = cb._id;
     } else return unexpected_error(errors::ui_invalid_slotid);
     return cb;
   }
 
-  auto background() {
-    const auto csp = system::slot_address<checkbox>(_id);
+  template<typename Self> decltype(auto) background(this Self& self) {
+    const auto csp = system::slot_address<checkbox>(self._id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->background.handle();
+    if constexpr (!is_const<Self>) return csp->background.access();
+    else return std::as_const(csp->background).access();
   }
-
-  const auto background() const {
-    const auto csp = system::slot_address<checkbox>(_id);
+  template<typename Self> decltype(auto) border(this Self& self) {
+    const auto csp = system::slot_address<checkbox>(self._id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->background.handle();
+    if constexpr (!is_const<Self>) return csp->border.access();
+    else return std::as_const(csp->border).access();
   }
-
-  auto border() {
-    const auto csp = system::slot_address<checkbox>(_id);
+  template<typename Self> decltype(auto) icon(this Self& self) {
+    const auto csp = system::slot_address<checkbox>(self._id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->border.handle();
+    if constexpr (!is_const<Self>) return csp->checkbox.access();
+    else return std::as_const(csp->checkbox).access();
   }
-
-  const auto border() const {
-    const auto csp = system::slot_address<checkbox>(_id);
+  template<typename Self> decltype(auto) text(this Self& self) {
+    const auto csp = system::slot_address<checkbox>(self._id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->border.handle();
-  }
-
-  auto box() {
-    const auto csp = system::slot_address<checkbox>(_id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->box.handle();
-  }
-
-  const auto box() const {
-    const auto csp = system::slot_address<checkbox>(_id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->box.handle();
-  }
-
-  auto mark() {
-    const auto csp = system::slot_address<checkbox>(_id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->mark.handle();
-  }
-
-  const auto mark() const {
-    const auto csp = system::slot_address<checkbox>(_id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->mark.handle();
-  }
-
-  auto text() {
-    const auto csp = system::slot_address<checkbox>(_id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->text.handle();
-  }
-
-  const auto text() const {
-    const auto csp = system::slot_address<checkbox>(_id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->text.handle();
+    if constexpr (!is_const<Self>) return csp->text.access();
+    else return std::as_const(csp->text).access();
   }
 
   const auto& checked() const {
@@ -195,7 +147,6 @@ public:
     if (!csp) fatal_error(errors::ui_invalid_slotid);
     return csp->checked;
   }
-
   auto& checked(bool Checked) {
     const auto csp = system::slot_address<checkbox>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);

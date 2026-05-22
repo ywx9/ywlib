@@ -26,9 +26,9 @@ struct text : public base {
     return {};
   }
 
-  class setter : public base::setter<text> {
+  class accessor : public base::accessor<text> {
   public:
-    ~setter() {
+    ~accessor() {
       if (part.text_layout_changed) {
         if (auto res = part.rebuild_text_layout(); !res) fatal_error(res.error());
         part.layout_changed = true;
@@ -39,60 +39,60 @@ struct text : public base {
       part.text_layout_changed = part.text_alignment_changed = false;
     }
 
+    const auto& string() const { return part.string; }
     auto& string(std::wstring String) {
       part.string = std::move(String);
       part.text_layout_changed = true;
       return *this;
     }
+    const auto& font() const { return part.font; }
     auto& font(const font_config& Font) {
       part.set_font_config(Font);
       part.text_layout_changed = true;
       return *this;
     }
+    const auto& alignment() const { return part.alignment; }
     auto& alignment(text_alignment Alignment) {
       part.alignment = Alignment;
       part.text_alignment_changed = true;
       return *this;
     }
+    const auto& block_alignment() const { return part.block_alignment; }
     auto& block_alignment(ui::alignment BlockAlignment) {
       part.block_alignment = BlockAlignment;
       part.text_layout_changed = true;
       return *this;
     }
+    const auto& color() const { return part.color; }
     auto& color(yw::color Color) {
       part.color = Color;
       part.text_layout_changed = true;
       return *this;
     }
+    const auto& padding() const { return part.padding; }
     auto& padding(float4 Padding) {
       part.padding = Padding;
       part.text_layout_changed = true;
       return *this;
     }
+
+    const auto& font_name() const { return part.font.name; }
     auto& font_name(std::wstring FontName) { return font({.name = std::move(FontName)}); }
+
+    const auto& font_size() const { return part.font.size; }
     auto& font_size(float FontSize) { return font({.size = FontSize}); }
+
+    const auto& font_weight() const { return part.font.weight; }
     auto& font_weight(yw::font_weight FontWeight) { return font({.weight = FontWeight}); }
+
+    const auto& font_style() const { return part.font.style; }
     auto& font_style(yw::font_style FontStyle) { return font({.style = FontStyle}); }
+
+    const auto& font_stretch() const { return part.font.stretch; }
     auto& font_stretch(yw::font_stretch FontStretch) { return font({.stretch = FontStretch}); }
   };
 
-  class getter : public base::getter<text> {
-  public:
-    const auto& string() const { return part.string; }
-    const auto& font() const { return part.font; }
-    const auto& alignment() const { return part.alignment; }
-    const auto& block_alignment() const { return part.block_alignment; }
-    const auto& color() const { return part.color; }
-    const auto& padding() const { return part.padding; }
-    const auto& font_name() const { return part.font.name; }
-    const auto& font_size() const { return part.font.size; }
-    const auto& font_weight() const { return part.font.weight; }
-    const auto& font_style() const { return part.font.style; }
-    const auto& font_stretch() const { return part.font.stretch; }
-  };
-
-  setter set() { return {*this}; }
-  getter get() const { return {*this}; }
+  accessor access() & noexcept { return {*this}; }
 
   float2 bounds() const noexcept { return layout_size + padding.xy() + padding.zw(); }
 
@@ -155,15 +155,6 @@ struct text : public base {
     return {};
   }
 
-  std::expected<void, error_trace> set_font_config(const yw::font_config& fc) {
-    if (fc.name.has_value()) font.name = *fc.name;
-    if (fc.weight.has_value()) font.weight = *fc.weight;
-    if (fc.style.has_value()) font.style = *fc.style;
-    if (fc.stretch.has_value()) font.stretch = *fc.stretch;
-    if (fc.size.has_value()) font.size = *fc.size;
-    return {};
-  }
-
   std::expected<void, error_trace> initialize() {
     if (text_layout_changed || !text_layout) {
       if (auto res = rebuild_text_layout(); !res) return unexpected_error(res.error());
@@ -174,13 +165,15 @@ struct text : public base {
     return {};
   }
 
-  std::expected<void, error_trace> draw(float2 Pos, float2 Size) {
+  std::expected<void, error_trace> draw(float2 Pos, float2 Area) {
     if (!text_layout) return unexpected_error(errors::not_initialized, "Not initialized");
     static const float c[] = {0.5f, 0.0f, 1.0f};
-    const auto cc = float2(c[unsigned(block_alignment) % 3], c[(unsigned(block_alignment) / 3) % 3]);
-    const auto origin = Pos + padding.xy() + (Size - bounds()) * cc;
-    brush.color(color);
-    if (auto res = draw_text(origin, text_layout.get()); !res) return unexpected_error(res.error());
+    if (color.a > 0.0f) {
+      brush.color(color);
+      const auto cc = float2(c[unsigned(block_alignment) % 3], c[(unsigned(block_alignment) / 3) % 3]);
+      const auto origin = Pos + padding.xy() + (Area - bounds()) * cc;
+      if (auto res = draw_text(origin, text_layout.get()); !res) return unexpected_error(res.error());
+    }
     return {};
   }
 

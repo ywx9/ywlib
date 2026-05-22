@@ -17,13 +17,9 @@ public:
 
     virtual std::expected<void, error_trace> draw() override {
       if (!visible) return {};
-      brush.color(background.color);
-      fill_geometry(core.geometry.get());
-      d2d.push_layer(core.geometry.get());
-      if (background.image) draw_bitmap(core.pos, core.size, background.image, background.image_opacity);
-      text.draw(core.pos, core.size);
-      d2d.pop_layer();
-      border.draw(core.geometry.get());
+      if (auto res = background.draw(core); !res) return unexpected_error(res.error());
+      if (auto res = text.draw(core.pos, core.size); !res) return unexpected_error(res.error());
+      if (auto res = border.draw(core); !res) return unexpected_error(res.error());
       return {};
     }
 
@@ -50,42 +46,24 @@ public:
     return lbl;
   }
 
-  auto background() {
-    const auto csp = system::slot_address<label>(_id);
+  template<typename Self> decltype(auto) background(this Self& self) {
+    const auto csp = system::slot_address<label>(self._id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->background.set();
+    if constexpr (!is_const<Self>) return csp->background.access();
+    else return std::as_const(csp->background.access());
   }
-
-  auto background() const {
-    const auto csp = system::slot_address<label>(_id);
+  template<typename Self> decltype(auto) border(this Self& self) {
+    const auto csp = system::slot_address<label>(self._id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->background.get();
+    if constexpr (!is_const<Self>) return csp->border.access();
+    else return std::as_const(csp->border.access());
   }
-
-  auto border() {
-    const auto csp = system::slot_address<label>(_id);
+  template<typename Self> decltype(auto) text(this Self& self) {
+    const auto csp = system::slot_address<label>(self._id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->border.set();
+    if constexpr (!is_const<Self>) return csp->text.access();
+    else return std::as_const(csp->text.access());
   }
-
-  auto border() const {
-    const auto csp = system::slot_address<label>(_id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->border.get();
-  }
-
-  auto text() {
-    const auto csp = system::slot_address<label>(_id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->text.set();
-  }
-
-  auto text() const {
-    const auto csp = system::slot_address<label>(_id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->text.get();
-  }
-
   auto& fit_to_text() {
     const auto csp = system::slot_address<label>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);

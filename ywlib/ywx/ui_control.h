@@ -1,5 +1,7 @@
 #pragma once
+#include "ywx/unknown.h"
 #include "ywx/event.h"
+#include "ywx/ui_parts.h"
 
 namespace yw::errors {
 define_error(ui_invalid_slotid);
@@ -11,7 +13,7 @@ class control : public unknown {
 protected:
   template<derived_from<control> Ctrl, derived_from<unknown> Layout>
   static std::expected<slotid, error_trace> create_control(Layout& layout) {
-    const auto lid = layout.id();
+    const auto lid = layout._slotid();
     const auto lsp = system::slot_address<unknown>(lid);
     if (!lsp) return unexpected_error(errors::operation_failed, "Failed to access layout slot");
     if (auto res = lsp->attachable(); !res) return unexpected_error(res.error());
@@ -119,43 +121,33 @@ public:
     virtual void wheel_event(events::wheel e) {}
   };
 
-  auto core() {
-    const auto csp = system::slot_address<control>(_id);
+  template<typename Self> decltype(auto) core(this Self& self) {
+    const auto csp = system::slot_address<control>(self._id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->core.set();
+    if constexpr (!is_const<Self>) return csp->core.access();
+    else return std::as_const(csp->core.access());
   }
 
-  const auto core() const {
-    const auto csp = system::slot_address<control>(_id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->core.get();
+  std::expected<void, error_trace> tooltip(std::wstring Tooltip) { // sets tooltip string
+    if (const auto csp = system::slot_address<control>(_id)) csp->tooltip = std::move(Tooltip);
+    else return unexpected_error(errors::ui_invalid_slotid);
+    return {};
   }
-
   const auto& tooltip() const {
-
     const auto csp = system::slot_address<control>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
     return csp->tooltip;
   }
 
-  auto& tooltip(std::wstring Text) {
-    const auto csp = system::slot_address<control>(_id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    csp->tooltip = std::move(Text);
-    return *this;
+  std::expected<void, error_trace> on_hover(function<void, events::hover> Callback) { // sets on_hover callback
+    if (const auto csp = system::slot_address<control>(_id)) csp->on_hover = std::move(Callback);
+    else return unexpected_error(errors::ui_invalid_slotid);
+    return {};
   }
-
   const auto& on_hover() const {
     const auto csp = system::slot_address<control>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
     return csp->on_hover;
-  }
-
-  auto& on_hover(function<void, events::hover> Handler) {
-    const auto csp = system::slot_address<control>(_id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    csp->on_hover = std::move(Handler);
-    return *this;
   }
 };
 } // namespace yw::ui

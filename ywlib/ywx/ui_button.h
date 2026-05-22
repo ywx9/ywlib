@@ -26,17 +26,13 @@ public:
 
     virtual std::expected<void, error_trace> draw() override {
       if (!visible) return {};
-      brush.color(background.color);
-      fill_geometry(core.geometry.get());
-      d2d.push_layer(core.geometry.get());
-      if (background.image) draw_bitmap(core.pos, core.size, background.image, background.image_opacity);
-      text.draw(core.pos, core.size);
-      if (pressed) {
+      if (auto res = background.draw(core); !res) return unexpected_error(res.error());
+      if (auto res = text.draw(core.pos, core.size); !res) return unexpected_error(res.error());
+      if (pressed && pressed_overlay_color.a > 0.0f) {
         brush.color(pressed_overlay_color);
-        fill_geometry(core.geometry.get());
+        if (auto res = fill_geometry(core.geometry.get()); !res) return unexpected_error(res.error());
       }
-      d2d.pop_layer();
-      border.draw(core.geometry.get());
+      if (auto res = border.draw(core); !res) return unexpected_error(res.error());
       return {};
     }
 

@@ -3,7 +3,7 @@
 
 namespace yw::ui::parts {
 
-template<bool Vertical> struct scrollbar : public part_base {
+template<bool Vertical> struct scrollbar : public base {
   color track_color = colors::darkgray;
   color thumb_color = colors::gray;
   color border_color = colors::black;
@@ -41,7 +41,7 @@ template<bool Vertical> struct scrollbar : public part_base {
     draw_rectangle(bot_pos, box_sz);
     const float o = width * 0.2f;
     const float w_o = width - o;
-    if constexpr (Vertical) {
+    if constexpr (v) {
       const auto top = top_pos + float2(width * 0.5f, o);
       draw_line(top, top_pos + float2(o, w_o));
       draw_line(top, top_pos + float2(w_o, w_o));
@@ -58,74 +58,61 @@ template<bool Vertical> struct scrollbar : public part_base {
     }
   }
 
-  class handle : public part_base::handle<scrollbar<Vertical>> {
-    template<bool V> friend struct scrollbar;
-    using part_base::handle<scrollbar<Vertical>>::handle;
-    using part_base::handle<scrollbar<Vertical>>::_p;
+  class accessor : public base::accessor<scrollbar> {
+    using base::accessor<scrollbar>::part;
 
   public:
-    const auto& track_color() const { return _p->track_color; }
+    const auto& track_color() const { return part.track_color; }
     auto& track_color(yw::color Color) {
-      _p->track_color = Color;
-      _p->view_changed = true;
+      part.track_color = Color;
+      part.view_changed = true;
       return *this;
     }
-
-    const auto& thumb_color() const { return _p->thumb_color; }
+    const auto& thumb_color() const { return part.thumb_color; }
     auto& thumb_color(yw::color Color) {
-      _p->thumb_color = Color;
-      _p->view_changed = true;
+      part.thumb_color = Color;
+      part.view_changed = true;
       return *this;
     }
-
-    const auto& border_color() const { return _p->border_color; }
+    const auto& border_color() const { return part.border_color; }
     auto& border_color(yw::color Color) {
-      _p->border_color = Color;
-      _p->view_changed = true;
+      part.border_color = Color;
+      part.view_changed = true;
       return *this;
     }
-
-    const auto& icon_color() const { return _p->icon_color; }
+    const auto& icon_color() const { return part.icon_color; }
     auto& icon_color(yw::color Color) {
-      _p->icon_color = Color;
-      _p->view_changed = true;
+      part.icon_color = Color;
+      part.view_changed = true;
       return *this;
     }
-
-    const auto& radius() const { return _p->radius; }
-    auto& radius(float1 Radius) {
-      _p->radius = Radius.x;
-      _p->view_changed = true;
+    const auto& radius() const { return part.radius; }
+    auto& radius(float Radius) {
+      part.radius = Radius;
+      part.view_changed = true;
       return *this;
     }
-
-    const auto& width() const { return _p->width; }
-    auto& width(float1 Width) {
-      _p->width = yw::max(0.0f, Width.x);
-      _p->layout_changed = true;
+    const auto& width() const { return part.width; }
+    auto& width(float Width) {
+      part.width = Width;
+      part.view_changed = true;
       return *this;
     }
-
-    const auto& max_value() const { return _p->max_value; }
-    auto& max_value(float1 Value) {
-      _p->max_value = yw::max(0.0f, Value.x);
-      _p->view_changed = true;
-      return *this;
-    }
-
-    const auto& border_width() const { return _p->border_width; }
+    const auto& border_width() const { return part.border_width; }
     auto& border_width(float BorderWidth) {
-      _p->border_width = BorderWidth;
-      _p->view_changed = true;
+      part.border_width = BorderWidth;
+      part.view_changed = true;
       return *this;
     }
-
-    const auto& range() const { return _p->range; }
+    const auto& max_value() const { return part.max_value; }
+    auto& max_value(float MaxValue) {
+      part.max_value = MaxValue;
+      part.view_changed = true;
+      return *this;
+    }
+    const auto& range() const { return part.range; }
   };
 
-  handle handle() noexcept { return *this; }
+  accessor access() & noexcept { return {*this}; }
 };
-
-using vscrollbar = scrollbar<true>;
-using hscrollbar = scrollbar<false>;
 }

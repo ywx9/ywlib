@@ -59,6 +59,7 @@ public:
   }
 
   explicit operator bool() const noexcept;
+  auto _slotid() const noexcept { return _id; }
 };
 
 namespace ui {

@@ -89,7 +89,7 @@ inline void wm_getminmaxinfo(window::handle<window::type::unknown>::slot& ws, LP
   if (!mmi) return;
   if (const auto csp = system::slot_address<ui::control>(ws.child_control)) {
     csp->ensure_minimum_size();
-    const auto minimum_area = vapply_r<int2>(yw::ceil, csp->core.area());
+    const auto minimum_area = vapply_r<int2>(yw::ceil, csp->core.bounds());
     const auto frame_area = ws.frame_thickness.xy() + ws.frame_thickness.zw();
     const auto minimum_track = minimum_area + frame_area;
     mmi->ptMinTrackSize.x = LONG(minimum_track.x);

@@ -19,32 +19,16 @@ struct base {
   void make_messy() const {
     if (const auto csp = system::slot_address<unknown>(control_id)) csp->make_messy();
   }
-  template<derived_from<base> Part> class setter {
+
+  template<typename Part> class accessor {
   protected:
     friend Part;
     Part& part;
-    setter(Part& PartRef) : part(PartRef) {}
+    accessor(Part& PartRef) : part(PartRef) {}
 
   public:
-    ~setter() {
-      if (part.layout_changed) part.make_messy();
-      else if (part.geometry_changed) part.make_moved();
-      else if (part.view_changed) part.make_dirty();
-      part.view_changed = part.geometry_changed = part.layout_changed = false;
-    }
-    setter(setter&& Other) noexcept = default;
-    setter(const setter& Other) noexcept = default;
-  };
-
-  template<derived_from<base> Part> class getter {
-  protected:
-    friend Part;
-    const Part& part;
-    getter(const Part& PartRef) : part(PartRef) {}
-
-  public:
-    getter(getter&& Other) noexcept = default;
-    getter(const getter& Other) noexcept = default;
+    accessor(accessor&& Other) noexcept = default;
+    accessor(const accessor& Other) noexcept = default;
   };
 }; // base
 
@@ -63,18 +47,22 @@ struct core : public base {
   ui::alignment alignment = ui::alignment::center;
   vector<bool, 2> constrained{false, false};
 
-  class setter : public base::setter<core> {
+  class accessor : public base::accessor<core> {
   public:
+    const auto& margin() const { return part.margin; }
     auto& margin(float4 Margin) {
       part.margin = vapply_r<float4>(yw::max, float4(), Margin);
       part.layout_changed = true;
       return *this;
     }
+    const auto& min_size() const { return part.min_size; }
     auto& min_size(float2 MinSize) {
       part.min_size = vapply_r<float2>(yw::max, float2(), MinSize);
       part.layout_changed = true;
       return *this;
     }
+    const auto& pos() const { return part.pos; }
+    const auto& size() const { return part.size; }
     auto& size(std::optional<float2> Size) {
       if (Size) {
         part.constrained = {true, true};
@@ -83,11 +71,13 @@ struct core : public base {
       part.layout_changed = true;
       return *this;
     }
+    const auto& radius() const { return part.radius; }
     auto& radius(float2 Radius) {
       part.radius = Radius;
       part.geometry_changed = true;
       return *this;
     }
+    const auto& alignment() const { return part.alignment; }
     auto& alignment(ui::alignment Alignment) {
       part.alignment = Alignment;
       part.geometry_changed = true;
@@ -95,18 +85,7 @@ struct core : public base {
     }
   };
 
-  class getter : public base::getter<core> {
-  public:
-    const auto& margin() const { return part.margin; }
-    const auto& min_size() const { return part.min_size; }
-    const auto& pos() const { return part.pos; }
-    const auto& size() const { return part.size; }
-    const auto& radius() const { return part.radius; }
-    const auto& alignment() const { return part.alignment; }
-  };
-
-  setter set() { return setter(*this); }
-  getter get() const { return getter(*this); }
+  accessor access() & noexcept { return accessor(*this); }
 
   float2 bounds() const { return size + margin.xy() + margin.zw(); }
   float2 minimum_size() const { return vapply_r<float2>(yw::max, min_size, required_size * constrained); }
@@ -143,18 +122,23 @@ struct background : public base {
   yw::bitmap image{}; // optional
   float image_opacity = 1.0f;
 
-  class setter : public base::setter<background> {
+  class accessor : public base::accessor<background> {
+    using base::accessor<background>::part;
+
   public:
+    const auto& color() const { return part.color; }
     auto& color(yw::color Color) {
       part.color = Color;
       part.view_changed = true;
       return *this;
     }
+    const auto& image() const { return part.image; }
     auto& image(yw::bitmap Image) {
       part.image = std::move(Image);
       part.view_changed = true;
       return *this;
     }
+    float image_opacity() const { return part.image_opacity; }
     auto& image_opacity(float Opacity) {
       part.image_opacity = Opacity;
       part.view_changed = true;
@@ -162,15 +146,17 @@ struct background : public base {
     }
   };
 
-  class getter : public base::getter<background> {
-  public:
-    const auto& color() const { return part.color; }
-    const auto& image() const { return part.image; }
-    float image_opacity() const { return part.image_opacity; }
-  };
+  accessor access() & noexcept { return accessor(*this); }
 
-  setter set() { return setter(*this); }
-  getter get() const { return getter(*this); }
+  /// \note need to call border::draw function after this
+  std::expected<void, error_trace> draw(const core& Core) {
+    brush.color(color);
+    if (auto res = fill_geometry(Core.geometry.get()); !res) return unexpected_error(res.error());
+    d2d.push_layer(Core.geometry.get());
+    if (image && image_opacity > 0.0f)
+    if (auto res = draw_bitmap(Core.pos, Core.size, image, image_opacity); !res) return unexpected_error(res.error());
+    return {};
+  }
 }; // background
 
 /// MARK: border
@@ -180,18 +166,23 @@ struct border : public base {
   float width = 1.0f;
   bool dashed = false;
 
-  class setter : public base::setter<border> {
+  class accessor : public base::accessor<border> {
+    using base::accessor<border>::part;
+
   public:
+    const auto& color() const { return part.color; }
     auto& color(yw::color Color) {
       part.color = Color;
       part.view_changed = true;
       return *this;
     }
+    float width() const { return part.width; }
     auto& width(float Width) {
       part.width = Width;
       part.view_changed = true;
       return *this;
     }
+    bool dashed() const { return part.dashed; }
     auto& dashed(bool Dashed) {
       part.dashed = Dashed;
       part.view_changed = true;
@@ -199,15 +190,16 @@ struct border : public base {
     }
   };
 
-  class getter : public base::getter<border> {
-  public:
-    const auto& color() const { return part.color; }
-    float width() const { return part.width; }
-    bool dashed() const { return part.dashed; }
-  };
+  accessor access() noexcept { return accessor(*this); }
 
-  setter set() { return setter(*this); }
-  getter get() const { return getter(*this); }
+  std::expected<void, error_trace> draw(const core& Core) {
+    d2d.pop_layer();
+    if (color.a > 0.0f) {
+      brush.color(color);
+      if (auto res = draw_geometry(Core.geometry.get()); !res) return unexpected_error(res.error());
+    }
+    return {};
+  }
 }; // border
 
 /// MARK: focus_ring
@@ -216,19 +208,25 @@ struct focus_ring : public base {
   color color = {0.0f, 0.0f, 1.0f, 0.5f};
   float offset = arbitrary_value;
   float width = arbitrary_value * 0.5f;
+  bool dashed = false;
 
-  class setter : public base::setter<focus_ring> {
+  class accessor : public base::accessor<focus_ring> {
+    using base::accessor<focus_ring>::part;
+
   public:
+    const auto& color() const { return part.color; }
     auto& color(yw::color Color) {
       part.color = Color;
       part.view_changed = true;
       return *this;
     }
+    float offset() const { return part.offset; }
     auto& offset(float Offset) {
       part.offset = Offset;
       part.view_changed = true;
       return *this;
     }
+    float width() const { return part.width; }
     auto& width(float Width) {
       part.width = Width;
       part.view_changed = true;
@@ -236,14 +234,22 @@ struct focus_ring : public base {
     }
   };
 
-  class getter : public base::getter<focus_ring> {
-  public:
-    const auto& color() const { return part.color; }
-    float offset() const { return part.offset; }
-    float width() const { return part.width; }
-  };
+  accessor access() & noexcept { return accessor(*this); }
 
-  setter set() { return setter(*this); }
-  getter get() const { return getter(*this); }
+  std::expected<void, error_trace> draw(const core& Core) {
+    if (!Core.geometry) return unexpected_error(errors::invalid_argument, "Invalid geometry");
+    if (brush.color().a <= 0.0f) return {};
+    const float2 center = Core.pos + Core.size * 0.5f;
+    const float2 scale = (Core.size + float2::fill(offset * 2.0f)) / Core.size;
+    auto m = D2D1::Matrix3x2F::Translation(-center.x, -center.y) *
+             D2D1::Matrix3x2F::Scale(scale.x, scale.y) *
+             D2D1::Matrix3x2F::Translation(center.x, center.y);
+    d2d.context()->SetTransform(m);
+    brush.color(color);
+    brush.dashed(dashed);
+    d2d.context()->DrawGeometry(Core.geometry.get(), brush.d2d_brush(), width, brush.d2d_stroke());
+    brush.dashed(false);
+    return {};
+  }
 }; // focus_ring
 } // namespace yw::ui::parts
