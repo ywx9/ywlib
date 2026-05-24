@@ -88,8 +88,8 @@ inline void wm_getminmaxinfo(window::handle<window::type::unknown>::slot& ws, LP
   auto* mmi = reinterpret_cast<MINMAXINFO*>(lp);
   if (!mmi) return;
   if (const auto csp = system::slot_address<ui::control>(ws.child_control)) {
-    csp->ensure_minimum_size();
-    const auto minimum_area = vapply_r<int2>(yw::ceil, csp->core.bounds());
+    const auto minimum_size = csp->calculate_minimum_size();
+    const auto minimum_area = vapply_r<int2>(yw::ceil, minimum_size + csp->core.margin.xy() + csp->core.margin.zw());
     const auto frame_area = ws.frame_thickness.xy() + ws.frame_thickness.zw();
     const auto minimum_track = minimum_area + frame_area;
     mmi->ptMinTrackSize.x = LONG(minimum_track.x);
@@ -225,7 +225,7 @@ void wm_button_up(window::handle<window::type::unknown>::slot& ws, WPARAM wp, LP
 }
 } // namespace internal
 
-//////////////////////////////////////// MARK: wclass::proc
+/// MARK: wclass::proc
 
 inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   const auto wsid = std::bit_cast<ui::slotid>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -254,7 +254,7 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     if (const auto p = system::slot_address<ui::control>(wsp->focused_control)) p->char_event(static_cast<wchar_t>(wp));
     return 0;
 
-    //////////////////////////////////// MARK: ボタンイベント
+    /// MARK: Button events
 
   case WM_LBUTTONDOWN: internal::wm_button_down<keys::lbutton>(*wsp, wp, lp); return 0;
   case WM_LBUTTONUP: internal::wm_button_up<keys::lbutton>(*wsp, wp, lp); return 0;
@@ -299,7 +299,7 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     } else if (wsp->size != int2(cr.right, cr.bottom)) internal::wm_size(*wsp, 0, MAKELPARAM(cr.right, cr.bottom));
     return 0;
 
-    ////////////////////////////////////// MARK: IME
+    /// MARK: IME
 
     // case WM_IME_SETCONTEXT: lp &= ~ISC_SHOWUICOMPOSITIONWINDOW; return ::DefWindowProcW(hwnd, msg, wp, lp);
 
@@ -367,10 +367,9 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     // case WM_IME_ENDCOMPOSITION:
     //   system::ime.hide();
     //   system::ime.reset_state();
-    //   // 必要なら edit 側の通常キャレットを戻す
     //   return 0;
 
-    //////////////////////////////////// MARK: 終了処理
+    /// MARK: closing events
 
   case WM_CLOSE:
     if (wsp->on_close && !wsp->on_close()) return 0;

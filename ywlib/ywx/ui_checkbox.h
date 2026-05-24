@@ -18,7 +18,6 @@ public:
 
     float4 padding = float4::fill(arbitrary_value);
     float icon_offset = arbitrary_value;
-    bool checked = false;
 
     function<void, bool> on_change;
     function<void, bool> on_focus;
@@ -47,13 +46,17 @@ public:
       return {};
     }
 
-    virtual void ensure_minimum_size() override {
+    virtual float2 calculate_minimum_size() const override {
       const auto cb_bounds = checkbox.bounds();
       const auto tx_bounds = text.bounds();
       const float gap = text.string.empty() ? 0.0f : icon_offset;
       const float2 inner{cb_bounds.x + gap + tx_bounds.x, yw::max(cb_bounds.y, tx_bounds.y)};
-      core.size = vapply_r<float2>(
+      return vapply_r<float2>(
         yw::max, core.min_size, core.required_size * core.constrained, inner + padding.xy() + padding.zw());
+    }
+
+    virtual void ensure_minimum_size() override {
+      core.size = calculate_minimum_size();
     }
 
     virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) const override {
@@ -91,10 +94,10 @@ public:
       case keys::lbutton.code:
       case keys::enter.code:
       case keys::space.code:
-        checked = !checked;
+        checkbox.checked = !checkbox.checked;
         assume(make_dirty());
         if (on_click) on_click(captured_key);
-        if (on_change) on_change(checked);
+        if (on_change) on_change(checkbox.checked);
       }
     }
   };
@@ -145,13 +148,13 @@ public:
   const auto& checked() const {
     const auto csp = system::slot_address<checkbox>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->checked;
+    return csp->checkbox.checked;
   }
   auto& checked(bool Checked) {
     const auto csp = system::slot_address<checkbox>(_id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    if (csp->checked != Checked) {
-      csp->checked = Checked;
+    if (csp->checkbox.checked != Checked) {
+      csp->checkbox.checked = Checked;
       assume(csp->make_dirty());
     }
     return *this;

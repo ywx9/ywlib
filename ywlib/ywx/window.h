@@ -102,7 +102,8 @@ public:
       if (hwnd) return unexpected_error(errors::invalid_operation, "Window already created");
       if (auto res = wclass.initialize(); !res) return unexpected_error(res.error());
       hwnd = ::CreateWindowExW(
-        exstyle, wclass.name(), title.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, 0, 0, wclass.hinstance(), 0);
+        exstyle, wclass.name(), title.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT, int(ui::arbitrary_value),
+        int(ui::arbitrary_value), 0, 0, wclass.hinstance(), 0);
       if (!hwnd) return unexpected_error(errors::operation_failed, "CreateWindowExW failed");
       ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, std::bit_cast<LONG_PTR>(id));
       return {};
@@ -112,7 +113,7 @@ public:
       RECT wr, cr;
       if (!::GetWindowRect(hwnd, &wr)) return unexpected_error(errors::operation_failed, "GetWindowRect failed");
       if (!::GetClientRect(hwnd, &cr)) return unexpected_error(errors::operation_failed, "GetClientRect failed");
-      const auto left = (wr.right - wr.top - cr.right) / 2;
+      const auto left = (wr.right - wr.left - cr.right) / 2;
       frame_thickness = int4(left, wr.bottom - wr.top - cr.bottom - left, left, left);
       size = int2(cr.right, cr.bottom);
       pos = int2(wr.left, wr.top);
@@ -184,9 +185,8 @@ public:
         if (auto res = draw_bitmap({}, size, background.image, background.image_opacity); !res)
           return unexpected_error(res.error());
       if (auto res = draw_bitmap({}, controllayer); !res) return unexpected_error(res.error());
-      if (const auto fcsp = system::slot_address<ui::control>(focused_control)) {
+      if (const auto fcsp = system::slot_address<ui::control>(focused_control))
         if (auto res = fcsp->draw_focus_ring(focus_ring); !res) return unexpected_error(res.error());
-      }
       if (auto res = d->close(); !res) return unexpected_error(res.error());
       if (swapchain) swapchain->Present(0, 0);
       dirty = false;
@@ -194,7 +194,8 @@ public:
     }
 
     /// explicitly performs redrawing
-    std::expected<void, error_trace> redraw() {
+    std::expected<void, error_trace> redraw(bool Messy = false) {
+      Messy ? messy = true : dirty = true;
       if (auto res = update_controllayer(); !res) return unexpected_error(res.error());
       if (auto res = draw_controllayer(); !res) return unexpected_error(res.error());
       if (auto res = draw(); !res) return unexpected_error(res.error());
@@ -232,6 +233,15 @@ public:
     return {};
   }
 
+  auto pos() const {
+    if (const auto wsp = system::slot_address<handle>(_id)) return wsp->pos;
+    return int2{};
+  }
+  auto size() const {
+    if (const auto wsp = system::slot_address<handle>(_id)) return uint2(wsp->size);
+    return uint2{};
+  }
+
   std::expected<void, error_trace> pos(int2 Pos) {
     const auto wsp = system::slot_address<handle>(_id);
     if (!wsp) return unexpected_error(errors::ui_invalid_slotid);
@@ -252,19 +262,24 @@ public:
     else return std::as_const(wsp->background.access());
   }
 
-  std::expected<void, error_trace> redraw() {
+  std::expected<void, error_trace> redraw(bool Messy = false) {
     const auto wsp = system::slot_address<handle>(_id);
     if (!wsp) return unexpected_error(errors::ui_invalid_slotid);
-    if (auto res = wsp->redraw(); !res) return unexpected_error(res.error());
+    if (auto res = wsp->redraw(Messy); !res) return unexpected_error(res.error());
     return {};
+  }
+
+  std::expected<drawing, error_trace> begin_draw() {
+    const auto wsp = system::slot_address<handle>(_id);
+    if (!wsp) return unexpected_error(errors::ui_invalid_slotid);
+    if (auto d = wsp->rendertarget.begin_draw()) return d;
+    else return unexpected_error(d.error());
   }
 };
 
 /// MARK: standard window
 
 template<> struct options<type::standard> {
-  /// \note 初期化時の記法の都合により、options<type::unknown>を継承するわけにはいかない
-
   std::optional<int2> pos = {};
   std::optional<uint2> size = {};
   std::optional<std::wstring> title = {};
@@ -317,16 +332,9 @@ public:
     if (const auto wsp = system::slot_address<handle>(_id)) return wsp->size;
     return {};
   }
-
-  std::expected<drawing, error_trace> begin_draw() {
-    const auto wsp = system::slot_address<handle>(_id);
-    if (!wsp) return unexpected_error(errors::ui_invalid_slotid);
-    if (auto d = wsp->rendertarget.begin_draw()) return d;
-    else return unexpected_error(d.error());
-  }
 }; // standard window
 
-/// \note custom window
+/// MARK: custom window
 
 template<> struct options<type::custom> {
   std::optional<int2> pos = {};
@@ -334,6 +342,7 @@ template<> struct options<type::custom> {
   std::optional<std::wstring> title = {};
   std::optional<DWORD> style = {};
   std::optional<DWORD> exstyle = {};
+  bool is_primal_window = true;
 };
 
 template<> class handle<type::custom> : public handle<type::unknown> {
@@ -361,7 +370,7 @@ public:
       /// \note rendertarget and controllayer are getting updated in WM_SIZE
       wsp->messy = true, wsp->manually_drawn = false, wsp->active = true;
       wsp->visible = bool(wsp->style & WS_VISIBLE);
-      system::primal_windows.push_back(id);
+      if (Options.is_primal_window) system::primal_windows.push_back(id);
       return handle<type::custom>(id);
     }
   };
@@ -385,19 +394,42 @@ namespace yw {
 namespace system {
 
 /// shows/hides tooltip window
+/// \param Pos relative position of control to window's client area
+/// \param Size size of control
 std::expected<void, error_trace> show_tooltip(float2 Pos, float2 Size, std::wstring Text) {
   constexpr DWORD style = WS_POPUP;
-  constexpr DWORD exstyle = WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT;
-  static auto tooltip_window = assume(window::open<window::type::custom>({.style = style, .exstyle = exstyle}));
-  static auto tooltip_label = assume(ui::label::add(tooltip_window));
+  constexpr DWORD exstyle = WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE;
+  constexpr float margin = ui::arbitrary_value; // avoid tooltip being too close to the control
+  static auto tooltip_window = [&] {
+    auto res = window::open<window::type::custom>({.style = style, .exstyle = exstyle, .is_primal_window = false});
+    if (!res) fatal_error(res.error());
+    res->background().color(colors::ivory);
+    return std::move(*res);
+  }();
+  static auto tooltip_label = [&] {
+    auto res = ui::label::add(tooltip_window);
+    if (!res) fatal_error(res.error());
+    res->core().margin({});
+    res->text().font_size(12.0f).padding({});
+    return std::move(*res);
+  }();
   if (Text.empty()) {
     if (auto res = tooltip_window.hide(); !res) return unexpected_error(res.error());
     return {};
   }
   tooltip_label.text().string(std::move(Text));
-  if (auto res = tooltip_window.pos(Pos, Size); !res) return unexpected_error(res.error());
-  if (auto res = tooltip_window.show(); !res) return unexpected_error(res.error());
   if (auto res = tooltip_window.redraw(); !res) return unexpected_error(res.error());
+  const auto tooltip_size = tooltip_window.size();
+  const auto left_right = Pos + Size;
+  const auto desktop_size = desktop_client_size();
+  float2 origin{Pos.x, 0.0f};
+  if (Pos.y < desktop_size.y - left_right.y) origin.y = left_right.y + margin;
+  else origin.y = Pos.y - tooltip_size.y - margin;
+  if (const auto wsp = slot_address<window::handle<window::type::unknown>>(tooltip_window._slotid())) {
+    ::SetWindowPos(wsp->hwnd, nullptr, int(origin.x), int(origin.y), 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    ::ShowWindow(wsp->hwnd, SW_SHOW);
+    wsp->swapchain->Present(0, 0);
+  }
   return {};
 }
 

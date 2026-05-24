@@ -29,6 +29,18 @@ public:
       return {};
     }
 
+    virtual float2 calculate_minimum_size() const override {
+      float2 internal;
+      for (const auto& cid : controls)
+        if (const auto csp = system::slot_address<control>(cid)) {
+          const auto bounds = csp->calculate_minimum_size() + csp->core.margin.xy() + csp->core.margin.zw();
+          get<!Vertical>(internal) = yw::max(get<!Vertical>(internal), get<!Vertical>(bounds));
+          get<Vertical>(internal) += get<Vertical>(bounds);
+        }
+      return vapply_r<float2>(yw::max, core.min_size, internal, core.required_size * core.constrained) +
+             padding.xy() + padding.zw();
+    }
+
     virtual void ensure_minimum_size() override {
       float2 internal;
       for (const auto& cid : controls)

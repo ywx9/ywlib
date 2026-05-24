@@ -39,6 +39,8 @@ struct text : public base {
       part.text_layout_changed = part.text_alignment_changed = false;
     }
 
+    auto layout_size() const { return part.layout_size; }
+
     const auto& string() const { return part.string; }
     auto& string(std::wstring String) {
       part.string = std::move(String);

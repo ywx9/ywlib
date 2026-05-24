@@ -24,6 +24,7 @@ protected:
     csp->id = cid;
     csp->layout_id = lid;
     csp->window_id = lsp->get_window_id();
+    csp->core.control_id = cid;
     return cid;
   }
 
@@ -103,7 +104,8 @@ public:
       return {};
     }
 
-    virtual void ensure_minimum_size() { core.size = core.minimum_size(); }
+    virtual float2 calculate_minimum_size() const { return core.minimum_size(); }
+    virtual void ensure_minimum_size() { core.size = calculate_minimum_size(); }
     virtual void update_layout(float2 Pos, float2 Size) { core.update_geometry(Pos, Size); }
     virtual std::expected<void, error_trace> draw() = 0;
 

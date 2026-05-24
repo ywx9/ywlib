@@ -27,6 +27,14 @@ struct base {
     accessor(Part& PartRef) : part(PartRef) {}
 
   public:
+    ~accessor() noexcept {
+      if (const auto csp = system::slot_address<unknown>(part.control_id)) {
+        if (part.layout_changed) csp->make_messy();
+        else if (part.geometry_changed) csp->make_moved();
+        else if (part.view_changed) csp->make_dirty();
+      }
+    }
+
     accessor(accessor&& Other) noexcept = default;
     accessor(const accessor& Other) noexcept = default;
   };
@@ -62,6 +70,7 @@ struct core : public base {
       return *this;
     }
     const auto& pos() const { return part.pos; }
+
     const auto& size() const { return part.size; }
     auto& size(std::optional<float2> Size) {
       if (Size) {
@@ -71,6 +80,9 @@ struct core : public base {
       part.layout_changed = true;
       return *this;
     }
+
+    auto bounds() const { return part.bounds(); }
+
     const auto& radius() const { return part.radius; }
     auto& radius(float2 Radius) {
       part.radius = Radius;

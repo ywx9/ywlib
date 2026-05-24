@@ -95,7 +95,7 @@ public:
       return {};
     }
 
-    virtual void ensure_minimum_size() override {
+    virtual float2 calculate_minimum_size() const override {
       const auto cb_bounds = checkbox.bounds();
       float2 inner = padding.xy() + padding.zw();
       for (size_t i = 0; i < items.size(); ++i) {
@@ -104,7 +104,11 @@ public:
         inner.x = yw::max(inner.x, padding.x + cb_bounds.x + icon_offset + tx_bounds.x + padding.z);
       }
       inner.y += (items.size() - 1) * item_offset;
-      core.size = vapply_r<float2>(yw::max, core.min_size, core.required_size * core.constrained, inner);
+      return vapply_r<float2>(yw::max, core.min_size, core.required_size * core.constrained, inner);
+    }
+
+    virtual void ensure_minimum_size() override {
+      core.size = calculate_minimum_size();
     }
 
     virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) const override {

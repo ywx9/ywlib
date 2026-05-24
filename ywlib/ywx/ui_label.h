@@ -4,8 +4,6 @@
 
 namespace yw::ui {
 
-/// \note ui::labelのminimum_sizeについて、非拘束である場合、テキストがpaddingも含めて表示されるように決定される。
-
 class label : public control {
 public:
   struct slot : public control::slot {
@@ -23,9 +21,13 @@ public:
       return {};
     }
 
-    virtual void ensure_minimum_size() {
+    virtual float2 calculate_minimum_size() const override {
       const float2 inner = text.bounds() * (int2(1, 1) - core.constrained);
-      core.size = vapply_r<float2>(yw::max, core.min_size, core.required_size * core.constrained, inner);
+      return vapply_r<float2>(yw::max, core.min_size, core.required_size * core.constrained, inner);
+    }
+
+    virtual void ensure_minimum_size() override {
+      core.size = calculate_minimum_size();
     }
 
     virtual slotid next_tab_stop(slotid, bool, bool&) const override { return {}; }
