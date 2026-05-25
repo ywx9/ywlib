@@ -37,8 +37,8 @@ public:
           get<!Vertical>(internal) = yw::max(get<!Vertical>(internal), get<!Vertical>(bounds));
           get<Vertical>(internal) += get<Vertical>(bounds);
         }
-      return vapply_r<float2>(yw::max, core.min_size, internal, core.required_size * core.constrained) +
-             padding.xy() + padding.zw();
+      return vapply_r<float2>(yw::max, core.min_size, internal, core.required_size * core.constrained) + padding.xy() +
+             padding.zw();
     }
 
     virtual void ensure_minimum_size() override {
@@ -78,9 +78,19 @@ public:
       if (!visible) return {};
       if (auto res = background.draw(core); !res) return unexpected_error(res.error());
       for (const auto& cid : controls)
-        if (const auto csp = system::slot_address<control>(cid)) csp->draw();
+        if (const auto csp = system::slot_address<control>(cid))
+          if (auto res = csp->draw(); !res) return unexpected_error(res.error());
       if (auto res = border.draw(core); !res) return unexpected_error(res.error());
       return {};
+    }
+
+    size_t hittest_index(float2 Pt) const {
+      if (!core.hittest(Pt)) return npos;
+      for (size_t i = 0; i < controls.size(); ++i) {
+        if (const auto csp = system::slot_address<control>(controls[i]))
+          if (csp->core.hittest(Pt)) return i;
+      }
+      return npos;
     }
 
     virtual slotid hittest(float2 Pt) const override {
@@ -111,6 +121,25 @@ public:
       csp->border.control_id = lyt._id;
     } else return unexpected_error(errors::ui_invalid_slotid, "missing slot");
     return lyt;
+  }
+
+  std::expected<void, error_trace> erase(derived_from<control> auto& Control) {
+    const auto csp = system::slot_address<layout>(_id);
+    if (!csp) return unexpected_error(errors::ui_invalid_slotid);
+    const auto cid = Control._id;
+    if (auto it = std::find(csp->controls.begin(), csp->controls.end(), cid); it != csp->controls.end()) {
+      csp->controls.erase(it);
+      system::uis.erase(cid);
+      return {};
+    } else return unexpected_error(errors::invalid_argument, "Control not found in layout");
+  }
+
+  std::expected<void, error_trace> clear() {
+    const auto csp = system::slot_address<layout>(_id);
+    if (!csp) return unexpected_error(errors::ui_invalid_slotid);
+    for (const auto& cid : csp->controls) system::uis.erase(cid);
+    csp->controls.clear();
+    return {};
   }
 };
 

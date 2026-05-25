@@ -45,7 +45,7 @@ public:
       csp->border.control_id = lbl._id;
       csp->text.control_id = lbl._id;
     } else return unexpected_error(errors::ui_invalid_slotid);
-    return lbl;
+    return std::move(lbl);
   }
 
   template<typename Self> decltype(auto) background(this Self& self) {

@@ -1,152 +1,144 @@
 #pragma once
-#include "ywx/ui_control.h"
-#include "ywx/uip_checkbox.h"
-#include "ywx/uip_text.h"
+#include "ywx/ui_checkbox.h"
+#include "ywx/ui_layout.h"
 
 namespace yw::ui {
 
-class radiobutton : public control {
-  static constexpr float2 default_icon_size = {20.0f, 20.0f};
+class radiobutton : public vertical_layout {
   static constexpr std::string_view box_path = "M 10 2 A 8 8 0 1 0 10 18 A 8 8 0 1 0 10 2";
   static constexpr std::string_view mark_path = "M 10 6 A 4 4 0 1 0 10 14 A 4 4 0 1 0 10 6";
+
 public:
-  struct slot : public control::slot {
-    static constexpr size_t invalid_index = size_t(-1);
-
-    parts::background background;
-    parts::border border;
-    parts::checkbox checkbox;
-    std::vector<parts::text> items;
-
-    float4 padding = float4::fill(arbitrary_value);
-    float icon_offset = arbitrary_value;
-    float item_offset = arbitrary_value;
-    size_t selected_index = invalid_index;
-    size_t focused_index = invalid_index;
-
+  struct slot : public vertical_layout::slot {
+    std::vector<checkbox> items;
+    size_t selected_index = npos, focused_index = npos;
     function<void, size_t> on_change;
     function<void, bool> on_focus;
     function<void, key> on_click;
-
     key captured_key{};
-
-    size_t normalize_focus() const noexcept {
-      if (items.empty()) return invalid_index;
-      if (focused_index < items.size()) return focused_index;
-      if (selected_index < items.size()) return selected_index;
-      return 0;
-    }
-
-    float row_height(size_t Index) const noexcept {
-      if (Index >= items.size()) return 0.0f;
-      return yw::max(checkbox.bounds().y, items[Index].bounds().y);
-    }
-
-    size_t hit_item(float2 Point) const noexcept {
-      if (!core.hittest(Point)) return invalid_index;
-      float y = core.pos.y + padding.y;
-      for (size_t i = 0; i < items.size(); ++i) {
-        const auto h = row_height(i);
-        if (Point.y >= y && Point.y <= y + h) return i;
-        y += h + item_offset;
-      }
-      return invalid_index;
-    }
-
-    void move_focus(int Delta) {
-      const auto base = normalize_focus();
-      if (base == invalid_index) return;
-      const auto n = int(items.size());
-      const auto index = int(base);
-      focused_index = size_t((index + Delta + n) % n);
-      assume(make_dirty());
-    }
-
-    void select_index(size_t Index) {
-      if (Index >= items.size()) return;
-      const bool changed = selected_index != Index;
-      selected_index = Index;
-      focused_index = Index;
-      assume(make_dirty());
-      if (on_click) on_click(captured_key);
-      if (changed && on_change) on_change(Index);
-    }
+    bool locked = true;
 
     //-- overrides --//
 
-    virtual bool focusable() const override { return enabled; }
-
-    virtual std::expected<void, error_trace> draw() override {
-      if (!visible) return {};
-      if (auto res = background.draw(core); !res) return unexpected_error(res.error());
-      const auto cb_bounds = checkbox.bounds();
-      const float text_width = core.size.x - padding.x - padding.z - cb_bounds.x - icon_offset;
-      float2 offset = core.pos + padding.xy();
-      for (size_t i = 0; i < items.size(); ++i) {
-        auto& item = items[i];
-        const auto height = yw::max(cb_bounds.y, item.bounds().y);
-        const auto text_pos = offset + float2(cb_bounds.x + icon_offset, 0);
-        checkbox.checked = i == selected_index;
-        if (auto res = checkbox.draw(offset, float2(cb_bounds.x, height)); !res) return unexpected_error(res.error());
-        if (auto res = item.draw(text_pos, float2(text_width, height)); !res) return unexpected_error(res.error());
-        offset.y += height + item_offset;
-      }
-      if (auto res = border.draw(core); !res) return unexpected_error(res.error());
+    virtual std::expected<void, error_trace> attachable() const override {
+      if (locked) return unexpected_error(errors::ui_not_attachable);
       return {};
     }
-
-    virtual float2 calculate_minimum_size() const override {
-      const auto cb_bounds = checkbox.bounds();
-      float2 inner = padding.xy() + padding.zw();
-      for (size_t i = 0; i < items.size(); ++i) {
-        const auto tx_bounds = items[i].bounds();
-        inner.y += yw::max(cb_bounds.y, tx_bounds.y);
-        inner.x = yw::max(inner.x, padding.x + cb_bounds.x + icon_offset + tx_bounds.x + padding.z);
-      }
-      inner.y += (items.size() - 1) * item_offset;
-      return vapply_r<float2>(yw::max, core.min_size, core.required_size * core.constrained, inner);
+    virtual std::expected<void, error_trace> attach(slotid Child) override {
+      if (locked) return unexpected_error(errors::ui_not_attachable);
+      if (auto res = vertical_layout::slot::attach(Child)) return {};
+      else return unexpected_error(res.error());
+    }
+    virtual std::expected<void, error_trace> detach(slotid Child) override {
+      if (locked) return {};
+      if (auto res = vertical_layout::slot::detach(Child)) return {};
+      else return unexpected_error(res.error());
     }
 
-    virtual void ensure_minimum_size() override {
-      core.size = calculate_minimum_size();
-    }
-
+    virtual bool focusable() const override { return enabled && !items.empty(); }
+    virtual slotid hittest(float2 Pt) const override { return core.hittest(Pt) ? id : slotid(); }
     virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) const override {
       if (Focused == id) Found = true;
       else if (Found && visible) return id;
       return {};
     }
 
+    size_t normalize_focus() const {
+      if (items.empty()) return npos;
+      if (focused_index < items.size()) return focused_index;
+      if (selected_index < items.size()) return selected_index;
+      return 0;
+    }
+
+    size_t hit_item(float2 Pt) const {
+      for (size_t i = {}; i < items.size(); ++i) {
+        const auto item_sp = system::slot_address<checkbox>(items[i]._slotid());
+        if (item_sp && item_sp->core.hittest(Pt)) return i;
+      }
+      return npos;
+    }
+
+    std::expected<void, error_trace> select_index(size_t index) {
+      if (index >= items.size()) return unexpected_error(errors::invalid_argument);
+      const bool changed = selected_index != index;
+      if (selected_index < items.size()) {
+        if (const auto sp = system::slot_address<checkbox>(items[selected_index]._slotid())) sp->checkbox.checked = false;
+        else return unexpected_error(errors::ui_invalid_slotid);
+      }
+      selected_index = index;
+      focused_index = index;
+      if (const auto sp = system::slot_address<checkbox>(items[selected_index]._slotid())) sp->checkbox.checked = true;
+      else return unexpected_error(errors::ui_invalid_slotid);
+      if (auto res = make_dirty(); !res) return unexpected_error(res.error());
+      if (changed && on_change) on_change(index);
+      return {};
+    }
+
+    virtual std::expected<void, error_trace> draw_focus_ring(const parts::focus_ring& fr) override {
+      /// \note draw forcus ring around focused item
+      const auto fsp = system::slot_address<checkbox>(items[focused_index]._slotid());
+      if (!fsp) return unexpected_error(errors::ui_invalid_slotid);
+      if (auto res = fsp->draw_focus_ring(fr)) return {};
+      else return unexpected_error(res.error());
+    }
+
     virtual void click_event(events::button e) override {
-      if (enabled && e.code == captured_key && e.code == keys::lbutton) click_action(hit_item(float2(e.pos)));
+      if (enabled && e.code == captured_key)
+        if (const auto index = hit_item(float2(e.pos)); index != npos) {
+          select_index(index);
+          if (on_click) on_click(captured_key);
+        }
       captured_key = {};
     }
 
     virtual void button_event(events::button e) override {
-      if (enabled && e.down) captured_key = e.code;
-      else captured_key = {};
+      if (!enabled) {
+        captured_key = {};
+        return;
+      }
+      if (e.down) {
+        captured_key = e.code;
+        if (e.code == keys::lbutton)
+          if (const auto index = hit_item(float2(e.pos)); index != npos && focused_index != index) {
+            focused_index = index;
+            make_dirty();
+          }
+      } else captured_key = {};
     }
 
     virtual void focus_event(bool focused) override {
       if (focused) focused_index = normalize_focus();
-      else
-        captured_key = {}, focused_index = invalid_index;
-      assume(make_dirty());
+      else captured_key = {}, focused_index = npos;
+      make_dirty();
       if (enabled && on_focus) on_focus(focused);
     }
 
     virtual bool key_event(events::key e) override {
-      if (!enabled) return false;
+      if (!enabled || items.empty()) return false;
       if (e.down) {
         switch (e.code.code) {
         case keys::up.code:
+        case keys::left.code: {
           captured_key = {};
-          move_focus(-1);
+          const auto current = normalize_focus();
+          const auto next = current ? current - 1 : items.size() - 1;
+          if (current != next) {
+            focused_index = next;
+            assume(make_dirty());
+          }
           return true;
+        }
         case keys::down.code:
+        case keys::right.code: {
           captured_key = {};
-          move_focus(1);
+          const auto current = normalize_focus();
+          const auto next = (current + 1) % items.size();
+          if (current != next) {
+            focused_index = next;
+            assume(make_dirty());
+          }
           return true;
+        }
         case keys::space.code:
         case keys::enter.code:
           captured_key = e.code;
@@ -156,18 +148,15 @@ public:
           return false;
         }
       }
-      if (captured_key == e.code) click_action(normalize_focus());
-      captured_key = {};
-      return e.code == keys::space || e.code == keys::enter;
-    }
-
-    void click_action(size_t NewIndex) {
-      switch (captured_key.code) {
-      case keys::lbutton.code:
-      case keys::enter.code:
-      case keys::space.code:
-        select_index(NewIndex);
+      if (captured_key == e.code) {
+        if (const auto index = normalize_focus(); index != npos) {
+          assume(select_index(index));
+          if (on_click) on_click(captured_key);
+        }
       }
+      const bool handled = e.code == keys::space || e.code == keys::enter;
+      captured_key = {};
+      return handled;
     }
   };
 
@@ -176,35 +165,82 @@ public:
 
   static std::expected<radiobutton, error_trace> add(derived_from<unknown> auto& Layout) {
     radiobutton rb;
-    if (auto res = create_control<radiobutton>(Layout, rb)) rb._id = *res;
+    if (auto res = create_control<radiobutton>(Layout)) rb._id = *res;
     else return unexpected_error(res.error());
     if (const auto csp = system::slot_address<radiobutton>(rb._id)) {
+      const auto [bg_color, _] = control::get_auto_color();
       csp->background.control_id = rb._id;
+      csp->background.color = bg_color;
       csp->border.control_id = rb._id;
-      csp->checkbox.control_id = rb._id;
-      csp->checkbox.box.data = assume(svgpath::create(parts::icon::default_size, box_path));
-      csp->checkbox.check.data = assume(svgpath::create(parts::icon::default_size, mark_path));
     } else return unexpected_error(errors::ui_invalid_slotid);
     return rb;
   }
 
-  template<typename Self> decltype(auto) background(this Self& self) {
+  size_t item_count() const {
+    const auto csp = system::slot_address<radiobutton>(_id);
+    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    return csp->items.size();
+  }
+
+  std::expected<void, error_trace> append_item(std::wstring s) {
+    const auto csp = system::slot_address<radiobutton>(_id);
+    if (!csp) return unexpected_error(errors::ui_invalid_slotid);
+    csp->locked = false;
+    if (auto res = checkbox::add(*this)) {
+      res->icon().box_icon(assume(svgpath::create(parts::icon::default_size, box_path)));
+      res->icon().box_fill_color(colors::white);
+      res->icon().box_stroke_color(colors::black);
+      res->icon().check_icon(assume(svgpath::create(parts::icon::default_size, mark_path)));
+      res->icon().check_fill_color(colors::black);
+      res->icon().check_stroke_width(0.0f);
+      res->text().string(std::move(s));
+      csp->items.push_back(std::move(*res));
+      if (csp->selected_index == npos) {
+        csp->selected_index = 0;
+        csp->focused_index = 0;
+        csp->items.back().checked(true);
+      }
+    } else return unexpected_error(res.error());
+    csp->locked = true;
+    return {};
+  }
+
+  void clear_items() {
+    const auto csp = system::slot_address<radiobutton>(_id);
+    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    csp->locked = false;
+    assume(clear());
+    csp->locked = true;
+    csp->items.clear();
+    csp->selected_index = npos;
+    csp->focused_index = npos;
+    assume(csp->make_dirty());
+  }
+
+  size_t checked() const { return unsafe_get(&radiobutton::slot::selected_index); }
+
+  auto& checked(size_t index) {
+    const auto csp = system::slot_address<radiobutton>(_id);
+    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    assume(csp->select_index(index));
+    return *this;
+  }
+
+  template<typename Self> auto&& item(this Self&& self, size_t index) {
     const auto csp = system::slot_address<radiobutton>(self._id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
-    if constexpr (!is_const<Self>) return csp->background.access();
-    else return std::as_const(csp->background).access();
+    if (index >= csp->items.size()) fatal_error(errors::invalid_argument);
+    if constexpr (!is_const<remove_ref<Self>>) return csp->items[index];
+    else return std::as_const(csp->items[index]);
   }
-  template<typename Self> decltype(auto) border(this Self& self) {
-    const auto csp = system::slot_address<radiobutton>(self._id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    if constexpr (!is_const<Self>) return csp->border.access();
-    else return std::as_const(csp->border).access();
-  }
-  template<typename Self> decltype(auto) icon(this Self& self) {
-    const auto csp = system::slot_address<radiobutton>(self._id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    if constexpr (!is_const<Self>) return csp->checkbox.access();
-    else return std::as_const(csp->checkbox).access();
-  }
+
+  const auto& on_change() const { return unsafe_get(&radiobutton::slot::on_change); }
+  void on_change(function<void, size_t> f) { unsafe_set(&radiobutton::slot::on_change, std::move(f)); }
+
+  const auto& on_click() const { return unsafe_get(&radiobutton::slot::on_click); }
+  void on_click(function<void, key> f) { unsafe_set(&radiobutton::slot::on_click, std::move(f)); }
+
+  const auto& on_focus() const { return unsafe_get(&radiobutton::slot::on_focus); }
+  void on_focus(function<void, bool> f) { unsafe_set(&radiobutton::slot::on_focus, std::move(f)); }
 };
-}
+} // namespace yw::ui

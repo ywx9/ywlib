@@ -81,6 +81,7 @@ enum class alignment {
 }
 
 namespace system {
+bool recording_undo = true;
 short2 cursor_pos{};
 short2 cursor_delta{};
 inline slotset<unknown::slot> uis{};

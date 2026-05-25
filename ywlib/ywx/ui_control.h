@@ -68,24 +68,21 @@ public:
     virtual slotid get_window_id() const override { return window_id; }
 
     virtual std::expected<void, error_trace> make_dirty() override {
-      const auto wsp = system::slot_address<unknown>(window_id);
-      if (!wsp) return unexpected_error(errors::ui_invalid_slotid);
-      wsp->make_dirty();
+      if (const auto wsp = system::slot_address<unknown>(window_id))
+        if (auto res = wsp->make_dirty(); !res) return unexpected_error(res.error());
       return {};
     }
 
     virtual std::expected<void, error_trace> make_moved() override {
       if (auto res = core.update_geometry(); !res) return unexpected_error(res.error());
-      const auto wsp = system::slot_address<unknown>(window_id);
-      if (!wsp) return unexpected_error(errors::ui_invalid_slotid);
-      wsp->make_dirty();
+      if (const auto wsp = system::slot_address<unknown>(window_id))
+        if (auto res = wsp->make_dirty(); !res) return unexpected_error(res.error());
       return {};
     }
 
     virtual std::expected<void, error_trace> make_messy() override {
-      const auto wsp = system::slot_address<unknown>(window_id);
-      if (!wsp) return unexpected_error(errors::ui_invalid_slotid);
-      wsp->make_messy();
+      if (const auto wsp = system::slot_address<unknown>(window_id))
+        if (auto res = wsp->make_messy(); !res) return unexpected_error(res.error());
       return {};
     }
 
@@ -122,6 +119,18 @@ public:
     virtual void move_event(events::move e) {}
     virtual void wheel_event(events::wheel e) {}
   };
+
+  virtual ~control() {
+    const auto csp = system::slot_address<control>(_id);
+    if (!csp) return;
+    if (auto res = csp->make_messy(); !res) fatal_error(res.error());
+    const auto lsp = system::slot_address<unknown>(csp->layout_id);
+    if (!lsp) return;
+    if (auto res = lsp->detach(csp->id); !res) return;
+  }
+
+  control(control&&) = default;
+  control& operator=(control&&) = default;
 
   template<typename Self> decltype(auto) core(this Self& self) {
     const auto csp = system::slot_address<control>(self._id);

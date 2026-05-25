@@ -17,7 +17,6 @@ public:
 private:
   std::vector<group> _undo_stack{};
   std::vector<group> _redo_stack{};
-  // std::optional<group> _building{};
   bool _replaying = false;
   size_t _limit = 256;
   stopwatch _grouping_timer;
@@ -84,7 +83,7 @@ public:
   }
 
   bool undo() {
-    _grouping_timer.reset(); // 停止により、次のコマンドを強制的に新グループに
+    _grouping_timer.reset();
     if (_undo_stack.empty()) return false;
     auto g = std::move(_undo_stack.back());
     _undo_stack.pop_back();
@@ -97,7 +96,7 @@ public:
   }
 
   bool redo() {
-    _grouping_timer.reset(); // 停止により、次のコマンドを強制的に新グループに
+    _grouping_timer.reset();
     if (_redo_stack.empty()) return false;
     auto g = std::move(_redo_stack.back());
     _redo_stack.pop_back();

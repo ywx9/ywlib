@@ -69,7 +69,7 @@ struct wheel {
   bool horizontal : 1;
 };
 static_assert(sizeof(wheel) <= 8);
-} // namespace yw::event
+} // namespace yw::events
 
 namespace std {
 
@@ -88,8 +88,20 @@ template<typename C> struct formatter<yw::events::hover, C> {
   formatter<basic_string<C>, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(yw::events::hover value, auto& ctx) const {
-    const auto s = std::format("hover(pos: {}, type: {})", value.pos, value.type);
+    const auto s = std::format("hover(pos:{}, type:{})", value.pos, value.type);
     return fmt.format(s, ctx);
   }
 };
-}
+
+template<typename C> struct formatter<yw::events::button, C> {
+  formatter<basic_string<C>, C> fmt;
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(yw::events::button value, auto& ctx) const {
+    const auto s = std::format(
+      "button(pos:{}, code:{}, ctrl:{}, shift:{}, alt:{}, down:{}, double_click:{})", //
+      value.pos, value.code, bool(value.ctrl), bool(value.shift), bool(value.alt), bool(value.down),
+      bool(value.double_click));
+    return fmt.format(s, ctx);
+  }
+};
+} // namespace std

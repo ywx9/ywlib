@@ -607,7 +607,7 @@ inline constexpr struct {
         if constexpr (!stringable<T> && is_pointer<remove_ref<T>>) return static_cast<const void*>(a);
         else return a;
       };
-      return operator()(static_cast<S&&>(fmt), _to_hex(as)...);
+      return operator()(fmt, _to_hex(as)...);
     } else if constexpr (((stringable<Ts> && different_from<iter_value_t<Ts>, C>) || ...)) {
       constexpr auto _covert = []<typename S2>(const S2& s) -> decltype(auto) {
         using C2 = iter_value_t<S2>;

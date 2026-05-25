@@ -168,6 +168,7 @@ struct text : public base {
   }
 
   std::expected<void, error_trace> draw(float2 Pos, float2 Area) {
+    if (string.empty()) return {}; // nothing to draw
     if (!text_layout) return unexpected_error(errors::not_initialized, "Not initialized");
     static const float c[] = {0.5f, 0.0f, 1.0f};
     if (color.a > 0.0f) {

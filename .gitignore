@@ -3,6 +3,7 @@
 !.clang-format
 !.gitignore
 !LICENSE
+!AGENTS.MD
 !README.MD
 !docs/
 !docs/**
