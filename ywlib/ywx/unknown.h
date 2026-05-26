@@ -10,7 +10,7 @@ define_error(ui_not_attachable);
 class unknown {
   /// \note window と control で共有する基底クラス
 public:
-  class slot {
+  struct slot {
   public:
     slotset<slot>::slotid id{};
 
@@ -22,26 +22,6 @@ public:
     virtual std::expected<void, error_trace> make_dirty() = 0;
     virtual std::expected<void, error_trace> make_moved() = 0;
     virtual std::expected<void, error_trace> make_messy() = 0;
-  };
-
-  template<typename Handle> class setter {
-  protected:
-    friend Handle;
-    using slot_type = typename Handle::slot;
-    slot_type* _p = nullptr;
-    bool _dirty = false, _moved = false, _messy = false;
-    setter(slot_type* p) : _p(p) {}
-  };
-
-  template<typename Handle> class getter {
-  protected:
-    friend Handle;
-    using slot_type = typename Handle::slot;
-    const slot_type* _p = nullptr;
-    getter(const slot_type* p) : _p(p) {}
-
-  public:
-    const auto& id() const { return _p->id; }
   };
 
 protected:
@@ -67,7 +47,7 @@ namespace ui {
 inline constexpr float arbitrary_value = 4.0f;
 using slotid = slotset<unknown::slot>::slotid;
 
-enum class alignment {
+enum class alignment : unsigned char {
   center = 0b0000,
   left = 0b0001,
   right = 0b0010,
@@ -77,6 +57,22 @@ enum class alignment {
   left_bottom = 0b1001,
   right_top = 0b0110,
   right_bottom = 0b1010,
+};
+
+template<derived_from<unknown> Ui> class accessor {
+protected:
+  typename Ui::slot& slot;
+  bool dirty{}, moved{}, messy{};
+
+public:
+  accessor(typename Ui::slot& Slot) noexcept : slot(Slot) {}
+  accessor(accessor&&) noexcept = default;
+  accessor& operator=(accessor&&) noexcept = default;
+  ~accessor() noexcept {
+    if (messy) core.make_messy();
+    else if (moved) core.make_moved();
+    else if (dirty) core.make_dirty();
+  }
 };
 }
 

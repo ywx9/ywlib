@@ -17,6 +17,8 @@ struct text : public base {
   bool text_layout_changed = false;
   bool text_alignment_changed = false;
 
+  float2 calculate_minimum_size() const noexcept { return layout_size + padding.xy() + padding.zw(); }
+
   std::expected<void, error_trace> set_font_config(const yw::font_config& fc) {
     if (fc.name.has_value()) font.name = *fc.name;
     if (fc.weight.has_value()) font.weight = *fc.weight;

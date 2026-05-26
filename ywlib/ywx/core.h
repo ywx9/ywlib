@@ -370,14 +370,18 @@ public:
     if (auto res = initialize(); !res) fatal_error(res.error());
     return std::bit_cast<yw::color>(c.solid_brush->GetColor());
   }
-  void color(const yw::color& Color) {
+  auto& color(const yw::color& Color) {
     if (auto res = initialize(); !res) fatal_error(res.error());
     c.solid_brush->SetColor(reinterpret_cast<const D2D1_COLOR_F*>(&Color));
+    return *this;
   }
   bool dashed() { return c.dashed; }
 
   /// \note Note that the effect of this style change will continue until explicitly switched.
-  void dashed(bool Dashed = true) { c.dashed = Dashed; }
+  auto& dashed(bool Dashed = true) {
+    c.dashed = Dashed;
+    return *this;
+  }
 
   ID2D1SolidColorBrush* d2d_brush() {
     if (auto res = initialize(); !res) fatal_error(res.error());

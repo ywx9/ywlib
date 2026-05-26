@@ -201,13 +201,6 @@ public:
       if (auto res = draw(); !res) return unexpected_error(res.error());
       return {};
     }
-
-    // std::expected<void, error_trace> register_undo_resizing(uint2 NewSize) {
-    //   if (!system::recording_undo) return {};
-    //   commands.push({
-    //     [&]() {}
-    //   })
-    // }
   };
 
   virtual ~handle() noexcept { close(); }

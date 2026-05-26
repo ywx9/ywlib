@@ -4,33 +4,93 @@
 
 namespace yw::ui {
 
-class label : public control {
+class label : public frame {
 public:
-  struct slot : public control::slot {
-    parts::background background{.color = colors::transparent};
-    parts::border border{.color = colors::transparent};
-    parts::text text;
+  struct slot : public frame::slot {
+    yw::text text;
+    ui::alignment content_alignment = ui::alignment::center;
+    float4 padding = float4::fill(arbitrary_value);
 
     //-- overrides --//
 
     virtual std::expected<void, error_trace> draw() override {
       if (!visible) return {};
-      if (auto res = background.draw(core); !res) return unexpected_error(res.error());
-      if (auto res = text.draw(core.pos, core.size); !res) return unexpected_error(res.error());
-      if (auto res = border.draw(core); !res) return unexpected_error(res.error());
+      if (auto res = draw_background(); !res) return unexpected_error(res.error());
+      const auto tx_origin = calculate_inner_origin(text.layout_size(), padding, content_alignment);
+      if (auto res = text.draw(tx_origin); !res) return unexpected_error(res.error());
+      if (auto res = draw_foreground(); !res) return unexpected_error(res.error());
       return {};
     }
 
-    virtual float2 calculate_minimum_size() const override {
-      const float2 inner = text.bounds() * (int2(1, 1) - core.constrained);
-      return vapply_r<float2>(yw::max, core.min_size, core.required_size * core.constrained, inner);
+    virtual std::expected<float2, error_trace> calculate_minimum_size() const override {
+      const float2 inner = text.layout_size() + padding.xy() + padding.zw();
+      return vapply_r<float2>(yw::max, min_size, required_size * constrained, inner);
     }
 
-    virtual void ensure_minimum_size() override {
-      core.size = calculate_minimum_size();
+    virtual std::expected<void, error_trace> ensure_minimum_size() override {
+      if (auto res = calculate_minimum_size()) size = *res;
+      else return unexpected_error(res.error());
+      return {};
+    }
+  };
+
+  class text_accessor : public accessor<label> {
+    using accessor<label>::slot;
+
+  public:
+    auto layout_size() const { return slot.text.layout_size; }
+
+    const auto& string() const { return slot.text.string; }
+    auto& string(std::wstring String) {
+      slot.text.string = std::move(String);
+      slot.text.text_layout_changed = true;
+      return *this;
+    }
+    const auto& font() const { return slot.text.font; }
+    auto& font(const font_config& Font) {
+      slot.text.set_font_config(Font);
+      slot.text.text_layout_changed = true;
+      return *this;
+    }
+    const auto& alignment() const { return slot.text.alignment; }
+    auto& alignment(text_alignment Alignment) {
+      slot.text.alignment = Alignment;
+      slot.text.text_layout_changed = true;
+      return *this;
+    }
+    const auto& block_alignment() const { return slot.text.block_alignment; }
+    auto& block_alignment(ui::alignment BlockAlignment) {
+      slot.text.block_alignment = BlockAlignment;
+      slot.text.text_layout_changed = true;
+      return *this;
+    }
+    const auto& color() const { return slot.text.color; }
+    auto& color(yw::color Color) {
+      slot.text.color = Color;
+      slot.text.text_layout_changed = true;
+      return *this;
+    }
+    const auto& padding() const { return slot.padding; }
+    auto& padding(float4 Padding) {
+      slot.padding = Padding;
+      slot.text_layout_changed = true;
+      return *this;
     }
 
-    virtual slotid next_tab_stop(slotid, bool, bool&) const override { return {}; }
+    const auto& font_name() const { return slot.font.name; }
+    auto& font_name(std::wstring FontName) { return font({.name = std::move(FontName)}); }
+
+    const auto& font_size() const { return slot.font.size; }
+    auto& font_size(float FontSize) { return font({.size = FontSize}); }
+
+    const auto& font_weight() const { return slot.font.weight; }
+    auto& font_weight(yw::font_weight FontWeight) { return font({.weight = FontWeight}); }
+
+    const auto& font_style() const { return slot.font.style; }
+    auto& font_style(yw::font_style FontStyle) { return font({.style = FontStyle}); }
+
+    const auto& font_stretch() const { return slot.font.stretch; }
+    auto& font_stretch(yw::font_stretch FontStretch) { return font({.stretch = FontStretch}); }
   };
 
   using control::operator bool;
@@ -41,25 +101,11 @@ public:
     if (auto res = create_control<label>(Layout)) lbl._id = *res;
     else return unexpected_error(res.error());
     if (const auto csp = system::slot_address<label>(lbl._id)) {
-      csp->background.control_id = lbl._id;
-      csp->border.control_id = lbl._id;
-      csp->text.control_id = lbl._id;
+      csp->background_color = control::get_auto_color().first;
     } else return unexpected_error(errors::ui_invalid_slotid);
     return std::move(lbl);
   }
 
-  template<typename Self> decltype(auto) background(this Self& self) {
-    const auto csp = system::slot_address<label>(self._id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    if constexpr (!is_const<Self>) return csp->background.access();
-    else return std::as_const(csp->background.access());
-  }
-  template<typename Self> decltype(auto) border(this Self& self) {
-    const auto csp = system::slot_address<label>(self._id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    if constexpr (!is_const<Self>) return csp->border.access();
-    else return std::as_const(csp->border.access());
-  }
   template<typename Self> decltype(auto) text(this Self& self) {
     const auto csp = system::slot_address<label>(self._id);
     if (!csp) fatal_error(errors::ui_invalid_slotid);
