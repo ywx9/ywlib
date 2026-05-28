@@ -38,58 +38,51 @@ public:
     using accessor<label>::slot;
 
   public:
-    auto layout_size() const { return slot.text.layout_size; }
-
-    const auto& string() const { return slot.text.string; }
+    const auto& string() const { return slot.text.string(); }
     auto& string(std::wstring String) {
-      slot.text.string = std::move(String);
-      slot.text.text_layout_changed = true;
+      slot.text.string(std::move(String));
       return *this;
     }
-    const auto& font() const { return slot.text.font; }
-    auto& font(const font_config& Font) {
-      slot.text.set_font_config(Font);
-      slot.text.text_layout_changed = true;
+    const auto& color() const { return slot.text.color(); }
+    auto& color(const yw::color& Color) {
+      slot.text.color(Color);
       return *this;
     }
-    const auto& alignment() const { return slot.text.alignment; }
+    const auto& font() const { return slot.text.font(); }
+    auto& font(font_config Font) {
+      slot.text.font(std::move(Font));
+      return *this;
+    }
+    const auto& alignment() const { return slot.text.text_alignment(); }
     auto& alignment(text_alignment Alignment) {
-      slot.text.alignment = Alignment;
-      slot.text.text_layout_changed = true;
+      slot.text.text_alignment(Alignment);
       return *this;
     }
-    const auto& block_alignment() const { return slot.text.block_alignment; }
+    const auto& block_alignment() const { return slot.text.block_alignment(); }
     auto& block_alignment(ui::alignment BlockAlignment) {
-      slot.text.block_alignment = BlockAlignment;
-      slot.text.text_layout_changed = true;
-      return *this;
-    }
-    const auto& color() const { return slot.text.color; }
-    auto& color(yw::color Color) {
-      slot.text.color = Color;
-      slot.text.text_layout_changed = true;
+      slot.text.block_alignment(BlockAlignment);
       return *this;
     }
     const auto& padding() const { return slot.padding; }
     auto& padding(float4 Padding) {
       slot.padding = Padding;
-      slot.text_layout_changed = true;
+      messy = true;
       return *this;
     }
 
-    const auto& font_name() const { return slot.font.name; }
+    const auto& font_name() const { return slot.text.font().name.value_or(L""); }
     auto& font_name(std::wstring FontName) { return font({.name = std::move(FontName)}); }
 
-    const auto& font_size() const { return slot.font.size; }
+    const auto& font_size() const { return slot.text.font().size.value_or(0.0f); }
     auto& font_size(float FontSize) { return font({.size = FontSize}); }
 
-    const auto& font_weight() const { return slot.font.weight; }
+    const auto& font_weight() const { return slot.text.font().weight.value_or(yw::font_weight::normal); }
     auto& font_weight(yw::font_weight FontWeight) { return font({.weight = FontWeight}); }
 
-    const auto& font_style() const { return slot.font.style; }
+    const auto& font_style() const { return slot.text.font().style.value_or(yw::font_style::normal); }
     auto& font_style(yw::font_style FontStyle) { return font({.style = FontStyle}); }
 
-    const auto& font_stretch() const { return slot.font.stretch; }
+    const auto& font_stretch() const { return slot.text.font().stretch.value_or(yw::font_stretch::normal); }
     auto& font_stretch(yw::font_stretch FontStretch) { return font({.stretch = FontStretch}); }
   };
 

@@ -1,15 +1,21 @@
 #pragma once
 #include "ywx/core.h"
+#include "ywx/unknown.h"
 
 namespace yw {
 
 class text {
   comptr<IDWriteTextLayout> _text_layout;
+  std::wstring _string;
+  yw::color _color;
+  font_config _font = yw::font_config::default_;
+  yw::text_alignment _text_alignment = yw::text_alignment::left;
+  ui::alignment _block_alignment = ui::alignment::center;
   float2 _layout_size;
-  bool text_layout_changed = false;
-  bool text_alignment_changed = false;
+  bool _dirty = false; // alignment and/or color changed
+  bool _messy = false; // layout is changed
 
-  std::expected<void, error_trace> update_font_name() {
+  std::expected<void, error_trace> _update_font_name() {
     if (!_text_layout) return unexpected_error(errors::not_initialized, "Not initialized");
     if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
     IDWriteTextFormat* tfp = static_cast<IDWriteTextFormat*>(_text_layout.get());
@@ -17,11 +23,11 @@ class text {
     std::wstring font_name(n, L'\0');
     if (const auto hr = tfp->GetFontFamilyName(font_name.data(), n + 1); FAILED(hr))
       return unexpected_error(errors::operation_failed, "GetFontFamilyName failed", int(hr));
-    font.name = std::move(font_name);
+    _font.name = std::move(font_name);
     return {};
   }
 
-  std::expected<void, error_trace> update_layout_size() {
+  std::expected<void, error_trace> _update_layout_size() {
     if (!_text_layout) return unexpected_error(errors::not_initialized, "Not initialized");
     DWRITE_TEXT_METRICS metrics;
     if (const auto hr = _text_layout->GetMetrics(&metrics); FAILED(hr))
@@ -30,59 +36,105 @@ class text {
     return {};
   }
 
-  std::expected<void, error_trace> update_layout_alignment() {
+  std::expected<void, error_trace> _update_text_alignment() {
     if (!_text_layout) return {};
-    const auto hr = _text_layout->SetTextAlignment(static_cast<DWRITE_TEXT_ALIGNMENT>(text_alignment));
+    const auto hr = _text_layout->SetTextAlignment(static_cast<DWRITE_TEXT_ALIGNMENT>(_text_alignment));
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "SetTextAlignment failed", int(hr));
     return {};
   }
 
-  std::expected<void, error_trace> update_text_layout() {
+  std::expected<void, error_trace> _update_text_layout() {
     if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
     comptr<IDWriteTextFormat> tfp{};
     auto hr = dwrite.factory()->CreateTextFormat(
-      font.name->c_str(), nullptr, DWRITE_FONT_WEIGHT(*font.weight), DWRITE_FONT_STYLE(*font.style),
-      DWRITE_FONT_STRETCH(*font.stretch), *font.size, L"", &tfp.get());
+      _font.name->c_str(), nullptr, DWRITE_FONT_WEIGHT(*_font.weight), DWRITE_FONT_STYLE(*_font.style),
+      DWRITE_FONT_STRETCH(*_font.stretch), *_font.size, L"", &tfp.get());
     if (FAILED(hr) || !tfp) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int(hr));
     IDWriteTextLayout* tlp = nullptr;
-    auto hr = dwrite.factory()->CreateTextLayout(string.c_str(), UINT(string.size()), tfp.get(), 1e6, 1e6, &tlp);
+    auto hr = dwrite.factory()->CreateTextLayout(_string.c_str(), UINT(_string.size()), tfp.get(), 1e6, 1e6, &tlp);
     if (FAILED(hr) || !tlp) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", int(hr));
     _text_layout.reset(tlp);
-    if (auto res = update_layout_alignment(); !res) return unexpected_error(res.error());
-    if (auto res = update_font_name(); !res) return unexpected_error(res.error());
-    if (auto res = update_layout_size(); !res) return unexpected_error(res.error());
+    if (auto res = _update_text_alignment(); !res) return unexpected_error(res.error());
+    if (auto res = _update_font_name(); !res) return unexpected_error(res.error());
+    if (auto res = _update_layout_size(); !res) return unexpected_error(res.error());
     return {};
   }
 
 public:
-  std::wstring string;
-  font_config font = yw::font_config::default_;
-  yw::color color;
-  yw::text_alignment text_alignment = yw::text_alignment::left;
+  IDWriteTextLayout* dwrite_text_layout() { return _text_layout.get(); }
 
-  float2 layout_size() const noexcept { return _layout_size; }
-
-  void set_font(const font_config& new_font) {
-    if (new_font.name.has_value()) font.name = *new_font.name, text_layout_changed = true;
-    if (new_font.weight.has_value()) font.weight = *new_font.weight, text_layout_changed = true;
-    if (new_font.style.has_value()) font.style = *new_font.style, text_layout_changed = true;
-    if (new_font.stretch.has_value()) font.stretch = *new_font.stretch, text_layout_changed = true;
-    if (new_font.size.has_value()) font.size = *new_font.size, text_layout_changed = true;
+  const auto& string() const noexcept { return _string; }
+  auto& string(std::wstring String) noexcept {
+    _string = std::move(String);
+    _messy = true;
+    return *this;
   }
 
+  const color& color() const noexcept { return _color; }
+  auto& color(yw::color Color) noexcept {
+    _color = Color;
+    _dirty = true;
+    return *this;
+  }
+
+  const auto& font() const noexcept { return _font; }
+  auto& font(yw::font_config Font) noexcept {
+    if (Font.name.has_value()) _font.name = std::move(*Font.name);
+    if (Font.weight.has_value()) _font.weight = *Font.weight;
+    if (Font.style.has_value()) _font.style = *Font.style;
+    if (Font.stretch.has_value()) _font.stretch = *Font.stretch;
+    if (Font.size.has_value()) _font.size = *Font.size;
+    _messy = true;
+    return *this;
+  }
+
+  const auto& text_alignment() const noexcept { return _text_alignment; }
+  auto& text_alignment(yw::text_alignment Alignment) noexcept {
+    _text_alignment = Alignment;
+    _update_text_alignment(); // message will be printed if failed
+    _dirty = true;
+    return *this;
+  }
+
+  const auto& block_alignment() const noexcept { return _block_alignment; }
+  auto& block_alignment(yw::ui::alignment Alignment) noexcept {
+    _block_alignment = Alignment;
+    _dirty = true;
+    return *this;
+  }
+
+  float2 layout_size() const noexcept { return _layout_size; }
+  bool dirty() const noexcept { return _dirty; }
+  bool messy() const noexcept { return _messy; }
+  /// \note layout_size is determined by the current text layout
+
+  /// explicitly updates text layout
   std::expected<void, error_trace> update() {
-    if (text_layout_changed || !_text_layout) {
-      if (auto res = update_text_layout(); !res) return unexpected_error(res.error());
-    } else if (text_alignment_changed) {
-      if (auto res = update_layout_alignment(); !res) return unexpected_error(res.error());
-    }
-    text_layout_changed = text_alignment_changed = false;
+    if (!_messy && _text_layout) return {};
+    if (auto res = _update_text_layout(); !res) return unexpected_error(res.error());
+    _dirty = true, _messy = false;
     return {};
   }
 
+  /// draws text at specified position. layout will be updated if necessary
+  /// \note `block_alignment` is ignored
   std::expected<void, error_trace> draw(float2 Pos) {
-    if (string.empty() || !_text_layout) return {};
+    if (_string.empty() || !_text_layout) return {};
+    if (auto res = update(); !res) return unexpected_error(res.error());
+    brush.color(_color);
     if (auto res = draw_text(Pos, _text_layout.get()); !res) return unexpected_error(res.error());
+    return {};
+  }
+
+  /// draws text at specfied area. layout will be updated if necessary
+  std::expected<void, error_trace> draw(float2 Pos, float2 Area) {
+    if (_string.empty() || !_text_layout) return {};
+    if (auto res = update(); !res) return unexpected_error(res.error());
+    constexpr float c[]{0.5f, 0.0f, 1.0f};
+    const float2 cc{c[unsigned(_block_alignment) % 3], c[unsigned(_block_alignment) / 3 % 3]};
+    const auto origin = Pos + cc * (Area - _layout_size);
+    brush.color(_color);
+    if (auto res = draw_text(origin, _text_layout.get()); !res) return unexpected_error(res.error());
     return {};
   }
 
