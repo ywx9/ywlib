@@ -21,12 +21,12 @@ template<> struct options<type::unknown> {
   std::optional<std::wstring> title = {};
 };
 
-template<> class handle<type::unknown> : public unknown {
+template<> class handle<type::unknown> : public ui::unknown {
 protected:
-  handle(ui::slotid Id) : unknown(Id) {}
+  handle(ui::slotid Id) : ui::unknown(Id) {}
 
 public:
-  struct slot : public unknown::slot {
+  struct slot : public ui::unknown::slot {
     HWND hwnd{};
     int4 frame_thickness{};
     int2 pos{};
@@ -39,8 +39,14 @@ public:
     bitmap controllayer{};
     comptr<IDXGISwapChain1> swapchain{};
 
-    ui::parts::background background;
-    ui::parts::focus_ring focus_ring;
+    color background_color = colors::white;
+    bitmap background_image;
+    float background_image_opacity = 1.0f;
+
+    color focusring_color = {0.0f, 0.0f, 1.0f, 0.5f};
+    float focusring_offset = ui::arbitrary_value;
+    float focusring_width = ui::arbitrary_value;
+    bool focusring_dashed = false;
 
     ui::slotid child_control{};
     ui::slotid focused_control{};
@@ -52,8 +58,8 @@ public:
     bool resizing = false, tracking = false;
 
     function<bool> on_close;
-    function<void, events::key> on_keydown;
-    function<void, events::key> on_keyup;
+    function<void, yw::key_event> on_keydown;
+    function<void, yw::key_event> on_keyup;
 
     command_manager commands;
 
@@ -156,8 +162,8 @@ public:
         const auto csp = system::slot_address<ui::control>(child_control);
         if (!csp) return unexpected_error(errors::ui_invalid_slotid);
         csp->ensure_minimum_size();
-        const auto new_size = vapply_r<int2>(yw::max, csp->core.bounds(), size);
-        csp->update_layout({}, new_size);
+        const auto new_size = vapply_r<int2>(yw::max, csp->bounds(), size);
+        csp->update_geometry({}, new_size);
         if (size != new_size)
           ::SetWindowPos(hwnd, nullptr, 0, 0, new_size.x, new_size.y, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
       }
@@ -179,14 +185,16 @@ public:
 
     std::expected<void, error_trace> draw() {
       if (!dirty) return {};
-      auto d = rendertarget.begin_draw(background.color);
+      auto d = rendertarget.begin_draw(background_color);
       if (!d) return unexpected_error(d.error());
-      if (background.image)
-        if (auto res = draw_bitmap({}, size, background.image, background.image_opacity); !res)
+      if (background_image)
+        if (auto res = draw_bitmap({}, size, background_image, background_image_opacity); !res)
           return unexpected_error(res.error());
       if (auto res = draw_bitmap({}, controllayer); !res) return unexpected_error(res.error());
-      if (const auto fcsp = system::slot_address<ui::control>(focused_control))
-        if (auto res = fcsp->draw_focus_ring(focus_ring); !res) return unexpected_error(res.error());
+      if (const auto fcsp = system::slot_address<ui::control>(focused_control)) {
+        auto res = fcsp->draw_focusring(focusring_color, focusring_offset, focusring_width, focusring_dashed);
+        if (!res) return unexpected_error(res.error());
+      }
       if (auto res = d->close(); !res) return unexpected_error(res.error());
       if (swapchain) swapchain->Present(0, 0);
       dirty = false;
@@ -200,6 +208,60 @@ public:
       if (auto res = draw_controllayer(); !res) return unexpected_error(res.error());
       if (auto res = draw(); !res) return unexpected_error(res.error());
       return {};
+    }
+  };
+
+  class background_accessor : public ui::accessor<handle> {
+    using ui::accessor<handle>::slot;
+
+  public:
+    const auto& color() const { return slot.background_color; }
+    auto& color(const yw::color& Color) {
+      slot.background_color = Color;
+      dirty = true;
+      return *this;
+    }
+    const auto& image() const { return slot.background_image; }
+    auto& image(yw::bitmap Image) {
+      slot.background_image = std::move(Image);
+      dirty = true;
+      return *this;
+    }
+    const auto& image_opacity() const { return slot.background_image_opacity; }
+    auto& image_opacity(float1 Opacity) {
+      slot.background_image_opacity = Opacity.x;
+      dirty = true;
+      return *this;
+    }
+  };
+
+  class focusring_accessor : public ui::accessor<handle> {
+    using ui::accessor<handle>::slot;
+
+  public:
+    const auto& color() const { return slot.focusring_color; }
+    auto& color(const yw::color& Color) {
+      slot.focusring_color = Color;
+      dirty = true;
+      return *this;
+    }
+    const auto& offset() const { return slot.focusring_offset; }
+    auto& offset(float1 Offset) {
+      slot.focusring_offset = Offset.x;
+      dirty = true;
+      return *this;
+    }
+    const auto& width() const { return slot.focusring_width; }
+    auto& width(float1 Width) {
+      slot.focusring_width = Width.x;
+      dirty = true;
+      return *this;
+    }
+    const auto& dashed() const { return slot.focusring_dashed; }
+    auto& dashed(bool Dashed) {
+      slot.focusring_dashed = Dashed;
+      dirty = true;
+      return *this;
     }
   };
 
@@ -258,8 +320,15 @@ public:
   template<typename Self> decltype(auto) background(this Self& self) {
     const auto wsp = system::slot_address<handle>(self._id);
     if (!wsp) fatal_error(errors::ui_invalid_slotid);
-    if constexpr (!is_const<Self>) return wsp->background.access();
-    else return std::as_const(wsp->background.access());
+    if constexpr (!is_const<Self>) return background_accessor(*wsp);
+    else return const_cast<const background_accessor>(background_accessor(*wsp));
+  }
+
+  template<typename Self> decltype(auto) focusring(this Self& self) {
+    const auto wsp = system::slot_address<handle>(self._id);
+    if (!wsp) fatal_error(errors::ui_invalid_slotid);
+    if constexpr (!is_const<Self>) return focusring_accessor(*wsp);
+    else return const_cast<const focusring_accessor>(focusring_accessor(*wsp));
   }
 
   std::expected<void, error_trace> redraw(bool Messy = false) {
@@ -410,7 +479,7 @@ std::expected<void, error_trace> show_tooltip(float2 Pos, float2 Size, std::wstr
     auto res = ui::label::add(tooltip_window);
     if (!res) fatal_error(res.error());
     res->core().margin({});
-    res->text().font_size(12.0f).padding({});
+    res->text().font_size(12.0f);
     return std::move(*res);
   }();
   if (Text.empty()) {
@@ -438,12 +507,13 @@ window::handle<window::type::unknown>::slot* window_slot_address(ui::slotid Wind
 }
 } // namespace system
 
-inline void ui::control::slot::hover_event(events::hover Event) {
-  if (enabled && on_hover) on_hover(Event);
+inline void ui::control::slot::hover_event(yw::hover_event e) {
+  if (!enabled) return;
+  if (on_hover) on_hover(e);
   if (tooltip.empty()) return;
-  if (Event.enter()) {
+  if (e.enter()) {
     if (const auto w = system::slot_address<window::handle<window::type::unknown>>(window_id))
-      system::show_tooltip(core.pos + w->pos + w->frame_thickness.xy(), core.size, tooltip);
-  } else if (Event.leave()) system::show_tooltip({}, {}, {});
+      system::show_tooltip(pos + w->pos + w->frame_thickness.xy(), size, tooltip);
+  } else if (e.leave()) system::show_tooltip({}, {}, {});
 }
 } // namespace yw

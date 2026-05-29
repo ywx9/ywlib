@@ -1,11 +1,7 @@
 #pragma once
-#include "ywx/event.h"
-#include "ywx/unknown.h"
+#include "ywx/keys.h"
+#include "ywx/ui_unknown.h"
 // #include "ywx/ui_parts.h"
-
-namespace yw::errors {
-define_error(ui_invalid_slotid);
-}
 
 namespace yw::ui {
 
@@ -15,20 +11,26 @@ protected:
   static std::expected<slotid, error_trace> create_control(Layout& layout) {
     const auto lid = layout._slotid();
     const auto lsp = system::slot_address<unknown>(lid);
-    if (!lsp) return unexpected_error(errors::operation_failed, "Failed to access layout slot");
+    if (!lsp) return unexpected_error(errors::ui_invalid_slotid);
     if (auto res = lsp->attachable(); !res) return unexpected_error(res.error());
     const auto cid = system::uis.add(std::make_unique<typename Ctrl::slot>());
     const auto csp = system::slot_address<Ctrl>(cid);
-    if (!csp) return unexpected_error(errors::operation_failed, "Failed to create control slot");
+    if (!csp) return unexpected_error(errors::ui_invalid_slotid);
     lsp->attach(cid);
     csp->id = cid;
     csp->layout_id = lid;
     csp->window_id = lsp->get_window_id();
-    csp->core.control_id = cid;
     return cid;
   }
 
-  /// returns default background and border colors.
+  template<typename Accessor, typename Self> static Accessor create_accessor(Self& self) {
+    const auto csp = system::slot_address<remove_const<Self>>(self._slotid());
+    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    if constexpr (!is_const<Self>) return Accessor(*csp);
+    else return const_cast<const Accessor>(Accessor(*csp));
+  }
+
+  /// returns background and border colors.
   static tuple<color, color> get_auto_color() noexcept {
     constexpr float hues[] = {240.0f, 120.0f, 0.0f, 270.0f, 180.0f, 30.0f, 210.0f, 60.0f, 300.0f};
     static size_t color_index = 0;
@@ -48,12 +50,19 @@ protected:
     if (!csp) fatal_error(errors::ui_invalid_slotid);
     csp->*mp = static_cast<T&&>(value);
   }
+  template<typename Mp, typename T> std::expected<void, error_trace> safe_set(Mp mp, T&& value) {
+    const auto csp = dynamic_cast<class_type<Mp>*>(system::uis.get(_id));
+    if (!csp) return unexpected_error(errors::ui_invalid_slotid);
+    csp->*mp = static_cast<T&&>(value);
+    return {};
+  }
 
 public:
   struct slot : public unknown::slot {
     slotid layout_id{};
     slotid window_id{};
     float4 margin = float4::fill(arbitrary_value);
+    float4 padding = float4::fill(arbitrary_value);
     float2 min_size = float2::fill(arbitrary_value * 2);
     float2 required_size{};
     float2 provided_pos{};
@@ -69,13 +78,13 @@ public:
     bool dying = false;
 
     std::wstring tooltip{};
-    function<void, events::hover> on_hover;
+    function<void, yw::hover_event> on_hover;
 
-    float2 calculate_inner_origin(float2 Size, float4 Padding, ui::alignment Alignment) const {
+    float2 calculate_content_origin(float2 Size, float4 Padding, ui::alignment Alignment) const {
       const auto area = size - Padding.xy() - Padding.zw();
       constexpr float c[]{0.5f, 0.0f, 1.0f};
       const float2 cc{c[unsigned(Alignment) % 3], c[(unsigned(Alignment) / 3) % 3]};
-      return Padding.xy() + (area - Size) * cc;
+      return pos + Padding.xy() + (area - Size) * cc;
     }
 
     //-- overrides --//
@@ -114,7 +123,7 @@ public:
 
     virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) const { return {}; }
 
-    virtual std::expected<void, error_trace> draw_focus_ring(
+    virtual std::expected<void, error_trace> draw_focusring(
       const yw::color& Color, float Offset, float Width, bool Dashed) {
       brush.color(Color).dashed(Dashed);
       auto res = draw_round_rectangle(
@@ -124,8 +133,8 @@ public:
       return {};
     }
 
-    virtual std::expected<float2, error_trace> calculate_minimum_size() const {
-      return vapply_r<float2>(yw::max, min_size, required_size * constrained);
+    virtual std::expected<float2, error_trace> calculate_minimum_size() {
+      return vapply_r<float2>(yw::max, min_size, padding.xy() + padding.zw(), required_size * constrained);
     }
     virtual std::expected<void, error_trace> ensure_minimum_size() {
       if (auto res = calculate_minimum_size()) return {};
@@ -157,15 +166,16 @@ public:
     virtual float2 ime_position() const { return {}; };
     virtual void ime_insert_text(std::wstring_view) {}
 
+    virtual void button_event(yw::button_event e) {}
     virtual void char_event(wchar_t c) {}
-    virtual void click_event(events::button e) {}
-    virtual void button_event(events::button e) {}
-    virtual void drag_event(events::drag e) {}
+    virtual void click_event(yw::button_event e) {}
+    virtual void double_click_event(yw::button_event e) {}
+    virtual void drag_event(yw::drag_event e) {}
     virtual void focus_event(bool) {}
-    virtual void hover_event(events::hover Event);
-    virtual bool key_event(events::key e) { return false; }
-    virtual void move_event(events::move e) {}
-    virtual void wheel_event(events::wheel e) {}
+    virtual void hover_event(yw::hover_event e);
+    virtual bool key_event(yw::key_event e) { return false; }
+    virtual void move_event(yw::move_event e) {}
+    virtual void wheel_event(yw::wheel_event e) {}
   };
 
   class core_accessor : public accessor<control> {
@@ -178,6 +188,13 @@ public:
       messy = true;
       return *this;
     }
+    const auto& padding() const { return slot.padding; }
+    auto& padding(float4 Padding) {
+      slot.padding = vapply_r<float4>(yw::max, float4(), Padding);
+      messy = true;
+      return *this;
+    }
+
     const auto& min_size() const { return slot.min_size; }
     auto& min_size(float2 MinSize) {
       slot.min_size = vapply_r<float2>(yw::max, float2(), MinSize);
@@ -224,33 +241,18 @@ public:
   control(control&&) = default;
   control& operator=(control&&) = default;
 
-  template<typename Self> decltype(auto) core(this Self& self) {
-    const auto csp = system::slot_address<control>(self._id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    if constexpr (!is_const<Self>) return core_accessor(*csp);
-    else return std::as_const(core_accessor(*csp));
+  template<typename Self> decltype(auto) core(this Self& self) { return create_accessor<core_accessor>(self); }
+
+  const auto& tooltip() const { return unsafe_get(&slot::tooltip); }
+  std::expected<void, error_trace> tooltip(std::wstring Tooltip) {
+    if (auto res = safe_set(&slot::tooltip, std::move(Tooltip))) return {};
+    else return unexpected_error(res.error());
   }
 
-  std::expected<void, error_trace> tooltip(std::wstring Tooltip) { // sets tooltip string
-    if (const auto csp = system::slot_address<control>(_id)) csp->tooltip = std::move(Tooltip);
-    else return unexpected_error(errors::ui_invalid_slotid);
-    return {};
-  }
-  const auto& tooltip() const {
-    const auto csp = system::slot_address<control>(_id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->tooltip;
-  }
-
-  std::expected<void, error_trace> on_hover(function<void, events::hover> Callback) { // sets on_hover callback
-    if (const auto csp = system::slot_address<control>(_id)) csp->on_hover = std::move(Callback);
-    else return unexpected_error(errors::ui_invalid_slotid);
-    return {};
-  }
-  const auto& on_hover() const {
-    const auto csp = system::slot_address<control>(_id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    return csp->on_hover;
+  const auto& on_hover() const { return unsafe_get(&slot::on_hover); }
+  std::expected<void, error_trace> on_hover(function<void, yw::hover_event> f) {
+    if (auto res = safe_set(&slot::on_hover, std::move(f))) return {};
+    else return unexpected_error(res.error());
   }
 };
 
@@ -350,18 +352,7 @@ public:
     }
   };
 
-  template<typename Self> decltype(auto) background(this Self&& self) {
-    const auto csp = system::slot_address<frame>(self._id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    if constexpr (!is_const<remove_ref<Self>>) return background_accessor(*csp);
-    else return std::as_const(background_accessor(*csp));
-  }
-
-  template<typename Self> decltype(auto) border(this Self&& self) {
-    const auto csp = system::slot_address<frame>(self._id);
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
-    if constexpr (!is_const<remove_ref<Self>>) return border_accessor(*csp);
-    else return std::as_const(border_accessor(*csp));
-  }
+  template<typename Self> decltype(auto) background(this Self&& self) { create_accessor<background_accessor>(self); }
+  template<typename Self> decltype(auto) border(this Self&& self) { create_accessor<border_accessor>(self); }
 };
 } // namespace yw::ui

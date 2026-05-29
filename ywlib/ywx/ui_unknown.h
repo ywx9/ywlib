@@ -1,14 +1,14 @@
 #pragma once
 #include "ywx/core.h"
 
-namespace yw {
-
-namespace errors{
+namespace yw::errors {
+define_error(ui_invalid_slotid);
 define_error(ui_not_attachable);
 }
 
+namespace yw::ui {
+
 class unknown {
-  /// \note window と control で共有する基底クラス
 public:
   struct slot {
   public:
@@ -31,7 +31,6 @@ protected:
 
 public:
   virtual ~unknown() noexcept {}
-
   unknown(unknown&& Other) noexcept : _id(std::exchange(Other._id, {})) {}
   unknown& operator=(unknown&& Other) noexcept {
     if (this != &Other) _id = std::exchange(Other._id, {});
@@ -41,8 +40,6 @@ public:
   explicit operator bool() const noexcept;
   auto _slotid() const noexcept { return _id; }
 };
-
-namespace ui {
 
 inline constexpr float arbitrary_value = 4.0f;
 using slotid = slotset<unknown::slot>::slotid;
@@ -59,7 +56,7 @@ enum class alignment : unsigned char {
   right_bottom = 0b1010,
 };
 
-template<derived_from<unknown> Ui> class accessor {
+template<typename Ui> class accessor {
 protected:
   typename Ui::slot& slot;
   bool dirty{}, moved{}, messy{};
@@ -69,23 +66,31 @@ public:
   accessor(accessor&&) noexcept = default;
   accessor& operator=(accessor&&) noexcept = default;
   ~accessor() noexcept {
-    if (messy) core.make_messy();
-    else if (moved) core.make_moved();
-    else if (dirty) core.make_dirty();
+    if (messy) slot.make_messy();
+    else if (moved) slot.make_moved();
+    else if (dirty) slot.make_dirty();
   }
 };
-}
+} // namespace yw::ui
 
-namespace system {
+namespace yw::system {
 bool recording_undo = true;
 short2 cursor_pos{};
 short2 cursor_delta{};
-inline slotset<unknown::slot> uis{};
-inline std::vector<slotset<unknown::slot>::slotid> primal_windows{};
-template<derived_from<unknown> Ui> typename Ui::slot* slot_address(slotset<unknown::slot>::slotid id) noexcept {
+inline slotset<ui::unknown::slot> uis{};
+inline std::vector<slotset<ui::unknown::slot>::slotid> primal_windows{};
+template<derived_from<ui::unknown> Ui> typename Ui::slot* slot_address(slotset<ui::unknown::slot>::slotid id) noexcept {
   return dynamic_cast<typename Ui::slot*>(uis.get(id));
 }
-} // namespace system
+} // namespace yw::system
 
-inline unknown::operator bool() const noexcept { return system::uis.contains(_id); }
-} // namespace yw
+namespace yw {
+
+inline ui::unknown::operator bool() const noexcept { return system::uis.contains(_id); }
+
+constexpr auto to_dwrite_value(ui::alignment Align) noexcept {
+  if (const auto a = uint8_t(Align) & 0b11; a == 0b01) return DWRITE_TEXT_ALIGNMENT_LEADING;
+  else if (a == 0b10) return DWRITE_TEXT_ALIGNMENT_TRAILING;
+  else return DWRITE_TEXT_ALIGNMENT_CENTER;
+}
+}

@@ -54,6 +54,8 @@ inline constexpr double ln2 = 0.69314718055994530942;
 inline constexpr double ln3 = 1.09861228866810969139;
 inline constexpr double ln5 = 1.60943791243410037460;
 
+template<typename C> inline const std::basic_string<C> empty_string{};
+
 template<typename... Ts> inline constexpr bool always_false = false;
 template<bool... Bs> inline constexpr size_t counts = (Bs + ...);
 template<bool... Bs> inline constexpr size_t inspects = false;

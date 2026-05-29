@@ -26,31 +26,37 @@ public:
 
     virtual std::expected<void, error_trace> draw() override {
       if (!visible) return {};
-      if (auto res = background.draw(core); !res) return unexpected_error(res.error());
-      if (auto res = text.draw(core.pos, core.size); !res) return unexpected_error(res.error());
+      if (auto res = draw_background(); !res) return unexpected_error(res.error());
+      const auto tx_origin = calculate_content_origin(text.bounds(), text_padding, text_alignment);
+      if (auto res = text.draw(tx_origin); !res) return unexpected_error(res.error());
       if (pressed && pressed_overlay_color.a > 0.0f) {
         brush.color(pressed_overlay_color);
-        if (auto res = fill_geometry(core.geometry.get()); !res) return unexpected_error(res.error());
+        if (auto res = fill_geometry(geometry.get()); !res) return unexpected_error(res.error());
       }
-      if (auto res = border.draw(core); !res) return unexpected_error(res.error());
+      if (auto res = draw_foreground(); !res) return unexpected_error(res.error());
       return {};
     }
 
-    virtual void click_event(events::button e) override {
-      if (enabled && e.code == captured_key) click_action();
+    virtual void click_event(yw::button_event e) override {
+      if (!enabled) return;
+      const auto key = e.key;
+      if (key == captured_key && key == keys::lbutton)
+        if (on_click) on_click(key);
       captured_key = {};
       pressed = false;
     }
 
-    virtual void button_event(events::button e) override {
+    virtual void button_event(yw::button_event e) override {
       if (!enabled) return;
+      const auto key = e.key;
       if (e.down) {
-        captured_key = e.code;
-        const auto b = e.code == keys::lbutton;
+        captured_key = key;
+        const auto b = key == keys::lbutton;
         if (pressed != b) make_dirty();
         pressed = b;
       } else {
-        if (captured_key == e.code) click_action();
+        if (key == captured_key && key == keys::lbutton)
+          if (on_click) on_click(key);
         if (pressed) make_dirty();
         captured_key = {};
         pressed = false;
@@ -66,29 +72,22 @@ public:
       if (enabled && on_focus) on_focus(focused);
     }
 
-    virtual bool key_event(events::key e) override {
+    virtual bool key_event(yw::key_event e) override {
       if (!enabled) return false;
+      const auto key = e.key;
       if (e.down) {
-        captured_key = e.code;
-        const auto b = e.code == keys::enter || e.code == keys::space;
+        captured_key = key;
+        const auto b = key == keys::enter || key == keys::space;
         if (pressed != b) make_dirty();
         pressed = b;
       } else {
-        if (captured_key == e.code) click_action();
+        if (key == captured_key && (key == keys::enter || key == keys::space))
+          if (on_click) on_click(captured_key);
         if (pressed) make_dirty();
         captured_key = {};
         pressed = false;
       }
-      return e.code == keys::space || e.code == keys::enter;
-    }
-
-    virtual void click_action() {
-      switch (captured_key.code) {
-      case keys::lbutton.code:
-      case keys::enter.code:
-      case keys::space.code:
-        if (on_click) on_click(captured_key);
-      }
+      return key == keys::space || key == keys::enter;
     }
   };
 
@@ -101,23 +100,29 @@ public:
     else return unexpected_error(res.error());
     if (const auto csp = system::slot_address<button>(btn._id)) {
       const auto [bg_color, border_color] = control::get_auto_color();
-      csp->background.control_id = btn._id;
-      csp->background.color = bg_color;
-      csp->border.control_id = btn._id;
-      csp->border.color = border_color;
-      csp->text.control_id = btn._id;
-      csp->text.color = border_color;
+      csp->background_color = bg_color;
+      csp->border_color = border_color;
+      csp->text.color(bg_color);
     } else return unexpected_error(errors::ui_invalid_slotid);
     return btn;
   }
 
   const auto& pressed_overlay_color() const { return unsafe_get(&button::slot::pressed_overlay_color); }
-  void pressed_overlay_color(const color& c) { unsafe_set(&button::slot::pressed_overlay_color, c); }
+  std::expected<void, error_trace> pressed_overlay_color(const color& c) {
+    if (auto res = safe_set(&button::slot::pressed_overlay_color, c)) return {};
+    else return unexpected_error(res.error());
+  }
 
   const auto& on_click() const { return unsafe_get(&button::slot::on_click); }
-  void on_click(function<void, key> f) { unsafe_set(&button::slot::on_click, std::move(f)); }
+  std::expected<void, error_trace> on_click(function<void, yw::key> f) {
+    if (auto res = safe_set(&button::slot::on_click, std::move(f))) return {};
+    else return unexpected_error(res.error());
+  }
 
   const auto& on_focus() const { return unsafe_get(&button::slot::on_focus); }
-  void on_focus(function<void, bool> f) { unsafe_set(&button::slot::on_focus, std::move(f)); }
+  std::expected<void, error_trace> on_focus(function<void, bool> f) {
+    if (auto res = safe_set(&button::slot::on_focus, std::move(f))) return {};
+    else return unexpected_error(res.error());
+  }
 };
 } // namespace yw::ui

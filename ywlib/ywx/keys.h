@@ -3,9 +3,29 @@
 
 namespace yw {
 
+struct modifiers {
+  bool ctrl : 1;
+  bool shift : 1;
+  bool alt : 1;
+  std::string to_string() const {
+    std::string s("(ctrl:0, shift:0, alt:0)");
+    s[6] = '0' + ctrl, s[15] = '0' + shift, s[23] = '0' + alt;
+    return s;
+  }
+};
+static_assert(sizeof(modifiers) == 1);
+
 struct key {
   uint8_t code;
-  friend constexpr bool operator==(key lhs, key rhs) noexcept = default;
+
+  friend constexpr bool operator==(key x, key y) noexcept = default;
+  friend constexpr key operator&(key x, key y) noexcept { return key(x.code & y.code); }
+  friend constexpr key operator|(key x, key y) noexcept { return key(x.code | y.code); }
+  friend constexpr key operator^(key x, key y) noexcept { return key(x.code ^ y.code); }
+  friend constexpr key& operator&=(key& x, key y) noexcept { return x.code &= y.code, x; }
+  friend constexpr key& operator|=(key& x, key y) noexcept { return x.code |= y.code, x; }
+  friend constexpr key& operator^=(key& x, key y) noexcept { return x.code ^= y.code, x; }
+
   bool pressed() const noexcept { return (::GetKeyState(int(code)) & 0x8000) != 0; }
   constexpr std::string_view name() const noexcept {
     static constexpr const char* names[] = {
@@ -113,13 +133,119 @@ inline constexpr key comma{VK_OEM_COMMA};
 inline constexpr key period{VK_OEM_PERIOD};
 inline constexpr key slash{VK_OEM_2};
 } // namespace keys
+
+#pragma pack(push, 1)
+
+struct button_event {
+  short2 pos;
+  yw::key key;
+  yw::modifiers mods;
+  bool down;
+};
+static_assert(sizeof(button_event) <= 8);
+
+struct drag_event {
+  short2 delta;
+  yw::key key;
+  yw::modifiers mods;
+};
+static_assert(sizeof(drag_event) <= 8);
+
+struct hover_event {
+  short2 pos;
+  enum class type : uint8_t { enter = 0x1, leave = 0x2, move = 0x4 } type;
+  bool enter() const { return type == type::enter; }
+  bool leave() const { return type == type::leave; }
+  bool move() const { return type == type::move; }
+};
+static_assert(sizeof(hover_event) <= 8);
+
+struct key_event {
+  yw::key key;
+  yw::modifiers mods;
+  bool down;
+};
+static_assert(sizeof(key_event) <= 8);
+
+struct move_event {
+  short2 pos;
+  short2 delta;
+};
+static_assert(sizeof(move_event) <= 8);
+
+struct wheel_event {
+  short2 pos;
+  short delta;
+  yw::modifiers mods;
+  bool horizontal;
+};
+static_assert(sizeof(wheel_event) <= 8);
+
+#pragma pack(pop)
 } // namespace yw
 
 namespace std {
+
+template<> struct formatter<yw::modifiers> {
+  formatter<std::string> fmt;
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::modifiers& m, auto& ctx) const { return fmt.format(m.to_string(), ctx); }
+};
 
 template<> struct formatter<yw::key> {
   formatter<std::string_view> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::key& k, auto& ctx) const { return fmt.format(k.name(), ctx); }
+};
+
+template<> struct formatter<yw::button_event> {
+  formatter<std::string> fmt;
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::button_event& e, auto& ctx) const {
+    if (e.down) return std::format("button_event(pos:{}, key:{}, mods:{}, down)", e.pos, e.key, e.mods);
+    else return std::format("button_event(pos:{}, key:{}, mods:{}, up)", e.pos, e.key, e.mods);
+  }
+};
+
+template<> struct formatter<yw::drag_event> {
+  formatter<std::string> fmt;
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::drag_event& e, auto& ctx) const {
+    return std::format("drag_event(delta:{}, key:{}, mods:{})", e.delta, e.key, e.mods);
+  }
+};
+
+template<> struct formatter<yw::hover_event> {
+  formatter<std::string> fmt;
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::hover_event& e, auto& ctx) const {
+    return std::format("hover_event(pos:{}, type:{})", e.pos, static_cast<int>(e.type));
+  }
+};
+
+template<> struct formatter<yw::key_event> {
+  formatter<std::string> fmt;
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::key_event& e, auto& ctx) const {
+    if (e.down) return std::format("key_event(key:{}, mods:{}, down)", e.key, e.mods);
+    else return std::format("key_event(key:{}, mods:{}, up)", e.key, e.mods);
+  }
+};
+
+template<> struct formatter<yw::move_event> {
+  formatter<std::string> fmt;
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::move_event& e, auto& ctx) const {
+    return std::format("move_event(pos:{}, delta:{})", e.pos, e.delta);
+  }
+};
+
+template<> struct formatter<yw::wheel_event> {
+  formatter<std::string> fmt;
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::wheel_event& e, auto& ctx) const {
+    if (e.horizontal) return std::format("wheel_event(pos:{}, delta:{}, mods:{}, horizontal)", e.pos, e.delta, e.mods);
+    else return std::format("wheel_event(pos:{}, delta:{}, mods:{}, vertical)", e.pos, e.delta, e.mods);
+  }
 };
 } // namespace std

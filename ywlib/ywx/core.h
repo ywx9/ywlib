@@ -395,12 +395,12 @@ public:
 
 //////////////////////////////////////// MARK: dwrite
 
-enum class text_alignment : uint8_t {
-  left = DWRITE_TEXT_ALIGNMENT_LEADING,
-  right = DWRITE_TEXT_ALIGNMENT_TRAILING,
-  center = DWRITE_TEXT_ALIGNMENT_CENTER,
-  justified = DWRITE_TEXT_ALIGNMENT_JUSTIFIED
-};
+// enum class text_align : uint8_t {
+//   left = DWRITE_TEXT_ALIGNMENT_LEADING,
+//   right = DWRITE_TEXT_ALIGNMENT_TRAILING,
+//   center = DWRITE_TEXT_ALIGNMENT_CENTER,
+//   justified = DWRITE_TEXT_ALIGNMENT_JUSTIFIED
+// };
 
 enum class font_weight : uint16_t {
   thin = DWRITE_FONT_WEIGHT_THIN,
