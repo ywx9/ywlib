@@ -16,11 +16,10 @@ public:
 
     virtual ~slot() noexcept {}
     virtual slotset<slot>::slotid get_window_id() const = 0;
-    virtual std::expected<void, error_trace> attachable() const { return unexpected_error(errors::ui_not_attachable); }
+    virtual bool attachable() const { return false; }
     virtual std::expected<void, error_trace> attach(slotset<slot>::slotid Child) { return {}; }
     virtual std::expected<void, error_trace> detach(slotset<slot>::slotid Child) { return {}; }
     virtual std::expected<void, error_trace> make_dirty() = 0;
-    virtual std::expected<void, error_trace> make_moved() = 0;
     virtual std::expected<void, error_trace> make_messy() = 0;
   };
 
@@ -59,7 +58,7 @@ enum class alignment : unsigned char {
 template<typename Ui> class accessor {
 protected:
   typename Ui::slot& slot;
-  bool dirty{}, moved{}, messy{};
+  bool dirty{}, messy{};
 
 public:
   accessor(typename Ui::slot& Slot) noexcept : slot(Slot) {}
@@ -67,7 +66,6 @@ public:
   accessor& operator=(accessor&&) noexcept = default;
   ~accessor() noexcept {
     if (messy) slot.make_messy();
-    else if (moved) slot.make_moved();
     else if (dirty) slot.make_dirty();
   }
 };

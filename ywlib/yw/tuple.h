@@ -147,11 +147,12 @@ template<typename T> inline constexpr auto build = []<typename Tp>(Tp&& Tuple) n
 
 inline constexpr struct {
   struct internal {
-    template<size_t I, size_t N, typename F, typename T, typename... Ts>
+    template<size_t I, size_t N, typename F, typename... Ts> requires (I == N)
+    static constexpr void operator()(F&, Ts&&...) noexcept {}
+    template<size_t I, size_t N, typename F, typename T, typename... Ts> requires (I < N)
     static constexpr void operator()(F&& f, T&& t, Ts&&... ts) noexcept(
-      I == N || (nt_invocable<F&, element_t<T, I>, element_t<Ts, I>...> &&
-                  noexcept(operator()<I + 1, N>(f, static_cast<T&&>(t), static_cast<Ts&&>(ts)...)))) {
-      if constexpr (I == N) return;
+      nt_invocable<F&, element_t<T, I>, element_t<Ts, I>...> &&
+                  noexcept(operator()<I + 1, N>(f, static_cast<T&&>(t), static_cast<Ts&&>(ts)...))) {
       invoke(f, get<I>(static_cast<T&&>(t)), get<I>(static_cast<Ts&&>(ts))...);
       operator()<I + 1, N>(f, static_cast<T&&>(t), static_cast<Ts&&>(ts)...);
     }

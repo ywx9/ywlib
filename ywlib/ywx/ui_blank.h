@@ -6,7 +6,7 @@ namespace yw::ui {
 class blank : public control {
 public:
   struct slot : public control::slot {
-    virtual std::expected<void, error_trace> draw() override { return {}; }
+    virtual std::expected<void, error_trace> draw() const override { return {}; }
     virtual slotid next_tab_stop(slotid, bool, bool&) const override { return {}; }
   };
 
@@ -17,6 +17,9 @@ public:
     blank b;
     if (auto res = create_control<blank>(Layout)) b._id = *res;
     else return unexpected_error(res.error());
+    const auto csp = system::slot_address<blank>(b._slotid());
+    if (!csp) return unexpected_error(errors::ui_invalid_slotid);
+    csp->minimum_size = float2();
     return b;
   }
 

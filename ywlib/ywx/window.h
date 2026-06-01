@@ -45,7 +45,7 @@ public:
 
     color focusring_color = {0.0f, 0.0f, 1.0f, 0.5f};
     float focusring_offset = ui::arbitrary_value;
-    float focusring_width = ui::arbitrary_value;
+    float focusring_width = 2.0f;
     bool focusring_dashed = false;
 
     ui::slotid child_control{};
@@ -67,10 +67,7 @@ public:
 
     virtual ui::slotid get_window_id() const override { return id; }
 
-    virtual std::expected<void, error_trace> attachable() const override {
-      if (child_control) return unexpected_error(errors::invalid_operation, "Window already has a control attached");
-      return {};
-    }
+    virtual bool attachable() const override { return !child_control; }
     virtual std::expected<void, error_trace> attach(ui::slotid Child) override {
       child_control = Child;
       messy = true;
@@ -83,10 +80,6 @@ public:
       return {};
     }
     virtual std::expected<void, error_trace> make_dirty() override {
-      dirty = true;
-      return {};
-    }
-    virtual std::expected<void, error_trace> make_moved() override {
       dirty = true;
       return {};
     }
@@ -161,9 +154,9 @@ public:
       if (child_control) {
         const auto csp = system::slot_address<ui::control>(child_control);
         if (!csp) return unexpected_error(errors::ui_invalid_slotid);
-        csp->ensure_minimum_size();
+        if (auto res = csp->ensure_necessary_size(); !res) return unexpected_error(res.error());
         const auto new_size = vapply_r<int2>(yw::max, csp->bounds(), size);
-        csp->update_geometry({}, new_size);
+        if (auto res = csp->update_geometry({}, new_size); !res) return unexpected_error(res.error());
         if (size != new_size)
           ::SetWindowPos(hwnd, nullptr, 0, 0, new_size.x, new_size.y, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
       }

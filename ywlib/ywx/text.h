@@ -11,8 +11,8 @@ class text {
   font_config _font = yw::font_config::default_;
   ui::alignment _alignment = ui::alignment::left;
   float2 _bounds;
-  bool _dirty = false; // alignment and/or color changed
-  bool _messy = false; // layout is changed
+  mutable bool _dirty = false; // alignment and/or color changed
+  mutable bool _messy = false; // layout is changed
 
   std::expected<void, error_trace> _update_font_name() {
     if (!_layout) return unexpected_error(errors::not_initialized, "Not initialized");
@@ -117,7 +117,7 @@ public:
   bool dirty() const noexcept { return _dirty; }
   bool messy() const noexcept { return _messy; }
 
-  /// explicitly updates text layout
+  /// updates text layout
   std::expected<void, error_trace> update() {
     if (!_messy && _layout) return {};
     if (auto res = _update_text_layout(); !res) return unexpected_error(res.error());
@@ -125,11 +125,10 @@ public:
     return {};
   }
 
-  /// draws text at specified position. layout will be updated if necessary
+  /// draws text at specified position
   /// \note `block_alignment` is ignored
-  std::expected<void, error_trace> draw(float2 Pos) {
+  std::expected<void, error_trace> draw(float2 Pos) const {
     if (_string.empty() || !_layout) return {};
-    if (auto res = update(); !res) return unexpected_error(res.error());
     brush.color(_color);
     if (auto res = draw_text(Pos, _layout.get()); !res) return unexpected_error(res.error());
     _dirty = false;

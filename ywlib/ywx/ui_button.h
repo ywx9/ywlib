@@ -24,10 +24,10 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error_trace> draw() override {
+    virtual std::expected<void, error_trace> draw() const override {
       if (!visible) return {};
       if (auto res = draw_background(); !res) return unexpected_error(res.error());
-      const auto tx_origin = calculate_content_origin(text.bounds(), text_padding, text_alignment);
+      const auto tx_origin = calculate_content_origin(text.bounds(), padding, text_alignment);
       if (auto res = text.draw(tx_origin); !res) return unexpected_error(res.error());
       if (pressed && pressed_overlay_color.a > 0.0f) {
         brush.color(pressed_overlay_color);
@@ -94,15 +94,16 @@ public:
   using control::operator bool;
   button() noexcept = default;
 
-  static std::expected<button, error_trace> add(derived_from<unknown> auto& Layout) {
+  static std::expected<button, error_trace> add(derived_from<unknown> auto& Layout, bool auto_color = true) {
     button btn;
     if (auto res = create_control<button>(Layout)) btn._id = *res;
     else return unexpected_error(res.error());
     if (const auto csp = system::slot_address<button>(btn._id)) {
-      const auto [bg_color, border_color] = control::get_auto_color();
+      color bg_color = colors::white, border_color = colors::black;
+      if (auto_color) vassign(tuple<>::asref(bg_color, border_color), control::get_auto_color());
       csp->background_color = bg_color;
       csp->border_color = border_color;
-      csp->text.color(bg_color);
+      csp->text.color(border_color);
     } else return unexpected_error(errors::ui_invalid_slotid);
     return btn;
   }
