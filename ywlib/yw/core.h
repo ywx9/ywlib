@@ -318,18 +318,14 @@ inline constexpr struct {
 template<std::ranges::range R> using iterator_t = std::ranges::iterator_t<R>;
 template<std::ranges::range R> using sentinel_t = std::ranges::sentinel_t<R>;
 
-inline constexpr auto begin = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::begin(std::declval<R>())))
-                                requires requires { std::ranges::begin(std::declval<R>()); }
-{ return std::ranges::begin(static_cast<R&&>(r)); };
-inline constexpr auto end = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::end(std::declval<R>())))
-                              requires requires { std::ranges::end(std::declval<R>()); }
-{ return std::ranges::end(static_cast<R&&>(r)); };
-inline constexpr auto size = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::size(std::declval<R>())))
-                               requires requires { std::ranges::size(std::declval<R>()); }
-{ return std::ranges::size(static_cast<R&&>(r)); };
-inline constexpr auto data = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::data(std::declval<R>())))
-                               requires requires { std::ranges::data(std::declval<R>()); }
-{ return std::ranges::data(static_cast<R&&>(r)); };
+inline constexpr auto begin = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::begin(r)))
+                                requires requires { std::ranges::begin(r); } { return std::ranges::begin(r); };
+inline constexpr auto end = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::end(r)))
+                              requires requires { std::ranges::end(r); } { return std::ranges::end(r); };
+inline constexpr auto size = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::size(r)))
+                               requires requires { std::ranges::size(r); } { return std::ranges::size(r); };
+inline constexpr auto data = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::data(r)))
+                               requires requires { std::ranges::data(r); } { return std::ranges::data(r); };
 
 namespace sys {
 template<typename T, template<typename> typename> struct iter_type : std::type_identity<void> {};

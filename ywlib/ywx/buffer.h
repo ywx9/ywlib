@@ -32,7 +32,7 @@ public:
   }
 
   uint32_t size() const noexcept { return _size; }
-  ID3D11Buffer* d3d_buffer() { return _buffer.get(); }
+  ID3D11Buffer* d3d_buffer() const { return _buffer.get(); }
 
   std::expected<std::vector<T>, error_trace> copy_to_cpu() const;
   std::expected<std::vector<T>, error_trace> copy_to_cpu(staging_buffer<T>&) const;
@@ -49,6 +49,7 @@ public:
   staging_buffer() noexcept = default;
 
   static std::expected<staging_buffer, error_trace> create(uint1 Size) {
+    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     staging_buffer stb;
     stb._size = Size.x;
     D3D11_BUFFER_DESC desc{UINT(sizeof(T)) * Size.x, D3D11_USAGE_STAGING, {}, D3D11_CPU_ACCESS_READ, {}, 0};
@@ -58,10 +59,12 @@ public:
   }
 
   static std::expected<staging_buffer, error_trace> create(const buffer<T>& b) {
-    if (auto res = create(b.size())) {
-      if (auto res = res->copy_from(b)) return std::move(*res);
-      else return unexpected_error(res.error());
-    } else return unexpected_error(res.error());
+    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
+    staging_buffer stb;
+    if (auto res = create(b.size())) stb = std::move(*res);
+    else return unexpected_error(res.error());
+    if (auto res = stb.copy_from(b); !res) return unexpected_error(res.error());
+    return std::move(stb);
   }
 
   std::expected<std::vector<T>, error_trace> copy_to_cpu() const {
@@ -79,7 +82,9 @@ public:
 template<typename T> staging_buffer(const buffer<T>&) -> staging_buffer<T>;
 
 template<typename T> std::expected<std::vector<T>, error_trace> buffer<T>::copy_to_cpu() const {
-  staging_buffer<T> staging(*this);
+  staging_buffer<T> staging;
+  if (auto res = staging_buffer<T>::create(*this)) staging = std::move(*res);
+  else return unexpected_error(res.error());
   if (auto res = staging.copy_to_cpu()) return std::move(*res);
   else return unexpected_error(res.error());
 }
@@ -104,6 +109,7 @@ public:
   constant_buffer() noexcept = default;
 
   static std::expected<constant_buffer, error_trace> create(const T& Val) {
+    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     constant_buffer cb;
     cb._size = 1;
     D3D11_SUBRESOURCE_DATA srd(&Val, 0, 0);
@@ -158,14 +164,21 @@ public:
   structured_buffer() noexcept = default;
 
   static std::expected<structured_buffer, error_trace> create(uint1 Size) {
+    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     if (auto res = create(nullptr, Size)) return res;
     else return unexpected_error(res.error());
   }
 
   static std::expected<structured_buffer, error_trace> create(const T* Data, uint1 Size) {
+    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     structured_buffer sb;
     sb._size = Size.x;
     if (auto res = sb._init(Data)) return sb;
+    else return unexpected_error(res.error());
+  }
+
+  template<contiguous_range<T> Rg> static std::expected<structured_buffer, error_trace> create(Rg&& rg) {
+    if (auto res = create(yw::data(rg), yw::size(rg))) return res;
     else return unexpected_error(res.error());
   }
 
@@ -208,11 +221,13 @@ public:
   rw_structured_buffer() noexcept = default;
 
   static std::expected<rw_structured_buffer, error_trace> create(uint1 Size) {
+    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     if (auto res = create(nullptr, Size)) return res;
     else return unexpected_error(res.error());
   }
 
   static std::expected<rw_structured_buffer, error_trace> create(const T* Data, uint1 Size) {
+    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     rw_structured_buffer sb;
     sb._size = Size.x;
     if (auto res = sb._init(Data)) return sb;

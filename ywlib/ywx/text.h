@@ -7,7 +7,7 @@ namespace yw {
 class text {
   comptr<IDWriteTextLayout> _layout;
   std::wstring _string;
-  yw::color _color;
+  yw::color _color = colors::black;
   font_config _font = yw::font_config::default_;
   ui::alignment _alignment = ui::alignment::left;
   float2 _bounds;

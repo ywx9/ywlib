@@ -19,7 +19,7 @@ public:
     else return unexpected_error(res.error());
     const auto csp = system::slot_address<blank>(b._slotid());
     if (!csp) return unexpected_error(errors::ui_invalid_slotid);
-    csp->minimum_size = float2();
+    csp->margin = {}, csp->padding = {}, csp->minimum_size = {};
     return b;
   }
 

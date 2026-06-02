@@ -12,24 +12,23 @@ public:
 
     /// MARK: overrides
 
+    virtual std::expected<float2, error_trace> calculate_necessary_size() const override {
+      const float2 inner = text.bounds() + padding.xy() + padding.zw();
+      return vapply_r<float2>(_calc_nec_size, size_policy, minimum_size, required_size, inner);
+    }
+
+    virtual std::expected<void, error_trace> ensure_necessary_size() override {
+      if (auto res = text.update(); !res) return unexpected_error(res.error());
+      if (auto res = calculate_necessary_size()) return size = *res, std::expected<void, error_trace>{};
+      else return unexpected_error(res.error());
+    }
+
     virtual std::expected<void, error_trace> draw() const override {
       if (!visible) return {};
       if (auto res = draw_background(); !res) return unexpected_error(res.error());
       const auto text_origin = calculate_content_origin(text.bounds(), padding, text_alignment);
       if (auto res = text.draw(text_origin); !res) return unexpected_error(res.error());
       if (auto res = draw_foreground(); !res) return unexpected_error(res.error());
-      return {};
-    }
-
-    virtual std::expected<float2, error_trace> calculate_necessary_size() const override {
-      const float2 inner = text.bounds() + padding.xy() + padding.zw();
-      return vapply_r<float2>(yw::max, minimum_size, required_size * constrained, inner);
-    }
-
-    virtual std::expected<void, error_trace> ensure_necessary_size() override {
-      if (auto res = text.update(); !res) return unexpected_error(res.error());
-      if (auto res = calculate_necessary_size()) size = *res;
-      else return unexpected_error(res.error());
       return {};
     }
   };
@@ -44,9 +43,7 @@ public:
       try {
         if (slot.text.messy())
           if (auto res = slot.text.update(); !res) fatal_error(res.error());
-      } catch (...) {
-        fatal_error(errors::unreachable, "Unhandled exception in ui::label::text_accessor destructor");
-      }
+      } catch (...) { fatal_error(errors::unreachable, "Unhandled exception in ui::label::text_accessor destructor"); }
     }
 
     const auto& string() const { return slot.text.string(); }
@@ -100,29 +97,13 @@ public:
   using control::operator bool;
   label() noexcept = default;
 
-  static std::expected<label, error_trace> add(derived_from<unknown> auto& Layout, bool auto_color = true) {
+  static std::expected<label, error_trace> add(derived_from<unknown> auto& Layout) {
     label lbl;
     if (auto res = create_control<label>(Layout)) lbl._id = *res;
     else return unexpected_error(res.error());
-    if (const auto csp = system::slot_address<label>(lbl._id)) {
-      color text_color = colors::black;
-      if (auto_color) text_color = control::get_auto_color().second;
-      csp->text.color(text_color);
-    } else return unexpected_error(errors::ui_invalid_slotid);
     return std::move(lbl);
   }
 
   template<typename Self> decltype(auto) text(this Self& self) { return create_accessor<text_accessor>(self); }
-
-  std::expected<void, error_trace> fit_to_text() {
-    const auto csp = system::slot_address<label>(_id);
-    if (!csp) return unexpected_error(errors::ui_invalid_slotid);
-    if (auto res = csp->text.update(); !res) return unexpected_error(res.error());
-    const auto inner = csp->text.bounds() + csp->padding.xy() + csp->padding.zw();
-    csp->constrained = {true, true};
-    csp->required_size = vapply_r<float2>(yw::max, csp->minimum_size, inner);
-    if (auto res = csp->make_messy(); !res) return unexpected_error(res.error());
-    return {};
-  }
 };
 } // namespace yw::ui

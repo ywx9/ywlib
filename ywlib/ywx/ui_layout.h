@@ -26,30 +26,30 @@ public:
     }
 
     virtual std::expected<float2, error_trace> calculate_necessary_size() const override {
-      float2 internal;
+      float2 inner;
       for (const auto& cid : controls)
         if (const auto csp = system::slot_address<control>(cid)) {
           auto bounds = csp->margin.xy() + csp->margin.zw();
           if (auto res = csp->calculate_necessary_size()) bounds += *res;
           else return unexpected_error(res.error());
-          get<!Vertical>(internal) = yw::max(get<!Vertical>(internal), get<!Vertical>(bounds));
-          get<Vertical>(internal) += get<Vertical>(bounds);
+          get<!Vertical>(inner) = yw::max(get<!Vertical>(inner), get<!Vertical>(bounds));
+          get<Vertical>(inner) += get<Vertical>(bounds);
         } else return unexpected_error(errors::ui_invalid_slotid);
-      internal += padding.xy() + padding.zw();
-      return vapply_r<float2>(yw::max, minimum_size, internal, required_size * constrained);
+      inner += padding.xy() + padding.zw();
+      return vapply_r<float2>(_calc_nec_size, size_policy, minimum_size, required_size, inner);
     }
 
     virtual std::expected<void, error_trace> ensure_necessary_size() override {
-      float2 internal;
+      float2 inner;
       for (const auto& cid : controls)
         if (const auto csp = system::slot_address<control>(cid)) {
           if (auto res = csp->ensure_necessary_size(); !res) return unexpected_error(res.error());
           const auto bounds = csp->bounds();
-          get<!Vertical>(internal) = yw::max(get<!Vertical>(internal), get<!Vertical>(bounds));
-          get<Vertical>(internal) += get<Vertical>(bounds);
+          get<!Vertical>(inner) = yw::max(get<!Vertical>(inner), get<!Vertical>(bounds));
+          get<Vertical>(inner) += get<Vertical>(bounds);
         } else return unexpected_error(errors::ui_invalid_slotid);
-      internal += padding.xy() + padding.zw();
-      size = vapply_r<float2>(yw::max, minimum_size, internal, required_size * constrained);
+      inner += padding.xy() + padding.zw();
+      size = vapply_r<float2>(_calc_nec_size, size_policy, minimum_size, required_size, inner);
       return {};
     }
 
@@ -58,18 +58,18 @@ public:
       frame::slot::update_geometry(Pos, Area);
       if (controls.empty()) return {};
       const auto extra = size - necessary_size;
-      unsigned uc_count = 0;
+      unsigned free_count = 0;
       for (const auto& cid : controls)
-        if (const auto csp = system::slot_address<control>(cid)) uc_count += !get<Vertical>(csp->constrained);
+        if (const auto csp = system::slot_address<control>(cid)) free_count += !bool(get<Vertical>(csp->size_policy));
         else return unexpected_error(errors::ui_invalid_slotid);
       float2 extra_per_uc{};
       float2 off = pos + padding.xy();
       const float width = get<!Vertical>(size - padding.xy() - padding.zw());
-      if (uc_count) {
-        get<Vertical>(extra_per_uc) = get<Vertical>(extra) / uc_count;
+      if (free_count) {
+        get<Vertical>(extra_per_uc) = get<Vertical>(extra) / free_count;
         for (const auto& cid : controls)
           if (const auto csp = system::slot_address<control>(cid)) {
-            float2 area = csp->bounds() + extra_per_uc * (int2(1, 1) - csp->constrained);
+            float2 area = csp->bounds() + extra_per_uc * (int2(1, 1) - vector2<bool>(csp->size_policy));
             get<!Vertical>(area) = width;
             if (auto rse = csp->update_geometry(off, area); !rse) return unexpected_error(rse.error());
             get<Vertical>(off) += get<Vertical>(area);

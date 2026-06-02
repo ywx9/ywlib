@@ -30,7 +30,7 @@ public:
         brush.color(background_color);
         if (auto res = fill_geometry(geometry.get()); !res) return unexpected_error(res.error());
       }
-      d2d.push_layer(geometry.get());
+      if (crop_content) d2d.push_layer(geometry.get());
       if (background_image_opacity > 0.0f && background_image) {
         if (auto res = draw_bitmap(pos, size, background_image, background_image_opacity); !res)
           return unexpected_error(res.error());
@@ -39,7 +39,7 @@ public:
     }
 
     std::expected<void, error_trace> draw_foreground() const {
-      d2d.pop_layer();
+      if (crop_content) d2d.pop_layer();
       if (border_color.a > 0.0f && border_thickness > 0.0f) {
         brush.color(border_color).dashed(border_dashed);
         if (auto res = draw_geometry(geometry.get(), border_thickness); !res) return unexpected_error(res.error());

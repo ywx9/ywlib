@@ -26,34 +26,33 @@ public:
     }
 
     virtual std::expected<float2, error_trace> calculate_necessary_size() const override {
-      float2 internal;
+      float2 inner;
       for (const auto& cid : controls)
         if (const auto csp = system::slot_address<control>(cid)) {
-          if (auto res = csp->calculate_necessary_size()) internal = vapply_r<float2>(yw::max, internal, *res);
+          if (auto res = csp->calculate_necessary_size()) inner = vapply_r<float2>(yw::max, inner, *res);
           else return unexpected_error(res.error());
         } else return unexpected_error(errors::ui_invalid_slotid);
-      internal += padding.xy() + padding.zw();
-      return vapply_r<float2>(yw::max, minimum_size, internal, required_size * constrained);
+      inner += padding.xy() + padding.zw();
+      return vapply_r<float2>(_calc_nec_size, size_policy, minimum_size, required_size, inner);
     }
 
     virtual std::expected<void, error_trace> ensure_necessary_size() override {
-      float2 internal;
+      float2 inner;
       for (const auto& cid : controls)
         if (const auto csp = system::slot_address<control>(cid)) {
           if (auto res = csp->ensure_necessary_size(); !res) return unexpected_error(res.error());
-          internal = vapply_r<float2>(yw::max, internal, csp->size);
+          inner = vapply_r<float2>(yw::max, inner, csp->size);
         } else return unexpected_error(errors::ui_invalid_slotid);
-      internal += padding.xy() + padding.zw();
-      size = vapply_r<float2>(yw::max, minimum_size, internal, required_size * constrained);
+      inner += padding.xy() + padding.zw();
+      size = vapply_r<float2>(_calc_nec_size, size_policy, minimum_size, required_size, inner);
       return {};
     }
 
     virtual std::expected<void, error_trace> update_geometry(float2 Pos, float2 Area) override {
-      const auto necessary_size = size;
       frame::slot::update_geometry(Pos, Area);
       if (controls.empty()) return {};
-      const auto _pos = Pos + padding.xy();
-      const auto _area = Area - padding.xy() - padding.zw();
+      const auto _pos = pos + padding.xy();
+      const auto _area = size - padding.xy() - padding.zw();
       for (const auto& cid : controls)
         if (const auto csp = system::slot_address<control>(cid)) {
           if (auto res = csp->update_geometry(_pos, _area); !res) return unexpected_error(res.error());

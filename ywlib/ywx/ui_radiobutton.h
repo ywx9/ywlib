@@ -1,246 +1,260 @@
 // #pragma once
 // #include "ywx/ui_checkbox.h"
-// #include "ywx/ui_layout.h"
 
 // namespace yw::ui {
 
 // class radiobutton : public vertical_layout {
-//   static constexpr std::string_view box_path = "M 10 2 A 8 8 0 1 0 10 18 A 8 8 0 1 0 10 2";
-//   static constexpr std::string_view mark_path = "M 10 6 A 4 4 0 1 0 10 14 A 4 4 0 1 0 10 6";
+//   static constexpr float2 default_icon_size{16.0f, 16.0f};
+//   static constexpr std::string_view box_path = "M 8 0 A 8 8 0 1 0 8 16 A 8 8 0 1 0 8 0";
+//   static constexpr std::string_view check_path = "M 8 4 A 4 4 0 1 0 8 12 A 4 4 0 1 0 8 4";
 
 // public:
+//   /// MARK: slot
+
 //   struct slot : public vertical_layout::slot {
 //     std::vector<checkbox> items;
-//     size_t selected_index = npos, focused_index = npos;
+//     color_pair default_color{colors::transparent, colors::black};
+//     size_t selected_index = npos;
+//     size_t focused_index = npos;
+//     bool locked = true;
+//     bool updating = false;
+
 //     function<void, size_t> on_change;
 //     function<void, bool> on_focus;
 //     function<void, key> on_click;
-//     key captured_key{};
-//     bool locked = true;
 
-//     //-- overrides --//
-
-//     virtual std::expected<void, error_trace> attachable() const override {
-//       if (locked) return unexpected_error(errors::ui_not_attachable);
-//       return {};
-//     }
+//     virtual bool attachable() const override { return !locked; }
 //     virtual std::expected<void, error_trace> attach(slotid Child) override {
 //       if (locked) return unexpected_error(errors::ui_not_attachable);
 //       if (auto res = vertical_layout::slot::attach(Child)) return {};
 //       else return unexpected_error(res.error());
 //     }
 //     virtual std::expected<void, error_trace> detach(slotid Child) override {
-//       if (locked) return {};
 //       if (auto res = vertical_layout::slot::detach(Child)) return {};
 //       else return unexpected_error(res.error());
 //     }
 
-//     virtual bool focusable() const override { return enabled && !items.empty(); }
-//     virtual slotid hittest(float2 Pt) const override { return core.hittest(Pt) ? id : slotid(); }
-//     virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) const override {
-//       if (Focused == id) Found = true;
-//       else if (Found && visible) return id;
-//       return {};
-//     }
-
-//     size_t normalize_focus() const {
-//       if (items.empty()) return npos;
-//       if (focused_index < items.size()) return focused_index;
-//       if (selected_index < items.size()) return selected_index;
-//       return 0;
-//     }
-
-//     size_t hit_item(float2 Pt) const {
-//       for (size_t i = {}; i < items.size(); ++i) {
-//         const auto item_sp = system::slot_address<checkbox>(items[i]._slotid());
-//         if (item_sp && item_sp->core.hittest(Pt)) return i;
-//       }
-//       return npos;
-//     }
-
-//     std::expected<void, error_trace> select_index(size_t index) {
+//     std::expected<void, error_trace> select_index(size_t index, bool notify = true) {
 //       if (index >= items.size()) return unexpected_error(errors::invalid_argument);
-//       const bool changed = selected_index != index;
-//       if (selected_index < items.size()) {
-//         if (const auto sp = system::slot_address<checkbox>(items[selected_index]._slotid())) sp->checkbox.checked = false;
-//         else return unexpected_error(errors::ui_invalid_slotid);
-//       }
+//       if (updating) return {};
+//       updating = true;
+//       const auto prev = selected_index;
+//       if (prev < items.size() && prev != index) items[prev].checked(false);
 //       selected_index = index;
 //       focused_index = index;
-//       if (const auto sp = system::slot_address<checkbox>(items[selected_index]._slotid())) sp->checkbox.checked = true;
-//       else return unexpected_error(errors::ui_invalid_slotid);
+//       items[index].checked(true);
+//       updating = false;
 //       if (auto res = make_dirty(); !res) return unexpected_error(res.error());
-//       if (changed && on_change) on_change(index);
+//       if (notify && prev != index && on_change) on_change(index);
 //       return {};
 //     }
 
-//     virtual std::expected<void, error_trace> draw_focus_ring(const parts::focus_ring& fr) override {
-//       /// \note draw forcus ring around focused item
-//       const auto fsp = system::slot_address<checkbox>(items[focused_index]._slotid());
-//       if (!fsp) return unexpected_error(errors::ui_invalid_slotid);
-//       if (auto res = fsp->draw_focus_ring(fr)) return {};
-//       else return unexpected_error(res.error());
-//     }
-
-//     virtual void click_event(events::button e) override {
-//       if (enabled && e.code == captured_key)
-//         if (const auto index = hit_item(float2(e.pos)); index != npos) {
-//           select_index(index);
-//           if (on_click) on_click(captured_key);
-//         }
-//       captured_key = {};
-//     }
-
-//     virtual void button_event(events::button e) override {
-//       if (!enabled) {
-//         captured_key = {};
-//         return;
+//     std::expected<void, error_trace> item_change(size_t index, bool checked) {
+//       if (index >= items.size()) return unexpected_error(errors::invalid_argument);
+//       if (updating) return {};
+//       if (checked) return select_index(index);
+//       if (selected_index == index) {
+//         updating = true;
+//         items[index].checked(true);
+//         updating = false;
 //       }
-//       if (e.down) {
-//         captured_key = e.code;
-//         if (e.code == keys::lbutton)
-//           if (const auto index = hit_item(float2(e.pos)); index != npos && focused_index != index) {
-//             focused_index = index;
-//             make_dirty();
-//           }
-//       } else captured_key = {};
+//       return {};
 //     }
 
-//     virtual void focus_event(bool focused) override {
-//       if (focused) focused_index = normalize_focus();
-//       else captured_key = {}, focused_index = npos;
-//       make_dirty();
+//     std::expected<void, error_trace> item_focus(size_t index, bool focused) {
+//       if (index >= items.size()) return unexpected_error(errors::invalid_argument);
+//       if (focused) focused_index = index;
+//       else if (focused_index == index) focused_index = npos;
+//       if (auto res = make_dirty(); !res) return unexpected_error(res.error());
 //       if (enabled && on_focus) on_focus(focused);
-//     }
-
-//     virtual bool key_event(events::key e) override {
-//       if (!enabled || items.empty()) return false;
-//       if (e.down) {
-//         switch (e.code.code) {
-//         case keys::up.code:
-//         case keys::left.code: {
-//           captured_key = {};
-//           const auto current = normalize_focus();
-//           const auto next = current ? current - 1 : items.size() - 1;
-//           if (current != next) {
-//             focused_index = next;
-//             assume(make_dirty());
-//           }
-//           return true;
-//         }
-//         case keys::down.code:
-//         case keys::right.code: {
-//           captured_key = {};
-//           const auto current = normalize_focus();
-//           const auto next = (current + 1) % items.size();
-//           if (current != next) {
-//             focused_index = next;
-//             assume(make_dirty());
-//           }
-//           return true;
-//         }
-//         case keys::space.code:
-//         case keys::enter.code:
-//           captured_key = e.code;
-//           return true;
-//         default:
-//           captured_key = {};
-//           return false;
-//         }
-//       }
-//       if (captured_key == e.code) {
-//         if (const auto index = normalize_focus(); index != npos) {
-//           assume(select_index(index));
-//           if (on_click) on_click(captured_key);
-//         }
-//       }
-//       const bool handled = e.code == keys::space || e.code == keys::enter;
-//       captured_key = {};
-//       return handled;
+//       return {};
 //     }
 //   };
 
+//   class icon_accessor : public accessor<radiobutton> {
+//     using accessor<radiobutton>::slot;
+
+//     icon_style& style;
+//     bool check_icon = false;
+
+//     template<typename Fn> void apply(Fn&& fn) {
+//       for (auto& item : slot.items) fn(radiobutton::select_icon(item, check_icon));
+//       this->dirty = true;
+//     }
+
+//   public:
+//     icon_accessor(radiobutton::slot& Slot, icon_style& Style, bool CheckIcon) noexcept :
+//       accessor<radiobutton>(Slot), style(Style), check_icon(CheckIcon) {}
+
+//     const auto& icon() const { return style.icon; }
+//     auto& icon(svgpath Icon) {
+//       style.icon = std::move(Icon);
+//       apply([&](auto&& accessor) { accessor.icon(assume(svgpath::create(style.icon))); });
+//       return *this;
+//     }
+//     const auto& stroke_color() const { return style.stroke_color; }
+//     auto& stroke_color(color StrokeColor) {
+//       style.stroke_color = StrokeColor;
+//       apply([&](auto&& accessor) { accessor.stroke_color(style.stroke_color); });
+//       return *this;
+//     }
+//     const auto& fill_color() const { return style.fill_color; }
+//     auto& fill_color(color FillColor) {
+//       style.fill_color = FillColor;
+//       apply([&](auto&& accessor) { accessor.fill_color(style.fill_color); });
+//       return *this;
+//     }
+//     const auto& stroke_width() const { return style.stroke_width; }
+//     auto& stroke_width(float StrokeWidth) {
+//       style.stroke_width = StrokeWidth;
+//       apply([&](auto&& accessor) { accessor.stroke_width(style.stroke_width); });
+//       return *this;
+//     }
+//   };
+
+// private:
+//   static std::expected<svgpath, error_trace> create_box_icon() { return svgpath::create(default_icon_size, box_path); }
+//   static std::expected<svgpath, error_trace> create_check_icon() { return svgpath::create(default_icon_size, check_path); }
+//   static ui::icon::icon_accessor select_icon(checkbox& item, bool check) {
+//     if (check) return item.check_icon().icon_();
+//     else return item.box_icon().icon_();
+//   }
+
+//   static void apply_icon_style(checkbox& item, const icon_style& style, bool check) {
+//     select_icon(item, check)
+//       .icon(assume(svgpath::create(style.icon)))
+//       .fill_color(style.fill_color)
+//       .stroke_color(style.stroke_color)
+//       .stroke_width(style.stroke_width);
+//   }
+
+// public:
 //   using control::operator bool;
 //   radiobutton() noexcept = default;
 
-//   static std::expected<radiobutton, error_trace> add(derived_from<unknown> auto& Layout) {
+//   static std::expected<radiobutton, error_trace> add(
+//     derived_from<unknown> auto& Layout, const color_pair& Colors = color_pair::auto_color()) {
 //     radiobutton rb;
 //     if (auto res = create_control<radiobutton>(Layout)) rb._id = *res;
 //     else return unexpected_error(res.error());
 //     if (const auto csp = system::slot_address<radiobutton>(rb._id)) {
-//       const auto [bg_color, _] = control::get_auto_color();
-//       csp->background.control_id = rb._id;
-//       csp->background.color = bg_color;
-//       csp->border.control_id = rb._id;
+//       if (auto box = create_box_icon()) csp->box_icon_style.icon = std::move(*box);
+//       else return unexpected_error(box.error());
+//       if (auto check = create_check_icon()) csp->check_icon_style.icon = std::move(*check);
+//       else return unexpected_error(check.error());
+//       csp->default_color = Colors;
+//       csp->background_color = Colors.background;
 //     } else return unexpected_error(errors::ui_invalid_slotid);
 //     return rb;
 //   }
 
 //   size_t item_count() const {
-//     const auto csp = system::slot_address<radiobutton>(_id);
+//     const auto csp = system::slot_address<radiobutton>(_slotid());
 //     if (!csp) fatal_error(errors::ui_invalid_slotid);
 //     return csp->items.size();
 //   }
 
 //   std::expected<void, error_trace> append_item(std::wstring s) {
-//     const auto csp = system::slot_address<radiobutton>(_id);
+//     const auto csp = system::slot_address<radiobutton>(_slotid());
 //     if (!csp) return unexpected_error(errors::ui_invalid_slotid);
 //     csp->locked = false;
-//     if (auto res = checkbox::add(*this)) {
-//       res->icon().box_icon(assume(svgpath::create(parts::icon::default_size, box_path)));
-//       res->icon().box_fill_color(colors::white);
-//       res->icon().box_stroke_color(colors::black);
-//       res->icon().check_icon(assume(svgpath::create(parts::icon::default_size, mark_path)));
-//       res->icon().check_fill_color(colors::black);
-//       res->icon().check_stroke_width(0.0f);
-//       res->text().string(std::move(s));
-//       csp->items.push_back(std::move(*res));
-//       if (csp->selected_index == npos) {
-//         csp->selected_index = 0;
-//         csp->focused_index = 0;
-//         csp->items.back().checked(true);
-//       }
-//     } else return unexpected_error(res.error());
+//     auto res = checkbox::add(*this, csp->default_color, false);
 //     csp->locked = true;
+//     if (!res) return unexpected_error(res.error());
+
+//     const auto index = csp->items.size();
+//     apply_icon_style(*res, csp->box_icon_style, false);
+//     apply_icon_style(*res, csp->check_icon_style, true);
+//     res->text().text().string(std::move(s));
+//     if (auto r = res->on_change([csp, index](bool checked) {
+//           if (auto res = csp->item_change(index, checked); !res) fatal_error(res.error());
+//         });
+//       !r)
+//       return unexpected_error(r.error());
+//     if (auto r = res->on_focus([csp, index](bool focused) {
+//           if (auto res = csp->item_focus(index, focused); !res) fatal_error(res.error());
+//         });
+//       !r)
+//       return unexpected_error(r.error());
+//     if (auto r = res->on_click([csp](key k) {
+//           if (csp->on_click) csp->on_click(k);
+//         });
+//       !r)
+//       return unexpected_error(r.error());
+
+//     csp->items.push_back(std::move(*res));
+//     if (csp->selected_index == npos) {
+//       csp->selected_index = index;
+//       csp->focused_index = index;
+//       csp->updating = true;
+//       csp->items.back().checked(true);
+//       csp->updating = false;
+//     }
+//     if (auto r = csp->make_messy(); !r) return unexpected_error(r.error());
 //     return {};
 //   }
 
-//   void clear_items() {
-//     const auto csp = system::slot_address<radiobutton>(_id);
-//     if (!csp) fatal_error(errors::ui_invalid_slotid);
+//   std::expected<void, error_trace> clear_items() {
+//     const auto csp = system::slot_address<radiobutton>(_slotid());
+//     if (!csp) return unexpected_error(errors::ui_invalid_slotid);
 //     csp->locked = false;
-//     assume(clear());
+//     if (auto res = clear(); !res) {
+//       csp->locked = true;
+//       return unexpected_error(res.error());
+//     }
 //     csp->locked = true;
 //     csp->items.clear();
 //     csp->selected_index = npos;
 //     csp->focused_index = npos;
-//     assume(csp->make_dirty());
+//     csp->updating = false;
+//     if (auto res = csp->make_dirty(); !res) return unexpected_error(res.error());
+//     return {};
 //   }
 
 //   size_t checked() const { return unsafe_get(&radiobutton::slot::selected_index); }
 
 //   auto& checked(size_t index) {
-//     const auto csp = system::slot_address<radiobutton>(_id);
+//     const auto csp = system::slot_address<radiobutton>(_slotid());
 //     if (!csp) fatal_error(errors::ui_invalid_slotid);
 //     assume(csp->select_index(index));
 //     return *this;
 //   }
 
-//   template<typename Self> auto&& item(this Self&& self, size_t index) {
-//     const auto csp = system::slot_address<radiobutton>(self._id);
+//   template<typename Self> decltype(auto) text(this Self&& self, size_t index) {
+//     const auto csp = system::slot_address<radiobutton>(self._slotid());
 //     if (!csp) fatal_error(errors::ui_invalid_slotid);
 //     if (index >= csp->items.size()) fatal_error(errors::invalid_argument);
-//     if constexpr (!is_const<remove_ref<Self>>) return csp->items[index];
-//     else return std::as_const(csp->items[index]);
+//     return csp->items[index].text().text();
+//   }
+
+//   decltype(auto) box_icon() {
+//     const auto csp = system::slot_address<radiobutton>(_slotid());
+//     if (!csp) fatal_error(errors::ui_invalid_slotid);
+//     return icon_accessor(*csp, csp->box_icon_style, false);
+//   }
+
+//   decltype(auto) check_icon() {
+//     const auto csp = system::slot_address<radiobutton>(_slotid());
+//     if (!csp) fatal_error(errors::ui_invalid_slotid);
+//     return icon_accessor(*csp, csp->check_icon_style, true);
 //   }
 
 //   const auto& on_change() const { return unsafe_get(&radiobutton::slot::on_change); }
-//   void on_change(function<void, size_t> f) { unsafe_set(&radiobutton::slot::on_change, std::move(f)); }
+//   std::expected<void, error_trace> on_change(function<void, size_t> f) {
+//     if (auto res = safe_set(&radiobutton::slot::on_change, std::move(f))) return {};
+//     else return unexpected_error(res.error());
+//   }
 
 //   const auto& on_click() const { return unsafe_get(&radiobutton::slot::on_click); }
-//   void on_click(function<void, key> f) { unsafe_set(&radiobutton::slot::on_click, std::move(f)); }
+//   std::expected<void, error_trace> on_click(function<void, key> f) {
+//     if (auto res = safe_set(&radiobutton::slot::on_click, std::move(f))) return {};
+//     else return unexpected_error(res.error());
+//   }
 
 //   const auto& on_focus() const { return unsafe_get(&radiobutton::slot::on_focus); }
-//   void on_focus(function<void, bool> f) { unsafe_set(&radiobutton::slot::on_focus, std::move(f)); }
+//   std::expected<void, error_trace> on_focus(function<void, bool> f) {
+//     if (auto res = safe_set(&radiobutton::slot::on_focus, std::move(f))) return {};
+//     else return unexpected_error(res.error());
+//   }
 // };
 // } // namespace yw::ui

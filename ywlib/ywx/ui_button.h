@@ -5,6 +5,8 @@ namespace yw::ui {
 
 class button : public label {
 public:
+  /// MARK: slot
+
   class slot : public label::slot {
   public:
     color pressed_overlay_color = color(0, 0, 0, 0.5f);
@@ -13,8 +15,6 @@ public:
 
     function<void, bool> on_focus;
     function<void, key> on_click;
-
-    //-- overrides --//
 
     virtual bool focusable() const override { return true; }
 
@@ -91,19 +91,20 @@ public:
     }
   };
 
+  /// MARK: handle functions
+
   using control::operator bool;
   button() noexcept = default;
 
-  static std::expected<button, error_trace> add(derived_from<unknown> auto& Layout, bool auto_color = true) {
+  static std::expected<button, error_trace> add(
+    derived_from<unknown> auto& Layout, const color_pair& Colors = color_pair::auto_color()) {
     button btn;
     if (auto res = create_control<button>(Layout)) btn._id = *res;
     else return unexpected_error(res.error());
     if (const auto csp = system::slot_address<button>(btn._id)) {
-      color bg_color = colors::white, border_color = colors::black;
-      if (auto_color) vassign(tuple<>::asref(bg_color, border_color), control::get_auto_color());
-      csp->background_color = bg_color;
-      csp->border_color = border_color;
-      csp->text.color(border_color);
+      csp->background_color = Colors.background;
+      csp->border_color = Colors.foreground;
+      csp->text.color(Colors.foreground);
     } else return unexpected_error(errors::ui_invalid_slotid);
     return btn;
   }
@@ -119,7 +120,6 @@ public:
     if (auto res = safe_set(&button::slot::on_click, std::move(f))) return {};
     else return unexpected_error(res.error());
   }
-
   const auto& on_focus() const { return unsafe_get(&button::slot::on_focus); }
   std::expected<void, error_trace> on_focus(function<void, bool> f) {
     if (auto res = safe_set(&button::slot::on_focus, std::move(f))) return {};

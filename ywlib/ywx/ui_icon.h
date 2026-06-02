@@ -1,62 +1,36 @@
 #pragma once
 #include "ywx/svgpath.h"
-#include "ywx/ui_frame.h"
+#include "ywx/ui_control.h"
 
 namespace yw::ui {
 
-class icon : public frame {
+class icon : public control {
 public:
   /// MARK: slot
 
-  struct slot : public frame::slot {
-    std::variant<bitmap, svgpath> icon;
-    std::optional<float2> icon_size;
+  struct slot : public control::slot {
+    svgpath icon;
     color fill_color = colors::black;
     color stroke_color = colors::black;
     float stroke_width = 1.0f;
 
     virtual std::expected<float2, error_trace> calculate_necessary_size() const override {
-      const auto _icon_size = std::visit([](auto&& i) { return float2(i.size()); }, icon);
-      const auto inner = icon_size.value_or(_icon_size) + padding.xy() + padding.zw();
-      return vapply_r<float2>(yw::max, minimum_size, required_size * constrained, inner);
-    }
-
-    virtual std::expected<void, error_trace> ensure_necessary_size() override {
-      if (auto res = calculate_necessary_size()) size = *res;
-      else return unexpected_error(res.error());
-      return {};
+      const auto inner = icon.size() + padding.xy() + padding.zw();
+      return vapply_r<float2>(_calc_nec_size, size_policy, minimum_size, required_size, inner);
     }
 
     virtual std::expected<void, error_trace> draw() const override {
-      if (!visible) return {};
-      if (auto res = draw_background(); !res) return unexpected_error(res.error());
+      if (!visible || !icon) return {};
       const auto _pos = pos + padding.xy();
       const auto _size = size - padding.xy() - padding.zw();
-      if (std::holds_alternative<svgpath>(icon)) {
-        const auto& i = std::get<svgpath>(icon);
-        if (!i) return {};
-        if (fill_color.a > 0.0f) {
-          brush.color(fill_color);
-          if (auto res = fill_svgpath(_pos, _size, i); !res) return unexpected_error(res.error());
-        }
-        if (stroke_color.a > 0.0f) {
-          brush.color(stroke_color);
-          if (auto res = stroke_svgpath(_pos, _size, i, stroke_width); !res) return unexpected_error(res.error());
-        }
-      } else if (std::holds_alternative<bitmap>(icon)) {
-        const auto& i = std::get<bitmap>(icon);
-        if (!i) return {};
-        if (fill_color.a > 0.0f) {
-          brush.color(fill_color);
-          if (auto res = fill_rectangle(_pos, _size); !res) return unexpected_error(res.error());
-        }
-        if (auto res = draw_bitmap(_pos, _size, i); !res) return unexpected_error(res.error());
-        if (stroke_color.a > 0.0f) {
-          brush.color(stroke_color);
-          if (auto res = draw_rectangle(_pos, _size, stroke_width); !res) return unexpected_error(res.error());
-        }
+      if (fill_color.a > 0.0f) {
+        brush.color(fill_color);
+        if (auto res = fill_svgpath(_pos, _size, icon); !res) return unexpected_error(res.error());
       }
-      if (auto res = draw_foreground(); !res) return unexpected_error(res.error());
+      if (stroke_color.a > 0.0f) {
+        brush.color(stroke_color);
+        if (auto res = stroke_svgpath(_pos, _size, icon, stroke_width); !res) return unexpected_error(res.error());
+      }
       return {};
     }
   };
@@ -68,14 +42,8 @@ public:
 
   public:
     const auto& icon() const { return slot.icon; }
-    auto& icon(std::variant<bitmap, svgpath> Icon) {
+    auto& icon(svgpath Icon) {
       slot.icon = std::move(Icon);
-      this->dirty = true;
-      return *this;
-    }
-    const auto& icon_size() const { return slot.icon_size; }
-    auto& icon_size(std::optional<float2> IconSize) {
-      slot.icon_size = std::move(IconSize);
       this->dirty = true;
       return *this;
     }
@@ -104,10 +72,17 @@ public:
   using control::operator bool;
   icon() noexcept = default;
 
-  static std::expected<icon, error_trace> add(derived_from<unknown> auto& Layout) {
+  static std::expected<icon, error_trace> add(
+    derived_from<unknown> auto& Layout, const color_pair& Colors = color_pair::auto_color()) {
     icon icn;
     if (auto res = create_control<icon>(Layout)) icn._id = *res;
     else return unexpected_error(res.error());
+    const auto csp = system::slot_address<icon>(icn._id);
+    if (!csp) return unexpected_error(errors::ui_invalid_slotid);
+    csp->margin = {}, csp->padding = {};
+    csp->fill_color = Colors.background;
+    csp->stroke_color = Colors.foreground;
+    csp->crop_content = false;
     return std::move(icn);
   }
 
