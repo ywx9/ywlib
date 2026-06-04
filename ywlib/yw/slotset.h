@@ -1,6 +1,10 @@
 #pragma once
 #include "yw/core.h"
 
+namespace yw::errors {
+define_error(invalid_slotid);
+}
+
 namespace yw {
 
 //////////////////////////////////////// MARK: slotset

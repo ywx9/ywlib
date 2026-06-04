@@ -16,7 +16,6 @@ class text {
 
   std::expected<void, error_trace> _update_font_name() {
     if (!_layout) return unexpected_error(errors::not_initialized, "Not initialized");
-    if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
     IDWriteTextFormat* tfp = static_cast<IDWriteTextFormat*>(_layout.get());
     const auto n = tfp->GetFontFamilyNameLength();
     std::wstring font_name(n, L'\0');
@@ -43,8 +42,8 @@ class text {
   }
 
   std::expected<void, error_trace> _update_text_layout() {
-    if (auto res = dwrite.initialize(); !res) return unexpected_error(res.error());
     comptr<IDWriteTextFormat> tfp{};
+    const auto& dwrite = yw::dwrite();
     auto hr = dwrite.factory()->CreateTextFormat(
       _font.name->c_str(), nullptr, DWRITE_FONT_WEIGHT(*_font.weight), DWRITE_FONT_STYLE(*_font.style),
       DWRITE_FONT_STRETCH(*_font.stretch), *_font.size, L"", &tfp.get());
@@ -129,7 +128,7 @@ public:
   /// \note `block_alignment` is ignored
   std::expected<void, error_trace> draw(float2 Pos) const {
     if (_string.empty() || !_layout) return {};
-    brush.color(_color);
+    brush().color(_color);
     if (auto res = draw_text(Pos, _layout.get()); !res) return unexpected_error(res.error());
     _dirty = false;
     return {};

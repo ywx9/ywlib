@@ -138,6 +138,7 @@ public:
 
     virtual std::expected<void, error_trace> draw_focusring(
       const yw::color& Color, float Offset, float Width, bool Dashed) {
+      const auto& brush = yw::brush();
       brush.color(Color).dashed(Dashed);
       auto res = draw_round_rectangle(
         pos - float2::fill(Offset), size + float2::fill(Offset * 2.0f), radius + float2::fill(Offset), Width);
@@ -165,10 +166,9 @@ public:
       if (size_policy.x == ui::size_policy::free) size.x = max_size.x;
       if (size_policy.y == ui::size_policy::free) size.y = max_size.y;
       pos = provided_pos + margin.xy() + (max_size - size) * cc;
-      if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
       ID2D1RoundedRectangleGeometry* geom;
       D2D1_ROUNDED_RECT rr{D2D1_RECT_F(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
-      if (const auto hr = d2d.factory()->CreateRoundedRectangleGeometry(&rr, &geom); FAILED(hr))
+      if (const auto hr = d2d().factory()->CreateRoundedRectangleGeometry(&rr, &geom); FAILED(hr))
         return unexpected_error(errors::operation_failed, "CreateRoundedRectangleGeometry failed", int32_t(hr));
       geometry.reset(geom);
       return {};

@@ -49,17 +49,15 @@ public:
   staging_buffer() noexcept = default;
 
   static std::expected<staging_buffer, error_trace> create(uint1 Size) {
-    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     staging_buffer stb;
     stb._size = Size.x;
     D3D11_BUFFER_DESC desc{UINT(sizeof(T)) * Size.x, D3D11_USAGE_STAGING, {}, D3D11_CPU_ACCESS_READ, {}, 0};
-    if (auto hr = d3d.device()->CreateBuffer(&desc, nullptr, &stb._buffer.get()); FAILED(hr))
+    if (auto hr = d3d().device()->CreateBuffer(&desc, nullptr, &stb._buffer.get()); FAILED(hr))
       return unexpected_error(errors::operation_failed, "Failed to create staging buffer", int32_t(hr));
     return std::move(stb);
   }
 
   static std::expected<staging_buffer, error_trace> create(const buffer<T>& b) {
-    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     staging_buffer stb;
     if (auto res = create(b.size())) stb = std::move(*res);
     else return unexpected_error(res.error());
@@ -69,6 +67,7 @@ public:
 
   std::expected<std::vector<T>, error_trace> copy_to_cpu() const {
     if (!*this) return unexpected_error(errors::invalid_argument, "Uninitialized staging buffer");
+    const auto& d3d = yw::d3d();
     std::vector<T> Data(buffer<T>::size());
     D3D11_MAPPED_SUBRESOURCE mapped;
     if (auto hr = d3d.context()->Map(buffer<T>::d3d_buffer(), 0, D3D11_MAP_READ, 0, &mapped); FAILED(hr))
@@ -109,17 +108,17 @@ public:
   constant_buffer() noexcept = default;
 
   static std::expected<constant_buffer, error_trace> create(const T& Val) {
-    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     constant_buffer cb;
     cb._size = 1;
     D3D11_SUBRESOURCE_DATA srd(&Val, 0, 0);
-    if (auto hr = d3d.device()->CreateBuffer(&desc, &srd, &cb._buffer.get()); FAILED(hr))
+    if (auto hr = d3d().device()->CreateBuffer(&desc, &srd, &cb._buffer.get()); FAILED(hr))
       return unexpected_error(errors::operation_failed, "Failed to create constant buffer", int32_t(hr));
     return std::move(cb);
   }
 
   std::expected<void, error_trace> set(const T& Val) {
     if (!bool(*this)) return unexpected_error(errors::invalid_argument, "Uninitialized constant buffer");
+    const auto& d3d = yw::d3d();
     D3D11_MAPPED_SUBRESOURCE mapped;
     if (auto hr = d3d.context()->Map(buffer<T>::d3d_buffer(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped); FAILED(hr))
       return unexpected_error(errors::operation_failed, "Failed to map constant buffer", int32_t(hr));
@@ -164,13 +163,11 @@ public:
   structured_buffer() noexcept = default;
 
   static std::expected<structured_buffer, error_trace> create(uint1 Size) {
-    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     if (auto res = create(nullptr, Size)) return res;
     else return unexpected_error(res.error());
   }
 
   static std::expected<structured_buffer, error_trace> create(const T* Data, uint1 Size) {
-    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     structured_buffer sb;
     sb._size = Size.x;
     if (auto res = sb._init(Data)) return sb;
@@ -185,7 +182,7 @@ public:
   std::expected<void, error_trace> copy_from(const T* Data, uint1 Size) {
     if (!bool(*this)) return unexpected_error(errors::not_initialized, "Uninitialized structured buffer");
     if (buffer<T>::size() != Size.x) return unexpected_error(errors::invalid_argument, "Buffer size mismatch");
-    d3d.context()->UpdateSubresource((::ID3D11Buffer*)*this, 0, nullptr, Data, 0, 0);
+    d3d().context()->UpdateSubresource((::ID3D11Buffer*)*this, 0, nullptr, Data, 0, 0);
     return {};
   }
 };
@@ -199,6 +196,7 @@ template<typename T> class rw_structured_buffer : public buffer<T> {
   comptr<::ID3D11UnorderedAccessView> _uav;
 
   std::expected<void, error_trace> _init(const T* Data) {
+    const auto& d3d = yw::d3d();
     D3D11_BUFFER_DESC desc{UINT(sizeof(T)) * buffer<T>::size(), {}, 0x80, {}, 0x40, sizeof(T)};
     if (Data) {
       D3D11_SUBRESOURCE_DATA srd{Data, int(sizeof(T))};
@@ -221,13 +219,11 @@ public:
   rw_structured_buffer() noexcept = default;
 
   static std::expected<rw_structured_buffer, error_trace> create(uint1 Size) {
-    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     if (auto res = create(nullptr, Size)) return res;
     else return unexpected_error(res.error());
   }
 
   static std::expected<rw_structured_buffer, error_trace> create(const T* Data, uint1 Size) {
-    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     rw_structured_buffer sb;
     sb._size = Size.x;
     if (auto res = sb._init(Data)) return sb;
@@ -237,7 +233,7 @@ public:
   std::expected<void, error_trace> copy_from(const T* Data, uint1 Size) {
     if (!bool(*this)) return unexpected_error(errors::not_initialized, "Uninitialized rw_structured_buffer");
     if (Size.x != buffer<T>::size()) return unexpected_error(errors::invalid_argument, "Buffer size mismatch");
-    d3d.context()->UpdateSubresource(buffer<T>::d3d_buffer(), 0, nullptr, Data, 0, 0);
+    d3d().context()->UpdateSubresource(buffer<T>::d3d_buffer(), 0, nullptr, Data, 0, 0);
     return {};
   }
 };

@@ -14,10 +14,8 @@ private:
   svgpath(comptr<::ID2D1PathGeometry>&& geom) : _geometry(std::move(geom)) {}
 
   static std::expected<comptr<::ID2D1PathGeometry>, error_trace> parse_svg_path(const std::string_view svg_path_str) {
-    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-
     comptr<::ID2D1PathGeometry> geometry;
-    auto hr = d2d.factory()->CreatePathGeometry(&geometry.get());
+    auto hr = d2d().factory()->CreatePathGeometry(&geometry.get());
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreatePathGeometry failed", int32_t(hr));
 
     comptr<::ID2D1GeometrySink> sink;
@@ -429,10 +427,8 @@ public:
   /// \return copied svgpath on success, error_trace on failure
   static std::expected<svgpath, error_trace> create(const svgpath& source) {
     if (!source) return unexpected_error(errors::invalid_argument, "source svgpath not initialized");
-    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-
     comptr<::ID2D1PathGeometry> new_geometry;
-    auto hr = d2d.factory()->CreatePathGeometry(&new_geometry.get());
+    auto hr = d2d().factory()->CreatePathGeometry(&new_geometry.get());
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreatePathGeometry failed", int32_t(hr));
 
     comptr<::ID2D1GeometrySink> sink;
@@ -463,6 +459,8 @@ inline std::expected<void, error_trace> stroke_svgpath(
   float2 pos, float2 size, const svgpath& path, float1 border_width = 1.0f) {
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   if (!path) return {};
+  const auto& d2d = yw::d2d();
+  const auto& brush = yw::brush();
   const float2 scale = size / path.size();
   comptr<ID2D1TransformedGeometry> tg;
   D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Scale(scale.x, scale.y) * D2D1::Matrix3x2F::Translation(pos.x, pos.y);
@@ -476,6 +474,8 @@ inline std::expected<void, error_trace> stroke_svgpath(
   float2 pos, const svgpath& path, float1 border_width = 1.0f) {
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   if (!path) return {};
+  const auto& d2d = yw::d2d();
+  const auto& brush = yw::brush();
   comptr<ID2D1TransformedGeometry> tg;
   D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Translation(pos.x, pos.y);
   if (FAILED(d2d.factory()->CreateTransformedGeometry(path.get(), &matrix, &tg.get())))
@@ -489,23 +489,25 @@ inline std::expected<void, error_trace> stroke_svgpath(
 inline std::expected<void, error_trace> fill_svgpath(float2 pos, float2 size, const svgpath& path) {
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   if (!path) return {};
+  const auto& d2d = yw::d2d();
   const float2 scale = size / path.size();
   comptr<ID2D1TransformedGeometry> tg;
   D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Scale(scale.x, scale.y) * D2D1::Matrix3x2F::Translation(pos.x, pos.y);
   if (FAILED(d2d.factory()->CreateTransformedGeometry(path.get(), &matrix, &tg.get())))
     return unexpected_error(errors::invalid_operation, "failed to create transformed geometry");
-  d2d.context()->FillGeometry(tg.get(), brush.d2d_brush());
+  d2d.context()->FillGeometry(tg.get(), brush().d2d_brush());
   return {};
 }
 
 inline std::expected<void, error_trace> fill_svgpath(float2 pos, const svgpath& path) {
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   if (!path) return {};
+  const auto& d2d = yw::d2d();
   comptr<ID2D1TransformedGeometry> tg;
   D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Translation(pos.x, pos.y);
   if (FAILED(d2d.factory()->CreateTransformedGeometry(path.get(), &matrix, &tg.get())))
     return unexpected_error(errors::invalid_operation, "failed to create transformed geometry");
-  d2d.context()->FillGeometry(tg.get(), brush.d2d_brush());
+  d2d.context()->FillGeometry(tg.get(), brush().d2d_brush());
   return {};
 }
 } // namespace yw

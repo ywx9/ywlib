@@ -13,394 +13,571 @@
 
 namespace yw {
 
-//////////////////////////////////////// MARK: ok/yes
+namespace system {
+inline LRESULT __stdcall wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+}
+
+/// MARK: ok/yes
 
 inline bool ok(
   null_terminated<wchar_t> Text, null_terminated<wchar_t> Title = L"Confirmation", bool topmost = false,
   bool modal = false) {
-  UINT flags = MB_OK;
-  if (topmost) flags |= MB_TOPMOST;
-  if (modal) flags |= MB_TASKMODAL;
+  UINT flags = MB_OK | (topmost ? MB_TOPMOST : 0) | (modal ? MB_TASKMODAL : 0);
   return ::MessageBoxW(nullptr, Text.data(), Title.data(), flags) == IDOK;
 }
 
 inline bool yes(
   null_terminated<wchar_t> Text, null_terminated<wchar_t> Title = L"Confirmation", bool topmost = false,
   bool modal = false) {
-  UINT flags = MB_YESNO;
-  if (topmost) flags |= MB_TOPMOST;
-  if (modal) flags |= MB_TASKMODAL;
+  UINT flags = MB_YESNO | (topmost ? MB_TOPMOST : 0) | (modal ? MB_TASKMODAL : 0);
   return ::MessageBoxW(nullptr, Text.data(), Title.data(), flags) == IDYES;
 }
 
-//////////////////////////////////////// MARK: unexpected_win32_error
+/// MARK: unexpected_win32_error
 
 inline std::unexpected<error_trace> unexpected_win32_error(const char* msg, const source& src = {}) {
   return unexpected_error(errors::operation_failed, msg, int32_t(::GetLastError()), uint64_t(-1), src);
 }
 
-//////////////////////////////////////// MARK: desktop_client_size
+/// MARK: desktop_client_size
 
 inline uint2 desktop_client_size() {
-  static const uint2 _size = [] {
-    if (RECT r; !::GetClientRect(::GetDesktopWindow(), &r)) return uint2();
-    else return uint2(r.right, r.bottom);
-  }();
-  return _size;
+  if (RECT r; !::GetClientRect(::GetDesktopWindow(), &r)) return uint2();
+  else return uint2(r.right, r.bottom);
 }
 
-//////////////////////////////////////// MARK: wclass
+/// MARK: unknown
 
-/// \note Writes `if (auto res = wclass.initialize(); !res) fatal_error(res.error());` before using.
-inline class {
-  struct contents {
-    HINSTANCE hinstance{};
-    const wchar_t* name = L"ywlib_window_class";
-    bool initialized = false;
-  } c;
+class unknown {
+public:
+  struct slot {
+    slotset<slot>::slotid id{};
+    virtual ~slot() noexcept {}
+  };
+
+protected:
+  slotset<slot>::slotid _id{};
+  unknown() noexcept = default;
+  unknown(slotset<slot>::slotid Id) : _id(Id) {}
 
 public:
-  static LRESULT __stdcall proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
-
-  std::expected<void, error_trace> initialize() {
-    if (c.initialized) return {};
-    c.hinstance = ::GetModuleHandleW(nullptr);
-    WNDCLASSW wc{};
-    wc.style = CS_DBLCLKS;
-    wc.lpfnWndProc = proc;
-    wc.hInstance = c.hinstance;
-    wc.hCursor = ::LoadCursorW(nullptr, IDC_ARROW);
-    wc.lpszClassName = c.name;
-    if (!::RegisterClassW(&wc)) return unexpected_win32_error("RegisterClassW failed");
-    c.initialized = true;
-    return {};
-  }
-
-  HINSTANCE hinstance() const noexcept { return c.hinstance; }
-  const wchar_t* name() const noexcept { return c.name; }
-} wclass;
-
-//////////////////////////////////////// MARK: comptr
-
-template<typename Com> class comptr {
-  comptr(const comptr&) = delete;
-  comptr& operator=(const comptr&) = delete;
-  Com* p{nullptr};
-
-public:
-  explicit operator bool() const { return p != nullptr; }
-  Com* operator->() const { return p; }
-  bool operator==(Com* other) const { return p == other; }
-  ~comptr() {
-    if (p) p->Release();
-    p = nullptr;
-  }
-  comptr() = default;
-  comptr(comptr&& other) : p(std::exchange(other.p, nullptr)) {}
-  comptr& operator=(comptr&& other) {
-    if (this == &other) return *this;
-    if (p) p->Release();
-    p = std::exchange(other.p, nullptr);
+  unknown(unknown&& Other) noexcept : _id(std::move(Other._id)) {}
+  unknown& operator=(unknown&& Other) noexcept {
+    if (this == &Other) _id = std::exchange(Other._id, {});
     return *this;
   }
-  Com*& get() & { return p; }
-  Com* get() const& { return p; }
-  void release() {
-    if (p) p->Release();
-    p = nullptr;
-  }
-
-  /// releases the current COM pointer and takes ownership of the new pointer
-  void reset(Com* ptr) noexcept {
-    if (p) p->Release();
-    p = ptr;
-  }
-
-  explicit operator Com*&() & { return p; }
-  explicit operator Com*() const& { return p; }
+  explicit operator bool() const noexcept;
+  auto id() const noexcept { return _id; }
 };
 
-//////////////////////////////////////// MARK: d3d
+using unknown_slotid = slotset<unknown::slot>::slotid;
 
-/// \note Writes `if (auto res = d3d.initialize(); !res) fatal_error(res.error());` before using.
-inline class {
-  struct contents {
+namespace system {
+inline slotset<unknown::slot> unknowns;
+template<derived_from<unknown> T> typename T::slot* get_slot_pointer(unknown_slotid Id) noexcept {
+  return static_cast<T::slot*>(unknowns.get(Id));
+}
+} // namespace system
+
+inline unknown::operator bool() const noexcept { return system::unknowns.contains(_id); }
+
+/// MARK: wclass
+
+class wclass final : public unknown {
+public:
+  struct slot : unknown::slot {
+    HINSTANCE hinstance{};
+    const wchar_t* name = L"ywlib_window_class";
+
+    std::expected<void, error_trace> initialize(unknown_slotid Id) {
+      if (system::unknowns.contains(id)) return {};
+      hinstance = ::GetModuleHandleW(nullptr);
+      WNDCLASSW wc{};
+      wc.style = CS_DBLCLKS;
+      wc.lpfnWndProc = system::wndproc;
+      wc.hInstance = hinstance;
+      wc.hCursor = ::LoadCursorW(nullptr, IDC_ARROW);
+      wc.lpszClassName = name;
+      if (!::RegisterClassW(&wc) || ::GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+        return unexpected_error(errors::operation_failed, "RegisterClassW failed");
+      id = Id;
+      return {};
+    }
+
+    std::expected<void, error_trace> release() {
+      id = {};
+      ::UnregisterClassW(name, hinstance);
+      hinstance = {};
+      return {};
+    }
+  };
+
+  using unknown::operator bool;
+
+  explicit wclass() {
+    static unknown_slotid id = {};
+    if (!system::unknowns.contains(id)) {
+      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
+      const auto temp_sp = system::get_slot_pointer<wclass>(temp_id);
+      if (!temp_sp) fatal_error(errors::invalid_slotid);
+      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
+      id = temp_id;
+    }
+    this->_id = id;
+  }
+
+  HINSTANCE hinstance() const noexcept {
+    if (auto sp = system::get_slot_pointer<wclass>(_id)) return sp->hinstance;
+    return nullptr;
+  }
+  const wchar_t* name() const noexcept {
+    if (auto sp = system::get_slot_pointer<wclass>(_id)) return sp->name;
+    return nullptr;
+  }
+
+  std::expected<void, error_trace> release() const {
+    const auto sp = system::get_slot_pointer<wclass>(_id);
+    if (!sp) return unexpected_error(errors::invalid_slotid);
+    if (auto res = sp->release(); !res) return unexpected_error(res.error());
+    return {};
+  }
+};
+
+/// MARK: d3d
+
+class d3d final : public unknown {
+public:
+  struct slot : unknown::slot {
     ID3D11Device* device{};
     ID3D11DeviceContext* context{};
     ID3D11BlendState* blend_state{};
-    ID3D11RasterizerState* rasterizer_state{};
     ID3D11SamplerState* sampler_state{};
+    ID3D11RasterizerState* rasterizer_state{};
     ID3D11DepthStencilState* depth_stencil_state{};
-    bool initialized{};
 
-    void release() noexcept {
-      if (blend_state) blend_state->Release(), blend_state = nullptr;
-      if (rasterizer_state) rasterizer_state->Release(), rasterizer_state = nullptr;
-      if (sampler_state) sampler_state->Release(), sampler_state = nullptr;
+    ~slot() noexcept {
+      if (depth_stencil_state) depth_stencil_state->Release();
+      if (rasterizer_state) rasterizer_state->Release();
+      if (sampler_state) sampler_state->Release();
+      if (blend_state) blend_state->Release();
+      if (context) context->Release();
+      if (device) device->Release();
+    }
+
+    std::expected<void, error_trace> _init_device() {
+      const D3D_FEATURE_LEVEL _levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
+      const auto hr = ::D3D11CreateDevice(
+        nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, _levels, _countof(_levels),
+        D3D11_SDK_VERSION, &device, nullptr, &context);
+      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "D3D11CreateDevice failed");
+      return {};
+    }
+
+    std::expected<void, error_trace> _init_blend_state() {
+      D3D11_BLEND_DESC blend_desc{};
+      blend_desc.RenderTarget[0].BlendEnable = TRUE;
+      blend_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+      blend_desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+      blend_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+      blend_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+      blend_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+      blend_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+      blend_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+      const auto hr = device->CreateBlendState(&blend_desc, &blend_state);
+      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBlendState failed");
+      context->OMSetBlendState(blend_state, nullptr, 0xffffffff);
+      return {};
+    }
+
+    std::expected<void, error_trace> _init_sampler_state() {
+      D3D11_SAMPLER_DESC sampler_desc{};
+      sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+      sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+      sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+      sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+      sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+      const auto hr = device->CreateSamplerState(&sampler_desc, &sampler_state);
+      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSamplerState failed");
+      context->PSSetSamplers(0, 1, &sampler_state);
+      return {};
+    }
+
+    std::expected<void, error_trace> _init_rasterizer_state() {
+      D3D11_RASTERIZER_DESC rasterizer_desc{};
+      rasterizer_desc.FillMode = D3D11_FILL_SOLID;
+      rasterizer_desc.CullMode = D3D11_CULL_NONE;
+      rasterizer_desc.FrontCounterClockwise = TRUE;
+      rasterizer_desc.DepthClipEnable = TRUE;
+      const auto hr = device->CreateRasterizerState(&rasterizer_desc, &rasterizer_state);
+      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateRasterizerState failed");
+      context->RSSetState(rasterizer_state);
+      return {};
+    }
+
+    std::expected<void, error_trace> _init_depth_stencil_state() {
+      D3D11_DEPTH_STENCIL_DESC depth_stencil_desc{};
+      depth_stencil_desc.DepthEnable = TRUE;
+      depth_stencil_desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+      depth_stencil_desc.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL; // Reverse-Z
+      const auto hr = device->CreateDepthStencilState(&depth_stencil_desc, &depth_stencil_state);
+      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDepthStencilState failed");
+      context->OMSetDepthStencilState(depth_stencil_state, 0);
+      return {};
+    }
+
+    std::expected<void, error_trace> initialize(unknown_slotid Id) {
+      if (system::unknowns.contains(id)) return {};
+      if (auto res = _init_device(); !res) return res;
+      if (auto res = _init_blend_state(); !res) return res;
+      if (auto res = _init_sampler_state(); !res) return res;
+      if (auto res = _init_rasterizer_state(); !res) return res;
+      if (auto res = _init_depth_stencil_state(); !res) return res;
+      id = Id;
+      return {};
+    }
+
+    std::expected<void, error_trace> release() {
+      id = {};
       if (depth_stencil_state) depth_stencil_state->Release(), depth_stencil_state = nullptr;
+      if (rasterizer_state) rasterizer_state->Release(), rasterizer_state = nullptr;
+      if (blend_state) blend_state->Release(), blend_state = nullptr;
+      if (sampler_state) sampler_state->Release(), sampler_state = nullptr;
       if (context) context->Release(), context = nullptr;
       if (device) device->Release(), device = nullptr;
-      initialized = false;
+      return {};
     }
+  };
 
-    ~contents() noexcept { release(); }
-  } c{};
+  using unknown::operator bool;
 
-public:
-  std::expected<void, error_trace> initialize() {
-    if (c.initialized) return {};
-    const D3D_FEATURE_LEVEL _levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
-    auto hr = D3D11CreateDevice(
-      nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, _levels, _countof(_levels),
-      D3D11_SDK_VERSION, &c.device, nullptr, &c.context);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "D3D11CreateDevice failed", int32_t(hr));
-    D3D11_BLEND_DESC blend_desc{};
-    blend_desc.RenderTarget[0].BlendEnable = TRUE;
-    blend_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
-    blend_desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-    blend_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-    blend_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-    blend_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
-    blend_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-    blend_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-    hr = c.device->CreateBlendState(&blend_desc, &c.blend_state);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBlendState failed", int32_t(hr));
-    c.context->OMSetBlendState(c.blend_state, nullptr, 0xffffffff);
-    D3D11_RASTERIZER_DESC rasterizer_desc{};
-    rasterizer_desc.FillMode = D3D11_FILL_SOLID;
-    rasterizer_desc.CullMode = D3D11_CULL_NONE;
-    rasterizer_desc.FrontCounterClockwise = TRUE;
-    rasterizer_desc.DepthClipEnable = TRUE;
-    hr = c.device->CreateRasterizerState(&rasterizer_desc, &c.rasterizer_state);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateRasterizerState failed", int32_t(hr));
-    c.context->RSSetState(c.rasterizer_state);
-    D3D11_SAMPLER_DESC sampler_desc{};
-    sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-    sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
-    sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
-    sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
-    sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
-    hr = c.device->CreateSamplerState(&sampler_desc, &c.sampler_state);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSamplerState failed", int32_t(hr));
-    c.context->PSSetSamplers(0, 1, &c.sampler_state);
-    D3D11_DEPTH_STENCIL_DESC depth_stencil_desc{};
-    depth_stencil_desc.DepthEnable = TRUE;
-    depth_stencil_desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
-    depth_stencil_desc.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL; // Reverse-Z
-    hr = c.device->CreateDepthStencilState(&depth_stencil_desc, &c.depth_stencil_state);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDepthStencilState failed", int32_t(hr));
-    c.context->OMSetDepthStencilState(c.depth_stencil_state, 0);
-    c.initialized = true;
-    return {};
+  explicit d3d() {
+    static unknown_slotid id = {};
+    if (!system::unknowns.contains(id)) {
+      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
+      const auto temp_sp = system::get_slot_pointer<d3d>(temp_id);
+      if (!temp_sp) fatal_error(errors::invalid_slotid);
+      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
+      id = temp_id;
+    }
+    this->_id = id;
   }
 
-  void release() noexcept { c.release(); }
+  ID3D11Device* device() const noexcept {
+    if (const auto sp = system::get_slot_pointer<d3d>(_id)) return sp->device;
+    return nullptr;
+  }
+  ID3D11DeviceContext* context() const noexcept {
+    if (const auto sp = system::get_slot_pointer<d3d>(_id)) return sp->context;
+    return nullptr;
+  }
+  ID3D11BlendState* blend_state() const noexcept {
+    if (const auto sp = system::get_slot_pointer<d3d>(_id)) return sp->blend_state;
+    return nullptr;
+  }
+  ID3D11RasterizerState* rasterizer_state() const noexcept {
+    if (const auto sp = system::get_slot_pointer<d3d>(_id)) return sp->rasterizer_state;
+    return nullptr;
+  }
+  ID3D11SamplerState* sampler_state() const noexcept {
+    if (const auto sp = system::get_slot_pointer<d3d>(_id)) return sp->sampler_state;
+    return nullptr;
+  }
+  ID3D11DepthStencilState* depth_stencil_state() const noexcept {
+    if (const auto sp = system::get_slot_pointer<d3d>(_id)) return sp->depth_stencil_state;
+    return nullptr;
+  }
 
-  ID3D11Device* device() noexcept { return c.device; }
-  ID3D11DeviceContext* context() noexcept { return c.context; }
-  ID3D11BlendState* blend_state() noexcept { return c.blend_state; }
-  ID3D11RasterizerState* rasterizer_state() noexcept { return c.rasterizer_state; }
-  ID3D11SamplerState* sampler_state() noexcept { return c.sampler_state; }
-  ID3D11DepthStencilState* depth_stencil_state() noexcept { return c.depth_stencil_state; }
-} d3d;
+  std::expected<void, error_trace> release() const {
+    const auto sp = system::get_slot_pointer<d3d>(_id);
+    if (!sp) return unexpected_error(errors::invalid_slotid);
+    if (auto res = sp->release(); !res) return unexpected_error(res.error());
+    return {};
+  }
+};
 
-//////////////////////////////////////// MARK: dxgi
+/// MARK: dxgi
 
-/// \note Writes `if (auto res = dxgi.initialize(); !res) fatal_error(res.error());` before using.
-inline class {
-  struct contents {
-    IDXGIFactory2* factory{nullptr};
-    IDXGIDevice2* device{nullptr};
-    bool initialized{false};
+class dxgi final : public unknown {
+public:
+  struct slot : unknown::slot {
+    IDXGIFactory2* factory{};
+    IDXGIDevice2* device{};
 
-    void release() noexcept {
+    ~slot() noexcept {
+      if (device) device->Release();
+      if (factory) factory->Release();
+    }
+
+    std::expected<void, error_trace> initialize(unknown_slotid Id) {
+      if (system::unknowns.contains(id)) return {};
+      const auto& d3d = yw::d3d();
+      auto hr = ::CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void**>(&factory));
+      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDXGIFactory2 failed", int32_t(hr));
+      hr = d3d.device()->QueryInterface(__uuidof(IDXGIDevice2), reinterpret_cast<void**>(&device));
+      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDevice failed", int32_t(hr));
+      id = Id;
+      return {};
+    }
+
+    std::expected<void, error_trace> release() {
+      id = {};
       if (device) device->Release(), device = nullptr;
       if (factory) factory->Release(), factory = nullptr;
-      initialized = false;
+      return {};
     }
+  };
 
-    ~contents() noexcept { release(); }
-  } c{};
+  using unknown::operator bool;
 
-public:
-  std::expected<void, error_trace> initialize() {
-    if (c.initialized) return {};
-    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
-    auto hr = ::CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void**>(&c.factory));
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDXGIFactory2 failed", int32_t(hr));
-    hr = d3d.device()->QueryInterface(__uuidof(IDXGIDevice2), reinterpret_cast<void**>(&c.device));
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDevice failed", int32_t(hr));
-    c.initialized = true;
+  explicit dxgi() {
+    static unknown_slotid id = {};
+    if (!system::unknowns.contains(id)) {
+      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
+      const auto temp_sp = system::get_slot_pointer<dxgi>(temp_id);
+      if (!temp_sp) fatal_error(errors::invalid_slotid);
+      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
+      id = temp_id;
+    }
+    this->_id = id;
+  }
+  std::expected<void, error_trace> release() const {
+    const auto sp = system::get_slot_pointer<dxgi>(_id);
+    if (!sp) return unexpected_error(errors::invalid_slotid);
+    if (auto res = sp->release(); !res) return unexpected_error(res.error());
     return {};
   }
 
-  void release() noexcept { c.release(); }
+  IDXGIFactory2* factory() const noexcept {
+    if (const auto sp = system::get_slot_pointer<dxgi>(_id)) return sp->factory;
+    return nullptr;
+  }
+  IDXGIDevice2* device() const noexcept {
+    if (const auto sp = system::get_slot_pointer<dxgi>(_id)) return sp->device;
+    return nullptr;
+  }
+};
 
-  IDXGIFactory2* factory() noexcept { return c.factory; }
-  IDXGIDevice2* device() noexcept { return c.device; }
-} dxgi;
+/// MARK: coinit
 
-//////////////////////////////////////// MARK: coinit
-
-inline class {
-  struct contents {
-    bool initialized{};
-
-    void release() noexcept {
-      if (initialized) ::CoUninitialize();
-      initialized = false;
+class coinit final : public unknown {
+public:
+  struct slot : unknown::slot {
+    ~slot() noexcept {
+      if (system::unknowns.contains(id)) ::CoUninitialize();
     }
 
-    ~contents() noexcept { release(); }
-  } c{};
+    std::expected<void, error_trace> initialize(unknown_slotid Id) {
+      if (system::unknowns.contains(id)) return {};
+      if (auto hr = ::CoInitializeEx(nullptr, COINIT_MULTITHREADED); FAILED(hr))
+        return unexpected_error(errors::operation_failed, "CoInitializeEx failed", int32_t(hr));
+      id = Id;
+      return {};
+    }
 
-public:
-  std::expected<void, error_trace> initialize() {
-    if (c.initialized) return {};
-    if (auto hr = ::CoInitializeEx(nullptr, COINIT_MULTITHREADED); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "CoInitializeEx failed", int32_t(hr));
-    c.initialized = true;
+    std::expected<void, error_trace> release() {
+      if (system::unknowns.contains(id)) ::CoUninitialize();
+      id = {};
+      return {};
+    }
+  };
+
+  using unknown::operator bool;
+
+  explicit coinit() {
+    static unknown_slotid id = {};
+    if (!system::unknowns.contains(id)) {
+      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
+      const auto temp_sp = system::get_slot_pointer<coinit>(temp_id);
+      if (!temp_sp) fatal_error(errors::invalid_slotid);
+      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
+      id = temp_id;
+    }
+    this->_id = id;
+  }
+  std::expected<void, error_trace> release() const {
+    const auto sp = system::get_slot_pointer<coinit>(_id);
+    if (!sp) return unexpected_error(errors::invalid_slotid);
+    if (auto res = sp->release(); !res) return unexpected_error(res.error());
     return {};
   }
+};
 
-  void release() noexcept { c.release(); }
-} coinit;
+/// MARK: d2d
 
-//////////////////////////////////////// MARK: d2d
-
-/// \note Writes `if (auto res = d2d.initialize(); !res) fatal_error(res.error());` before using.
-inline class {
-  struct contents {
+class d2d final : public unknown {
+public:
+  struct slot : unknown::slot {
     ID2D1Factory1* factory{};
     ID2D1Device* device{};
     ID2D1DeviceContext* context{};
-    bool initialized{};
 
-    void release() noexcept {
+    ~slot() noexcept {
+      if (context) context->Release();
+      if (device) device->Release();
+      if (factory) factory->Release();
+    }
+
+    std::expected<void, error_trace> initialize(unknown_slotid Id) {
+      if (system::unknowns.contains(id)) return {};
+      const auto dxgi = yw::dxgi();
+      const auto coinit = yw::coinit();
+      auto hr = ::D2D1CreateFactory(
+        D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), reinterpret_cast<void**>(&factory));
+      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "D2D1CreateFactory failed", int32_t(hr));
+      hr = factory->CreateDevice(dxgi.device(), &device);
+      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDevice failed", int32_t(hr));
+      hr = device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &context);
+      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDeviceContext failed", int32_t(hr));
+      id = Id;
+      return {};
+    }
+
+    std::expected<void, error_trace> release() {
+      id = {};
       if (context) context->Release(), context = nullptr;
       if (device) device->Release(), device = nullptr;
       if (factory) factory->Release(), factory = nullptr;
-      initialized = false;
+      return {};
     }
+  };
 
-    ~contents() noexcept { release(); }
-  } c{};
+  using unknown::operator bool;
 
-public:
-  std::expected<void, error_trace> initialize() {
-    if (c.initialized) return {};
-    if (auto res = dxgi.initialize(); !res) return unexpected_error(res.error());
-    if (auto res = coinit.initialize(); !res) return unexpected_error(res.error());
-    auto hr = ::D2D1CreateFactory(
-      D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), reinterpret_cast<void**>(&c.factory));
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "D2D1CreateFactory failed", int32_t(hr));
-    hr = c.factory->CreateDevice(dxgi.device(), &c.device);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDevice failed", int32_t(hr));
-    hr = c.device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &c.context);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDeviceContext failed", int32_t(hr));
-    c.initialized = true;
+  explicit d2d() {
+    static unknown_slotid id = {};
+    if (!system::unknowns.contains(id)) {
+      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
+      const auto temp_sp = system::get_slot_pointer<d2d>(temp_id);
+      if (!temp_sp) fatal_error(errors::invalid_slotid);
+      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
+      id = temp_id;
+    }
+    this->_id = id;
+  }
+  std::expected<void, error_trace> release() const {
+    const auto sp = system::get_slot_pointer<d2d>(_id);
+    if (!sp) return unexpected_error(errors::invalid_slotid);
+    if (auto res = sp->release(); !res) return unexpected_error(res.error());
     return {};
   }
 
-  void release() noexcept { c.release(); }
+  ID2D1Factory1* factory() const noexcept {
+    if (const auto sp = system::get_slot_pointer<d2d>(_id)) return sp->factory;
+    return nullptr;
+  }
+  ID2D1Device* device() const noexcept {
+    if (const auto sp = system::get_slot_pointer<d2d>(_id)) return sp->device;
+    return nullptr;
+  }
+  ID2D1DeviceContext* context() const noexcept {
+    if (const auto sp = system::get_slot_pointer<d2d>(_id)) return sp->context;
+    return nullptr;
+  }
 
-  ID2D1Factory1* factory() noexcept { return c.factory; }
-  ID2D1Device* device() noexcept { return c.device; }
-  ID2D1DeviceContext* context() noexcept { return c.context; }
-
-  std::expected<void, error_trace> push_layer(ID2D1Geometry* Geometry) {
-    if (auto res = initialize(); !res) return unexpected_error(res.error());
+  std::expected<void, error_trace> push_layer(ID2D1Geometry* Geometry) const {
     context()->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), Geometry), nullptr);
     return {};
   }
 
-  std::expected<void, error_trace> pop_layer() {
-    if (auto res = initialize(); !res) return unexpected_error(res.error());
+  std::expected<void, error_trace> pop_layer() const {
     context()->PopLayer();
     return {};
   }
-} d2d;
+};
 
-//////////////////////////////////////// MARK: brush
+/// MARK: brush
 
-/// \note Writes `if (auto res = brush.initialize(); !res) fatal_error(res.error());` before using.
-inline class {
-  struct contents {
+class brush final : public unknown {
+public:
+  struct slot : unknown::slot {
     ID2D1SolidColorBrush* solid_brush{};
     ID2D1StrokeStyle* stroke_style{};
     ID2D1StrokeStyle* dashed_stroke_style{};
     bool dashed = false;
-    bool initialized = false;
 
-    void release() noexcept {
+    ~slot() noexcept {
+      if (dashed_stroke_style) dashed_stroke_style->Release();
+      if (stroke_style) stroke_style->Release();
+      if (solid_brush) solid_brush->Release();
+    }
+
+    std::expected<void, error_trace> initialize(unknown_slotid Id) {
+      if (system::unknowns.contains(id)) return {};
+      const auto& d2d = yw::d2d();
+      if (auto hr = d2d.context()->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black), &solid_brush); FAILED(hr))
+        return unexpected_error(errors::operation_failed, "CreateSolidColorBrush failed", int32_t(hr));
+      D2D1_STROKE_STYLE_PROPERTIES stroke_style_props{};
+      stroke_style_props.startCap = D2D1_CAP_STYLE_ROUND;
+      stroke_style_props.endCap = D2D1_CAP_STYLE_ROUND;
+      stroke_style_props.dashCap = D2D1_CAP_STYLE_ROUND;
+      stroke_style_props.lineJoin = D2D1_LINE_JOIN_ROUND;
+      stroke_style_props.miterLimit = 10.0f;
+      if (auto hr = d2d.factory()->CreateStrokeStyle(&stroke_style_props, nullptr, 0, &stroke_style); FAILED(hr))
+        return unexpected_error(errors::operation_failed, "CreateStrokeStyle failed", int32_t(hr));
+      stroke_style_props.dashStyle = D2D1_DASH_STYLE_DASH;
+      if (auto hr = d2d.factory()->CreateStrokeStyle(&stroke_style_props, nullptr, 0, &dashed_stroke_style); FAILED(hr))
+        return unexpected_error(errors::operation_failed, "CreateStrokeStyle (dashed) failed", int32_t(hr));
+      id = Id;
+      return {};
+    }
+
+    std::expected<void, error_trace> release() {
+      id = {};
       if (dashed_stroke_style) dashed_stroke_style->Release(), dashed_stroke_style = nullptr;
       if (stroke_style) stroke_style->Release(), stroke_style = nullptr;
       if (solid_brush) solid_brush->Release(), solid_brush = nullptr;
-      initialized = false;
+      dashed = false;
+      return {};
     }
+  };
 
-    ~contents() noexcept { release(); }
-  } c{};
+  using unknown::operator bool;
 
-public:
-  /// initializes brush if it hasn't been initialized yet.
-  std::expected<void, error_trace> initialize() {
-    if (c.initialized) return {};
-    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-    if (auto hr = d2d.context()->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black), &c.solid_brush); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "CreateSolidColorBrush failed", int32_t(hr));
-    D2D1_STROKE_STYLE_PROPERTIES stroke_style_props{};
-    stroke_style_props.startCap = D2D1_CAP_STYLE_ROUND;
-    stroke_style_props.endCap = D2D1_CAP_STYLE_ROUND;
-    stroke_style_props.dashCap = D2D1_CAP_STYLE_ROUND;
-    stroke_style_props.lineJoin = D2D1_LINE_JOIN_ROUND;
-    stroke_style_props.miterLimit = 10.0f;
-    if (auto hr = d2d.factory()->CreateStrokeStyle(&stroke_style_props, nullptr, 0, &c.stroke_style); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "CreateStrokeStyle failed", int32_t(hr));
-    stroke_style_props.dashStyle = D2D1_DASH_STYLE_DASH;
-    if (auto hr = d2d.factory()->CreateStrokeStyle(&stroke_style_props, nullptr, 0, &c.dashed_stroke_style); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "CreateStrokeStyle (dashed) failed", int32_t(hr));
-    c.initialized = true;
+  explicit brush() {
+    static unknown_slotid id = {};
+    if (!system::unknowns.contains(id)) {
+      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
+      const auto temp_sp = system::get_slot_pointer<brush>(temp_id);
+      if (!temp_sp) fatal_error(errors::invalid_slotid);
+      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
+      id = temp_id;
+    }
+    this->_id = id;
+  }
+  std::expected<void, error_trace> release() const {
+    const auto sp = system::get_slot_pointer<brush>(_id);
+    if (!sp) return unexpected_error(errors::invalid_slotid);
+    if (auto res = sp->release(); !res) return unexpected_error(res.error());
     return {};
   }
 
-  void release() noexcept { c.release(); }
-
-  yw::color color() {
-    if (auto res = initialize(); !res) fatal_error(res.error());
-    return std::bit_cast<yw::color>(c.solid_brush->GetColor());
+  yw::color color() const {
+    return std::bit_cast<yw::color>(system::get_slot_pointer<brush>(_id)->solid_brush->GetColor());
   }
-  auto& color(const yw::color& Color) {
-    if (auto res = initialize(); !res) fatal_error(res.error());
-    c.solid_brush->SetColor(reinterpret_cast<const D2D1_COLOR_F*>(&Color));
+  auto& color(const yw::color& Color) const {
+    system::get_slot_pointer<brush>(_id)->solid_brush->SetColor(reinterpret_cast<const D2D1_COLOR_F*>(&Color));
     return *this;
   }
-  bool dashed() { return c.dashed; }
-
-  /// \note Note that the effect of this style change will continue until explicitly switched.
-  auto& dashed(bool Dashed = true) {
-    c.dashed = Dashed;
+  bool dashed() const {
+    if (const auto sp = system::get_slot_pointer<brush>(_id)) return sp->dashed;
+    return false;
+  }
+  auto& dashed(bool Dashed = true) const {
+    if (const auto sp = system::get_slot_pointer<brush>(_id)) sp->dashed = Dashed;
     return *this;
   }
-
-  ID2D1SolidColorBrush* d2d_brush() {
-    if (auto res = initialize(); !res) fatal_error(res.error());
-    return c.solid_brush;
+  ID2D1SolidColorBrush* d2d_brush() const {
+    if (const auto sp = system::get_slot_pointer<brush>(_id)) return sp->solid_brush;
+    return nullptr;
   }
-  ID2D1StrokeStyle* d2d_stroke() {
-    if (auto res = initialize(); !res) fatal_error(res.error());
-    return c.dashed ? c.dashed_stroke_style : c.stroke_style;
+  ID2D1StrokeStyle* d2d_stroke() const {
+    if (const auto sp = system::get_slot_pointer<brush>(_id))
+      return sp->dashed ? sp->dashed_stroke_style : sp->stroke_style;
+    return nullptr;
   }
-} brush;
+};
 
-//////////////////////////////////////// MARK: dwrite
-
-// enum class text_align : uint8_t {
-//   left = DWRITE_TEXT_ALIGNMENT_LEADING,
-//   right = DWRITE_TEXT_ALIGNMENT_TRAILING,
-//   center = DWRITE_TEXT_ALIGNMENT_CENTER,
-//   justified = DWRITE_TEXT_ALIGNMENT_JUSTIFIED
-// };
+/// MARK: dwrite
 
 enum class font_weight : uint16_t {
   thin = DWRITE_FONT_WEIGHT_THIN,
@@ -455,113 +632,223 @@ struct font_config {
 inline const font_config font_config::default_{
   L""s, 16.0f, font_weight::normal, font_style::normal, font_stretch::normal};
 
-/// \note Writes `if (auto res = dwrite.initialize(); !res) fatal_error(res.error())` before using.
-inline class {
-  struct contents {
+class dwrite final : public unknown {
+public:
+  struct slot : unknown::slot {
     IDWriteFactory1* factory{};
     IDWriteTextFormat* text_format{};
-    bool initialized = false;
 
-    void release() noexcept {
-      if (text_format) std::exchange(text_format, nullptr)->Release();
-      if (factory) std::exchange(factory, nullptr)->Release();
-      initialized = false;
+    ~slot() noexcept {
+      if (text_format) text_format->Release();
+      if (factory) factory->Release();
     }
 
-    ~contents() noexcept { release(); }
-  } c{};
+    std::expected<void, error_trace> initialize(unknown_slotid Id) {
+      if (system::unknowns.contains(id)) return {};
+      const auto& d2d = yw::d2d();
+      auto hr = ::DWriteCreateFactory(
+        DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory1), reinterpret_cast<IUnknown**>(&factory));
+      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "DWriteCreateFactory failed", int32_t(hr));
+      hr = factory->CreateTextFormat(
+        font_config::default_.name->c_str(), nullptr, DWRITE_FONT_WEIGHT(*font_config::default_.weight),
+        DWRITE_FONT_STYLE(*font_config::default_.style), DWRITE_FONT_STRETCH(*font_config::default_.stretch),
+        font_config::default_.size.value_or(16.0f), L"", &text_format);
+      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int32_t(hr));
+      text_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+      id = Id;
+      return {};
+    }
 
-public:
-  std::expected<void, error_trace> initialize() {
-    if (c.initialized) return {};
-    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-    // Creates DirectWrite factory.
-    auto hr = ::DWriteCreateFactory(
-      DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory1), reinterpret_cast<IUnknown**>(&c.factory));
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "DWriteCreateFactory failed", int32_t(hr));
-    // Creates default text format.
-    hr = c.factory->CreateTextFormat( //
-      font_config::default_.name->c_str(), nullptr, //
-      DWRITE_FONT_WEIGHT(*font_config::default_.weight), //
-      DWRITE_FONT_STYLE(*font_config::default_.style), //
-      DWRITE_FONT_STRETCH(*font_config::default_.stretch), //
-      font_config::default_.size.value_or(16.0f), L"", &c.text_format);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int32_t(hr));
-    c.text_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-    c.initialized = true;
+    std::expected<void, error_trace> release() {
+      id = {};
+      if (text_format) text_format->Release(), text_format = nullptr;
+      if (factory) factory->Release(), factory = nullptr;
+      return {};
+    }
+  };
+
+  using unknown::operator bool;
+
+  explicit dwrite() {
+    static unknown_slotid id = {};
+    if (!system::unknowns.contains(id)) {
+      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
+      const auto temp_sp = system::get_slot_pointer<dwrite>(temp_id);
+      if (!temp_sp) fatal_error(errors::invalid_slotid);
+      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
+      id = temp_id;
+    }
+    this->_id = id;
+  }
+  std::expected<void, error_trace> release() const {
+    const auto sp = system::get_slot_pointer<dwrite>(_id);
+    if (!sp) return unexpected_error(errors::invalid_slotid);
+    if (auto res = sp->release(); !res) return unexpected_error(res.error());
     return {};
   }
 
-  void release() noexcept { c.release(); }
+  IDWriteFactory1* factory() const noexcept {
+    if (const auto sp = system::get_slot_pointer<dwrite>(_id)) return sp->factory;
+    return nullptr;
+  }
+  IDWriteTextFormat* text_format() const noexcept {
+    if (const auto sp = system::get_slot_pointer<dwrite>(_id)) return sp->text_format;
+    return nullptr;
+  }
+};
 
-  IDWriteFactory1* factory() { return c.factory; }
-  IDWriteTextFormat* text_format() { return c.text_format; }
-} dwrite;
+//// MARK: wic
 
-///////////////////////////////////////// MARK: wic
-
-/// \note Writes `if (auto res = wic.initialize(); !res) fatal_error(res.error())` before using.
-inline class {
-  struct contents {
+class wic final : public unknown {
+public:
+  struct slot : unknown::slot {
     ::IWICImagingFactory2* factory{};
-    bool initialized{};
 
-    void release() noexcept {
-      if (factory) std::exchange(factory, nullptr)->Release();
-      initialized = false;
+    ~slot() noexcept {
+      if (factory) factory->Release();
     }
 
-    ~contents() noexcept { release(); }
-  } c{};
+    std::expected<void, error_trace> initialize(unknown_slotid Id) {
+      if (system::unknowns.contains(id)) return {};
+      const auto& d2d = yw::d2d();
+      auto hr = ::CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CoCreateInstance failed", int32_t(hr));
+      id = Id;
+      return {};
+    }
 
-public:
-  std::expected<void, error_trace> initialize() {
-    if (c.initialized) return {};
-    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-    auto hr = ::CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&c.factory));
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CoCreateInstance failed", int32_t(hr));
-    c.initialized = true;
+    std::expected<void, error_trace> release() {
+      id = {};
+      if (factory) factory->Release(), factory = nullptr;
+      return {};
+    }
+  };
+
+  using unknown::operator bool;
+
+  explicit wic() {
+    static unknown_slotid id = {};
+    if (!system::unknowns.contains(id)) {
+      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
+      const auto temp_sp = system::get_slot_pointer<wic>(temp_id);
+      if (!temp_sp) fatal_error(errors::invalid_slotid);
+      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
+      id = temp_id;
+    }
+    this->_id = id;
+  }
+  std::expected<void, error_trace> release() const {
+    const auto sp = system::get_slot_pointer<wic>(_id);
+    if (!sp) return unexpected_error(errors::invalid_slotid);
+    if (auto res = sp->release(); !res) return unexpected_error(res.error());
     return {};
   }
 
-  void release() noexcept { c.release(); }
+  ::IWICImagingFactory2* factory() const noexcept {
+    if (const auto sp = system::get_slot_pointer<wic>(_id)) return sp->factory;
+    return nullptr;
+  }
+};
 
-  ::IWICImagingFactory2* factory() { return c.factory; }
-} wic;
+/// MARK: xaudio2
 
-//////////////////////////////////////// MARK: xaudio2
-
-/// \note Writes `if (auto res = xaudio2.initialize(); !res) fatal_error(res.error())` before using.
-inline class {
-  struct contents {
-    ::IXAudio2* xaudio2{};
+class xaudio2 final : public unknown {
+public:
+  struct slot : unknown::slot {
+    ::IXAudio2* device{};
     ::IXAudio2MasteringVoice* mastering_voice{};
-    bool initialized{};
 
-    void release() noexcept {
-      if (mastering_voice) std::exchange(mastering_voice, nullptr)->DestroyVoice();
-      if (xaudio2) std::exchange(xaudio2, nullptr)->Release();
-      initialized = false;
+    ~slot() noexcept {
+      if (mastering_voice) mastering_voice->DestroyVoice();
+      if (device) device->Release();
     }
 
-    ~contents() noexcept { release(); }
-  } c{};
+    std::expected<void, error_trace> initialize(unknown_slotid Id) {
+      if (system::unknowns.contains(id)) return {};
+      const auto& coinit = yw::coinit();
+      if (const auto hr = ::XAudio2Create(&device, 0, XAUDIO2_DEFAULT_PROCESSOR); FAILED(hr))
+        return unexpected_error(errors::operation_failed, "XAudio2Create failed", int32_t(hr));
+      if (const auto hr = device->CreateMasteringVoice(&mastering_voice); FAILED(hr))
+        return unexpected_error(errors::operation_failed, "CreateMasteringVoice failed", int32_t(hr));
+      id = Id;
+      return {};
+    }
 
-public:
-  std::expected<void, error_trace> initialize() {
-    if (c.initialized) return {};
-    if (auto res = coinit.initialize(); !res) return unexpected_error(res.error());
-    auto hr = ::XAudio2Create(&c.xaudio2, 0, XAUDIO2_DEFAULT_PROCESSOR);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "XAudio2Create failed", int32_t(hr));
-    hr = c.xaudio2->CreateMasteringVoice(&c.mastering_voice);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateMasteringVoice failed", int32_t(hr));
-    c.initialized = true;
+    std::expected<void, error_trace> release() {
+      id = {};
+      if (mastering_voice) mastering_voice->DestroyVoice(), mastering_voice = nullptr;
+      if (device) device->Release(), device = nullptr;
+      return {};
+    }
+  };
+
+  using unknown::operator bool;
+
+  explicit xaudio2() {
+    static unknown_slotid id = {};
+    if (!system::unknowns.contains(id)) {
+      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
+      const auto temp_sp = system::get_slot_pointer<xaudio2>(temp_id);
+      if (!temp_sp) fatal_error(errors::invalid_slotid);
+      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
+      id = temp_id;
+    }
+    this->_id = id;
+  }
+  std::expected<void, error_trace> release() const {
+    const auto sp = system::get_slot_pointer<xaudio2>(_id);
+    if (!sp) return unexpected_error(errors::invalid_slotid);
+    if (auto res = sp->release(); !res) return unexpected_error(res.error());
     return {};
   }
 
-  void release() noexcept { c.release(); }
+  ::IXAudio2* device() const noexcept {
+    if (const auto sp = system::get_slot_pointer<xaudio2>(_id)) return sp->device;
+    return nullptr;
+  }
+  ::IXAudio2MasteringVoice* mastering_voice() const noexcept {
+    if (const auto sp = system::get_slot_pointer<xaudio2>(_id)) return sp->mastering_voice;
+    return nullptr;
+  }
+};
 
-  ::IXAudio2* device() { return c.xaudio2; }
-  ::IXAudio2MasteringVoice* mastering_voice() { return c.mastering_voice; }
-} xaudio2;
+/// MARK: comptr
+
+template<typename Com> class comptr {
+  comptr(const comptr&) = delete;
+  comptr& operator=(const comptr&) = delete;
+  Com* _ptr{nullptr};
+
+public:
+  explicit operator bool() const { return _ptr != nullptr; }
+  Com* operator->() const { return _ptr; }
+  bool operator==(Com* Other) const { return _ptr == Other; }
+  ~comptr() {
+    if (_ptr) _ptr->Release();
+    _ptr = nullptr;
+  }
+  comptr() = default;
+  comptr(comptr&& Other) : _ptr(std::exchange(Other._ptr, nullptr)) {}
+  comptr& operator=(comptr&& Other) {
+    if (this == &Other) return *this;
+    if (_ptr) _ptr->Release();
+    _ptr = std::exchange(Other._ptr, nullptr);
+    return *this;
+  }
+  Com*& get() & { return _ptr; }
+  Com* get() const& { return _ptr; }
+  void release() {
+    if (_ptr) _ptr->Release();
+    _ptr = nullptr;
+  }
+
+  /// releases current pointer and takes ownership of new
+  void reset(Com* New) noexcept {
+    if (_ptr) _ptr->Release();
+    _ptr = New;
+  }
+
+  explicit operator Com*&() & { return _ptr; }
+  explicit operator Com*() const& { return _ptr; }
+};
 } // namespace yw

@@ -6,6 +6,10 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 if("@TARGET_TYPE@" STREQUAL "dll")
   add_library(${PROJECT_NAME} SHARED @SOURCE_FILE@)
   set_target_properties(${PROJECT_NAME} PROPERTIES
@@ -24,6 +28,19 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 target_compile_options(${PROJECT_NAME} PRIVATE -mavx2)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(${PROJECT_NAME} PRIVATE
+    $<$<CONFIG:Release>:-O2>
+    $<$<CONFIG:Release>:-ffunction-sections>
+    $<$<CONFIG:Release>:-fdata-sections>
+    $<$<CONFIG:Release>:-Wno-unused-function>
+  )
+  target_link_options(${PROJECT_NAME} PRIVATE
+    $<$<CONFIG:Release>:-Wl,--gc-sections>
+    $<$<CONFIG:Release>:-s>
+  )
+endif()
 
 if("@LIBRARY@" STREQUAL "ywxlib")
   target_compile_definitions(${PROJECT_NAME} PRIVATE

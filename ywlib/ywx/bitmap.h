@@ -25,18 +25,16 @@ public:
 
   /// creates empty bitmap with specified size
   static std::expected<bitmap, error_trace> create(uint2 size) {
-    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
     comptr<::ID2D1Bitmap1> bmp;
-    auto hr = d2d.context()->CreateBitmap(D2D1_SIZE_U{size.x, size.y}, nullptr, 0, &properties, &bmp.get());
+    auto hr = d2d().context()->CreateBitmap(D2D1_SIZE_U{size.x, size.y}, nullptr, 0, &properties, &bmp.get());
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBitmap failed", int32_t(hr));
     return bitmap(std::move(bmp), size);
   }
 
   /// creates bitmap from image file
   static std::expected<bitmap, error_trace> create(const std::filesystem::path& p) {
-    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
-    if (auto res = wic.initialize(); !res) return unexpected_error(res.error());
     comptr<IWICBitmapDecoder> decoder;
+    const auto& wic = yw::wic();
     auto hr = wic.factory()->CreateDecoderFromFilename(
       p.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, &decoder.get());
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDecoderFromFilename failed", int32_t(hr));
@@ -54,14 +52,14 @@ public:
     hr = converter->GetSize(&size.x, &size.y);
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "FormatConverter::GetSize failed", int32_t(hr));
     comptr<::ID2D1Bitmap1> bmp;
-    hr = d2d.context()->CreateBitmapFromWicBitmap(converter.get(), &properties, &bmp.get());
+    hr = d2d().context()->CreateBitmapFromWicBitmap(converter.get(), &properties, &bmp.get());
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBitmapFromWicBitmap failed", int32_t(hr));
     return bitmap(std::move(bmp), size);
   }
 
   /// creates bitmap for rendertarget from swapchain
   static std::expected<bitmap, error_trace> create(IDXGISwapChain1* swapchain) {
-    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
+    if (!swapchain) return unexpected_error(errors::invalid_argument, "null swapchain");
     DXGI_SWAP_CHAIN_DESC1 scdesc{};
     if (auto hr = swapchain->GetDesc1(&scdesc); FAILED(hr))
       return unexpected_error(errors::operation_failed, "GetDesc1 failed", int32_t(hr));
@@ -71,7 +69,7 @@ public:
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "GetBuffer failed", int32_t(hr));
     comptr<::ID2D1Bitmap1> bmp;
     D2D1_BITMAP_PROPERTIES1 bp{pixelformat, 96.0f, 96.0f, D2D1_BITMAP_OPTIONS(3), nullptr};
-    hr = d2d.context()->CreateBitmapFromDxgiSurface(surface.get(), &bp, &bmp.get());
+    hr = d2d().context()->CreateBitmapFromDxgiSurface(surface.get(), &bp, &bmp.get());
     if (FAILED(hr))
       return unexpected_error(errors::operation_failed, "CreateBitmapFromDxgiSurface failed", int32_t(hr));
     return bitmap(std::move(bmp), size);
@@ -80,10 +78,9 @@ public:
   /// copies bitmap from another
   static std::expected<bitmap, error_trace> create(const bitmap& source) {
     if (!source) return unexpected_error(errors::invalid_argument, "source bitmap not initialized");
-    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
     const auto size = source.size();
     comptr<::ID2D1Bitmap1> bmp;
-    auto hr = d2d.context()->CreateBitmap(D2D1_SIZE_U{size.x, size.y}, nullptr, 0, &properties, &bmp.get());
+    auto hr = d2d().context()->CreateBitmap(D2D1_SIZE_U{size.x, size.y}, nullptr, 0, &properties, &bmp.get());
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBitmap failed", int32_t(hr));
     D2D1_RECT_U rect{0, 0, size.x, size.y};
     D2D1_POINT_2U pt{0, 0};
@@ -96,19 +93,20 @@ public:
 
   std::expected<drawing, error_trace> begin_draw(const source& src = {}) {
     if (!*this) return unexpected_error(errors::not_initialized, "bitmap not initialized");
-    return drawing::create(_bitmap.get(), src);
+    if (auto res = drawing::create(_bitmap.get(), src)) return std::move(*res);
+    else return unexpected_error(res.error());
   }
 
   std::expected<drawing, error_trace> begin_draw(const color& clear_color, const source& src = {}) {
     if (auto d = begin_draw(src); d) {
-      d2d.context()->Clear(reinterpret_cast<const D2D1::ColorF*>(&clear_color));
+      d2d().context()->Clear(reinterpret_cast<const D2D1::ColorF*>(&clear_color));
       return std::move(d);
     } else return unexpected_error(d.error());
   }
 
   std::expected<void, error_trace> save_as(const std::filesystem::path& p, const GUID& FileFormat) const {
+    const auto& wic = yw::wic();
     if (!*this) return unexpected_error(errors::not_initialized, "bitmap not initialized");
-    if (auto res = wic.initialize(); !res) return unexpected_error(errors::not_initialized, "wic not initialized");
     comptr<IWICStream> stream;
     if (auto hr = wic.factory()->CreateStream(&stream.get()); FAILED(hr))
       return unexpected_error(errors::operation_failed, "CreateStream failed", int32_t(hr));
@@ -125,7 +123,7 @@ public:
     if (auto hr = frame->Initialize(nullptr); FAILED(hr))
       return unexpected_error(errors::operation_failed, "Frame::Initialize failed", int32_t(hr));
     comptr<IWICImageEncoder> image_encoder;
-    if (auto hr = wic.factory()->CreateImageEncoder(d2d.device(), &image_encoder.get()); FAILED(hr))
+    if (auto hr = wic.factory()->CreateImageEncoder(d2d().device(), &image_encoder.get()); FAILED(hr))
       return unexpected_error(errors::operation_failed, "CreateImageEncoder failed", int32_t(hr));
     if (auto hr = image_encoder->WriteFrame(_bitmap.get(), frame.get(), nullptr); FAILED(hr))
       return unexpected_error(errors::operation_failed, "ImageEncoder::WriteFrame failed", int32_t(hr));
@@ -152,7 +150,7 @@ inline std::expected<void, error_trace> draw_bitmap(float2 pos, float2 size, con
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   if (!b) return {};
   D2D1_RECT_F rect = D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y);
-  d2d.context()->DrawBitmap((ID2D1Bitmap1*)b, &rect, opacity.x);
+  d2d().context()->DrawBitmap((ID2D1Bitmap1*)b, &rect, opacity.x);
   return {};
 }
 
@@ -160,7 +158,7 @@ inline std::expected<void, error_trace> draw_bitmap(float2 pos, const bitmap& b,
   if (!drawing::d2d_drawing()) return unexpected_error(errors::invalid_operation, "drawing not begun");
   if (!b) return {};
   D2D1_RECT_F rect = D2D1::RectF(pos.x, pos.y, pos.x + b.size().x, pos.y + b.size().y);
-  d2d.context()->DrawBitmap((ID2D1Bitmap1*)b, &rect, opacity.x);
+  d2d().context()->DrawBitmap((ID2D1Bitmap1*)b, &rect, opacity.x);
   return {};
 }
 } // namespace yw

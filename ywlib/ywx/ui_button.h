@@ -30,7 +30,7 @@ public:
       const auto tx_origin = calculate_content_origin(text.bounds(), padding, text_alignment);
       if (auto res = text.draw(tx_origin); !res) return unexpected_error(res.error());
       if (pressed && pressed_overlay_color.a > 0.0f) {
-        brush.color(pressed_overlay_color);
+        brush().color(pressed_overlay_color);
         if (auto res = fill_geometry(geometry.get()); !res) return unexpected_error(res.error());
       }
       if (auto res = draw_foreground(); !res) return unexpected_error(res.error());

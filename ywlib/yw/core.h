@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <cmath>
 #include <compare>
 #include <concepts>
 #include <cstring>
@@ -397,14 +398,6 @@ template<arithmetic T> constexpr auto stov = [](stringable<char> auto&& str) -> 
   return result;
 };
 
-constexpr auto vtos = [](arithmetic auto value) -> std::string {
-  auto temp = std::string(32, '\0');
-  const auto [ptr, ec] = std::to_chars(temp.data(), temp.data() + temp.size(), value);
-  if (ec == std::errc()) temp.resize(ptr - temp.data());
-  else temp.clear();
-  return temp;
-};
-
 namespace internal {
 inline constexpr char utos_table_upper[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 inline constexpr char utos_table_lower[] = "0123456789abcdefghijklmnopqrstuvwxyz";
@@ -456,6 +449,93 @@ template<char_type C> constexpr std::basic_string<C> int_to_string(integral auto
 }
 
 constexpr std::string int_to_string(integral auto value) { return int_to_string<char>(value); }
+
+template<char_type C> constexpr std::basic_string<C> float_to_string(floating auto value) {
+  using T = decltype(value);
+  using limits = std::numeric_limits<uint64_t>;
+
+  if (std::isnan(value)) return _ascii_string<C>("nan");
+  if (std::isinf(value)) return value < 0 ? _ascii_string<C>("-inf") : _ascii_string<C>("inf");
+
+  const bool minus = std::signbit(value);
+  long double abs_value = static_cast<long double>(minus ? -value : value);
+  if (abs_value == 0) return minus ? _ascii_string<C>("-0") : _ascii_string<C>("0");
+
+  constexpr uint64_t scale = 1000000;
+  constexpr long double max_uint64 = static_cast<long double>(limits::max());
+
+  auto append_fixed6 = [](std::basic_string<C>& s, uint64_t frac) {
+    const size_t offset = s.size();
+    s.resize(offset + 6, C('0'));
+    internal::utos<6, 10, false, C>(s.data() + offset, frac);
+  };
+
+  auto append_sign = [&](std::basic_string<C>& s) {
+    if (minus) s += C('-');
+  };
+
+  auto to_exponential = [&]() {
+    int exponent = 0;
+    long double normalized = abs_value;
+    while (normalized >= 10) {
+      normalized /= 10;
+      ++exponent;
+    }
+    uint64_t int_part = static_cast<uint64_t>(normalized);
+    uint64_t frac_part = static_cast<uint64_t>((normalized - int_part) * scale + 0.5L);
+    if (frac_part >= scale) {
+      ++int_part;
+      frac_part -= scale;
+      if (int_part >= 10) {
+        int_part = 1;
+        ++exponent;
+      }
+    }
+
+    std::basic_string<C> s;
+    append_sign(s);
+    s += uint_to_string<C>(int_part);
+    s += C('.');
+    append_fixed6(s, frac_part);
+    s += C('e');
+    s += C('+');
+    s += uint_to_string<C>(static_cast<uint64_t>(exponent));
+    return s;
+  };
+
+  if (abs_value >= max_uint64) return to_exponential();
+
+  uint64_t int_part = static_cast<uint64_t>(abs_value);
+  uint64_t frac_part = static_cast<uint64_t>((abs_value - int_part) * scale + 0.5L);
+  if (frac_part >= scale) {
+    ++int_part;
+    frac_part -= scale;
+  }
+
+  if (int_part >= limits::max()) return to_exponential();
+
+  std::basic_string<C> s;
+  append_sign(s);
+  s += uint_to_string<C>(int_part);
+  s += C('.');
+  append_fixed6(s, frac_part);
+
+  if (int_part != 0) {
+    while (!s.empty() && s.back() == C('0')) s.pop_back();
+    if (!s.empty() && s.back() == C('.')) s.pop_back();
+  }
+  return s;
+}
+
+constexpr std::string float_to_string(floating auto value) { return float_to_string<char>(value); }
+
+template<char_type C> constexpr std::basic_string<C> vtos(arithmetic auto value) {
+  if constexpr (is_bool<decltype(value)>) return bool_to_string<C>(value);
+  else if constexpr (integral<decltype(value)>) return int_to_string<C>(value);
+  else return float_to_string<C>(value);
+}
+
+constexpr std::string vtos(arithmetic auto value) { return vtos<char>(value); }
 
 //////////////////////////////////////// MARK: GET
 
@@ -567,20 +647,23 @@ template<char_type C> inline constexpr auto unicode = []<stringable S>(S&& s) ->
 namespace yw {
 
 inline constexpr struct {
-  /// \note 以下のステップで変換する
-  /// 1. 文字型を決定する。最初の引数がstringableであればiter_value_t、そうでなければcharとする。
-  /// 2. 引数にstd::filesystem::pathが含まれている場合、それぞれnative()で文字列化する。
-  /// 3. 引数に文字列型が含まれている場合、1で決定した文字型に変換する。
-  /// 4. std::vformat、std::make_format_argsでフォーマットする。
-
-  template<typename T> requires(!stringable<T>) static std::string operator()(const T& a) {
-    if constexpr (same_as<T, std::filesystem::path>) {
+  template<typename T> static constexpr auto operator()(const T& a) {
+    if constexpr (stringable<T>) {
+      using C = iter_value_t<T>;
+      return std::basic_string<C>(std::basic_string_view<C>(a));
+    } else if constexpr (arithmetic<T>) return vtos(a);
+    else if constexpr (is_pointer<remove_ref<T>>) {
+      if (std::is_constant_evaluated()) {
+        constexpr size_t width = sizeof(void*) * 2;
+        std::string s(width + 2, '0');
+        s[0] = '0';
+        s[1] = 'x';
+        return s;
+      } else return vtos(reinterpret_cast<size_t>(a));
+    } else if constexpr (same_as<T, std::filesystem::path>) {
       if constexpr (same_as<std::filesystem::path::value_type, char>) return std::string(a.native());
       else return unicode<char>(a.native());
-    } else if constexpr (!stringable<T> && is_pointer<remove_ref<T>>)
-      return std::format("{}", static_cast<const void*>(a));
-    else if constexpr (char_type<T> && different_from<T, char>) return unicode<char>(std::basic_string_view<T>(&a));
-    else return std::format("{}", a);
+    } else return std::format("{}", a);
   }
 
   template<stringable S, typename... Ts> static std::basic_string<iter_value_t<S>> operator()(S&& fmt, Ts&&... as) {

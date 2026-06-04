@@ -14,7 +14,6 @@ inline class {
 
   static std::expected<bitmap, error_trace> bitmap_from_pixels(uint2 size, const uint8_t* pixels, uint32_t stride) {
     if (!pixels) return unexpected_error(errors::invalid_argument, "null pixel buffer");
-    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
     auto bmp = bitmap::create(size);
     if (!bmp) return unexpected_error(bmp.error());
     auto* p = static_cast<ID2D1Bitmap1*>(*bmp);
@@ -27,7 +26,6 @@ inline class {
   static std::expected<std::vector<uint8_t>, error_trace> pixels_from_bitmap(
     const bitmap& b, uint2& size, uint32_t& stride) {
     if (!b) return unexpected_error(errors::not_initialized, "bitmap not initialized");
-    if (auto res = d2d.initialize(); !res) return unexpected_error(res.error());
 
     size = b.size();
     const uint32_t width = size.x;
@@ -41,7 +39,7 @@ inline class {
       96.0f,
       D2D1_BITMAP_OPTIONS(D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW),
       nullptr};
-    auto hr = d2d.context()->CreateBitmap(D2D1_SIZE_U{width, height}, nullptr, 0, &props, &cpu_bmp.get());
+    auto hr = d2d().context()->CreateBitmap(D2D1_SIZE_U{width, height}, nullptr, 0, &props, &cpu_bmp.get());
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBitmap (CPU_READ) failed", int32_t(hr));
 
     auto* src = static_cast<ID2D1Bitmap1*>(b);
