@@ -24,11 +24,11 @@ public:
       const auto _pos = pos + padding.xy();
       const auto _size = size - padding.xy() - padding.zw();
       if (fill_color.a > 0.0f) {
-        brush.color(fill_color);
+        brush().color(fill_color);
         if (auto res = fill_svgpath(_pos, _size, icon); !res) return unexpected_error(res.error());
       }
       if (stroke_color.a > 0.0f) {
-        brush.color(stroke_color);
+        brush().color(stroke_color);
         if (auto res = stroke_svgpath(_pos, _size, icon, stroke_width); !res) return unexpected_error(res.error());
       }
       return {};
@@ -77,8 +77,8 @@ public:
     icon icn;
     if (auto res = create_control<icon>(Layout)) icn._id = *res;
     else return unexpected_error(res.error());
-    const auto csp = system::slot_address<icon>(icn._id);
-    if (!csp) return unexpected_error(errors::ui_invalid_slotid);
+    const auto csp = system::get_slot_pointer<icon>(icn._id);
+    if (!csp) return unexpected_error(errors::invalid_slotid);
     csp->margin = {}, csp->padding = {};
     csp->fill_color = Colors.background;
     csp->stroke_color = Colors.foreground;

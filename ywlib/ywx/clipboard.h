@@ -18,8 +18,7 @@ inline class {
     if (!bmp) return unexpected_error(bmp.error());
     auto* p = static_cast<ID2D1Bitmap1*>(*bmp);
     if (!p) return unexpected_error(errors::not_initialized, "bitmap not initialized");
-    auto hr = p->CopyFromMemory(nullptr, pixels, stride);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CopyFromMemory failed", int32_t(hr));
+    hresult_test(p->CopyFromMemory, nullptr, pixels, stride);
     return std::move(*bmp);
   }
 
@@ -39,17 +38,13 @@ inline class {
       96.0f,
       D2D1_BITMAP_OPTIONS(D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW),
       nullptr};
-    auto hr = d2d().context()->CreateBitmap(D2D1_SIZE_U{width, height}, nullptr, 0, &props, &cpu_bmp.get());
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBitmap (CPU_READ) failed", int32_t(hr));
+    hresult_test(d2d().context()->CreateBitmap, D2D1_SIZE_U{width, height}, nullptr, 0, &props, &cpu_bmp.get());
 
     auto* src = static_cast<ID2D1Bitmap1*>(b);
     if (!src) return unexpected_error(errors::not_initialized, "bitmap not initialized");
-    hr = cpu_bmp->CopyFromBitmap(nullptr, src, nullptr);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CopyFromBitmap failed", int32_t(hr));
-
+    hresult_test(cpu_bmp->CopyFromBitmap, nullptr, src, nullptr);
     D2D1_MAPPED_RECT mapped{};
-    hr = cpu_bmp->Map(D2D1_MAP_OPTIONS_READ, &mapped);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "Map failed", int32_t(hr));
+    hresult_test(cpu_bmp->Map, D2D1_MAP_OPTIONS_READ, &mapped);
 
     stride = width * 4;
     std::vector<uint8_t> pixels(stride * height);

@@ -16,13 +16,11 @@ class viewport {
 
   static std::expected<void, error_trace> _init_dss() {
     if (_dss) return {};
-    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     D3D11_DEPTH_STENCIL_DESC depth_stencil_desc{};
     depth_stencil_desc.DepthEnable = TRUE;
     depth_stencil_desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
     depth_stencil_desc.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL;
-    if (auto hr = d3d.device()->CreateDepthStencilState(&depth_stencil_desc, &_dss.get()); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "CreateDepthStencilState failed", int32_t(hr));
+    hresult_test(d3d().device()->CreateDepthStencilState, &depth_stencil_desc, &_dss.get());
     return {};
   }
 
@@ -67,23 +65,17 @@ class viewport {
     if (auto res = bitmap::create(Size)) _bitmap = std::move(*res);
     else return unexpected_error(res.error());
     comptr<IDXGISurface> surface;
-    if (auto hr = ((ID2D1Bitmap1*)_bitmap)->GetSurface(&surface.get()); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "Failed to get surface", int32_t(hr));
-    if (auto hr = surface->QueryInterface(&_texture.get()); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "Failed to query interface", int32_t(hr));
+    hresult_test(_bitmap.d2d_bitmap()->GetSurface, &surface.get());
+    hresult_test(surface->QueryInterface, &_texture.get());
     D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{bitmap::dxgiformat, D3D11_SRV_DIMENSION_TEXTURE2D};
     srv_desc.Texture2D.MipLevels = 1;
-    if (auto hr = d3d.device()->CreateShaderResourceView(_texture.get(), &srv_desc, &_srv.get()); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "Failed to create shader resource view", int32_t(hr));
+    hresult_test(d3d().device()->CreateShaderResourceView, _texture.get(), &srv_desc, &_srv.get());
     D3D11_TEXTURE2D_DESC tex_desc{
       Size.x, Size.y, 1, 1, DXGI_FORMAT_D32_FLOAT, DXGI_SAMPLE_DESC(1, 0), {}, D3D11_BIND_DEPTH_STENCIL};
-    if (auto hr = d3d.device()->CreateTexture2D(&tex_desc, nullptr, &_depth.get()); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "Failed to create depth texture", int32_t(hr));
-    if (auto hr = d3d.device()->CreateDepthStencilView(_depth.get(), nullptr, &_dsv.get()); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "Failed to create depth stencil view", int32_t(hr));
+    hresult_test(d3d().device()->CreateTexture2D, &tex_desc, nullptr, &_depth.get());
+    hresult_test(d3d().device()->CreateDepthStencilView, _depth.get(), nullptr, &_dsv.get());
     D3D11_RENDER_TARGET_VIEW_DESC rtv_desc{bitmap::dxgiformat, D3D11_RTV_DIMENSION_TEXTURE2D};
-    if (auto hr = d3d.device()->CreateRenderTargetView(_texture.get(), &rtv_desc, &_rtv.get()); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "Failed to create render target view", int32_t(hr));
+    hresult_test(d3d().device()->CreateRenderTargetView, _texture.get(), &rtv_desc, &_rtv.get());
     return {};
   }
 
@@ -104,14 +96,13 @@ class viewport {
 
   std::expected<void, error_trace> _prepare_render(const color* clear_color) {
     if (!*this) return unexpected_error(errors::not_initialized, "Viewport not initialized");
-    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
     if (clear_color) {
-      d3d.context()->ClearDepthStencilView(_dsv.get(), D3D11_CLEAR_DEPTH, 0.0f, 0);
-      d3d.context()->ClearRenderTargetView(_rtv.get(), &clear_color->r);
+      d3d().context()->ClearDepthStencilView(_dsv.get(), D3D11_CLEAR_DEPTH, 0.0f, 0);
+      d3d().context()->ClearRenderTargetView(_rtv.get(), &clear_color->r);
     }
     D3D11_VIEWPORT vp{0.0f, 0.0f, float(_bitmap.size().x), float(_bitmap.size().y), 0.0f, 1.0f};
-    d3d.context()->RSSetViewports(1, &vp);
-    d3d.context()->OMSetDepthStencilState(_dss.get(), 0);
+    d3d().context()->RSSetViewports(1, &vp);
+    d3d().context()->OMSetDepthStencilState(_dss.get(), 0);
     return {};
   }
 
@@ -288,15 +279,13 @@ public:
   }
 
   std::expected<void, error_trace> clear_depth() {
-    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
-    d3d.context()->ClearDepthStencilView(_dsv.get(), D3D11_CLEAR_DEPTH, 0.0f, 0);
+    d3d().context()->ClearDepthStencilView(_dsv.get(), D3D11_CLEAR_DEPTH, 0.0f, 0);
     return {};
   }
 
   std::expected<void, error_trace> clear(const color& Clear = colors::transparent) {
-    if (auto res = d3d.initialize(); !res) return unexpected_error(res.error());
-    d3d.context()->ClearDepthStencilView(_dsv.get(), D3D11_CLEAR_DEPTH, 0.0f, 0);
-    d3d.context()->ClearRenderTargetView(_rtv.get(), &Clear.r);
+    d3d().context()->ClearDepthStencilView(_dsv.get(), D3D11_CLEAR_DEPTH, 0.0f, 0);
+    d3d().context()->ClearRenderTargetView(_rtv.get(), &Clear.r);
     return {};
   }
 

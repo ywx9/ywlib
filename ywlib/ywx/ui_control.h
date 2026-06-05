@@ -1,15 +1,49 @@
 #pragma once
 #include "ywx/keys.h"
-#include "ywx/ui_unknown.h"
-// #include "ywx/ui_parts.h"
 
 namespace yw::errors {
 define_error(ui_invalid_size_policy);
+define_error(ui_not_attachable);
 }
 
 namespace yw::ui {
 
-enum class size_policy { free, fixed, fit_content };
+/// MARK: accessor
+
+template<typename Ui> class accessor {
+protected:
+  typename Ui::slot& slot;
+  bool dirty{}, messy{};
+
+public:
+  accessor(typename Ui::slot& Slot) noexcept : slot(Slot) {}
+  accessor(accessor&&) noexcept = default;
+  accessor& operator=(accessor&&) noexcept = default;
+  ~accessor() noexcept {
+    if (messy) slot.make_messy();
+    else if (dirty) slot.make_dirty();
+  }
+};
+
+inline constexpr float arbitrary_value = 4.0f;
+
+enum class size_policy {
+  free,        // sets size so that at least whole content is visible
+  fixed,       // sets size to specified
+  fit_content, // sets size to fit content
+};
+
+enum class alignment : unsigned char {
+  center = 0b0000,
+  left = 0b0001,
+  right = 0b0010,
+  top = 0b0100,
+  bottom = 0b1000,
+  left_top = 0b0101,
+  left_bottom = 0b1001,
+  right_top = 0b0110,
+  right_bottom = 0b1010,
+};
 
 struct color_pair {
   color background;
@@ -25,27 +59,27 @@ struct color_pair {
   }
 };
 
-class control : public unknown {
+class control : public interface {
 protected:
-  template<derived_from<control> Ctrl, derived_from<unknown> Layout>
-  static std::expected<slotid, error_trace> create_control(Layout& layout) {
-    const auto lid = layout._slotid();
-    const auto lsp = system::slot_address<unknown>(lid);
-    if (!lsp) return unexpected_error(errors::ui_invalid_slotid);
+  template<typename Ctrl, derived_from<interface> Layout>
+  static std::expected<unknown_slotid, error_trace> create_control(Layout& layout) {
+    const auto lid = layout.id();
+    const auto lsp = system::get_slot_pointer<interface>(lid);
+    if (!lsp) return unexpected_error(errors::invalid_slotid);
     if (!lsp->attachable()) return unexpected_error(errors::ui_not_attachable);
-    const auto cid = system::uis.add(std::make_unique<typename Ctrl::slot>());
-    const auto csp = system::slot_address<Ctrl>(cid);
-    if (!csp) return unexpected_error(errors::ui_invalid_slotid);
-    lsp->attach(cid);
-    csp->id = cid;
-    csp->layout_id = lid;
-    csp->window_id = lsp->get_window_id();
-    return cid;
+    const auto cid = system::unknowns.add(std::make_unique<typename Ctrl::slot>());
+    if (const auto csp = system::get_slot_pointer<Ctrl>(cid)) {
+      lsp->attach(cid);
+      csp->id = cid;
+      csp->layout_id = lid;
+      csp->window_id = lsp->get_window_id();
+      return cid;
+    } else return unexpected_error(errors::invalid_slotid);
   }
 
   template<typename Accessor, typename Self> static Accessor create_accessor(Self& self) {
-    const auto csp = system::slot_address<remove_const<Self>>(self._slotid());
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    const auto csp = system::get_slot_pointer<remove_const<Self>>(self.id());
+    if (!csp) fatal_error(errors::invalid_slotid);
     if constexpr (!is_const<Self>) return Accessor(*csp);
     else return const_cast<const Accessor>(Accessor(*csp));
   }
@@ -53,18 +87,18 @@ protected:
   control() noexcept = default;
 
   template<typename Mp> const auto& unsafe_get(Mp mp) const {
-    const auto csp = dynamic_cast<class_type<Mp>*>(system::uis.get(_id));
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    const auto csp = dynamic_cast<class_type<Mp>*>(system::unknowns.get(_id));
+    if (!csp) fatal_error(errors::invalid_slotid);
     return csp->*mp;
   }
   template<typename Mp, typename T> void unsafe_set(Mp mp, T&& value) {
-    const auto csp = dynamic_cast<class_type<Mp>*>(system::uis.get(_id));
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    const auto csp = dynamic_cast<class_type<Mp>*>(system::unknowns.get(_id));
+    if (!csp) fatal_error(errors::invalid_slotid);
     csp->*mp = static_cast<T&&>(value);
   }
   template<typename Mp, typename T> std::expected<void, error_trace> safe_set(Mp mp, T&& value) {
-    const auto csp = dynamic_cast<class_type<Mp>*>(system::uis.get(_id));
-    if (!csp) return unexpected_error(errors::ui_invalid_slotid);
+    const auto csp = dynamic_cast<class_type<Mp>*>(system::unknowns.get(_id));
+    if (!csp) return unexpected_error(errors::invalid_slotid);
     csp->*mp = static_cast<T&&>(value);
     return {};
   }
@@ -72,9 +106,9 @@ protected:
 public:
   /// MARK: slot
 
-  struct slot : public unknown::slot {
-    slotid layout_id{};
-    slotid window_id{};
+  struct slot : interface::slot {
+    unknown_slotid layout_id{};
+    unknown_slotid window_id{};
     float4 margin = float4::fill(arbitrary_value);
     float4 padding = float4::fill(arbitrary_value);
     float2 minimum_size = float2::fill(arbitrary_value * 2);
@@ -115,16 +149,16 @@ public:
       return SUCCEEDED(hr) && contains;
     }
 
-    virtual slotid get_window_id() const override { return window_id; }
+    virtual unknown_slotid get_window_id() const override { return window_id; }
 
     virtual std::expected<void, error_trace> make_dirty() override {
-      if (const auto wsp = system::slot_address<unknown>(window_id))
+      if (const auto wsp = system::get_slot_pointer<interface>(window_id))
         if (auto res = wsp->make_dirty(); !res) return unexpected_error(res.error());
       return {};
     }
 
     virtual std::expected<void, error_trace> make_messy() override {
-      if (const auto wsp = system::slot_address<unknown>(window_id))
+      if (const auto wsp = system::get_slot_pointer<interface>(window_id))
         if (auto res = wsp->make_messy(); !res) return unexpected_error(res.error());
       return {};
     }
@@ -133,8 +167,8 @@ public:
 
     virtual float2 bounds() const { return size + margin.xy() + margin.zw(); }
     virtual bool focusable() const { return false; }
-    virtual slotid hittest(float2 Pt) const { return hittest_geometry(Pt) ? id : slotid{}; }
-    virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) const { return {}; }
+    virtual unknown_slotid hittest(float2 Pt) const { return hittest_geometry(Pt) ? id : unknown_slotid{}; }
+    virtual unknown_slotid next_tab_stop(unknown_slotid Focused, bool Forward, bool& Found) const { return {}; }
 
     virtual std::expected<void, error_trace> draw_focusring(
       const yw::color& Color, float Offset, float Width, bool Dashed) {
@@ -294,12 +328,10 @@ public:
   /// MARK: handle functions
 
   virtual ~control() {
-    const auto csp = system::slot_address<control>(_id);
-    if (!csp) return;
-    if (auto res = csp->make_messy(); !res) fatal_error(res.error());
-    const auto lsp = system::slot_address<unknown>(csp->layout_id);
-    if (!lsp) return;
-    if (auto res = lsp->detach(csp->id); !res) return;
+    if (const auto csp = system::get_slot_pointer<control>(id()); !csp) return;
+    else if (auto res = csp->make_messy(); !res) fatal_error(res.error());
+    else if (const auto lsp = system::get_slot_pointer<interface>(csp->layout_id); !lsp) return;
+    else if (auto res = lsp->detach(csp->id); !res) return;
   }
 
   control(control&&) = default;
@@ -309,8 +341,8 @@ public:
 
   bool visible() const { return unsafe_get(&slot::visible); }
   auto& visible(bool b) {
-    const auto csp = system::slot_address<control>(_slotid());
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    const auto csp = system::get_slot_pointer<control>(id());
+    if (!csp) fatal_error(errors::invalid_slotid);
     if (csp->visible != b) {
       csp->visible = b;
       assume(csp->make_dirty());
@@ -320,8 +352,8 @@ public:
 
   bool enabled() const { return unsafe_get(&slot::enabled); }
   auto& enabled(bool b) {
-    const auto csp = system::slot_address<control>(_slotid());
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    const auto csp = system::get_slot_pointer<control>(id());
+    if (!csp) fatal_error(errors::invalid_slotid);
     if (csp->enabled != b) {
       csp->enabled = b;
       assume(csp->make_dirty());

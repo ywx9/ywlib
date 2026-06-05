@@ -4,6 +4,11 @@
 
 namespace yw {
 
+namespace system {
+inline int2 cursor_pos;
+inline int2 cursor_delta;
+}
+
 //////////////////////////////////////// MARK: mainloop
 
 inline class {
@@ -33,7 +38,7 @@ public:
     _state = state::running;
 
     for (const auto& wid : system::primal_windows)
-      if (const auto wsp = system::slot_address<window::handle<window::type::unknown>>(wid)) {
+      if (const auto wsp = system::get_slot_pointer<window::handle<window::type::unknown>>(wid)) {
         if (auto res = wsp->update_controllayer(); !res) {
           last_error = std::move(res.error().push());
           return _state = state::error, false;
@@ -58,7 +63,7 @@ public:
     }
 
     for (const auto& wid : system::primal_windows)
-      if (const auto wsp = system::slot_address<window::handle<window::type::unknown>>(wid))
+      if (const auto wsp = system::get_slot_pointer<window::handle<window::type::unknown>>(wid))
         if (auto res = wsp->update_controllayer(); !res) {
           last_error = std::move(res.error().push());
           return _state = state::error, false;
@@ -87,7 +92,7 @@ inline void wm_size(window::handle<window::type::unknown>::slot& ws, WPARAM, LPA
 inline void wm_getminmaxinfo(window::handle<window::type::unknown>::slot& ws, LPARAM lp) {
   auto* mmi = reinterpret_cast<MINMAXINFO*>(lp);
   if (!mmi) return;
-  if (const auto csp = system::slot_address<ui::control>(ws.child_control)) {
+  if (const auto csp = system::get_slot_pointer<ui::control>(ws.child_control)) {
     const auto minimum_size = assume(csp->calculate_necessary_size());
     const auto minimum_area = vapply_r<int2>(yw::ceil, minimum_size + csp->margin.xy() + csp->margin.zw());
     const auto frame_area = ws.frame_thickness.xy() + ws.frame_thickness.zw();
@@ -109,25 +114,25 @@ inline void wm_mousemove(window::handle<window::type::unknown>::slot& ws, WPARAM
   ::ClientToScreen(ws.hwnd, reinterpret_cast<POINT*>(&system::cursor_pos));
   system::cursor_delta = system::cursor_pos - old_global_pt;
   const auto pt = float2(local_pt);
-  if (const auto fcsp = system::slot_address<ui::control>(ws.focused_control)) {
+  if (const auto fcsp = system::get_slot_pointer<ui::control>(ws.focused_control)) {
     fcsp->move_event(move_event{local_pt, system::cursor_delta});
     const modifiers mods{(wp & MK_CONTROL) == MK_CONTROL, (wp & MK_SHIFT) == MK_SHIFT, keys::alt.pressed()};
     if ((wp & MK_LBUTTON) == MK_LBUTTON) fcsp->drag_event(drag_event{system::cursor_delta, keys::lbutton, mods});
     else if ((wp & MK_RBUTTON) == MK_RBUTTON) fcsp->drag_event(drag_event{system::cursor_delta, keys::rbutton, mods});
     else if ((wp & MK_MBUTTON) == MK_MBUTTON) fcsp->drag_event(drag_event{system::cursor_delta, keys::mbutton, mods});
   }
-  ui::slotid new_hcid{};
-  if (const auto csp = system::slot_address<ui::control>(ws.child_control)) new_hcid = csp->hittest(pt);
+  unknown_slotid new_hcid{};
+  if (const auto csp = system::get_slot_pointer<ui::control>(ws.child_control)) new_hcid = csp->hittest(pt);
   if (ws.hovered_control) {
     if (ws.hovered_control != new_hcid) {
-      if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control))
+      if (const auto hcsp = system::get_slot_pointer<ui::control>(ws.hovered_control))
         hcsp->hover_event(hover_event{local_pt, hover_event::type::leave});
       ws.hovered_control = new_hcid;
-      if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control))
+      if (const auto hcsp = system::get_slot_pointer<ui::control>(ws.hovered_control))
         hcsp->hover_event(hover_event{local_pt, hover_event::type::enter});
-    } else if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control))
+    } else if (const auto hcsp = system::get_slot_pointer<ui::control>(ws.hovered_control))
       hcsp->hover_event(hover_event{local_pt, hover_event::type::move});
-  } else if (const auto hcsp = system::slot_address<ui::control>(new_hcid)) {
+  } else if (const auto hcsp = system::get_slot_pointer<ui::control>(new_hcid)) {
     ws.hovered_control = new_hcid;
     hcsp->hover_event(hover_event{local_pt, hover_event::type::enter});
   }
@@ -138,7 +143,7 @@ inline void wm_mouseleave(window::handle<window::type::unknown>::slot& ws, WPARA
   ::ScreenToClient(ws.hwnd, reinterpret_cast<POINT*>(&local_pt));
   ws.tracking = false;
   if (ws.hovered_control) {
-    if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control))
+    if (const auto hcsp = system::get_slot_pointer<ui::control>(ws.hovered_control))
       hcsp->hover_event(hover_event{local_pt, hover_event::type::leave});
     ws.hovered_control = {};
   }
@@ -149,16 +154,16 @@ template<bool Horizontal> void wm_mousewheel(window::handle<window::type::unknow
   ::ScreenToClient(ws.hwnd, reinterpret_cast<POINT*>(&local_pt));
   const auto delta = static_cast<short>(GET_WHEEL_DELTA_WPARAM(wp));
   const modifiers mods{(wp & MK_CONTROL) == MK_CONTROL, (wp & MK_SHIFT) == MK_SHIFT, keys::alt.pressed()};
-  if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control))
+  if (const auto hcsp = system::get_slot_pointer<ui::control>(ws.hovered_control))
     hcsp->wheel_event(wheel_event{local_pt, delta, mods, Horizontal});
 }
 
 inline void wm_keydown(window::handle<window::type::unknown>::slot& ws, WPARAM wp, LPARAM lp) {
   if (wp == VK_TAB) {
-    if (const auto fsp = system::slot_address<ui::control>(ws.focused_control)) fsp->focus_event(false);
+    if (const auto fsp = system::get_slot_pointer<ui::control>(ws.focused_control)) fsp->focus_event(false);
     const bool shift = keys::shift.pressed();
-    if (const auto csp = system::slot_address<ui::control>(ws.child_control)) {
-      bool found = ws.focused_control == ui::slotid{};
+    if (const auto csp = system::get_slot_pointer<ui::control>(ws.child_control)) {
+      bool found = ws.focused_control == unknown_slotid{};
       auto next = csp->next_tab_stop(ws.focused_control, !shift, found);
       if (next != ws.focused_control) {
         ws.focused_control = next;
@@ -166,14 +171,14 @@ inline void wm_keydown(window::handle<window::type::unknown>::slot& ws, WPARAM w
       }
     }
   } else if (wp == VK_ESCAPE) {
-    if (const auto fsp = system::slot_address<ui::control>(ws.focused_control)) fsp->focus_event(false);
+    if (const auto fsp = system::get_slot_pointer<ui::control>(ws.focused_control)) fsp->focus_event(false);
     ws.focused_control = {};
     ws.dirty = true;
   } else {
     const modifiers mods{keys::ctrl.pressed(), keys::shift.pressed(), keys::alt.pressed()};
     const auto e = key_event{key{static_cast<uint8_t>(wp)}, mods, true};
     bool handled = false;
-    if (const auto p = system::slot_address<ui::control>(ws.focused_control)) handled = p->key_event(e);
+    if (const auto p = system::get_slot_pointer<ui::control>(ws.focused_control)) handled = p->key_event(e);
     if (!handled && ws.on_keydown) ws.on_keydown(e);
   }
 }
@@ -182,7 +187,7 @@ inline void wm_keyup(window::handle<window::type::unknown>::slot& ws, WPARAM wp,
   const modifiers mods{keys::ctrl.pressed(), keys::shift.pressed(), keys::alt.pressed()};
   const auto e = key_event{key{static_cast<uint8_t>(wp)}, mods, false};
   bool handled = false;
-  if (const auto p = system::slot_address<ui::control>(ws.focused_control)) handled = p->key_event(e);
+  if (const auto p = system::get_slot_pointer<ui::control>(ws.focused_control)) handled = p->key_event(e);
   if (!handled && ws.on_keyup) ws.on_keyup(e);
 }
 
@@ -194,7 +199,7 @@ void wm_button_down(window::handle<window::type::unknown>::slot& ws, WPARAM wp, 
   ws.dirty = true;
   const modifiers mods{(wp & MK_CONTROL) == MK_CONTROL, (wp & MK_SHIFT) == MK_SHIFT, keys::alt.pressed()};
   const button_event event{local_pt, K, mods, true};
-  if (const auto fcsp = system::slot_address<ui::control>(ws.focused_control)) {
+  if (const auto fcsp = system::get_slot_pointer<ui::control>(ws.focused_control)) {
     if (ws.focused_control == ws.hovered_control) {
       ws.captured_control = fcsp->id;
       fcsp->button_event(event);
@@ -204,11 +209,11 @@ void wm_button_down(window::handle<window::type::unknown>::slot& ws, WPARAM wp, 
     ws.focused_control = {};
     fcsp->focus_event(false);
   }
-  if (const auto hcsp = system::slot_address<ui::control>(ws.hovered_control)) {
+  if (const auto hcsp = system::get_slot_pointer<ui::control>(ws.hovered_control)) {
     ws.captured_control = hcsp->id;
     hcsp->button_event(event);
     if constexpr (DBL) hcsp->double_click_event(event);
-    ws.focused_control = (hcsp->focusable() ? hcsp->id : ui::slotid());
+    ws.focused_control = (hcsp->focusable() ? hcsp->id : unknown_slotid());
   } else ws.captured_control = {}, ws.focused_control = {};
 }
 
@@ -219,7 +224,7 @@ void wm_button_up(window::handle<window::type::unknown>::slot& ws, WPARAM wp, LP
   // if (ws.capture_count == 0) ::ReleaseCapture();
   const modifiers mods{(wp & MK_CONTROL) == MK_CONTROL, (wp & MK_SHIFT) == MK_SHIFT, keys::alt.pressed()};
   const button_event event{local_pt, K, mods, false};
-  if (const auto ccsp = system::slot_address<ui::control>(ws.captured_control)) {
+  if (const auto ccsp = system::get_slot_pointer<ui::control>(ws.captured_control)) {
     if (ws.captured_control == ws.hovered_control) ccsp->click_event(event);
     ccsp->button_event(event);
   }
@@ -228,11 +233,11 @@ void wm_button_up(window::handle<window::type::unknown>::slot& ws, WPARAM wp, LP
 }
 } // namespace internal
 
-/// MARK: wclass::proc
+/// MARK: system::wndproc
 
-inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-  const auto wsid = std::bit_cast<ui::slotid>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-  auto wsp = system::slot_address<window::handle<window::type::unknown>>(wsid);
+inline LRESULT CALLBACK system::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+  const auto wsid = std::bit_cast<unknown_slotid>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+  auto wsp = system::get_slot_pointer<window::handle<window::type::unknown>>(wsid);
   if (!wsp) return ::DefWindowProcW(hwnd, msg, wp, lp);
 
   switch (msg) {
@@ -245,7 +250,7 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
   case WM_KEYUP: internal::wm_keyup(*wsp, wp, lp); return 0;
 
   case WM_CHAR:
-    if (const auto p = system::slot_address<ui::control>(wsp->focused_control)) p->char_event(static_cast<wchar_t>(wp));
+    if (const auto p = system::get_slot_pointer<ui::control>(wsp->focused_control)) p->char_event(static_cast<wchar_t>(wp));
     return 0;
 
     /// MARK: Button events
@@ -305,7 +310,7 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     // }
 
     // case WM_IME_COMPOSITION:
-    //   if (const auto fcsp = system::slot_address<ui::control>(wsp->focused_control); !fcsp) system::ime.hide();
+    //   if (const auto fcsp = system::get_slot_pointer<ui::control>(wsp->focused_control); !fcsp) system::ime.hide();
     //   else if (HIMC himc = ::ImmGetContext(hwnd); !himc) system::ime.hide();
     //   else {
     //     if (lp & GCS_COMPSTR) {
@@ -371,9 +376,9 @@ inline LRESULT CALLBACK decltype(wclass)::proc(HWND hwnd, UINT msg, WPARAM wp, L
     return 0;
 
   case WM_NCDESTROY:
-    system::uis.erase(wsp->child_control);
+    system::unknowns.erase(wsp->child_control);
     const auto id = wsp->id;
-    system::uis.erase(id);
+    system::unknowns.erase(id);
     std::erase(system::primal_windows, id);
     ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
     if (system::primal_windows.empty()) ::PostQuitMessage(0);

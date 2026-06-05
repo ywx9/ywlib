@@ -2,7 +2,7 @@
 // #include "ywx/bitmap.h"
 // #include "ywx/event.h"
 // #include "ywx/tooltip.h"
-// #include "ywx/ui_unknown.h"
+// #include "ywx/ui_interface.h"
 
 // /*
 // 描画の仕組みを整理する。

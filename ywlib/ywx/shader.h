@@ -26,10 +26,8 @@ public:
       auto s = mes.empty() ? std::string("D3DCompile failed") : format("D3DCompile failed\n{}", mes);
       return unexpected_error(errors::operation_failed, s, int32_t(hr));
     }
-    hr = d3d().device()->CreateVertexShader(b->GetBufferPointer(), b->GetBufferSize(), nullptr, &shader._shader.get());
-    if (FAILED(hr)) {
-      return unexpected_error(errors::operation_failed, "Failed to create vertex shader", int32_t(hr));
-    } else return shader;
+    hresult_test(d3d().device()->CreateVertexShader, b->GetBufferPointer(), b->GetBufferSize(), nullptr, &shader._shader.get());
+    return std::move(shader);
   }
 
   void set_shader() const noexcept { d3d().context()->VSSetShader(_shader.get(), nullptr, 0); }

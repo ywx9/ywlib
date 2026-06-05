@@ -28,18 +28,18 @@ public:
     function<void, key> on_click;
 
     virtual bool attachable() const override { return !locked; }
-    virtual std::expected<void, error_trace> attach(slotid Child) override {
+    virtual std::expected<void, error_trace> attach(unknown_slotid Child) override {
       if (locked) return unexpected_error(errors::ui_not_attachable);
       if (auto res = horizontal_layout::slot::attach(Child)) return {};
       else return unexpected_error(res.error());
     }
-    virtual std::expected<void, error_trace> detach(slotid Child) override {
+    virtual std::expected<void, error_trace> detach(unknown_slotid Child) override {
       if (auto res = horizontal_layout::slot::detach(Child)) return {};
       else return unexpected_error(res.error());
     }
 
-    virtual slotid hittest(float2 Pt) const override { return hittest_geometry(Pt) ? id : slotid(); }
-    virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) const override {
+    virtual unknown_slotid hittest(float2 Pt) const override { return hittest_geometry(Pt) ? id : unknown_slotid(); }
+    virtual unknown_slotid next_tab_stop(unknown_slotid Focused, bool Forward, bool& Found) const override {
       if (Focused == id) Found = true;
       else if (Found && enabled) return id;
       return {};
@@ -77,10 +77,10 @@ public:
       case keys::enter.code:
       case keys::space.code:
         checked = !checked;
-        if (const auto sp = system::slot_address<ui::control>(check_icon._slotid())) {
+        if (const auto sp = system::get_slot_pointer<control>(check_icon.id())) {
           sp->visible = checked;
           if (auto res = make_dirty(); !res) fatal_error(res.error());
-        } else fatal_error(errors::ui_invalid_slotid);
+        } else fatal_error(errors::invalid_slotid);
         if (on_click) on_click(captured_key);
         if (on_change) on_change(checked);
         break;
@@ -103,7 +103,7 @@ public:
       if (auto res = svgpath::create(default_icon_size, mark_path)) check = std::move(*res);
       else return unexpected_error(res.error());
     }
-    if (const auto csp = system::slot_address<checkbox>(ckb._id)) {
+    if (const auto csp = system::get_slot_pointer<checkbox>(ckb._id)) {
       csp->locked = false;
       csp->background_color = Colors.background;
       if (auto res = ui::layer::add(ckb)) csp->icon_layer = std::move(*res);
@@ -122,43 +122,43 @@ public:
       else return unexpected_error(res.error());
       csp->text.text().color(Colors.foreground);
       csp->locked = true;
-    } else return unexpected_error(errors::ui_invalid_slotid);
+    } else return unexpected_error(errors::invalid_slotid);
     return ckb;
   }
 
   template<typename Self> auto& box_icon(this Self&& self) {
-    const auto csp = system::slot_address<checkbox>(self._slotid());
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    const auto csp = system::get_slot_pointer<checkbox>(self.id());
+    if (!csp) fatal_error(errors::invalid_slotid);
     return csp->box_icon;
   }
 
   template<typename Self> auto& check_icon(this Self&& self) {
-    const auto csp = system::slot_address<checkbox>(self._slotid());
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    const auto csp = system::get_slot_pointer<checkbox>(self.id());
+    if (!csp) fatal_error(errors::invalid_slotid);
     return csp->check_icon;
   }
 
   template<typename Self> auto& text(this Self&& self) {
-    const auto csp = system::slot_address<checkbox>(self._slotid());
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    const auto csp = system::get_slot_pointer<checkbox>(self.id());
+    if (!csp) fatal_error(errors::invalid_slotid);
     return csp->text;
   }
 
   bool checked() const {
-    const auto csp = system::slot_address<checkbox>(_slotid());
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    const auto csp = system::get_slot_pointer<checkbox>(id());
+    if (!csp) fatal_error(errors::invalid_slotid);
     return csp->checked;
   }
 
   auto& checked(bool Checked) {
-    const auto csp = system::slot_address<checkbox>(_slotid());
-    if (!csp) fatal_error(errors::ui_invalid_slotid);
+    const auto csp = system::get_slot_pointer<checkbox>(id());
+    if (!csp) fatal_error(errors::invalid_slotid);
     if (csp->checked != Checked) {
       csp->checked = Checked;
-      if (const auto sp = system::slot_address<ui::control>(csp->check_icon._slotid())) {
+      if (const auto sp = system::get_slot_pointer<ui::control>(csp->check_icon.id())) {
         sp->visible = Checked;
         assume(csp->make_dirty());
-      } else fatal_error(errors::ui_invalid_slotid);
+      } else fatal_error(errors::invalid_slotid);
     }
     return *this;
   }

@@ -11,6 +11,14 @@
 #include <wincodec.h>
 #include <xaudio2.h>
 
+#ifdef interface
+#undef interface
+#endif
+
+#define hresult_test(func, ...)                        \
+  if (const auto hr = (func)(__VA_ARGS__); FAILED(hr)) \
+  return unexpected_error(errors::operation_failed, #func " failed", int32_t(hr))
+
 namespace yw {
 
 namespace system {
@@ -52,7 +60,8 @@ class unknown {
 public:
   struct slot {
     slotset<slot>::slotid id{};
-    virtual ~slot() noexcept {}
+    virtual std::expected<void, error_trace> release() = 0;
+    virtual ~slot() {}
   };
 
 protected:
@@ -63,7 +72,7 @@ protected:
 public:
   unknown(unknown&& Other) noexcept : _id(std::move(Other._id)) {}
   unknown& operator=(unknown&& Other) noexcept {
-    if (this == &Other) _id = std::exchange(Other._id, {});
+    if (this != &Other) _id = std::exchange(Other._id, {});
     return *this;
   }
   explicit operator bool() const noexcept;
@@ -81,33 +90,88 @@ template<derived_from<unknown> T> typename T::slot* get_slot_pointer(unknown_slo
 
 inline unknown::operator bool() const noexcept { return system::unknowns.contains(_id); }
 
-/// MARK: wclass
+/// MARK: comobjects
 
-class wclass final : public unknown {
+namespace system {
+struct comdeleter {
+  void operator()(std::vector<unknown_slotid>* ptr) {
+    if (!ptr) return;
+    for (const auto id : *ptr | std::views::reverse)
+      if (const auto sp = system::get_slot_pointer<unknown>(id))
+        if (auto res = sp->release(); !res) fatal_error(res.error());
+  }
+};
+inline auto comobjects =
+  std::unique_ptr<std::vector<unknown_slotid>, comdeleter>(new std::vector<unknown_slotid>(), comdeleter());
+} // namespace system
+
+/// MARK: instance
+
+class interface : public unknown {
+protected:
+  using unknown::unknown;
+
 public:
   struct slot : unknown::slot {
-    HINSTANCE hinstance{};
-    const wchar_t* name = L"ywlib_window_class";
+    virtual bool attachable() const { return false; }
+    virtual std::expected<void, error_trace> attach(unknown_slotid Child) { return {}; }
+    virtual std::expected<void, error_trace> detach(unknown_slotid Child) { return {}; }
+    virtual unknown_slotid get_window_id() const = 0;
+    virtual std::expected<void, error_trace> make_dirty() = 0;
+    virtual std::expected<void, error_trace> make_messy() = 0;
+  };
 
-    std::expected<void, error_trace> initialize(unknown_slotid Id) {
-      if (system::unknowns.contains(id)) return {};
-      hinstance = ::GetModuleHandleW(nullptr);
-      WNDCLASSW wc{};
-      wc.style = CS_DBLCLKS;
-      wc.lpfnWndProc = system::wndproc;
-      wc.hInstance = hinstance;
-      wc.hCursor = ::LoadCursorW(nullptr, IDC_ARROW);
-      wc.lpszClassName = name;
+  using unknown::operator bool;
+};
+
+/// MARK: singleton
+
+template<typename T> class singleton : public unknown {
+protected:
+  inline static unknown_slotid singleton_id = {};
+  using unknown::unknown;
+
+  static std::expected<void, error_trace> initialize_singleton() {
+    if (system::unknowns.contains(singleton_id)) return {};
+    const auto temp_id = system::unknowns.add(std::make_unique<typename T::slot>());
+    if (const auto sp = system::get_slot_pointer<T>(temp_id); !sp) {
+      system::unknowns.erase(temp_id);
+      return unexpected_error(errors::invalid_slotid);
+    } else if (singleton_id = sp->id = temp_id; false) (void)0;
+    else if (auto res = sp->initialize(); !res) {
+      sp->id = singleton_id = {};
+      system::unknowns.erase(temp_id);
+      return unexpected_error(res.error());
+    } else return {};
+  }
+
+public:
+  struct slot : unknown::slot {};
+  using unknown::operator bool;
+};
+
+/// MARK: wclass
+
+class wclass final : public singleton<wclass> {
+public:
+  struct slot : singleton<wclass>::slot {
+    WNDCLASSW wc{
+      .style = CS_DBLCLKS,
+      .lpfnWndProc = system::wndproc,
+      .hInstance = ::GetModuleHandleW(nullptr),
+      .hCursor = ::LoadCursorW(nullptr, IDC_ARROW),
+      .lpszClassName = L"ywlib_window_class"};
+
+    std::expected<void, error_trace> initialize() {
       if (!::RegisterClassW(&wc) || ::GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
         return unexpected_error(errors::operation_failed, "RegisterClassW failed");
-      id = Id;
       return {};
     }
 
     std::expected<void, error_trace> release() {
-      id = {};
-      ::UnregisterClassW(name, hinstance);
-      hinstance = {};
+      system::unknowns.erase(singleton_id);
+      singleton_id = this->id = {};
+      ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
       return {};
     }
   };
@@ -115,54 +179,37 @@ public:
   using unknown::operator bool;
 
   explicit wclass() {
-    static unknown_slotid id = {};
-    if (!system::unknowns.contains(id)) {
-      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
-      const auto temp_sp = system::get_slot_pointer<wclass>(temp_id);
-      if (!temp_sp) fatal_error(errors::invalid_slotid);
-      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
-      id = temp_id;
-    }
-    this->_id = id;
+    if (auto res = initialize_singleton(); !res) fatal_error(res.error());
+    this->_id = singleton_id;
   }
 
   HINSTANCE hinstance() const noexcept {
-    if (auto sp = system::get_slot_pointer<wclass>(_id)) return sp->hinstance;
-    return nullptr;
-  }
-  const wchar_t* name() const noexcept {
-    if (auto sp = system::get_slot_pointer<wclass>(_id)) return sp->name;
+    if (auto sp = system::get_slot_pointer<wclass>(_id)) return sp->wc.hInstance;
     return nullptr;
   }
 
+  null_terminated<wchar_t> name() const noexcept {
+    if (auto sp = system::get_slot_pointer<wclass>(_id)) return sp->wc.lpszClassName;
+    return {};
+  }
+
   std::expected<void, error_trace> release() const {
-    const auto sp = system::get_slot_pointer<wclass>(_id);
-    if (!sp) return unexpected_error(errors::invalid_slotid);
-    if (auto res = sp->release(); !res) return unexpected_error(res.error());
+    if (const auto sp = system::get_slot_pointer<wclass>(_id); !sp) return unexpected_error(errors::invalid_slotid);
+    else if (auto res = sp->release(); !res) return unexpected_error(res.error());
     return {};
   }
 };
 
 /// MARK: d3d
 
-class d3d final : public unknown {
+class d3d final : public singleton<d3d> {
 public:
-  struct slot : unknown::slot {
+  struct slot : singleton<d3d>::slot {
     ID3D11Device* device{};
     ID3D11DeviceContext* context{};
     ID3D11BlendState* blend_state{};
     ID3D11SamplerState* sampler_state{};
     ID3D11RasterizerState* rasterizer_state{};
-    ID3D11DepthStencilState* depth_stencil_state{};
-
-    ~slot() noexcept {
-      if (depth_stencil_state) depth_stencil_state->Release();
-      if (rasterizer_state) rasterizer_state->Release();
-      if (sampler_state) sampler_state->Release();
-      if (blend_state) blend_state->Release();
-      if (context) context->Release();
-      if (device) device->Release();
-    }
 
     std::expected<void, error_trace> _init_device() {
       const D3D_FEATURE_LEVEL _levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
@@ -183,8 +230,7 @@ public:
       blend_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
       blend_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
       blend_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-      const auto hr = device->CreateBlendState(&blend_desc, &blend_state);
-      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBlendState failed");
+      hresult_test(device->CreateBlendState, &blend_desc, &blend_state);
       context->OMSetBlendState(blend_state, nullptr, 0xffffffff);
       return {};
     }
@@ -196,8 +242,7 @@ public:
       sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
       sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
       sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
-      const auto hr = device->CreateSamplerState(&sampler_desc, &sampler_state);
-      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSamplerState failed");
+      hresult_test(device->CreateSamplerState, &sampler_desc, &sampler_state);
       context->PSSetSamplers(0, 1, &sampler_state);
       return {};
     }
@@ -208,37 +253,22 @@ public:
       rasterizer_desc.CullMode = D3D11_CULL_NONE;
       rasterizer_desc.FrontCounterClockwise = TRUE;
       rasterizer_desc.DepthClipEnable = TRUE;
-      const auto hr = device->CreateRasterizerState(&rasterizer_desc, &rasterizer_state);
-      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateRasterizerState failed");
+      hresult_test(device->CreateRasterizerState, &rasterizer_desc, &rasterizer_state);
       context->RSSetState(rasterizer_state);
       return {};
     }
 
-    std::expected<void, error_trace> _init_depth_stencil_state() {
-      D3D11_DEPTH_STENCIL_DESC depth_stencil_desc{};
-      depth_stencil_desc.DepthEnable = TRUE;
-      depth_stencil_desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
-      depth_stencil_desc.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL; // Reverse-Z
-      const auto hr = device->CreateDepthStencilState(&depth_stencil_desc, &depth_stencil_state);
-      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDepthStencilState failed");
-      context->OMSetDepthStencilState(depth_stencil_state, 0);
-      return {};
-    }
-
-    std::expected<void, error_trace> initialize(unknown_slotid Id) {
-      if (system::unknowns.contains(id)) return {};
+    std::expected<void, error_trace> initialize() {
       if (auto res = _init_device(); !res) return res;
       if (auto res = _init_blend_state(); !res) return res;
       if (auto res = _init_sampler_state(); !res) return res;
       if (auto res = _init_rasterizer_state(); !res) return res;
-      if (auto res = _init_depth_stencil_state(); !res) return res;
-      id = Id;
       return {};
     }
 
     std::expected<void, error_trace> release() {
-      id = {};
-      if (depth_stencil_state) depth_stencil_state->Release(), depth_stencil_state = nullptr;
+      system::unknowns.erase(singleton_id);
+      singleton_id = this->id = {};
       if (rasterizer_state) rasterizer_state->Release(), rasterizer_state = nullptr;
       if (blend_state) blend_state->Release(), blend_state = nullptr;
       if (sampler_state) sampler_state->Release(), sampler_state = nullptr;
@@ -251,76 +281,59 @@ public:
   using unknown::operator bool;
 
   explicit d3d() {
-    static unknown_slotid id = {};
-    if (!system::unknowns.contains(id)) {
-      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
-      const auto temp_sp = system::get_slot_pointer<d3d>(temp_id);
-      if (!temp_sp) fatal_error(errors::invalid_slotid);
-      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
-      id = temp_id;
-    }
-    this->_id = id;
+    if (auto res = initialize_singleton(); !res) fatal_error(res.error());
+    this->_id = singleton_id;
   }
 
   ID3D11Device* device() const noexcept {
     if (const auto sp = system::get_slot_pointer<d3d>(_id)) return sp->device;
     return nullptr;
   }
+
   ID3D11DeviceContext* context() const noexcept {
     if (const auto sp = system::get_slot_pointer<d3d>(_id)) return sp->context;
     return nullptr;
   }
+
   ID3D11BlendState* blend_state() const noexcept {
     if (const auto sp = system::get_slot_pointer<d3d>(_id)) return sp->blend_state;
     return nullptr;
   }
+
   ID3D11RasterizerState* rasterizer_state() const noexcept {
     if (const auto sp = system::get_slot_pointer<d3d>(_id)) return sp->rasterizer_state;
     return nullptr;
   }
+
   ID3D11SamplerState* sampler_state() const noexcept {
     if (const auto sp = system::get_slot_pointer<d3d>(_id)) return sp->sampler_state;
     return nullptr;
   }
-  ID3D11DepthStencilState* depth_stencil_state() const noexcept {
-    if (const auto sp = system::get_slot_pointer<d3d>(_id)) return sp->depth_stencil_state;
-    return nullptr;
-  }
 
   std::expected<void, error_trace> release() const {
-    const auto sp = system::get_slot_pointer<d3d>(_id);
-    if (!sp) return unexpected_error(errors::invalid_slotid);
-    if (auto res = sp->release(); !res) return unexpected_error(res.error());
+    if (const auto sp = system::get_slot_pointer<d3d>(_id); !sp) return unexpected_error(errors::invalid_slotid);
+    else if (auto res = sp->release(); !res) return unexpected_error(res.error());
     return {};
   }
 };
 
 /// MARK: dxgi
 
-class dxgi final : public unknown {
+class dxgi final : public singleton<dxgi> {
 public:
-  struct slot : unknown::slot {
+  struct slot : singleton<dxgi>::slot {
     IDXGIFactory2* factory{};
     IDXGIDevice2* device{};
 
-    ~slot() noexcept {
-      if (device) device->Release();
-      if (factory) factory->Release();
-    }
-
-    std::expected<void, error_trace> initialize(unknown_slotid Id) {
-      if (system::unknowns.contains(id)) return {};
-      const auto& d3d = yw::d3d();
-      auto hr = ::CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void**>(&factory));
-      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDXGIFactory2 failed", int32_t(hr));
-      hr = d3d.device()->QueryInterface(__uuidof(IDXGIDevice2), reinterpret_cast<void**>(&device));
-      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDevice failed", int32_t(hr));
-      id = Id;
+    std::expected<void, error_trace> initialize() {
+      hresult_test(::CreateDXGIFactory2, 0, __uuidof(IDXGIFactory2), reinterpret_cast<void**>(&factory));
+      hresult_test(d3d().device()->QueryInterface, __uuidof(IDXGIDevice2), reinterpret_cast<void**>(&device));
       return {};
     }
 
     std::expected<void, error_trace> release() {
-      id = {};
+      system::unknowns.erase(singleton_id);
+      singleton_id = this->id = {};
       if (device) device->Release(), device = nullptr;
       if (factory) factory->Release(), factory = nullptr;
       return {};
@@ -330,110 +343,41 @@ public:
   using unknown::operator bool;
 
   explicit dxgi() {
-    static unknown_slotid id = {};
-    if (!system::unknowns.contains(id)) {
-      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
-      const auto temp_sp = system::get_slot_pointer<dxgi>(temp_id);
-      if (!temp_sp) fatal_error(errors::invalid_slotid);
-      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
-      id = temp_id;
-    }
-    this->_id = id;
-  }
-  std::expected<void, error_trace> release() const {
-    const auto sp = system::get_slot_pointer<dxgi>(_id);
-    if (!sp) return unexpected_error(errors::invalid_slotid);
-    if (auto res = sp->release(); !res) return unexpected_error(res.error());
-    return {};
+    if (auto res = initialize_singleton(); !res) fatal_error(res.error());
+    this->_id = singleton_id;
   }
 
   IDXGIFactory2* factory() const noexcept {
     if (const auto sp = system::get_slot_pointer<dxgi>(_id)) return sp->factory;
     return nullptr;
   }
+
   IDXGIDevice2* device() const noexcept {
     if (const auto sp = system::get_slot_pointer<dxgi>(_id)) return sp->device;
     return nullptr;
   }
 };
 
-/// MARK: coinit
-
-class coinit final : public unknown {
-public:
-  struct slot : unknown::slot {
-    ~slot() noexcept {
-      if (system::unknowns.contains(id)) ::CoUninitialize();
-    }
-
-    std::expected<void, error_trace> initialize(unknown_slotid Id) {
-      if (system::unknowns.contains(id)) return {};
-      if (auto hr = ::CoInitializeEx(nullptr, COINIT_MULTITHREADED); FAILED(hr))
-        return unexpected_error(errors::operation_failed, "CoInitializeEx failed", int32_t(hr));
-      id = Id;
-      return {};
-    }
-
-    std::expected<void, error_trace> release() {
-      if (system::unknowns.contains(id)) ::CoUninitialize();
-      id = {};
-      return {};
-    }
-  };
-
-  using unknown::operator bool;
-
-  explicit coinit() {
-    static unknown_slotid id = {};
-    if (!system::unknowns.contains(id)) {
-      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
-      const auto temp_sp = system::get_slot_pointer<coinit>(temp_id);
-      if (!temp_sp) fatal_error(errors::invalid_slotid);
-      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
-      id = temp_id;
-    }
-    this->_id = id;
-  }
-  std::expected<void, error_trace> release() const {
-    const auto sp = system::get_slot_pointer<coinit>(_id);
-    if (!sp) return unexpected_error(errors::invalid_slotid);
-    if (auto res = sp->release(); !res) return unexpected_error(res.error());
-    return {};
-  }
-};
-
 /// MARK: d2d
 
-class d2d final : public unknown {
+class d2d final : public singleton<d2d> {
 public:
-  struct slot : unknown::slot {
+  struct slot : singleton<d2d>::slot {
     ID2D1Factory1* factory{};
     ID2D1Device* device{};
     ID2D1DeviceContext* context{};
 
-    ~slot() noexcept {
-      if (context) context->Release();
-      if (device) device->Release();
-      if (factory) factory->Release();
-    }
-
-    std::expected<void, error_trace> initialize(unknown_slotid Id) {
-      if (system::unknowns.contains(id)) return {};
-      const auto dxgi = yw::dxgi();
-      const auto coinit = yw::coinit();
-      auto hr = ::D2D1CreateFactory(
-        D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), reinterpret_cast<void**>(&factory));
-      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "D2D1CreateFactory failed", int32_t(hr));
-      hr = factory->CreateDevice(dxgi.device(), &device);
-      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDevice failed", int32_t(hr));
-      hr = device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &context);
-      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDeviceContext failed", int32_t(hr));
-      id = Id;
+    std::expected<void, error_trace> initialize() {
+      const auto factory_type = D2D1_FACTORY_TYPE_SINGLE_THREADED;
+      hresult_test(::D2D1CreateFactory, factory_type, __uuidof(ID2D1Factory1), reinterpret_cast<void**>(&factory));
+      hresult_test(factory->CreateDevice, dxgi().device(), &device);
+      hresult_test(device->CreateDeviceContext, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &context);
       return {};
     }
 
     std::expected<void, error_trace> release() {
-      id = {};
+      system::unknowns.erase(singleton_id);
+      singleton_id = this->id = {};
       if (context) context->Release(), context = nullptr;
       if (device) device->Release(), device = nullptr;
       if (factory) factory->Release(), factory = nullptr;
@@ -444,31 +388,20 @@ public:
   using unknown::operator bool;
 
   explicit d2d() {
-    static unknown_slotid id = {};
-    if (!system::unknowns.contains(id)) {
-      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
-      const auto temp_sp = system::get_slot_pointer<d2d>(temp_id);
-      if (!temp_sp) fatal_error(errors::invalid_slotid);
-      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
-      id = temp_id;
-    }
-    this->_id = id;
-  }
-  std::expected<void, error_trace> release() const {
-    const auto sp = system::get_slot_pointer<d2d>(_id);
-    if (!sp) return unexpected_error(errors::invalid_slotid);
-    if (auto res = sp->release(); !res) return unexpected_error(res.error());
-    return {};
+    if (auto res = initialize_singleton(); !res) fatal_error(res.error());
+    this->_id = singleton_id;
   }
 
   ID2D1Factory1* factory() const noexcept {
     if (const auto sp = system::get_slot_pointer<d2d>(_id)) return sp->factory;
     return nullptr;
   }
+
   ID2D1Device* device() const noexcept {
     if (const auto sp = system::get_slot_pointer<d2d>(_id)) return sp->device;
     return nullptr;
   }
+
   ID2D1DeviceContext* context() const noexcept {
     if (const auto sp = system::get_slot_pointer<d2d>(_id)) return sp->context;
     return nullptr;
@@ -487,42 +420,32 @@ public:
 
 /// MARK: brush
 
-class brush final : public unknown {
+class brush final : public singleton<brush> {
 public:
-  struct slot : unknown::slot {
+  struct slot : singleton<brush>::slot {
     ID2D1SolidColorBrush* solid_brush{};
     ID2D1StrokeStyle* stroke_style{};
     ID2D1StrokeStyle* dashed_stroke_style{};
     bool dashed = false;
 
-    ~slot() noexcept {
-      if (dashed_stroke_style) dashed_stroke_style->Release();
-      if (stroke_style) stroke_style->Release();
-      if (solid_brush) solid_brush->Release();
-    }
-
-    std::expected<void, error_trace> initialize(unknown_slotid Id) {
-      if (system::unknowns.contains(id)) return {};
+    std::expected<void, error_trace> initialize() {
       const auto& d2d = yw::d2d();
-      if (auto hr = d2d.context()->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black), &solid_brush); FAILED(hr))
-        return unexpected_error(errors::operation_failed, "CreateSolidColorBrush failed", int32_t(hr));
-      D2D1_STROKE_STYLE_PROPERTIES stroke_style_props{};
-      stroke_style_props.startCap = D2D1_CAP_STYLE_ROUND;
-      stroke_style_props.endCap = D2D1_CAP_STYLE_ROUND;
-      stroke_style_props.dashCap = D2D1_CAP_STYLE_ROUND;
-      stroke_style_props.lineJoin = D2D1_LINE_JOIN_ROUND;
-      stroke_style_props.miterLimit = 10.0f;
-      if (auto hr = d2d.factory()->CreateStrokeStyle(&stroke_style_props, nullptr, 0, &stroke_style); FAILED(hr))
-        return unexpected_error(errors::operation_failed, "CreateStrokeStyle failed", int32_t(hr));
+      hresult_test(d2d.context()->CreateSolidColorBrush, D2D1::ColorF(D2D1::ColorF::Black), &solid_brush);
+      D2D1_STROKE_STYLE_PROPERTIES stroke_style_props{
+        .startCap = D2D1_CAP_STYLE_ROUND,
+        .endCap = D2D1_CAP_STYLE_ROUND,
+        .dashCap = D2D1_CAP_STYLE_ROUND,
+        .lineJoin = D2D1_LINE_JOIN_ROUND,
+        .miterLimit = 10.0f};
+      hresult_test(d2d.factory()->CreateStrokeStyle, &stroke_style_props, nullptr, 0, &stroke_style);
       stroke_style_props.dashStyle = D2D1_DASH_STYLE_DASH;
-      if (auto hr = d2d.factory()->CreateStrokeStyle(&stroke_style_props, nullptr, 0, &dashed_stroke_style); FAILED(hr))
-        return unexpected_error(errors::operation_failed, "CreateStrokeStyle (dashed) failed", int32_t(hr));
-      id = Id;
+      hresult_test(d2d.factory()->CreateStrokeStyle, &stroke_style_props, nullptr, 0, &dashed_stroke_style);
       return {};
     }
 
     std::expected<void, error_trace> release() {
-      id = {};
+      system::unknowns.erase(singleton_id);
+      singleton_id = this->id = {};
       if (dashed_stroke_style) dashed_stroke_style->Release(), dashed_stroke_style = nullptr;
       if (stroke_style) stroke_style->Release(), stroke_style = nullptr;
       if (solid_brush) solid_brush->Release(), solid_brush = nullptr;
@@ -534,46 +457,41 @@ public:
   using unknown::operator bool;
 
   explicit brush() {
-    static unknown_slotid id = {};
-    if (!system::unknowns.contains(id)) {
-      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
-      const auto temp_sp = system::get_slot_pointer<brush>(temp_id);
-      if (!temp_sp) fatal_error(errors::invalid_slotid);
-      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
-      id = temp_id;
-    }
-    this->_id = id;
-  }
-  std::expected<void, error_trace> release() const {
-    const auto sp = system::get_slot_pointer<brush>(_id);
-    if (!sp) return unexpected_error(errors::invalid_slotid);
-    if (auto res = sp->release(); !res) return unexpected_error(res.error());
-    return {};
+    if (auto res = initialize_singleton(); !res) fatal_error(res.error());
+    this->_id = singleton_id;
   }
 
-  yw::color color() const {
-    return std::bit_cast<yw::color>(system::get_slot_pointer<brush>(_id)->solid_brush->GetColor());
-  }
-  auto& color(const yw::color& Color) const {
-    system::get_slot_pointer<brush>(_id)->solid_brush->SetColor(reinterpret_cast<const D2D1_COLOR_F*>(&Color));
-    return *this;
-  }
-  bool dashed() const {
-    if (const auto sp = system::get_slot_pointer<brush>(_id)) return sp->dashed;
-    return false;
-  }
-  auto& dashed(bool Dashed = true) const {
-    if (const auto sp = system::get_slot_pointer<brush>(_id)) sp->dashed = Dashed;
-    return *this;
-  }
-  ID2D1SolidColorBrush* d2d_brush() const {
+  ID2D1SolidColorBrush* d2d_brush() const noexcept {
     if (const auto sp = system::get_slot_pointer<brush>(_id)) return sp->solid_brush;
     return nullptr;
   }
-  ID2D1StrokeStyle* d2d_stroke() const {
+
+  ID2D1StrokeStyle* d2d_stroke() const noexcept {
     if (const auto sp = system::get_slot_pointer<brush>(_id))
       return sp->dashed ? sp->dashed_stroke_style : sp->stroke_style;
     return nullptr;
+  }
+
+  yw::color color() const noexcept {
+    if (const auto sp = system::get_slot_pointer<brush>(_id))
+      return std::bit_cast<yw::color>(sp->solid_brush->GetColor());
+    return {};
+  }
+
+  auto& color(const yw::color& Color) const noexcept {
+    if (const auto sp = system::get_slot_pointer<brush>(_id))
+      sp->solid_brush->SetColor(reinterpret_cast<const D2D1_COLOR_F*>(&Color));
+    return *this;
+  }
+
+  bool dashed() const noexcept {
+    if (const auto sp = system::get_slot_pointer<brush>(_id)) return sp->dashed;
+    return false;
+  }
+
+  auto& dashed(bool Dashed = true) const noexcept {
+    if (const auto sp = system::get_slot_pointer<brush>(_id)) sp->dashed = Dashed;
+    return *this;
   }
 };
 
@@ -632,35 +550,28 @@ struct font_config {
 inline const font_config font_config::default_{
   L""s, 16.0f, font_weight::normal, font_style::normal, font_stretch::normal};
 
-class dwrite final : public unknown {
+class dwrite final : public singleton<dwrite> {
 public:
-  struct slot : unknown::slot {
+  struct slot : singleton<dwrite>::slot {
     IDWriteFactory1* factory{};
     IDWriteTextFormat* text_format{};
 
-    ~slot() noexcept {
-      if (text_format) text_format->Release();
-      if (factory) factory->Release();
-    }
-
-    std::expected<void, error_trace> initialize(unknown_slotid Id) {
-      if (system::unknowns.contains(id)) return {};
-      const auto& d2d = yw::d2d();
-      auto hr = ::DWriteCreateFactory(
-        DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory1), reinterpret_cast<IUnknown**>(&factory));
-      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "DWriteCreateFactory failed", int32_t(hr));
-      hr = factory->CreateTextFormat(
-        font_config::default_.name->c_str(), nullptr, DWRITE_FONT_WEIGHT(*font_config::default_.weight),
-        DWRITE_FONT_STYLE(*font_config::default_.style), DWRITE_FONT_STRETCH(*font_config::default_.stretch),
-        font_config::default_.size.value_or(16.0f), L"", &text_format);
-      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int32_t(hr));
-      text_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-      id = Id;
+    std::expected<void, error_trace> initialize() {
+      hresult_test(
+        ::DWriteCreateFactory, DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory1),
+        reinterpret_cast<IUnknown**>(&factory));
+      hresult_test(
+        factory->CreateTextFormat, font_config::default_.name->c_str(), nullptr,
+        DWRITE_FONT_WEIGHT(*font_config::default_.weight), DWRITE_FONT_STYLE(*font_config::default_.style),
+        DWRITE_FONT_STRETCH(*font_config::default_.stretch), font_config::default_.size.value_or(16.0f), L"",
+        &text_format);
+      hresult_test(text_format->SetTextAlignment, DWRITE_TEXT_ALIGNMENT_CENTER);
       return {};
     }
 
     std::expected<void, error_trace> release() {
-      id = {};
+      system::unknowns.erase(singleton_id);
+      singleton_id = this->id = {};
       if (text_format) text_format->Release(), text_format = nullptr;
       if (factory) factory->Release(), factory = nullptr;
       return {};
@@ -670,56 +581,72 @@ public:
   using unknown::operator bool;
 
   explicit dwrite() {
-    static unknown_slotid id = {};
-    if (!system::unknowns.contains(id)) {
-      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
-      const auto temp_sp = system::get_slot_pointer<dwrite>(temp_id);
-      if (!temp_sp) fatal_error(errors::invalid_slotid);
-      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
-      id = temp_id;
-    }
-    this->_id = id;
-  }
-  std::expected<void, error_trace> release() const {
-    const auto sp = system::get_slot_pointer<dwrite>(_id);
-    if (!sp) return unexpected_error(errors::invalid_slotid);
-    if (auto res = sp->release(); !res) return unexpected_error(res.error());
-    return {};
+    if (auto res = initialize_singleton(); !res) fatal_error(res.error());
+    this->_id = singleton_id;
   }
 
   IDWriteFactory1* factory() const noexcept {
     if (const auto sp = system::get_slot_pointer<dwrite>(_id)) return sp->factory;
     return nullptr;
   }
+
   IDWriteTextFormat* text_format() const noexcept {
     if (const auto sp = system::get_slot_pointer<dwrite>(_id)) return sp->text_format;
     return nullptr;
   }
 };
 
-//// MARK: wic
+/// MARK: coinit
 
-class wic final : public unknown {
+class coinit final : public singleton<coinit> {
 public:
-  struct slot : unknown::slot {
-    ::IWICImagingFactory2* factory{};
-
-    ~slot() noexcept {
-      if (factory) factory->Release();
-    }
-
-    std::expected<void, error_trace> initialize(unknown_slotid Id) {
-      if (system::unknowns.contains(id)) return {};
-      const auto& d2d = yw::d2d();
-      auto hr = ::CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-      if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CoCreateInstance failed", int32_t(hr));
-      id = Id;
+  struct slot : singleton<coinit>::slot {
+    std::expected<void, error_trace> initialize() {
+      hresult_test(::CoInitializeEx, nullptr, COINIT_MULTITHREADED);
+      if (system::comobjects) system::comobjects->push_back(this->id);
       return {};
     }
 
     std::expected<void, error_trace> release() {
-      id = {};
+      if (system::unknowns.contains(singleton_id)) ::CoUninitialize();
+      system::unknowns.erase(singleton_id);
+      singleton_id = this->id = {};
+      return {};
+    }
+  };
+
+  using unknown::operator bool;
+
+  explicit coinit() {
+    if (auto res = initialize_singleton(); !res) fatal_error(res.error());
+    this->_id = singleton_id;
+  }
+
+  /// releases all com objects
+  std::expected<void, error_trace> release() const {
+    if (system::comobjects) system::comobjects.reset();
+    return {};
+  }
+};
+
+//// MARK: wic
+
+class wic final : public singleton<wic> {
+public:
+  struct slot : singleton<wic>::slot {
+    ::IWICImagingFactory2* factory{};
+
+    std::expected<void, error_trace> initialize() {
+      const auto& coinit = yw::coinit();
+      hresult_test(::CoCreateInstance, CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+      if (system::comobjects) system::comobjects->push_back(this->id);
+      return {};
+    }
+
+    std::expected<void, error_trace> release() {
+      system::unknowns.erase(singleton_id);
       if (factory) factory->Release(), factory = nullptr;
+      singleton_id = this->id = {};
       return {};
     }
   };
@@ -727,21 +654,8 @@ public:
   using unknown::operator bool;
 
   explicit wic() {
-    static unknown_slotid id = {};
-    if (!system::unknowns.contains(id)) {
-      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
-      const auto temp_sp = system::get_slot_pointer<wic>(temp_id);
-      if (!temp_sp) fatal_error(errors::invalid_slotid);
-      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
-      id = temp_id;
-    }
-    this->_id = id;
-  }
-  std::expected<void, error_trace> release() const {
-    const auto sp = system::get_slot_pointer<wic>(_id);
-    if (!sp) return unexpected_error(errors::invalid_slotid);
-    if (auto res = sp->release(); !res) return unexpected_error(res.error());
-    return {};
+    if (auto res = initialize_singleton(); !res) fatal_error(res.error());
+    this->_id = singleton_id;
   }
 
   ::IWICImagingFactory2* factory() const noexcept {
@@ -752,30 +666,23 @@ public:
 
 /// MARK: xaudio2
 
-class xaudio2 final : public unknown {
+class xaudio2 final : public singleton<xaudio2> {
 public:
-  struct slot : unknown::slot {
+  struct slot : singleton<xaudio2>::slot {
     ::IXAudio2* device{};
     ::IXAudio2MasteringVoice* mastering_voice{};
 
-    ~slot() noexcept {
-      if (mastering_voice) mastering_voice->DestroyVoice();
-      if (device) device->Release();
-    }
-
-    std::expected<void, error_trace> initialize(unknown_slotid Id) {
-      if (system::unknowns.contains(id)) return {};
+    std::expected<void, error_trace> initialize() {
       const auto& coinit = yw::coinit();
-      if (const auto hr = ::XAudio2Create(&device, 0, XAUDIO2_DEFAULT_PROCESSOR); FAILED(hr))
-        return unexpected_error(errors::operation_failed, "XAudio2Create failed", int32_t(hr));
-      if (const auto hr = device->CreateMasteringVoice(&mastering_voice); FAILED(hr))
-        return unexpected_error(errors::operation_failed, "CreateMasteringVoice failed", int32_t(hr));
-      id = Id;
+      hresult_test(::XAudio2Create, &device, 0, XAUDIO2_DEFAULT_PROCESSOR);
+      hresult_test(device->CreateMasteringVoice, &mastering_voice);
+      if (system::comobjects) system::comobjects->push_back(this->id);
       return {};
     }
 
     std::expected<void, error_trace> release() {
-      id = {};
+      system::unknowns.erase(singleton_id);
+      singleton_id = this->id = {};
       if (mastering_voice) mastering_voice->DestroyVoice(), mastering_voice = nullptr;
       if (device) device->Release(), device = nullptr;
       return {};
@@ -785,27 +692,15 @@ public:
   using unknown::operator bool;
 
   explicit xaudio2() {
-    static unknown_slotid id = {};
-    if (!system::unknowns.contains(id)) {
-      const auto temp_id = system::unknowns.add(std::make_unique<slot>());
-      const auto temp_sp = system::get_slot_pointer<xaudio2>(temp_id);
-      if (!temp_sp) fatal_error(errors::invalid_slotid);
-      if (auto res = temp_sp->initialize(temp_id); !res) fatal_error(res.error());
-      id = temp_id;
-    }
-    this->_id = id;
-  }
-  std::expected<void, error_trace> release() const {
-    const auto sp = system::get_slot_pointer<xaudio2>(_id);
-    if (!sp) return unexpected_error(errors::invalid_slotid);
-    if (auto res = sp->release(); !res) return unexpected_error(res.error());
-    return {};
+    if (auto res = initialize_singleton(); !res) fatal_error(res.error());
+    this->_id = singleton_id;
   }
 
   ::IXAudio2* device() const noexcept {
     if (const auto sp = system::get_slot_pointer<xaudio2>(_id)) return sp->device;
     return nullptr;
   }
+
   ::IXAudio2MasteringVoice* mastering_voice() const noexcept {
     if (const auto sp = system::get_slot_pointer<xaudio2>(_id)) return sp->mastering_voice;
     return nullptr;

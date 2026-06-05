@@ -18,7 +18,7 @@ public:
 
     virtual bool focusable() const override { return true; }
 
-    virtual slotid next_tab_stop(slotid Focused, bool Forward, bool& Found) const override {
+    virtual unknown_slotid next_tab_stop(unknown_slotid Focused, bool Forward, bool& Found) const override {
       if (Focused == id) Found = true;
       else if (Found && visible) return id;
       return {};
@@ -101,11 +101,11 @@ public:
     button btn;
     if (auto res = create_control<button>(Layout)) btn._id = *res;
     else return unexpected_error(res.error());
-    if (const auto csp = system::slot_address<button>(btn._id)) {
+    if (const auto csp = system::get_slot_pointer<button>(btn._id)) {
       csp->background_color = Colors.background;
       csp->border_color = Colors.foreground;
       csp->text.color(Colors.foreground);
-    } else return unexpected_error(errors::ui_invalid_slotid);
+    } else return unexpected_error(errors::invalid_slotid);
     return btn;
   }
 

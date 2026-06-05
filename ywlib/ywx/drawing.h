@@ -75,13 +75,9 @@ public:
       _active = false;
       if (d2d_drawing()) {
         const auto& d2d = yw::d2d();
-        if (const auto hr = d2d.context()->EndDraw(); FAILED(hr))
-          return unexpected_error(errors::operation_failed, "EndDraw failed", int(hr));
+        hresult_test(d2d.context()->EndDraw);
         d2d.context()->SetTarget(nullptr);
-      } else if (d3d_drawing()) {
-        const auto& d3d = yw::d3d();
-        d3d.context()->OMSetRenderTargets(0, nullptr, nullptr);
-      }
+      } else if (d3d_drawing()) d3d().context()->OMSetRenderTargets(0, nullptr, nullptr);
       _target = nullptr;
       _target_type = target_type::none;
     } catch (...) { return unexpected_error(errors::operation_failed, "unknown error occurred while closing drawing"); }

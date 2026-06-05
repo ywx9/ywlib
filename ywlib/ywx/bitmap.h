@@ -22,12 +22,12 @@ public:
   explicit operator bool() const noexcept { return static_cast<bool>(_bitmap); }
   explicit operator ::ID2D1Bitmap1*&() & noexcept { return _bitmap.get(); }
   explicit operator ::ID2D1Bitmap1*() const& noexcept { return _bitmap.get(); }
+  ::ID2D1Bitmap1* d2d_bitmap() const noexcept { return _bitmap.get(); }
 
   /// creates empty bitmap with specified size
   static std::expected<bitmap, error_trace> create(uint2 size) {
     comptr<::ID2D1Bitmap1> bmp;
-    auto hr = d2d().context()->CreateBitmap(D2D1_SIZE_U{size.x, size.y}, nullptr, 0, &properties, &bmp.get());
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBitmap failed", int32_t(hr));
+    hresult_test(d2d().context()->CreateBitmap, D2D1_SIZE_U{size.x, size.y}, nullptr, 0, &properties, &bmp.get());
     return bitmap(std::move(bmp), size);
   }
 
@@ -35,25 +35,19 @@ public:
   static std::expected<bitmap, error_trace> create(const std::filesystem::path& p) {
     comptr<IWICBitmapDecoder> decoder;
     const auto& wic = yw::wic();
-    auto hr = wic.factory()->CreateDecoderFromFilename(
-      p.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, &decoder.get());
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateDecoderFromFilename failed", int32_t(hr));
+    const auto option = WICDecodeMetadataCacheOnLoad;
+    hresult_test(wic.factory()->CreateDecoderFromFilename, p.c_str(), nullptr, GENERIC_READ, option, &decoder.get());
     comptr<IWICBitmapFrameDecode> frame;
-    hr = decoder->GetFrame(0, &frame.get());
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "GetFrame failed", int32_t(hr));
+    hresult_test(decoder->GetFrame, 0, &frame.get());
     comptr<IWICFormatConverter> converter;
-    hr = wic.factory()->CreateFormatConverter(&converter.get());
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateFormatConverter failed", int32_t(hr));
-    hr = converter->Initialize(
-      frame.get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeMedianCut);
-    if (FAILED(hr))
-      return unexpected_error(errors::operation_failed, "FormatConverter::Initialize failed", int32_t(hr));
+    hresult_test(wic.factory()->CreateFormatConverter, &converter.get());
+    hresult_test(
+      converter->Initialize, frame.get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0.0,
+      WICBitmapPaletteTypeMedianCut);
     uint2 size;
-    hr = converter->GetSize(&size.x, &size.y);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "FormatConverter::GetSize failed", int32_t(hr));
+    hresult_test(converter->GetSize, &size.x, &size.y);
     comptr<::ID2D1Bitmap1> bmp;
-    hr = d2d().context()->CreateBitmapFromWicBitmap(converter.get(), &properties, &bmp.get());
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBitmapFromWicBitmap failed", int32_t(hr));
+    hresult_test(d2d().context()->CreateBitmapFromWicBitmap, converter.get(), &properties, &bmp.get());
     return bitmap(std::move(bmp), size);
   }
 
@@ -61,17 +55,13 @@ public:
   static std::expected<bitmap, error_trace> create(IDXGISwapChain1* swapchain) {
     if (!swapchain) return unexpected_error(errors::invalid_argument, "null swapchain");
     DXGI_SWAP_CHAIN_DESC1 scdesc{};
-    if (auto hr = swapchain->GetDesc1(&scdesc); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "GetDesc1 failed", int32_t(hr));
+    hresult_test(swapchain->GetDesc1, &scdesc);
     uint2 size{scdesc.Width, scdesc.Height};
     comptr<::IDXGISurface> surface;
-    auto hr = swapchain->GetBuffer(0, __uuidof(IDXGISurface), reinterpret_cast<void**>(&surface.get()));
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "GetBuffer failed", int32_t(hr));
+    hresult_test(swapchain->GetBuffer, 0, __uuidof(IDXGISurface), reinterpret_cast<void**>(&surface.get()));
     comptr<::ID2D1Bitmap1> bmp;
     D2D1_BITMAP_PROPERTIES1 bp{pixelformat, 96.0f, 96.0f, D2D1_BITMAP_OPTIONS(3), nullptr};
-    hr = d2d().context()->CreateBitmapFromDxgiSurface(surface.get(), &bp, &bmp.get());
-    if (FAILED(hr))
-      return unexpected_error(errors::operation_failed, "CreateBitmapFromDxgiSurface failed", int32_t(hr));
+    hresult_test(d2d().context()->CreateBitmapFromDxgiSurface, surface.get(), &bp, &bmp.get());
     return bitmap(std::move(bmp), size);
   }
 
@@ -80,12 +70,10 @@ public:
     if (!source) return unexpected_error(errors::invalid_argument, "source bitmap not initialized");
     const auto size = source.size();
     comptr<::ID2D1Bitmap1> bmp;
-    auto hr = d2d().context()->CreateBitmap(D2D1_SIZE_U{size.x, size.y}, nullptr, 0, &properties, &bmp.get());
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateBitmap failed", int32_t(hr));
+    hresult_test(d2d().context()->CreateBitmap, D2D1_SIZE_U{size.x, size.y}, nullptr, 0, &properties, &bmp.get());
     D2D1_RECT_U rect{0, 0, size.x, size.y};
     D2D1_POINT_2U pt{0, 0};
-    hr = bmp->CopyFromBitmap(&pt, source._bitmap.get(), &rect);
-    if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CopyFromBitmap failed", int32_t(hr));
+    hresult_test(bmp->CopyFromBitmap, &pt, source._bitmap.get(), &rect);
     return bitmap(std::move(bmp), size);
   }
 
@@ -105,42 +93,33 @@ public:
   }
 
   std::expected<void, error_trace> save_as(const std::filesystem::path& p, const GUID& FileFormat) const {
-    const auto& wic = yw::wic();
     if (!*this) return unexpected_error(errors::not_initialized, "bitmap not initialized");
+    const auto& wic = yw::wic();
     comptr<IWICStream> stream;
-    if (auto hr = wic.factory()->CreateStream(&stream.get()); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "CreateStream failed", int32_t(hr));
-    if (auto hr = stream->InitializeFromFilename(p.c_str(), GENERIC_WRITE); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "Stream::InitializeFromFilename failed", int32_t(hr));
+    hresult_test(wic.factory()->CreateStream, &stream.get());
+    hresult_test(stream->InitializeFromFilename, p.c_str(), GENERIC_WRITE);
     comptr<IWICBitmapEncoder> encoder;
-    if (auto hr = wic.factory()->CreateEncoder(FileFormat, nullptr, &encoder.get()); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "CreateEncoder failed", int32_t(hr));
-    if (auto hr = encoder->Initialize(stream.get(), WICBitmapEncoderNoCache); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "Encoder::Initialize failed", int32_t(hr));
+    hresult_test(wic.factory()->CreateEncoder, FileFormat, nullptr, &encoder.get());
+    hresult_test(encoder->Initialize, stream.get(), WICBitmapEncoderNoCache);
     comptr<IWICBitmapFrameEncode> frame;
-    if (auto hr = encoder->CreateNewFrame(&frame.get(), nullptr); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "CreateNewFrame failed", int32_t(hr));
-    if (auto hr = frame->Initialize(nullptr); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "Frame::Initialize failed", int32_t(hr));
+    hresult_test(encoder->CreateNewFrame, &frame.get(), nullptr);
+    hresult_test(frame->Initialize, nullptr);
     comptr<IWICImageEncoder> image_encoder;
-    if (auto hr = wic.factory()->CreateImageEncoder(d2d().device(), &image_encoder.get()); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "CreateImageEncoder failed", int32_t(hr));
-    if (auto hr = image_encoder->WriteFrame(_bitmap.get(), frame.get(), nullptr); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "ImageEncoder::WriteFrame failed", int32_t(hr));
-    if (auto hr = frame->Commit(); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "Frame::Commit failed", int32_t(hr));
-    if (auto hr = encoder->Commit(); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "Encoder::Commit failed", int32_t(hr));
-    if (auto hr = stream->Commit(STGC_DEFAULT); FAILED(hr))
-      return unexpected_error(errors::operation_failed, "Stream::Commit failed", int32_t(hr));
+    hresult_test(wic.factory()->CreateImageEncoder, d2d().device(), &image_encoder.get());
+    hresult_test(image_encoder->WriteFrame, _bitmap.get(), frame.get(), nullptr);
+    hresult_test(frame->Commit);
+    hresult_test(encoder->Commit);
+    hresult_test(stream->Commit, STGC_DEFAULT);
     return {};
   }
 
   std::expected<void, error_trace> save_as_png(const std::filesystem::path& p) const {
-    return save_as(p, GUID_ContainerFormatPng);
+    if (auto res = save_as(p, GUID_ContainerFormatPng)) return {};
+    else return unexpected_error(res.error());
   }
   std::expected<void, error_trace> save_as_jpeg(const std::filesystem::path& p) const {
-    return save_as(p, GUID_ContainerFormatJpeg);
+    if (auto res = save_as(p, GUID_ContainerFormatJpeg)) return {};
+    else return unexpected_error(res.error());
   }
 };
 

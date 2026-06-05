@@ -7,18 +7,18 @@ class blank : public control {
 public:
   struct slot : public control::slot {
     virtual std::expected<void, error_trace> draw() const override { return {}; }
-    virtual slotid next_tab_stop(slotid, bool, bool&) const override { return {}; }
+    virtual unknown_slotid next_tab_stop(unknown_slotid, bool, bool&) const override { return {}; }
   };
 
   using control::operator bool;
   blank() noexcept = default;
 
-  static std::expected<blank, error_trace> add(derived_from<unknown> auto& Layout) {
+  static std::expected<blank, error_trace> add(derived_from<interface> auto& Layout) {
     blank b;
     if (auto res = create_control<blank>(Layout)) b._id = *res;
     else return unexpected_error(res.error());
-    const auto csp = system::slot_address<blank>(b._slotid());
-    if (!csp) return unexpected_error(errors::ui_invalid_slotid);
+    const auto csp = system::get_slot_pointer<blank>(b.id());
+    if (!csp) return unexpected_error(errors::invalid_slotid);
     csp->margin = {}, csp->padding = {}, csp->minimum_size = {};
     return b;
   }

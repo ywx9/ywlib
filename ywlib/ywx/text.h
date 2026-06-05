@@ -1,6 +1,6 @@
 #pragma once
 #include "ywx/core.h"
-#include "ywx/ui_unknown.h"
+#include "ywx/ui_control.h"
 
 namespace yw {
 
@@ -36,7 +36,7 @@ class text {
 
   std::expected<void, error_trace> _reset_align() {
     if (!_layout) return {};
-    const auto hr = _layout->SetTextAlignment(to_dwrite_value(_alignment));
+    const auto hr = _layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT(_alignment));
     if (FAILED(hr)) return unexpected_error(errors::operation_failed, "SetTextAlignment failed", int(hr));
     return {};
   }
@@ -44,13 +44,11 @@ class text {
   std::expected<void, error_trace> _update_text_layout() {
     comptr<IDWriteTextFormat> tfp{};
     const auto& dwrite = yw::dwrite();
-    auto hr = dwrite.factory()->CreateTextFormat(
+    hresult_test(dwrite.factory()->CreateTextFormat,
       _font.name->c_str(), nullptr, DWRITE_FONT_WEIGHT(*_font.weight), DWRITE_FONT_STYLE(*_font.style),
       DWRITE_FONT_STRETCH(*_font.stretch), *_font.size, L"", &tfp.get());
-    if (FAILED(hr) || !tfp) return unexpected_error(errors::operation_failed, "CreateTextFormat failed", int(hr));
     IDWriteTextLayout* tlp = nullptr;
-    hr = dwrite.factory()->CreateTextLayout(_string.c_str(), UINT(_string.size()), tfp.get(), 1e6, 1e6, &tlp);
-    if (FAILED(hr) || !tlp) return unexpected_error(errors::operation_failed, "CreateTextLayout failed", int(hr));
+    hresult_test(dwrite.factory()->CreateTextLayout, _string.c_str(), UINT(_string.size()), tfp.get(), 1e6, 1e6, &tlp);
     _layout.reset(tlp);
     if (auto res = _reset_align(); !res) return unexpected_error(res.error());
     if (auto res = _update_font_name(); !res) return unexpected_error(res.error());
