@@ -4,6 +4,11 @@
 #include "yw/xml_node.h"
 #include "yw/xml_tree.h"
 
+#ifdef ywlib_header_name
+#error "ywlib_header_name already defined unexpectedly"
+#endif
+#define ywlib_header_name "yw/xml.h"
+
 /// \note 簡易なXMLパーサーを提供する。特に仕様と異なる点を以下に明記する。
 /// - char8_tで簡易にトークン解析を行うため、以下のように定義する。
 ///   - 空白(S)は、`0x20 | HT | LF | VT | FF | CR`を指す。
@@ -132,7 +137,8 @@ public:
     return result;
   }
 
-  static constexpr std::expected<document<View>, error_trace> parse(std::string_view doc) {
+  static constexpr std::expected<document<View>, error> parse(std::string_view doc) {
+    if (!std::is_constant_evaluated()) make_footprint;
     std::string_view rest = doc;
     const char* doc_end = doc.data() + doc.size();
     if (rest.size() >= 3 && char8_t(rest[0]) == 0xEF && char8_t(rest[1]) == 0xBB && char8_t(rest[2]) == 0xBF)
@@ -152,7 +158,7 @@ public:
     std::vector<misc<View>> prolog;
     while (true) {
       if (rest.starts_with("<!--"sv) || rest.starts_with("<?"sv)) {
-        if (auto m = misc<View>::parse(rest, doc); !m) return yw::unexpected_error(m.error());
+        if (auto m = misc<View>::parse(rest, doc); !m) return unexpected_error(m.error());
         else prolog.push_back(std::move(*m));
         _extract_whitespace(rest);
       } else if (!rest.starts_with("<!DOCTYPE"sv)) break;
@@ -161,14 +167,14 @@ public:
     if (rest.empty()) return unexpected_error("xml: missing root element", doc_end, doc);
     xml::element<View> element;
     if (rest.starts_with("<"sv)) {
-      if (auto r = xml::element<View>::parse(rest, doc); !r) return yw::unexpected_error(r.error());
+      if (auto r = xml::element<View>::parse(rest, doc); !r) return unexpected_error(r.error());
       else element = std::move(*r);
     } else return unexpected_error("xml: expected root element", rest.data(), doc);
     std::vector<misc<View>> trailing_misc;
     while (true) {
       _extract_whitespace(rest);
       if (rest.starts_with("<!--"sv) || rest.starts_with("<?"sv)) {
-        if (auto m = misc<View>::parse(rest, doc); !m) return yw::unexpected_error(m.error());
+        if (auto m = misc<View>::parse(rest, doc); !m) return unexpected_error(m.error());
         else trailing_misc.push_back(std::move(*m));
       } else break;
     }
@@ -179,11 +185,14 @@ public:
 };
 
 /// opens and parses an XML document from a file
-inline std::expected<document<false>, error_trace> open(const std::filesystem::path& path) {
-  if (auto fh = yw::open(path, open_mode::read_existing); !fh) return yw::unexpected_error(fh.error());
-  else if (auto size = fh->file_size(); !size) return yw::unexpected_error(size.error());
+inline std::expected<document<false>, error> open(const std::filesystem::path& path) {
+  make_footprint;
+  if (auto fh = yw::open(path, open_mode::read_existing); !fh) return unexpected_error(fh.error());
+  else if (auto size = fh->file_size(); !size) return unexpected_error(size.error());
   else if (std::string content(static_cast<size_t>(*size), '\0'); false) return {};
-  else if (auto read = fh->read_exact(content.data(), content.size()); !read) return yw::unexpected_error(read.error());
+  else if (auto read = fh->read_exact(content.data(), content.size()); !read) return unexpected_error(read.error());
   else return document<false>::parse(content);
 }
 } // namespace yw::xml
+
+#undef ywlib_header_name

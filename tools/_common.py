@@ -83,19 +83,21 @@ def run_python(
 def cmake_configure(
     build_dir: Path,
     *,
+    build_type: str | None = None,
     generator: str = "MinGW Makefiles",
 ) -> None:
     root = project_root()
     build_dir.mkdir(parents=True, exist_ok=True)
-    run(
-        [
-            "cmake",
-            "-S",
-            str(root),
-            "-B",
-            str(build_dir),
-            "-G",
-            generator,
-            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-        ]
-    )
+    args = [
+        "cmake",
+        "-S",
+        str(root),
+        "-B",
+        str(build_dir),
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+    ]
+    if build_type is not None:
+        args.append(f"-DCMAKE_BUILD_TYPE={build_type}")
+    if not (build_dir / "CMakeCache.txt").is_file():
+        args.extend(["-G", generator])
+    run(args)

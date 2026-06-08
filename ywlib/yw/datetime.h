@@ -5,9 +5,7 @@ namespace yw {
 
 namespace internal {
 inline auto current_datetime() noexcept {
-  try {
-    return std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time();
-  } catch (...) { return std::chrono::local_time<std::chrono::system_clock::duration>(); }
+  return std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time();
 }
 } // namespace internal
 

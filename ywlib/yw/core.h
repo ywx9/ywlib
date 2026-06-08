@@ -26,6 +26,15 @@
 #include <windows.h>
 #endif
 
+#ifdef ywlib_header_name
+#error "ywlib_header_name already defined unexpectedly"
+#endif
+#define ywlib_header_name "yw/core.h"
+
+#define _ywlib_stringize(x) #x
+#define _ywlib_make_source_info(Header, Line) Header "(" _ywlib_stringize(Line) ")"
+#define ywlib_make_source_info _ywlib_make_source_info(ywlib_header_name, __LINE__)
+
 namespace yw {
 
 using int8_t = std::int8_t;
@@ -418,11 +427,11 @@ template<char_type C, size_t N> constexpr std::basic_string<C> _ascii_string(con
   return r;
 }
 
-template<char_type C> constexpr std::basic_string<C> bool_to_string(bool value) {
-  return value ? _ascii_string<C>("true") : _ascii_string<C>("false");
-}
+// template<char_type C> constexpr std::basic_string<C> bool_to_string(bool value) {
+//   return value ? _ascii_string<C>("true") : _ascii_string<C>("false");
+// }
 
-constexpr std::string bool_to_string(bool value) { return bool_to_string<char>(value); }
+// constexpr std::string bool_to_string(bool value) { return bool_to_string<char>(value); }
 
 template<char_type C> constexpr std::basic_string<C> uint_to_string(uint_type auto value) {
   if (value == 0) return std::basic_string<C>(1, C('0'));
@@ -594,6 +603,53 @@ template<typename C> struct formatter<yw::none, C> {
 //////////////////////////////////////// MARK: unicode
 
 namespace yw {
+namespace internal {
+inline constexpr char32_t _unicode_s8_to_c32(const auto*& s) noexcept {
+  const auto c = char32_t(*s);
+  const auto i = unsigned(c >= 0xc0) + unsigned(c >= 0xe0) + unsigned(c >= 0xf0);
+  const auto j = i + 1 + unsigned(i != 0);
+  char32_t uc = char32_t(-int(i == 3) & s[i < 3 ? i : 3] & 0x3f);
+  uc |= char32_t((-int(i >= 2) & s[i < 2 ? i : 2] & 0x3f)) << (6 * (i >= 2 ? i - 2 : 0));
+  uc |= char32_t((-int(i >= 1) & s[i < 1 ? i : 1] & 0x3f)) << (6 * (i >= 1 ? i - 1 : 0));
+  uc |= char32_t(char8_t(c << j) >> j) << (6 * i);
+  s += i + 1;
+  return uc;
+}
+inline constexpr char32_t _unicode_s16_to_c32(const auto*& s) noexcept {
+  const auto c = char32_t(*s);
+  const bool b = (c & 0xff00) == 0xd800;
+  const auto uc = c ^ (-int(b) & (c ^ (0x10000 | ((c - 0xd800) << 10 | char32_t(s[b] - 0xdc00)))));
+  s += 1 + b;
+  return uc;
+}
+template<char_type C> inline constexpr void _unicode_c32_to_s8(char32_t uc, C*& s) noexcept {
+  const auto i = unsigned(uc >= 0x80) + unsigned(uc >= 0x800) + unsigned(uc >= 0x10000);
+  s[i < 3 ? i : 3] = C(0x80 | (uc & 0x3f));
+  s[i < 2 ? i : 2] = C(0x80 | ((uc >> (6 * (i > 1 ? i - 2 : 0))) & 0x3f));
+  s[i < 1 ? i : 1] = C(0x80 | ((uc >> (6 * (i > 0 ? i - 1 : 0))) & 0x3f));
+  *s = C(uint32_t(((i + (i >> 1)) << 4) + (-i & 0xb0)) | ((uc >> (6 * i)) & (0x3f >> i | -int(i == 0))));
+  s += i + 1;
+}
+template<char_type C> inline constexpr void _unicode_c32_to_s16(char32_t uc, C*& s) noexcept {
+  const bool b = uc >= 0x10000;
+  s[b] = C(0xdc00 | (uc & 0x3ff));
+  *s = C(uc ^ ((uc ^ (0xd800 | (uc >> 10))) & -int(b)));
+  s += 1 + b;
+}
+template<char_type In, char_type Out> constexpr Out* _unicode(const In* i, size_t n, Out* o) {
+  for (auto s = i, end = i + n; s < end;) {
+    char32_t uc;
+    if constexpr (same_as<In, char8_t>) uc = _unicode_s8_to_c32(s);
+    else if constexpr (same_as<In, char16_t>) uc = _unicode_s16_to_c32(s);
+    else uc = char32_t(*s++);
+    if constexpr (same_as<Out, char8_t>) _unicode_c32_to_s8(uc, o);
+    else if constexpr (same_as<Out, char16_t>) _unicode_c32_to_s16(uc, o);
+    else *o++ = Out(uc);
+  }
+  return o;
+}
+}
+
 template<char_type C> inline constexpr auto unicode = []<stringable S>(S&& s) -> std::basic_string<C> {
   using From = iter_value_t<S>;
   if constexpr (same_as<S&&, std::basic_string<C>&&>) return std::move(s);
@@ -605,38 +661,7 @@ template<char_type C> inline constexpr auto unicode = []<stringable S>(S&& s) ->
   const auto sv = std::bit_cast<std::basic_string_view<T>>(sv_original);
   constexpr auto scale = select_value<yw::max(int(sizeof(T)) - int(sizeof(C)), 0), 1, 3, 2, 4>;
   auto r = std::basic_string<C>(sv.size() * scale, C{});
-  auto out = r.data();
-  for (auto s = sv.data(), end = s + sv.size(); s < end;) {
-    char32_t uc;
-    if constexpr (same_as<T, char8_t>) {
-      const auto c = char32_t(*s);
-      const auto i = unsigned(c >= 0xc0) + unsigned(c >= 0xe0) + unsigned(c >= 0xf0);
-      const auto j = i + 1 + unsigned(i != 0);
-      uc = char32_t(-int(i == 3) & s[i < 3 ? i : 3] & 0x3f);
-      uc |= char32_t((-int(i >= 2) & s[i < 2 ? i : 2] & 0x3f)) << (6 * (i >= 2 ? i - 2 : 0));
-      uc |= char32_t((-int(i >= 1) & s[i < 1 ? i : 1] & 0x3f)) << (6 * (i >= 1 ? i - 1 : 0));
-      uc |= char32_t(char8_t(c << j) >> j) << (6 * i);
-      s += i + 1;
-    } else if constexpr (same_as<T, char16_t>) {
-      const auto c = char32_t(*s);
-      const bool b = (c & 0xff00) == 0xd800;
-      uc = c ^ (-int(b) & (c ^ (0x10000 | ((c - 0xd800) << 10 | char32_t(s[b] - 0xdc00)))));
-      s += 1 + b;
-    } else uc = char32_t(*s++);
-    if constexpr (sizeof(C) == 1) {
-      const auto i = unsigned(uc >= 0x80) + unsigned(uc >= 0x800) + unsigned(uc >= 0x10000);
-      out[i < 3 ? i : 3] = C(0x80 | (uc & 0x3f));
-      out[i < 2 ? i : 2] = C(0x80 | ((uc >> (6 * (i > 1 ? i - 2 : 0))) & 0x3f));
-      out[i < 1 ? i : 1] = C(0x80 | ((uc >> (6 * (i > 0 ? i - 1 : 0))) & 0x3f));
-      *out = C(uint32_t(((i + (i >> 1)) << 4) + (-i & 0xb0)) | ((uc >> (6 * i)) & (0x3f >> i | -int(i == 0))));
-      out += i + 1;
-    } else if constexpr (sizeof(C) == 2) {
-      const bool b = uc >= 0x10000;
-      out[b] = C(0xdc00 | (uc & 0x3ff));
-      *out = C(uc ^ ((uc ^ (0xd800 | (uc >> 10))) & -int(b)));
-      out += 1 + b;
-    } else *out++ = C(uc);
-  }
+  auto out = internal::_unicode(sv.data(), sv.size(), r.data());
   r.resize(out - r.data());
   return r;
 };
@@ -779,55 +804,68 @@ struct {
 #endif
   }
 } print_fallback;
-} // namespace yw
 
-//////////////////////////////////////// MARK: source
+/// MARK: unique_id
 
-namespace yw {
-struct source {
-  std::string_view file, func;
-  uint32_t line, column;
-
-  constexpr source(const std::source_location& loc = std::source_location::current()) noexcept
-    : file(loc.file_name()), func(loc.function_name()), line(loc.line()), column(loc.column()) {}
-
-  friend constexpr bool operator==(const source& a, const source& b) noexcept {
-    return a.file == b.file && a.func == b.func && a.line == b.line && a.column == b.column;
-  }
-
-  constexpr std::string to_string() const {
-    if (std::is_constant_evaluated()) {
-      auto line_s = uint_to_string(line);
-      auto column_s = uint_to_string(column);
-      std::string r;
-      r.reserve(file.size() + 1 + line_s.size() + 1 + column_s.size() + 5 + func.size());
-      r += file, r += '(', r += line_s, r += ',', r += column_s, r += ") in ", r += func;
-      return r;
-    } else return std::format("{}({},{}) in {}", file, line, column, func);
-  }
-
-  constexpr uint64_t unique_id() const noexcept {
-    constexpr uint64_t basis = 14695981039346656037ull;
-    constexpr uint64_t prime = 1099511628211ull;
-    auto hash = [](std::string_view s) {
-      uint64_t h = basis;
-      for (char c : s) { h ^= uint8_t(c), h *= prime; }
-      return h;
-    };
+inline constexpr uint64_t unique_id(std::source_location loc = std::source_location::current()) noexcept {
+  constexpr uint64_t basis = 14695981039346656037ull;
+  constexpr uint64_t prime = 1099511628211ull;
+  auto hash = [](std::string_view s) {
     uint64_t h = basis;
-    auto mix = [&](uint64_t v) { h ^= v, h *= prime; };
-    mix(hash(file)), mix(hash(func)), mix(line), mix(column);
+    for (char c : s) { h ^= uint8_t(c), h *= prime; }
     return h;
+  };
+  uint64_t h = basis;
+  auto mix = [&](uint64_t v) { h ^= v, h *= prime; };
+  mix(hash(loc.file_name())), mix(hash(loc.function_name())), mix(loc.line()), mix(loc.column());
+  return h;
+}
+
+/// MARK: source_trace_buffer
+
+template<size_t N> requires(N != 0) class footprints_t {
+  std::array<const char*, N> _items{};
+  std::size_t _next = 0;
+
+public:
+  static constexpr size_t count = N;
+
+  void push(const char* s) noexcept {
+    if (!s) return;
+    _items[_next] = s;
+    _next = (_next + 1) % N;
+  }
+
+  void clear() noexcept {
+    _items.fill(nullptr);
+    _next = 0;
+  }
+
+  std::string dump() const noexcept {
+    size_t len = 0;
+    for (size_t i = 0; i < N; ++i)
+      if (_items[i]) len += std::char_traits<char>::length(_items[i]) + 1;
+    std::string out;
+    out.reserve(len);
+    for (size_t i = _next; i < N; ++i)
+      if (_items[i]) out += _items[i], out += '\n';
+    for (size_t i = 0; i < _next; ++i)
+      if (_items[i]) out += _items[i], out += '\n';
+    return out;
+  }
+
+  ~footprints_t() noexcept {
+    for (size_t i = _next; i < N; ++i)
+      if (_items[i]) std::fputs(_items[i], stdout), std::fputc('\n', stdout);
+    for (size_t i = 0; i < _next; ++i)
+      if (_items[i]) std::fputs(_items[i], stdout), std::fputc('\n', stdout);
   }
 };
+
+inline footprints_t<32> footprint;
+
+#define make_footprint ::yw::footprint.push(ywlib_make_source_info)
 } // namespace yw
-namespace std {
-template<typename C> struct formatter<yw::source, C> {
-  formatter<basic_string<C>, C> fmt;
-  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::source& src, auto& ctx) const { return fmt.format(yw::unicode<C>(src.to_string()), ctx); }
-};
-} // namespace std
 
 //////////////////////////////////////// MARK: null_terminated
 
@@ -881,3 +919,5 @@ template<typename C> struct formatter<yw::null_terminated<C>, C> {
   }
 };
 } // namespace std
+
+#undef ywlib_header_name

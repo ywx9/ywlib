@@ -4,6 +4,11 @@
 
 #include <fcntl.h>
 
+#ifdef ywlib_header_name
+#error "ywlib_header_name already defined unexpectedly"
+#endif
+#define ywlib_header_name "yw/file.h"
+
 namespace yw {
 
 enum class open_mode { unknown, read_existing, update_existing, create_always, create_new, append, update_or_create };
@@ -22,8 +27,9 @@ class file_handle;
 } // namespace yw
 
 #ifdef _WIN32
-namespace yw::sys {
-inline std::expected<FILE*, error_trace> _open_win(const std::filesystem::path& p, open_mode mode) {
+namespace yw::internal {
+inline std::expected<FILE*, error> _open_win(const std::filesystem::path& p, open_mode mode) {
+  make_footprint;
   const auto generic_read_write = GENERIC_READ | GENERIC_WRITE;
   DWORD desired = 0, disp = 0, share = FILE_SHARE_READ;
   const char* fdopen_mode = nullptr;
@@ -47,26 +53,27 @@ inline std::expected<FILE*, error_trace> _open_win(const std::filesystem::path& 
   case open_mode::update_or_create:
     desired = generic_read_write, disp = OPEN_ALWAYS, fdopen_mode = "r+b", osf_flags = _O_RDWR;
     break;
-  default: return unexpected_error(errors::file_invalid_mode, "file_handle: invalid open_mode");
+  default: return unexpected_error(errors::file_invalid_mode);
   }
   auto h = ::CreateFileW(p.c_str(), desired, share, nullptr, disp, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (h == INVALID_HANDLE_VALUE) {
-    return unexpected_error(errors::file_open_failed, "file_handle: CreateFileW failed", int32_t(::GetLastError()));
+    return unexpected_error(errors::file_open_failed, "CreateFileW failed", int32_t(::GetLastError()));
   } else {
     if (const int fd = ::_open_osfhandle(reinterpret_cast<intptr_t>(h), osf_flags); fd == -1) {
       ::CloseHandle(h);
-      return unexpected_error(errors::file_open_failed, "file_handle: _open_osfhandle failed", errno);
+      return unexpected_error(errors::file_open_failed, "_open_osfhandle failed", errno);
     } else if (std::FILE* f = ::_fdopen(fd, fdopen_mode); !f) {
       ::_close(fd);
-      return unexpected_error(errors::file_open_failed, "file_handle: _fdopen failed", errno);
+      return unexpected_error(errors::file_open_failed, "_fdopen failed", errno);
     } else return f;
   }
 }
-} // namespace yw::sys
+} // namespace yw::internal
 #else
 #include <unistd.h>
 namespace yw::internal {
-inline std::expected<FILE*, error_trace> _open_posix(const std::filesystem::path& p, open_mode mode) {
+inline std::expected<FILE*, error> _open_posix(const std::filesystem::path& p, open_mode mode) {
+  make_footprint;
   int flags = 0;
   const char* fdopen_mode = nullptr;
   switch (mode) {
@@ -76,14 +83,14 @@ inline std::expected<FILE*, error_trace> _open_posix(const std::filesystem::path
   case open_mode::create_new: flags = O_RDWR | O_CREAT | O_EXCL, fdopen_mode = "r+b"; break;
   case open_mode::append: flags = O_WRONLY | O_CREAT | O_APPEND, fdopen_mode = "ab"; break;
   case open_mode::update_or_create: flags = O_RDWR | O_CREAT, fdopen_mode = "r+b"; break;
-  default: return unexpected_error(errors::file_invalid_mode, "file_handle::create: invalid open_mode");
+  default: return unexpected_error(errors::file_invalid_mode);
   }
   const mode_t perms = 0666;
   if (int fd = ::open(p.c_str(), flags, perms); fd == -1) {
-    return unexpected_error(errors::file_open_failed, "file_handle::create: open failed", errno);
+    return unexpected_error(errors::file_open_failed, "open failed", errno);
   } else if (std::FILE* f = ::fdopen(fd, fdopen_mode); !f) {
     ::close(fd);
-    return unexpected_error(errors::file_open_failed, "file_handle::create: fdopen failed", errno);
+    return unexpected_error(errors::file_open_failed, "fdopen failed", errno);
   } else return f;
 }
 } // namespace yw::internal
@@ -99,14 +106,15 @@ class file_handle {
   explicit file_handle(std::filesystem::path path, std::FILE* file, open_mode mode)
     : _path(std::move(path)), _file(file), _mode(mode) {}
 
-  std::expected<void, error_trace> _seek(int64_t off, seek_whence w) const {
-    if (!_file) return unexpected_error(errors::file_not_initialized, "file_handle: not initialized");
+  std::expected<void, error> _seek(int64_t off, seek_whence w) const {
+    make_footprint;
+    if (!_file) return unexpected_error(errors::file_not_initialized);
 #ifdef _WIN32
     if (::_fseeki64(_file, static_cast<__int64>(off), static_cast<int>(w)) != 0)
 #else
     if (::fseeko(_file, static_cast<off_t>(off), static_cast<int>(w)) != 0)
 #endif
-      return unexpected_error(errors::file_operation_failed, "file_handle: failed to seek", errno);
+      return unexpected_error(errors::file_operation_failed, "failed to seek", errno);
     else return {};
   }
 
@@ -127,9 +135,10 @@ public:
     if (_file) std::fclose(std::exchange(_file, nullptr));
   }
 
-  static std::expected<file_handle, error_trace> create(const std::filesystem::path& path, open_mode mode) {
+  static std::expected<file_handle, error> create(const std::filesystem::path& path, open_mode mode) {
+    make_footprint;
 #ifdef _WIN32
-    if (auto fexp = sys::_open_win(path, mode); !fexp) return unexpected_error(fexp.error());
+    if (auto fexp = internal::_open_win(path, mode); !fexp) return unexpected_error(fexp.error());
 #else
     if (auto fexp = internal::_open_posix(path, mode); !fexp) return unexpected_error(fexp.error());
 #endif
@@ -140,29 +149,33 @@ public:
   open_mode mode() const noexcept { return _mode; }
   bool is_open() const noexcept { return _file != nullptr; }
 
-  std::expected<void, error_trace> close() {
+  std::expected<void, error> close() {
+    make_footprint;
     if (_file != nullptr && std::fclose(std::exchange(_file, nullptr)) != 0)
-      return unexpected_error(errors::file_operation_failed, "file_handle: failed to close file", errno);
+      return unexpected_error(errors::file_operation_failed, "failed to close file", errno);
     return {};
   }
 
-  std::expected<int64_t, error_trace> tell() const {
-    if (!_file) return unexpected_error(errors::file_not_initialized, "file_handle: not initialized");
+  std::expected<int64_t, error> tell() const {
+    make_footprint;
+    if (!_file) return unexpected_error(errors::file_not_initialized);
 #ifdef _WIN32
     if (auto pos = ::_ftelli64(_file); pos < 0)
 #else
     if (auto pos = ::ftello(_file); pos < 0)
 #endif
-      return unexpected_error(errors::file_operation_failed, "file_handle: failed to tell position", errno);
+      return unexpected_error(errors::file_operation_failed, "failed to tell position", errno);
     else return static_cast<int64_t>(pos);
   }
 
-  std::expected<void, error_trace> seek(integral auto off, seek_whence w = seek_whence::begin) {
+  std::expected<void, error> seek(integral auto off, seek_whence w = seek_whence::begin) {
+    make_footprint;
     return _seek(static_cast<int64_t>(off), w);
   }
 
-  std::expected<int64_t, error_trace> file_size() const {
-    if (!_file) return unexpected_error(errors::file_not_initialized, "file_handle: not initialized");
+  std::expected<int64_t, error> file_size() const {
+    make_footprint;
+    if (!_file) return unexpected_error(errors::file_not_initialized);
     if (auto cur = tell(); !cur) return unexpected_error(cur.error());
     else if (auto res = _seek(0, seek_whence::end); !res) return unexpected_error(res.error());
     else if (auto size = tell(); !size) return unexpected_error(size.error());
@@ -170,35 +183,39 @@ public:
     else return *size;
   }
 
-  std::expected<size_t, error_trace> read(void* dst, size_t bytes) {
-    if (!_file) return unexpected_error(errors::file_not_initialized, "file_handle: not initialized");
+  std::expected<size_t, error> read(void* dst, size_t bytes) {
+    make_footprint;
+    if (!_file) return unexpected_error(errors::file_not_initialized);
     if (bytes == 0) return 0;
-    if (!dst) return unexpected_error(errors::file_invalid_buffer, "file_handle: null destination buffer");
+    if (!dst) return unexpected_error(errors::file_invalid_buffer, "null destination buffer");
     if (const auto n = std::fread(dst, 1, bytes, _file); n != 0) return n;
-    else if (std::ferror(_file)) return unexpected_error(errors::file_operation_failed, "file_handle: read error");
+    else if (std::ferror(_file)) return unexpected_error(errors::file_operation_failed, "read error");
     else return 0;
   }
 
-  std::expected<void, error_trace> read_exact(void* dst, size_t bytes) {
-    if (!_file) return unexpected_error(errors::file_not_initialized, "file_handle: not initialized");
+  std::expected<void, error> read_exact(void* dst, size_t bytes) {
+    make_footprint;
+    if (!_file) return unexpected_error(errors::file_not_initialized);
     if (bytes == 0) return {};
-    if (!dst) return unexpected_error(errors::file_invalid_buffer, "file_handle: null destination buffer");
+    if (!dst) return unexpected_error(errors::file_invalid_buffer, "null destination buffer");
     std::byte* p = static_cast<std::byte*>(dst);
     for (size_t total = 0; total < bytes;) {
       if (const size_t n = std::fread(p + total, 1, bytes - total, _file); n != 0) total += n;
-      else if (std::ferror(_file)) return unexpected_error(errors::file_operation_failed, "file_handle: read error");
-      else return unexpected_error(errors::file_operation_failed, "file_handle: read error");
+      else if (std::ferror(_file)) return unexpected_error(errors::file_operation_failed, "read error");
+      else return unexpected_error(errors::file_operation_failed, "read error");
     }
     return {};
   }
 
-  template<trivial T> std::expected<T, error_trace> read_trivial() {
+  template<trivial T> std::expected<T, error> read_trivial() {
+    make_footprint;
     T v{};
     if (auto res = read_exact(&v, sizeof(T)); !res) return unexpected_error(res.error());
     else return v;
   }
 
-  template<trivial T> std::expected<void, error_trace> read_trivial(T& v) {
+  template<trivial T> std::expected<void, error> read_trivial(T& v) {
+    make_footprint;
     if (auto res = read_exact(&v, sizeof(T)); !res) return unexpected_error(res.error());
     else return {};
   }
@@ -207,8 +224,9 @@ public:
   /// \return on success, ther number of bytes written (>0).
   ///         if `bytes` is 0, returns 0.
   /// \note a return value less than `bytes` indicates a partial write.
-  std::expected<size_t, error_trace> write(const void* src, size_t bytes) {
-    if (!_file) return unexpected_error(errors::file_not_initialized, "file_handle: not initialized");
+  std::expected<size_t, error> write(const void* src, size_t bytes) {
+    make_footprint;
+    if (!_file) return unexpected_error(errors::file_not_initialized);
     if (bytes == 0) return 0;
     if (!src) return unexpected_error(errors::file_invalid_buffer, "file_handle: null source buffer");
     if (auto n = std::fwrite(src, 1, bytes, _file); n != 0) return n;
@@ -218,8 +236,9 @@ public:
   /// writes exactly `bytes` bytes from `src` to the file.
   /// \return returns normally on success.
   /// \note returns an error if fewer than `bytes` bytes could be written.
-  std::expected<void, error_trace> write_exact(const void* src, size_t bytes) {
-    if (!_file) return unexpected_error(errors::file_not_initialized, "file_handle: not initialized");
+  std::expected<void, error> write_exact(const void* src, size_t bytes) {
+    make_footprint;
+    if (!_file) return unexpected_error(errors::file_not_initialized);
     if (bytes == 0) return {};
     if (!src) return unexpected_error(errors::file_invalid_buffer, "file_handle: null source buffer");
     const std::byte* p = static_cast<const std::byte*>(src);
@@ -232,20 +251,23 @@ public:
 
   /// writes a trivially copyable value to the file.
   /// \return returns normally on success.
-  template<trivial T> std::expected<void, error_trace> write_trivial(const T& v) {
+  template<trivial T> std::expected<void, error> write_trivial(const T& v) {
+    make_footprint;
     if (auto res = write_exact(&v, sizeof(T)); !res) return unexpected_error(res.error());
     else return {};
   }
 
-  std::expected<void, error_trace> flush() {
-    if (!_file) return unexpected_error(errors::file_not_initialized, "file_handle: not initialized");
-    if (std::fflush(_file) != 0) return unexpected_error(errors::file_operation_failed, "file_handle: flush error", errno);
+  std::expected<void, error> flush() {
+    make_footprint;
+    if (!_file) return unexpected_error(errors::file_not_initialized);
+    if (std::fflush(_file) != 0) return unexpected_error(errors::file_operation_failed, "file_handle: flush error");
     return {};
   }
 
-  std::expected<void, error_trace> truncate_to_current() {
-    if (!_file) return unexpected_error(errors::file_not_initialized, "file_handle: not initialized");
-    if (std::fflush(_file) != 0) return unexpected_error(errors::file_operation_failed, "file_handle: flush error", errno);
+  std::expected<void, error> truncate_to_current() {
+    make_footprint;
+    if (!_file) return unexpected_error(errors::file_not_initialized);
+    if (std::fflush(_file) != 0) return unexpected_error(errors::file_operation_failed, "file_handle: flush error");
     const auto cur = tell();
     if (!cur) return unexpected_error(errors::file_operation_failed, "file_handle: tell error");
 #ifdef _WIN32
@@ -261,15 +283,19 @@ public:
     return {};
   }
 
-  std::expected<void, error_trace> close_at_current() {
+  std::expected<void, error> close_at_current() {
+    make_footprint;
     if (auto res = truncate_to_current(); !res) return unexpected_error(res.error());
     if (auto res = close(); !res) return unexpected_error(res.error());
     return {};
   }
 };
 
-inline std::expected<file_handle, error_trace> open(const std::filesystem::path& path, open_mode mode) {
+inline std::expected<file_handle, error> open(const std::filesystem::path& path, open_mode mode) {
+  make_footprint;
   if (auto res = file_handle::create(path, mode); !res) return unexpected_error(res.error());
   else return std::move(*res);
 }
 } // namespace yw
+
+#undef ywlib_header_name

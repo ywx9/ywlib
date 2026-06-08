@@ -1,6 +1,11 @@
 #pragma once
 #include "yw/xml_node.h"
 
+#ifdef ywlib_header_name
+#error "ywlib_header_name already defined unexpectedly"
+#endif
+#define ywlib_header_name "yw/xml_tree.h"
+
 namespace yw::xml {
 
 /////////////////////////////////////// MARK: misc
@@ -80,13 +85,14 @@ public:
     else return {};
   }
 
-  static constexpr std::expected<misc<View>, error_trace> parse(std::string_view& rest, std::string_view doc) {
+  static constexpr std::expected<misc<View>, error> parse(std::string_view& rest, std::string_view doc) {
+    if (!std::is_constant_evaluated()) make_footprint;
     if (rest.starts_with("<!--"sv)) {
       if (auto res = comment<View>::parse(rest, doc); res) return misc<View>(std::move(*res));
-      else return yw::unexpected_error(res.error());
+      else return unexpected_error(res.error());
     } else if (rest.starts_with("<?"sv)) {
       if (auto res = pi<View>::parse(rest, doc); res) return misc<View>(std::move(*res));
-      else return yw::unexpected_error(res.error());
+      else return unexpected_error(res.error());
     } else {
       return unexpected_error("xml: expected comment or processing instruction", rest.data(), doc);
     }
@@ -143,7 +149,7 @@ public:
     return result;
   }
 
-  static constexpr std::expected<element, error_trace> parse(std::string_view& rest, std::string_view doc);
+  static constexpr std::expected<element, error> parse(std::string_view& rest, std::string_view doc);
 
   constexpr bool has_attribute(std::string_view attr_name) const noexcept {
     return get_if_attribute(attr_name) != nullptr;
@@ -159,10 +165,12 @@ public:
   }
 
   constexpr attribute<View>& get_attribute(std::string_view attr_name) {
+    if (!std::is_constant_evaluated()) make_footprint;
     if (auto* p = get_if_attribute(attr_name); p) return *p;
     throw std::out_of_range("xml: attribute not found");
   }
   constexpr const attribute<View>& get_attribute(std::string_view attr_name) const {
+    if (!std::is_constant_evaluated()) make_footprint;
     if (auto* p = get_if_attribute(attr_name); p) return *p;
     throw std::out_of_range("xml: attribute not found");
   }
@@ -175,10 +183,12 @@ public:
   constexpr const element<View>* get_if_first_element(std::string_view element_name) const noexcept;
 
   constexpr element<View>& get_first_element(std::string_view element_name) {
+    if (!std::is_constant_evaluated()) make_footprint;
     if (auto* p = get_if_first_element(element_name); p) return *p;
     throw std::out_of_range("xml: element not found");
   }
   constexpr const element<View>& get_first_element(std::string_view element_name) const {
+    if (!std::is_constant_evaluated()) make_footprint;
     if (auto* p = get_if_first_element(element_name); p) return *p;
     throw std::out_of_range("xml: element not found");
   }
@@ -296,24 +306,25 @@ public:
     else return {};
   }
 
-  static constexpr std::expected<child<View>, error_trace> parse(std::string_view& rest, std::string_view doc) {
+  static constexpr std::expected<child<View>, error> parse(std::string_view& rest, std::string_view doc) {
+    if (!std::is_constant_evaluated()) make_footprint;
     if (rest.front() == '<') {
       if (rest[1] == '!') {
         if (rest[2] == '-') {
           if (auto res = comment<View>::parse(rest, doc)) return child<View>(std::move(*res));
-          else return yw::unexpected_error(res.error());
+          else return unexpected_error(res.error());
         } else if (rest[2] == '[') {
           if (auto res = text<View>::parse(rest, doc)) return child<View>(std::move(*res));
-          else return yw::unexpected_error(res.error());
+          else return unexpected_error(res.error());
         } else return unexpected_error("xml: invalid child", rest.data(), doc);
       } else if (rest[1] == '?') {
         if (auto res = pi<View>::parse(rest, doc)) return child<View>(std::move(*res));
-        else return yw::unexpected_error(res.error());
+        else return unexpected_error(res.error());
       } else if (rest[1] == '/') return unexpected_error("xml: unexpected end tag", rest.data(), doc);
       else if (auto res = element<View>::parse(rest, doc)) return child<View>(std::move(*res));
-      else return yw::unexpected_error(res.error());
+      else return unexpected_error(res.error());
     } else if (auto res = text<View>::parse(rest, doc)) return child<View>(std::move(*res));
-    else return yw::unexpected_error(res.error());
+    else return unexpected_error(res.error());
   }
 };
 
@@ -382,8 +393,9 @@ template<bool View> constexpr char* element<View>::to_string_into(char* out) con
   return it;
 }
 
-template<bool View> inline constexpr std::expected<element<View>, error_trace> element<View>::parse(
+template<bool View> inline constexpr std::expected<element<View>, error> element<View>::parse(
   std::string_view& rest, std::string_view doc) {
+  if (!std::is_constant_evaluated()) make_footprint;
   const char* doc_end = doc.data() + doc.size();
   if (rest.empty()) return unexpected_error("xml: unexpected end of input (expected start tag)", doc_end, doc);
   if (rest.front() != '<') return unexpected_error("xml: expected start tag '<'", rest.data(), doc);
@@ -401,7 +413,7 @@ template<bool View> inline constexpr std::expected<element<View>, error_trace> e
       if (std::ranges::find(attributes, attr.name, &attribute<View>::name) != attributes.end())
         return unexpected_error("xml: duplicate attribute name", attr_pos, doc);
       attributes.push_back(std::move(attr));
-    } else return yw::unexpected_error(res.error());
+    } else return unexpected_error(res.error());
   }
   bool is_self_closing = false;
   if (rest.starts_with("/>"sv)) is_self_closing = true, rest.remove_prefix(2);
@@ -413,7 +425,7 @@ template<bool View> inline constexpr std::expected<element<View>, error_trace> e
       if (rest.empty()) return unexpected_error("xml: unexpected end of input (missing end tag)", doc_end, doc);
       if (rest.starts_with("</"sv)) break;
       if (auto res = child<View>::parse(rest, doc); res) children.push_back(std::move(*res));
-      else return yw::unexpected_error(res.error());
+      else return unexpected_error(res.error());
     }
     rest.remove_prefix(2);
     auto end_name = _extract_name(rest);
@@ -456,3 +468,5 @@ template<bool View> constexpr size_t element<View>::count_elements(std::string_v
   });
 }
 }
+
+#undef ywlib_header_name

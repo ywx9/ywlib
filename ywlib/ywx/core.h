@@ -60,7 +60,6 @@ class unknown {
 public:
   struct slot {
     slotset<slot>::slotid id{};
-    virtual std::expected<void, error_trace> release() = 0;
     virtual ~slot() {}
   };
 
@@ -90,19 +89,19 @@ template<derived_from<unknown> T> typename T::slot* get_slot_pointer(unknown_slo
 
 inline unknown::operator bool() const noexcept { return system::unknowns.contains(_id); }
 
-/// MARK: comobjects
+/// MARK: com_list_to_release
 
 namespace system {
-struct comdeleter {
-  void operator()(std::vector<unknown_slotid>* ptr) {
-    if (!ptr) return;
-    for (const auto id : *ptr | std::views::reverse)
-      if (const auto sp = system::get_slot_pointer<unknown>(id))
-        if (auto res = sp->release(); !res) fatal_error(res.error());
+inline class com_list_to_release {
+  std::vector<unknown_slotid> _ids;
+
+public:
+  ~com_list_to_release() {
+    for (const auto id : _ids | std::views::reverse) unknowns.erase(id);
   }
-};
-inline auto comobjects =
-  std::unique_ptr<std::vector<unknown_slotid>, comdeleter>(new std::vector<unknown_slotid>(), comdeleter());
+  void clear() { _ids.clear(); }
+  void push(unknown_slotid id) { _ids.push_back(id); }
+} com_list_to_release;
 } // namespace system
 
 /// MARK: instance
@@ -163,16 +162,9 @@ public:
       .lpszClassName = L"ywlib_window_class"};
 
     std::expected<void, error_trace> initialize() {
-      if (!::RegisterClassW(&wc) || ::GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
-        return unexpected_error(errors::operation_failed, "RegisterClassW failed");
-      return {};
-    }
-
-    std::expected<void, error_trace> release() {
-      system::unknowns.erase(singleton_id);
-      singleton_id = this->id = {};
-      ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
-      return {};
+      if (::RegisterClassW(&wc)) return {};
+      else if(::GetLastError() == ERROR_CLASS_ALREADY_EXISTS) return {};
+      else return unexpected_error(errors::operation_failed, "RegisterClassW failed");
     }
   };
 
@@ -190,12 +182,6 @@ public:
 
   null_terminated<wchar_t> name() const noexcept {
     if (auto sp = system::get_slot_pointer<wclass>(_id)) return sp->wc.lpszClassName;
-    return {};
-  }
-
-  std::expected<void, error_trace> release() const {
-    if (const auto sp = system::get_slot_pointer<wclass>(_id); !sp) return unexpected_error(errors::invalid_slotid);
-    else if (auto res = sp->release(); !res) return unexpected_error(res.error());
     return {};
   }
 };
@@ -265,17 +251,6 @@ public:
       if (auto res = _init_rasterizer_state(); !res) return res;
       return {};
     }
-
-    std::expected<void, error_trace> release() {
-      system::unknowns.erase(singleton_id);
-      singleton_id = this->id = {};
-      if (rasterizer_state) rasterizer_state->Release(), rasterizer_state = nullptr;
-      if (blend_state) blend_state->Release(), blend_state = nullptr;
-      if (sampler_state) sampler_state->Release(), sampler_state = nullptr;
-      if (context) context->Release(), context = nullptr;
-      if (device) device->Release(), device = nullptr;
-      return {};
-    }
   };
 
   using unknown::operator bool;
@@ -309,12 +284,6 @@ public:
     if (const auto sp = system::get_slot_pointer<d3d>(_id)) return sp->sampler_state;
     return nullptr;
   }
-
-  std::expected<void, error_trace> release() const {
-    if (const auto sp = system::get_slot_pointer<d3d>(_id); !sp) return unexpected_error(errors::invalid_slotid);
-    else if (auto res = sp->release(); !res) return unexpected_error(res.error());
-    return {};
-  }
 };
 
 /// MARK: dxgi
@@ -328,14 +297,6 @@ public:
     std::expected<void, error_trace> initialize() {
       hresult_test(::CreateDXGIFactory2, 0, __uuidof(IDXGIFactory2), reinterpret_cast<void**>(&factory));
       hresult_test(d3d().device()->QueryInterface, __uuidof(IDXGIDevice2), reinterpret_cast<void**>(&device));
-      return {};
-    }
-
-    std::expected<void, error_trace> release() {
-      system::unknowns.erase(singleton_id);
-      singleton_id = this->id = {};
-      if (device) device->Release(), device = nullptr;
-      if (factory) factory->Release(), factory = nullptr;
       return {};
     }
   };
@@ -372,15 +333,6 @@ public:
       hresult_test(::D2D1CreateFactory, factory_type, __uuidof(ID2D1Factory1), reinterpret_cast<void**>(&factory));
       hresult_test(factory->CreateDevice, dxgi().device(), &device);
       hresult_test(device->CreateDeviceContext, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &context);
-      return {};
-    }
-
-    std::expected<void, error_trace> release() {
-      system::unknowns.erase(singleton_id);
-      singleton_id = this->id = {};
-      if (context) context->Release(), context = nullptr;
-      if (device) device->Release(), device = nullptr;
-      if (factory) factory->Release(), factory = nullptr;
       return {};
     }
   };
@@ -440,16 +392,6 @@ public:
       hresult_test(d2d.factory()->CreateStrokeStyle, &stroke_style_props, nullptr, 0, &stroke_style);
       stroke_style_props.dashStyle = D2D1_DASH_STYLE_DASH;
       hresult_test(d2d.factory()->CreateStrokeStyle, &stroke_style_props, nullptr, 0, &dashed_stroke_style);
-      return {};
-    }
-
-    std::expected<void, error_trace> release() {
-      system::unknowns.erase(singleton_id);
-      singleton_id = this->id = {};
-      if (dashed_stroke_style) dashed_stroke_style->Release(), dashed_stroke_style = nullptr;
-      if (stroke_style) stroke_style->Release(), stroke_style = nullptr;
-      if (solid_brush) solid_brush->Release(), solid_brush = nullptr;
-      dashed = false;
       return {};
     }
   };
@@ -568,14 +510,6 @@ public:
       hresult_test(text_format->SetTextAlignment, DWRITE_TEXT_ALIGNMENT_CENTER);
       return {};
     }
-
-    std::expected<void, error_trace> release() {
-      system::unknowns.erase(singleton_id);
-      singleton_id = this->id = {};
-      if (text_format) text_format->Release(), text_format = nullptr;
-      if (factory) factory->Release(), factory = nullptr;
-      return {};
-    }
   };
 
   using unknown::operator bool;
@@ -603,14 +537,7 @@ public:
   struct slot : singleton<coinit>::slot {
     std::expected<void, error_trace> initialize() {
       hresult_test(::CoInitializeEx, nullptr, COINIT_MULTITHREADED);
-      if (system::comobjects) system::comobjects->push_back(this->id);
-      return {};
-    }
-
-    std::expected<void, error_trace> release() {
-      if (system::unknowns.contains(singleton_id)) ::CoUninitialize();
-      system::unknowns.erase(singleton_id);
-      singleton_id = this->id = {};
+      system::com_list_to_release.push(this->id);
       return {};
     }
   };
@@ -620,12 +547,6 @@ public:
   explicit coinit() {
     if (auto res = initialize_singleton(); !res) fatal_error(res.error());
     this->_id = singleton_id;
-  }
-
-  /// releases all com objects
-  std::expected<void, error_trace> release() const {
-    if (system::comobjects) system::comobjects.reset();
-    return {};
   }
 };
 
@@ -639,14 +560,7 @@ public:
     std::expected<void, error_trace> initialize() {
       const auto& coinit = yw::coinit();
       hresult_test(::CoCreateInstance, CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-      if (system::comobjects) system::comobjects->push_back(this->id);
-      return {};
-    }
-
-    std::expected<void, error_trace> release() {
-      system::unknowns.erase(singleton_id);
-      if (factory) factory->Release(), factory = nullptr;
-      singleton_id = this->id = {};
+      system::com_list_to_release.push(this->id);
       return {};
     }
   };
@@ -676,15 +590,7 @@ public:
       const auto& coinit = yw::coinit();
       hresult_test(::XAudio2Create, &device, 0, XAUDIO2_DEFAULT_PROCESSOR);
       hresult_test(device->CreateMasteringVoice, &mastering_voice);
-      if (system::comobjects) system::comobjects->push_back(this->id);
-      return {};
-    }
-
-    std::expected<void, error_trace> release() {
-      system::unknowns.erase(singleton_id);
-      singleton_id = this->id = {};
-      if (mastering_voice) mastering_voice->DestroyVoice(), mastering_voice = nullptr;
-      if (device) device->Release(), device = nullptr;
+      system::com_list_to_release.push(this->id);
       return {};
     }
   };

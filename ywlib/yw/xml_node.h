@@ -1,6 +1,11 @@
 #pragma once
 #include "yw/xml_base.h"
 
+#ifdef ywlib_header_name
+#error "ywlib_header_name already defined unexpectedly"
+#endif
+#define ywlib_header_name "yw/xml_node.h"
+
 namespace yw::xml {
 
 //////////////////////////////////////// MARK: comment
@@ -49,7 +54,8 @@ public:
     return result;
   }
 
-  static constexpr std::expected<comment<View>, error_trace> parse(std::string_view& rest, std::string_view doc) {
+  static constexpr std::expected<comment<View>, error> parse(std::string_view& rest, std::string_view doc) {
+    if (!std::is_constant_evaluated()) make_footprint;
     if (!rest.starts_with("<!--"sv)) return unexpected_error("xml: expected comment '<!--'", rest.data(), doc);
     rest.remove_prefix(4);
     if (rest.empty()) return unexpected_error("xml: unterminated comment (missing '-->')", rest.data(), doc);
@@ -112,7 +118,8 @@ public:
   /// Otherwise, content is emitted as-is without validation.
   constexpr std::string to_string() const { return std::string(content); }
 
-  static constexpr std::expected<text<View>, error_trace> parse(std::string_view& rest, std::string_view doc) {
+  static constexpr std::expected<text<View>, error> parse(std::string_view& rest, std::string_view doc) {
+    if (!std::is_constant_evaluated()) make_footprint;
     const char* start = rest.data();
     while (!rest.empty()) {
       if (rest.starts_with("<![CDATA["sv)) {
@@ -199,7 +206,8 @@ public:
     return result;
   }
 
-  static constexpr std::expected<pi<View>, error_trace> parse(std::string_view& rest, std::string_view doc) {
+  static constexpr std::expected<pi<View>, error> parse(std::string_view& rest, std::string_view doc) {
+    if (!std::is_constant_evaluated()) make_footprint;
     if (!rest.starts_with("<?"sv))
       return unexpected_error("xml: expected processing instruction '<?'", rest.data(), doc);
 
@@ -294,7 +302,8 @@ public:
     return result;
   }
 
-  static constexpr std::expected<attribute<View>, error_trace> parse(std::string_view& rest, std::string_view doc) {
+  static constexpr std::expected<attribute<View>, error> parse(std::string_view& rest, std::string_view doc) {
+    if (!std::is_constant_evaluated()) make_footprint;
     const char* name_pos = rest.data();
     auto name = _extract_name(rest);
     if (name.empty()) return unexpected_error("xml: invalid attribute name", name_pos, doc);
@@ -327,3 +336,5 @@ public:
   }
 };
 }
+
+#undef ywlib_header_name

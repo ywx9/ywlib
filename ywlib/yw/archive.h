@@ -3,6 +3,11 @@
 #include "yw/core.h"
 #include "yw/file.h"
 
+#ifdef ywlib_header_name
+#error "ywlib_header_name already defined unexpectedly"
+#endif
+#define ywlib_header_name "yw/archive.h"
+
 /**
  * \note
  * .ywaファイル
@@ -77,7 +82,8 @@ class handle {
 
 public:
   /// creates `archive`
-  static std::expected<handle, error_trace> create(const std::filesystem::path& p, open_mode mode) {
+  static std::expected<handle, error> create(const std::filesystem::path& p, open_mode mode) {
+    make_footprint;
     const auto e = yw::errors::archive_invalid_format;
     const open_mode fh_mode = mode == open_mode::append ? open_mode::update_or_create : mode;
     auto fh = yw::open(p, fh_mode);
@@ -95,16 +101,16 @@ public:
     if (auto res = fh->read_trivial<uint64_t>(); !res) return unexpected_error(res.error());
     else footer_offset = _to_le(*res);
     if (footer_offset + sizeof(footer) + sizeof(uint64_t) > file_size)
-      return unexpected_error(e, "archive: invalid footer offset", {}, file_size - 8);
+      return unexpected_error(e, "invalid footer offset", {}, file_size - 8);
     footer f;
     if (auto res = fh->seek(int64_t(footer_offset)); !res) return unexpected_error(res.error());
     if (auto res = fh->read_trivial(f); !res) return unexpected_error(res.error());
     else if (_to_le(f.magic) != footer_magic)
-      return unexpected_error(e, "archive: invalid footer magic", {}, footer_offset);
+      return unexpected_error(e, "invalid footer magic", {}, footer_offset);
     const uint32_t entry_count = _to_le(f.entry_count);
     const auto footer_size = sizeof(footer) + entry_count * sizeof(uint64_t) + sizeof(uint64_t);
     if (footer_offset + footer_size != file_size)
-      return unexpected_error(e, "archive: invalid entry count", {}, footer_offset + 4);
+      return unexpected_error(e, "invalid entry count", {}, footer_offset + 4);
     if (entry_count == 0) return handle(std::move(*fh), {}, {0, footer_offset}, mode);
     /// \note need to check entries
     std::vector<uint64_t> offsets(entry_count);
@@ -114,17 +120,16 @@ public:
     std::vector<entry> entries(entry_count);
     for (uint32_t i = 0; i < entry_count; ++i) {
       const auto off = offsets[i];
-      if (off >= footer_offset)
-        return unexpected_error(e, "archive: invalid entry offset", {}, footer_offset + 8 + i * 8);
+      if (off >= footer_offset) return unexpected_error(e, "invalid entry offset", {}, footer_offset + 8 + i * 8);
       if (auto res = fh->seek(int64_t(off)); !res) return unexpected_error(res.error());
       header h;
       if (auto res = fh->read_trivial(h); !res) return unexpected_error(res.error());
-      else if (_to_le(h.magic) != entry_magic) return unexpected_error(e, "archive: invalid entry magic", {}, off);
+      else if (_to_le(h.magic) != entry_magic) return unexpected_error(e, "invalid entry magic", {}, off);
       const uint32_t name_length = _to_le(h.name_length);
       if (name_length == 0 || name_length > max_name_size)
-        return unexpected_error(e, "archive: invalid name length", {}, off + 4);
+        return unexpected_error(e, "invalid name length", {}, off + 4);
       if (off + sizeof(header) + name_length > footer_offset)
-        return unexpected_error(e, "archive: invalid entry size", {}, off + 8);
+        return unexpected_error(e, "invalid entry size", {}, off + 8);
       const uint64_t data_length = _to_le(h.data_length);
       const uint64_t data_offset = off + sizeof(header) + name_length;
       const uint64_t crc_offset = data_offset + data_length;
@@ -139,7 +144,7 @@ public:
       const bool is_last = (i == entry_count - 1);
       if (auto res = fh->tell(); !res) return unexpected_error(res.error());
       else if (const auto cur = *res; (is_last && cur != footer_offset) || (!is_last && cur != offsets[i + 1]))
-        return unexpected_error(e, "archive: invalid entry size", {}, crc_offset);
+        return unexpected_error(e, "invalid entry size", {}, crc_offset);
     }
     return handle(std::move(*fh), std::move(entries), {offsets[0], footer_offset}, mode);
   }
@@ -157,8 +162,9 @@ public:
   const std::vector<entry>& entries() const noexcept { return _entries; }
 
   /// closes the archive
-  std::expected<void, error_trace> close() {
-    if (!is_open()) return unexpected_error(yw::errors::not_initialized, "not initialized");
+  std::expected<void, error> close() {
+    make_footprint;
+    if (!is_open()) return unexpected_error(yw::errors::not_initialized);
     if (auto res = flush(); !res) return unexpected_error(res.error());
     if (auto res = _fh.close(); !res) return unexpected_error(res.error());
     _entries.clear();
@@ -175,7 +181,8 @@ public:
   handle& operator=(handle&&) = default;
 
   /// reads the data of an entry by index
-  std::expected<std::vector<std::byte>, error_trace> read(size_t index) {
+  std::expected<std::vector<std::byte>, error> read(size_t index) {
+    make_footprint;
     if (index >= _entries.size()) return unexpected_error(yw::errors::invalid_argument, "index out of range");
     const auto& e = _entries[index];
     if (auto res = _fh.seek(int64_t(e.data_offset)); !res) return unexpected_error(res.error());
@@ -185,7 +192,8 @@ public:
   }
 
   /// reads the data of an entry by name
-  std::expected<std::vector<std::byte>, error_trace> read(stringable<char> auto&& name) {
+  std::expected<std::vector<std::byte>, error> read(stringable<char> auto&& name) {
+    make_footprint;
     const std::string_view sv(name);
     for (size_t i = 0; i < _entries.size(); ++i)
       if (_entries[i].name == sv) return read(i);
@@ -193,7 +201,8 @@ public:
   }
 
   /// verifies the CRC32 of an entry by index
-  std::expected<bool, error_trace> verify(size_t index) {
+  std::expected<bool, error> verify(size_t index) {
+    make_footprint;
     if (index >= _entries.size()) return unexpected_error(yw::errors::invalid_argument, "index out of range");
     const auto& e = _entries[index];
     if (auto res = _fh.seek(int64_t(e.data_offset)); !res) return unexpected_error(res.error());
@@ -209,11 +218,12 @@ public:
       }
       remaining -= to_read;
     }
-    return crc ^ 0xFFFFFFFF == e.crc32;
+    return (crc ^ 0xFFFFFFFF) == e.crc32;
   }
 
   /// verifies the CRC32 of an entry by name
-  std::expected<bool, error_trace> verify(stringable<char> auto&& name) {
+  std::expected<bool, error> verify(stringable<char> auto&& name) {
+    make_footprint;
     const std::string_view sv(name);
     for (size_t i = 0; i < _entries.size(); ++i)
       if (_entries[i].name == sv) return verify(i);
@@ -221,7 +231,8 @@ public:
   }
 
   /// flushes the archive footer
-  std::expected<void, error_trace> flush() {
+  std::expected<void, error> flush() {
+    make_footprint;
     if (_mode != open_mode::create_always && _mode != open_mode::create_new && _mode != open_mode::update_existing &&
         _mode != open_mode::update_or_create)
       return unexpected_error(yw::errors::invalid_operation, "archive not opened in write mode");
@@ -238,7 +249,8 @@ public:
   }
 
   /// removes the last `n` entries from the archive
-  std::expected<void, error_trace> remove(size_t n) {
+  std::expected<void, error> remove(size_t n) {
+    make_footprint;
     if (n == npos) n = _entries.size();
     else if (n > _entries.size()) return unexpected_error(yw::errors::invalid_argument, "n exceeds entry count");
     if (n == 0) {
@@ -252,7 +264,8 @@ public:
   }
 
   /// appends a new entry to the archive
-  std::expected<void, error_trace> append(stringable<char> auto&& name, const void* data, size_t data_length) {
+  std::expected<void, error> append(stringable<char> auto&& name, const void* data, size_t data_length) {
+    make_footprint;
     if (!data && data_length) return unexpected_error(yw::errors::invalid_argument, "null data pointer");
     const std::string_view sv(name);
     if (sv.size() == 0 || sv.size() > max_name_size)
@@ -286,14 +299,17 @@ public:
 };
 
 /// opens an archive file
-inline std::expected<handle, error_trace> open(const std::filesystem::path& path, open_mode mode) {
+inline std::expected<handle, error> open(const std::filesystem::path& path, open_mode mode) {
+  make_footprint;
   if (auto res = handle::create(path, mode); !res) return unexpected_error(res.error());
   else return std::move(*res);
 }
 
 /// packs files in `src_path` into an archive file `dst_path`.
-inline std::expected<void, error_trace> pack(const std::filesystem::path& src_path,
-  const std::filesystem::path& dst_path, open_mode mode = open_mode::create_always) {
+inline std::expected<void, error> pack(
+  const std::filesystem::path& src_path, const std::filesystem::path& dst_path,
+  open_mode mode = open_mode::create_always) {
+  make_footprint;
   if (!std::filesystem::is_directory(src_path))
     return unexpected_error(yw::errors::invalid_argument, "source path is not a directory");
   auto archive = handle::create(dst_path, mode);
@@ -317,8 +333,9 @@ inline std::expected<void, error_trace> pack(const std::filesystem::path& src_pa
 }
 
 /// unpacks files in an archive file `src_path` into a directory `dst_path`.
-inline std::expected<void, error_trace> extract(
+inline std::expected<void, error> extract(
   const std::filesystem::path& src_path, const std::filesystem::path& dst_path) {
+  make_footprint;
   auto archive = handle::create(src_path, open_mode::read_existing);
   if (!archive) return unexpected_error(archive.error());
   for (const auto& e : archive->entries()) {
@@ -335,3 +352,5 @@ inline std::expected<void, error_trace> extract(
   return {};
 }
 } // namespace yw::archive
+
+#undef ywlib_header_name

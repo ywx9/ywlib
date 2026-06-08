@@ -57,8 +57,8 @@ struct error {
 //////////////////////////////////////// MARK: define_error macro
 
 /// adds new error definition in namespace yw::errors
-#define define_error(error_name)                                                                       \
-  inline constexpr decltype(::yw::error::type) error_name = {#error_name, ::yw::source().unique_id()};
+#define define_error(error_name) \
+  inline constexpr decltype(::yw::error::type) error_name = {#error_name, ::yw::unique_id()};
 
 namespace errors {
 define_error(success);
@@ -67,15 +67,13 @@ define_error(invalid_operation);
 define_error(operation_failed);
 define_error(not_initialized);
 define_error(unreachable);
-}
+} // namespace errors
 
-constexpr error::~error() noexcept {
-  try {
-    if (type != errors::success && !handled && !std::is_constant_evaluated()) {
-      print("unhandled error destroyed");
-      yw::print.err(to_string());
-    }
-  } catch (...) {} // noexcept destructor
+constexpr error::~error() {
+  if (type != errors::success && !handled && !std::is_constant_evaluated()) {
+    print("unhandled error destroyed");
+    yw::print.err(to_string());
+  }
 }
 
 constexpr error::error() noexcept : type(errors::success), system_code(0), position(uint64_t(-1)), message() {}
@@ -112,130 +110,39 @@ constexpr error::error(decltype(error::type) e, null_terminated<char> msg, int32
 
 constexpr error::operator bool() const noexcept { return type != errors::success; }
 
-////////////////////////////// MARK: error_trace
+/// MARK: unexpected_error
 
-class error_trace {
-public:
-  yw::error error;
-  std::vector<source> frames;
-
-  constexpr ~error_trace() noexcept {
-    try {
-      if (error && !error.handled && !std::is_constant_evaluated()) {
-        print("unhandled error_trace destroyed");
-        yw::print.err(to_string());
-      }
-    } catch (...) {} // noexcept destructor
-  }
-
-  constexpr error_trace() = default;
-  constexpr error_trace(const error_trace& e) = default;
-  constexpr error_trace& operator=(const error_trace& e) = default;
-  constexpr error_trace(error_trace&&) = default;
-  constexpr error_trace& operator=(error_trace&&) = default;
-
-  constexpr error_trace(yw::error err, const source& src = {}) : error(std::move(err)) {
-    frames.reserve(8);
-    frames.push_back(src);
-  }
-
-  explicit constexpr operator bool() const noexcept { return bool(error); }
-
-  constexpr error_trace& push(const source& src = {}) & {
-    frames.push_back(src);
-    return *this;
-  }
-
-  constexpr std::string to_string() const {
-    auto s = error.to_string();
-    if (std::is_constant_evaluated()) {
-      for (const auto& src : frames) s += "\n  at " + src.to_string();
-    } else
-      for (const auto& src : frames) s += std::format("\n  at {}", src);
-    return s;
-  }
-};
-
-//////////////////////////////////////// MARK: unexpected_error
-
-inline std::unexpected<error_trace> unexpected_error(decltype(error::type) e, const source& src = {}) {
-  return std::unexpected<error_trace>(error_trace(yw::error(e, e.name, 0, npos), src));
+inline std::unexpected<error> unexpected_error(error& e) { return std::unexpected(std::move(e)); }
+inline std::unexpected<error> unexpected_error(
+  decltype(error::type) e, null_terminated<char> msg = {}, int32_t sys_code = 0, uint64_t pos = uint64_t(-1)) {
+  return std::unexpected(error(e, std::move(msg), sys_code, pos));
 }
 
-/// creates `std::unexpected<error_trace>` with given information.
-inline std::unexpected<error_trace> unexpected_error(
-  decltype(error::type) e, null_terminated<char> msg, int32_t sys_code = 0, uint64_t pos = uint64_t(-1),
-  const source& src = {}) {
-  return std::unexpected<error_trace>(error_trace(yw::error(e, std::move(msg), sys_code, pos), src));
-}
+/// MARK: fatal_error
 
-/// adds source information (default is current location) to error trace and returns `std::unexpected<error_trace>`.
-inline std::unexpected<error_trace> unexpected_error(error_trace& e, const source& src = {}) {
-  return std::unexpected<error_trace>(std::move(e.push(src)));
-}
-
-/// adds source information (default is current location) to error trace and returns `std::unexpected<error_trace>`.
-inline std::unexpected<error_trace> unexpected_error(std::unexpected<error_trace>& e, const source& src = {}) {
-  e.error().push(src);
-  return std::move(e);
-}
-inline std::unexpected<error_trace> unexpected_error(std::unexpected<error_trace>&& e, const source& src = {}) {
-  e.error().push(src);
-  return std::move(e);
-}
-
-//////////////////////////////////////// MARK: check_error
-
-inline std::expected<void, error_trace> check_error(std::expected<void, error_trace>&& res, const source& src = {}) {
-  if (!res) return unexpected_error(res.error(), src);
-  return {};
-}
-
-//////////////////////////////////////// MARK: fatal_error
-
-[[noreturn]] inline void fatal_error(const error_trace& e, const source& src = {}) {
-  print_fallback.err(format("Fatal error at {}\n{}", src, e));
-  std::exit(e.error.system_code);
-}
-
-[[noreturn]] inline void fatal_error(const error& e, const source& src = {}) {
-  print_fallback.err(format("Fatal error at {}\n{}", src, e));
+namespace internal {
+[[noreturn]] inline void _fatal_error(const error& e, const char* source_info) {
+  print_fallback.err(format("Fatal error: {} at {}\nFootprints:\n{}", e, source_info, footprint.dump()));
   std::exit(e.system_code);
 }
+} // namespace internal
 
-[[noreturn]] inline void fatal_error(decltype(errors::success) e, null_terminated<char> msg, int32_t sys_code = 0, const source& src = {}) {
-  print_fallback.err(format("Fatal error at {}\n{}", src, error(e, std::move(msg), sys_code)));
-  std::exit(sys_code);
-}
+#define fatal_error(e) ::yw::internal::_fatal_error(e, ywlib_make_source_info)
 
-[[noreturn]] inline void fatal_error(decltype(errors::success) e, const source& src = {}) {
-  print_fallback.err(format("Fatal error at {}\n{}", src, e.name));
-  std::exit(EXIT_FAILURE);
-}
+/// MARK: assume
 
-//////////////////////////////////////// MARK: assume
-
-/// returns value if `res` is valid; otherwise prints error and exits.
-template<typename T> requires(!is_void<T>)
-[[nodiscard]] T assume(std::expected<T, yw::error_trace>&& res, const source& src = {}) {
+namespace internal {
+template<typename T> T _assume(std::expected<T, yw::error>&& res, const char* source_info) {
   if (!res) {
-    print.err(format("Assumption failed\n{}\n  at {}", res.error(), src));
-    std::exit(res.error().error.system_code);
+    print_fallback.err(format("Assumption failed: {} at {}", res.error(), source_info));
+    std::exit(res.error().system_code);
   }
-  return std::move(*res);
+  if constexpr (is_void<T>) return;
+  else return std::move(*res);
 }
+} // namespace internal
 
-/// checks if `res` is valid; if not, prints error and exits.
-inline void assume(std::expected<void, yw::error_trace>&& res, const source& src = {}) {
-  if (!res) {
-    print.err(format("Assumption failed\n{}\n  at {}", res.error(), src));
-    std::exit(res.error().error.system_code);
-  }
-}
-
-template<typename T> requires(!is_void<T> && !specialization_of<T, std::expected>) [[nodiscard]] T&& assume(T&& value) {
-  return static_cast<T&&>(value);
-}
+#define assume(res) ::yw::internal::_assume(std::move(res), ywlib_make_source_info)
 
 } // namespace yw
 
@@ -247,11 +154,5 @@ template<typename C> struct formatter<yw::error, C> {
   formatter<basic_string<C>, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::error& err, auto& ctx) const { return fmt.format(yw::unicode<C>(err.to_string()), ctx); }
-};
-
-template<typename C> struct formatter<yw::error_trace, C> {
-  formatter<basic_string<C>, C> fmt;
-  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::error_trace& err, auto& ctx) const { return fmt.format(yw::unicode<C>(err.to_string()), ctx); }
 };
 } // namespace std

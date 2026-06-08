@@ -1,6 +1,11 @@
 #pragma once
 #include "yw/core.h"
 
+#ifdef ywlib_header_name
+#error "ywlib_header_name already defined unexpectedly"
+#endif
+#define ywlib_header_name "yw/base64.h"
+
 namespace yw::base64 {
 
 template<typename T> concept is_valid_value_type = std::is_trivially_copyable_v<T> && sizeof(T) == 1;
@@ -126,3 +131,5 @@ inline constexpr struct {
   static constexpr size_t size(size_t input_size) { return (input_size / 4) * 3; }
 } decode;
 } // namespace yw::base64
+
+#undef ywlib_header_name

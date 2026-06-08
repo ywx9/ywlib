@@ -7,6 +7,11 @@
 #include <shellapi.h>
 #endif
 
+#ifdef ywlib_header_name
+#error "ywlib_header_name already defined unexpectedly"
+#endif
+#define ywlib_header_name "yw/argument.h"
+
 /**
  * \note コマンドライン引数について
  * Windows では GetCommandLineW + CommandLineToArgvW を使用する。
@@ -36,29 +41,38 @@ inline std::string description;
 /// epilog (ex: example usage) of application used in help text
 inline std::string epilog;
 
-//////////////////////////////////////// MARK: converter
+/// MARK: converter
 
 template<typename T> struct converter {
-  static std::expected<T, error_trace> operator()(std::string_view) {
-    return unexpected_error(errors::argument_invalid_argument, "Invalid value for argument");
+  static std::expected<T, error> operator()(std::string_view) {
+    make_footprint;
+    return unexpected_error(errors::argument_invalid_argument);
   }
 };
 
 template<> struct converter<std::string> {
-  static std::expected<std::string, error_trace> operator()(std::string_view value) { return std::string(value); }
+  static std::expected<std::string, error> operator()(std::string_view value) {
+    make_footprint;
+    return std::string(value);
+  }
 };
 
 template<> struct converter<bool> {
-  static std::expected<bool, error_trace> operator()(std::string_view value) {
+  static std::expected<bool, error> operator()(std::string_view value) {
+    make_footprint;
     if (value == "1" || value == "true" || value == "on" || value == "yes") return true;
     if (value == "0" || value == "false" || value == "off" || value == "no") return false;
     return unexpected_error(errors::argument_invalid_argument, format("Invalid bool: {}", value));
   }
-  static std::expected<std::string, error_trace> operator()(bool value) { return value ? "true" : "false"; }
+  static std::expected<std::string, error> operator()(bool value) {
+    make_footprint;
+    return value ? "true" : "false";
+  }
 };
 
 template<typename T> requires(integral<T> && !is_bool<T>) struct converter<T> {
-  static std::expected<T, error_trace> operator()(std::string_view value) {
+  static std::expected<T, error> operator()(std::string_view value) {
+    make_footprint;
     T out{};
     const auto* b = value.data();
     const auto* e = b + value.size();
@@ -67,11 +81,15 @@ template<typename T> requires(integral<T> && !is_bool<T>) struct converter<T> {
       return unexpected_error(errors::argument_invalid_argument, format("Invalid integer: {}", value));
     return out;
   }
-  static std::expected<std::string, error_trace> operator()(T value) { return std::to_string(value); }
+  static std::expected<std::string, error> operator()(T value) {
+    make_footprint;
+    return std::to_string(value);
+  }
 };
 
 template<typename T> requires(float_type<T>) struct converter<T> {
-  static std::expected<T, error_trace> operator()(std::string_view value) {
+  static std::expected<T, error> operator()(std::string_view value) {
+    make_footprint;
     std::string s(value);
     char* end = nullptr;
     errno = 0;
@@ -80,10 +98,13 @@ template<typename T> requires(float_type<T>) struct converter<T> {
       return unexpected_error(errors::argument_invalid_argument, format("Invalid number: {}", value));
     return static_cast<T>(v);
   }
-  static std::expected<std::string, error_trace> operator()(T value) { return std::to_string(value); }
+  static std::expected<std::string, error> operator()(T value) {
+    make_footprint;
+    return std::to_string(value);
+  }
 };
 
-//////////////////////////////////////// MARK: handle
+/// MARK: handle
 
 class handle {
 public:
@@ -109,10 +130,14 @@ struct handle::slot {
   bool multiple = false;
   bool specified = false;
   virtual ~slot() = default;
-  virtual std::expected<void, error_trace> parse_value(std::string_view) {
-    return unexpected_error(errors::argument_invalid_argument, "Invalid value for argument");
+  virtual std::expected<void, error> parse_value(std::string_view) {
+    make_footprint;
+    return unexpected_error(errors::argument_invalid_argument);
   }
-  virtual std::optional<std::string> default_value_string() const { return std::nullopt; }
+  virtual std::optional<std::string> default_value_string() const {
+    make_footprint;
+    return std::nullopt;
+  }
 };
 
 namespace internal {
@@ -122,7 +147,7 @@ inline static std::unordered_map<std::string, handle::slotid> name_map;
 inline static std::vector<handle::slotid> positionals;
 } // namespace internal
 
-//////////////////////////////////////// MARK: positional
+/// MARK: positional
 
 template<typename T> class handle::positional : public handle {
   positional(slotid Id) : handle(Id) {}
@@ -132,7 +157,8 @@ public:
     std::optional<T> value;
     std::optional<T> default_value;
 
-    static std::expected<positional, error_trace> create(std::string Metavar) {
+    static std::expected<positional, error> create(std::string Metavar) {
+      make_footprint;
       const auto id = internal::slots.add(std::make_unique<slot>());
       const auto sp = dynamic_cast<slot*>(internal::slots.get(id));
       if (!sp) return unexpected_error(errors::operation_failed, "Failed to create positional slot");
@@ -145,14 +171,16 @@ public:
     }
 
     static slot& get(slotid Id) {
+      make_footprint;
       const auto sp = dynamic_cast<slot*>(internal::slots.get(Id));
-      if (!sp) fatal_error(errors::operation_failed, "Failed to get positional slot");
+      if (!sp) fatal_error(error(errors::operation_failed, "Failed to get positional slot"));
       return *sp;
     }
 
-    std::expected<void, error_trace> parse_value(std::string_view Value) override {
+    std::expected<void, error> parse_value(std::string_view Value) override {
+      make_footprint;
       if (auto res = converter<T>{}(Value); !res) {
-        yw::error& e = res.error().error;
+        yw::error& e = res.error();
         e.message = format("{} at #{}", e.message, key);
         return unexpected_error(res.error());
       } else value = std::move(*res);
@@ -168,37 +196,50 @@ public:
     }
   };
 
-  auto& description(std::string Desc) { return slot::get(id).description = std::move(Desc), *this; }
-  auto& required(bool Required = true) { return slot::get(id).required = Required, *this; }
-  auto& default_value(T Value) { return slot::get(id).default_value = std::move(Value), *this; }
+  auto& description(std::string Desc) {
+    make_footprint;
+    return slot::get(id).description = std::move(Desc), *this;
+  }
+  auto& required(bool Required = true) {
+    make_footprint;
+    return slot::get(id).required = Required, *this;
+  }
+  auto& default_value(T Value) {
+    make_footprint;
+    return slot::get(id).default_value = std::move(Value), *this;
+  }
 
   const auto& value() const {
-    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    make_footprint;
+    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
     auto& s = slot::get(id);
     if (s.specified) return *s.value;
-    if (!s.default_value.has_value()) fatal_error(errors::argument_invalid_usage, "No value available");
+    if (!s.default_value.has_value()) fatal_error(error(errors::argument_invalid_usage, "No value available"));
     return *s.default_value;
   }
 
   bool has_value() const {
-    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    make_footprint;
+    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
     auto& s = slot::get(id);
     return s.specified || s.default_value.has_value();
   }
 
   bool specified() const {
-    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    make_footprint;
+    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
     return slot::get(id).specified;
   }
 };
 
 template<typename T> handle::positional<T> positional(std::string Metavar) {
+  make_footprint;
   auto res = handle::positional<T>::slot::create(std::move(Metavar));
   if (!res) fatal_error(res.error());
   return std::move(*res);
 }
 
-//////////////////////////////////////// MARK: option
+/// MARK: option
 
 template<typename T> class handle::option : public handle {
   option(slotid Id) : handle(Id) {}
@@ -208,7 +249,8 @@ public:
     std::vector<T> values;
     std::optional<T> default_value;
 
-    static std::expected<option, error_trace> create(std::string Key) {
+    static std::expected<option, error> create(std::string Key) {
+      make_footprint;
       const auto id = internal::slots.add(std::make_unique<slot>());
       const auto [it, b] = internal::name_map.emplace(Key, id);
       if (!b) return unexpected_error(errors::argument_invalid_definition, format("Duplicate key: {}", Key));
@@ -221,14 +263,16 @@ public:
     }
 
     static slot& get(slotid Id) {
+      make_footprint;
       const auto sp = dynamic_cast<slot*>(internal::slots.get(Id));
-      if (!sp) fatal_error(errors::operation_failed, "Failed to get option slot");
+      if (!sp) fatal_error(error(errors::operation_failed, "Failed to get option slot"));
       return *sp;
     }
 
-    std::expected<void, error_trace> parse_value(std::string_view Value) override {
+    std::expected<void, error> parse_value(std::string_view Value) override {
+      make_footprint;
       if (auto res = converter<T>{}(Value); !res) {
-        yw::error& e = res.error().error;
+        yw::error& e = res.error();
         e.message = format("{} as '{}'", e.message, key);
         return unexpected_error(res.error());
       } else if (multiple || values.empty()) values.push_back(std::move(*res));
@@ -244,57 +288,79 @@ public:
     }
   };
 
-  auto& metavar(std::string Metavar) { return slot::get(id).metavar = std::move(Metavar), *this; }
-  auto& description(std::string Desc) { return slot::get(id).description = std::move(Desc), *this; }
-  auto& required(bool Required = true) { return slot::get(id).required = Required, *this; }
-  auto& multiple(bool Multiple = true) { return slot::get(id).multiple = Multiple, *this; }
-  auto& default_value(T Value) { return slot::get(id).default_value = std::move(Value), *this; }
+  auto& metavar(std::string Metavar) {
+    make_footprint;
+    return slot::get(id).metavar = std::move(Metavar), *this;
+  }
+  auto& description(std::string Desc) {
+    make_footprint;
+    return slot::get(id).description = std::move(Desc), *this;
+  }
+  auto& required(bool Required = true) {
+    make_footprint;
+    return slot::get(id).required = Required, *this;
+  }
+  auto& multiple(bool Multiple = true) {
+    make_footprint;
+    return slot::get(id).multiple = Multiple, *this;
+  }
+  auto& default_value(T Value) {
+    make_footprint;
+    return slot::get(id).default_value = std::move(Value), *this;
+  }
 
   auto& alias(std::string Alias) {
+    make_footprint;
     const auto [it, b] = internal::name_map.emplace(Alias, id);
-    if (!b) fatal_error(errors::argument_invalid_definition, format("Duplicate key: {}", Alias));
+    if (!b) fatal_error(error(errors::argument_invalid_definition, format("Duplicate key: {}", Alias)));
     return *this;
   }
 
   const auto& value() const {
-    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    make_footprint;
+    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
     auto& s = slot::get(id);
     if (s.specified) return s.values.front();
-    if (!s.default_value.has_value()) fatal_error(errors::argument_invalid_usage, "No value available");
+    if (!s.default_value.has_value()) fatal_error(error(errors::argument_invalid_usage, "No value available"));
     return *s.default_value;
   }
 
   const auto& values() const {
-    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    make_footprint;
+    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
     return slot::get(id).values;
   }
 
   bool has_value() const {
-    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    make_footprint;
+    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
     const auto& s = slot::get(id);
     return s.specified || s.default_value.has_value();
   }
 
   bool specified() const {
-    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    make_footprint;
+    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
     return slot::get(id).specified;
   }
 };
 
 template<typename T> handle::option<T> option(std::string Name) {
+  make_footprint;
   auto res = handle::option<T>::slot::create(std::move(Name));
   if (!res) fatal_error(res.error());
   return std::move(*res);
 }
 
-//////////////////////////////////////// MARK: flag
+/// MARK: flag
 
 class handle::flag : public handle {
   flag(slotid Id) : handle(Id) {}
 
 public:
   struct slot : handle::slot {
-    static std::expected<flag, error_trace> create(std::string Key) {
+    static std::expected<flag, error> create(std::string Key) {
+      make_footprint;
       const auto id = internal::slots.add(std::make_unique<slot>());
       const auto [it, b] = internal::name_map.emplace(Key, id);
       if (!b) return unexpected_error(errors::argument_invalid_definition, format("Duplicate key: {}", Key));
@@ -307,29 +373,36 @@ public:
     }
 
     static slot& get(slotid Id) {
+      make_footprint;
       const auto sp = dynamic_cast<slot*>(internal::slots.get(Id));
-      if (!sp) fatal_error(errors::operation_failed, "Failed to get flag slot");
+      if (!sp) fatal_error(error(errors::operation_failed, "Failed to get flag slot"));
       return *sp;
     }
 
-    std::expected<void, error_trace> parse_value(std::string_view value) override { return {}; }
+    std::expected<void, error> parse_value(std::string_view value) override { return {}; }
   };
 
-  auto& description(std::string Desc) { return slot::get(id).description = std::move(Desc), *this; }
+  auto& description(std::string Desc) {
+    make_footprint;
+    return slot::get(id).description = std::move(Desc), *this;
+  }
 
   auto& alias(std::string Alias) {
+    make_footprint;
     const auto [it, b] = internal::name_map.emplace(Alias, id);
-    if (!b) fatal_error(errors::argument_invalid_definition, format("Duplicate key: {}", Alias));
+    if (!b) fatal_error(error(errors::argument_invalid_definition, format("Duplicate key: {}", Alias)));
     return *this;
   }
 
   bool value() const {
-    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    make_footprint;
+    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
     return slot::get(id).specified;
   }
 
   bool has_value() const {
-    if (!internal::parsed) fatal_error(errors::argument_invalid_usage, "Call before parsing");
+    make_footprint;
+    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
     return true;
   }
 
@@ -337,12 +410,13 @@ public:
 };
 
 inline handle::flag flag(std::string Name) {
+  make_footprint;
   auto res = handle::flag::slot::create(std::move(Name));
   if (!res) fatal_error(res.error());
   return std::move(*res);
 }
 
-//////////////////////////////////////// MARK: print_help
+/// MARK: print_help
 
 namespace internal {
 inline std::string default_option_metavar(std::string_view key) {
@@ -509,12 +583,12 @@ inline void print_help() {
   }
 }
 
-//////////////////////////////////////// MARK: parse helper
+/// MARK: parse helper
 
 namespace internal {
 
-inline std::expected<std::vector<std::string>, error_trace> collect_argv(
-  int argc, char** argv, std::string& program_name) {
+inline std::expected<std::vector<std::string>, error> collect_argv(int argc, char** argv, std::string& program_name) {
+  make_footprint;
   std::vector<std::string> args;
 #if defined(_WIN32) || defined(_WIN64)
   int c = 0;
@@ -544,41 +618,38 @@ inline bool is_negative_number_token(std::string_view tok) {
 }
 
 inline void argument_error(null_terminated<char> msg) {
+  make_footprint;
   print_help();
-  fatal_error(errors::argument_invalid_argument, msg);
+  fatal_error(error(errors::argument_invalid_argument, msg));
 }
 } // namespace internal
 
-//////////////////////////////////////// MARK: parse
+/// MARK: parse
 
 inline void parse(int argc, char** argv) {
-  //-- 初実行の確認
-  if (internal::parsed) fatal_error(errors::argument_invalid_usage, "Arguments have already been parsed");
-  //-- 引数解釈
+  make_footprint;
+  if (internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Arguments have already been parsed"));
   auto args = internal::collect_argv(argc, argv, argument::name);
   if (!args) fatal_error(args.error());
 
-  bool after_double_dash = false; // "--"以降の引数はすべてpositionalとして扱う
-  size_t positional_index = 0;    // positionalの数を数える
+  bool after_double_dash = false;
+  size_t positional_index = 0;
 
   for (size_t i = 1; i < args->size(); ++i) {
     const std::string_view tok = (*args)[i];
-    if (!after_double_dash && tok == "--") { // 最初の"--"を検出
+    if (!after_double_dash && tok == "--") {
       after_double_dash = true;
       continue;
     }
-    if (!after_double_dash && internal::is_option_token(tok)) { // optionらしいものを発見
-      //-- いったんtoken全体をkey値としておく(--key value想定)
+    if (!after_double_dash && internal::is_option_token(tok)) {
       std::string_view key = tok;
       std::string_view value{};
       bool specified = false;
-      //-- token内に"="が含まれているなら、key=valueに分割
       if (auto kv = internal::split_eq(tok)) {
         key = kv->first;
         value = kv->second;
         specified = true;
       }
-      //-- 宣言されたkeyか確認
       auto it = internal::name_map.find(std::string(key));
       if (it == internal::name_map.end()) {
         if (key == "--help" || key == "-h") {
@@ -589,9 +660,9 @@ inline void parse(int argc, char** argv) {
       }
       const auto sp = internal::slots.get(it->second);
       if (!sp) internal::argument_error(format("Unknown option: {}", key));
-      //-- optionの場合はvalueが必須
+
       if (sp->type == handle::type::option) {
-        //-- --key=valueでないなら次を確認
+
         if (!specified && i + 1 < args->size()) {
           const auto next = (*args)[i + 1];
           if (!internal::is_option_token(next) || internal::is_negative_number_token(next))
@@ -599,12 +670,11 @@ inline void parse(int argc, char** argv) {
         }
         if (!specified) internal::argument_error(format("Missing value for option: {}", key));
         if (auto res = sp->parse_value(value); !res) print_help(), fatal_error(res.error());
-      } else if (specified) //-- flagの場合はvalueがあってはならない
-        internal::argument_error(format("Unexpected value for flag: {}", key));
-      else sp->specified = true; //-- flagがあったことはspecified==trueで表現する
+      } else if (specified) internal::argument_error(format("Unexpected value for flag: {}", key));
+      else sp->specified = true;
       continue;
     }
-    //-- positionalの場合
+
     if (positional_index < internal::positionals.size()) {
       const auto sp = internal::slots.get(internal::positionals[positional_index]);
       if (!sp) internal::argument_error(format("Unknown, positional argument: {}", tok));
@@ -612,7 +682,7 @@ inline void parse(int argc, char** argv) {
       ++positional_index;
     } else internal::argument_error(format("Unexpected positional argument: {}", tok));
   }
-  //-- requiredのチェック
+
   bool missing = false;
   std::string missing_message = "Missing required options";
   for (const auto& slot : internal::slots) {
@@ -627,3 +697,5 @@ inline void parse(int argc, char** argv) {
   internal::parsed = true;
 }
 } // namespace yw::argument
+
+#undef ywlib_header_name

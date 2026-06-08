@@ -1,19 +1,29 @@
 from __future__ import annotations
 
+import argparse
 import subprocess
 import sys
 
-from _common import project_root, run, run_python
+from _common import cmake_configure, project_root, run
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="configure and build with Debug settings",
+    )
+    return parser.parse_args()
 
 
 def main() -> int:
+    args = parse_args()
     root = project_root()
 
     build_dir = root / "build"
-    compile_commands_path = build_dir / "compile_commands.json"
-
-    if not compile_commands_path.is_file():
-        run_python(root / "tools" / "init.py", cwd=root)
+    build_type = "Debug" if args.debug else "Release"
+    cmake_configure(build_dir, build_type=build_type)
 
     run(
         [

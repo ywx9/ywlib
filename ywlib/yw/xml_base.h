@@ -1,6 +1,11 @@
 #pragma once
 #include "yw/core.h"
 
+#ifdef ywlib_header_name
+#error "ywlib_header_name already defined unexpectedly"
+#endif
+#define ywlib_header_name "yw/xml_base.h"
+
 namespace yw::xml {
 
 template<bool View> using string_type = select_type<View, std::string_view, std::string>;
@@ -75,8 +80,9 @@ constexpr std::string_view _extract_reference(std::string_view& rest) {
   return std::string_view(start, consumed);
 }
 
-constexpr std::unexpected<error_trace> unexpected_error(
-  null_terminated<char> msg, const char* pos, std::string_view doc, const source& src = {}) {
+constexpr std::unexpected<error> unexpected_error(
+  null_terminated<char> msg, const char* pos, std::string_view doc) {
+  if (!std::is_constant_evaluated()) make_footprint;
   const auto offset = uint64_t(pos - doc.data());
   const auto line = uint64_t(std::count(doc.data(), pos, '\n') + 1);
   size_t line_start_index = 0;
@@ -88,6 +94,8 @@ constexpr std::unexpected<error_trace> unexpected_error(
   const auto line_start = doc.data() + line_start_index;
   const auto column = uint64_t(pos - line_start + 1);
   auto s = std::format("{} (line {}, column {})", msg, line, column);
-  return yw::unexpected_error(errors::invalid_argument, std::move(s), 0, offset, src);
+  return unexpected_error(errors::invalid_argument, std::move(s), 0, offset);
 }
 }
+
+#undef ywlib_header_name

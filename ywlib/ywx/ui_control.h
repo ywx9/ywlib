@@ -149,6 +149,8 @@ public:
       return SUCCEEDED(hr) && contains;
     }
 
+    //-- overrides --//
+
     virtual unknown_slotid get_window_id() const override { return window_id; }
 
     virtual std::expected<void, error_trace> make_dirty() override {

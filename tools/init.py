@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 
@@ -32,7 +31,7 @@ def main() -> int:
         root / "CMakeLists.txt",
         template_dir / "CMakeLists.txt.in",
         values,
-        overwrite=True,
+        overwrite=False,
     )
 
     ensure_file_from_template(
@@ -53,9 +52,6 @@ def main() -> int:
     )
 
     build_dir = root / "build"
-    if build_dir.exists():
-        shutil.rmtree(build_dir)
-
     cmake_configure(build_dir)
 
     return 0
