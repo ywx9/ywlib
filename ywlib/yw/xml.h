@@ -27,7 +27,7 @@ template<bool View> class document {
 public:
   static constexpr bool view = View;
 
-  select_type<View, const std::string_view, std::string> xml_declaration;
+  select_type<View, const std::string_view, string<char>> xml_declaration;
   std::vector<misc<View>> prolog;
   xml::element<View> element;
   std::vector<misc<View>> trailing_misc;
@@ -130,9 +130,9 @@ public:
   /// returns this document in XML document form.
   /// If this document is empty, returns an empty string.
   /// Otherwise, this document is emitted as-is without validation.
-  constexpr std::string to_string() const {
+  constexpr string<char> to_string() const {
     if (is_empty()) return {};
-    std::string result(to_string_size(), '\0');
+    string<char> result(to_string_size(), '\0');
     to_string_into(result.data());
     return result;
   }
@@ -189,7 +189,7 @@ inline std::expected<document<false>, error> open(const std::filesystem::path& p
   make_footprint;
   if (auto fh = yw::open(path, open_mode::read_existing); !fh) return unexpected_error(fh.error());
   else if (auto size = fh->file_size(); !size) return unexpected_error(size.error());
-  else if (std::string content(static_cast<size_t>(*size), '\0'); false) return {};
+  else if (string<char> content(static_cast<size_t>(*size), '\0'); false) return {};
   else if (auto read = fh->read_exact(content.data(), content.size()); !read) return unexpected_error(read.error());
   else return document<false>::parse(content);
 }

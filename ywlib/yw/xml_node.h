@@ -14,7 +14,7 @@ template<bool View> class comment {
   constexpr comment(std::string_view Content) noexcept : content(Content) {}
 
 public:
-  select_type<View, const std::string_view, std::string> content;
+  select_type<View, const std::string_view, string<char>> content;
 
   /// checks if content is empty or valid for comment
   explicit constexpr operator bool() const noexcept { return is_empty() || is_valid(); }
@@ -47,9 +47,9 @@ public:
   /// writes this comment as `<!--content-->`.
   /// If content is empty, nothing is written.
   /// Otherwise, content is written without validation.
-  constexpr std::string to_string() const {
+  constexpr string<char> to_string() const {
     if (content.empty()) return {};
-    std::string result(to_string_size(), '\0');
+    string<char> result(to_string_size(), '\0');
     to_string_into(result.data());
     return result;
   }
@@ -74,7 +74,7 @@ template<bool View> class text {
   constexpr text(std::string_view Content) noexcept : content(Content) {}
 
 public:
-  select_type<View, const std::string_view, std::string> content;
+  select_type<View, const std::string_view, string<char>> content;
 
   /// checks if content is empty or valid for text
   explicit constexpr operator bool() const noexcept { return is_empty() || is_valid(); }
@@ -116,7 +116,7 @@ public:
   /// returns this text as-is.
   /// If content is empty, returns an empty string.
   /// Otherwise, content is emitted as-is without validation.
-  constexpr std::string to_string() const { return std::string(content); }
+  constexpr string<char> to_string() const { return string<char>(content); }
 
   static constexpr std::expected<text<View>, error> parse(std::string_view& rest, std::string_view doc) {
     if (!std::is_constant_evaluated()) make_footprint;
@@ -149,8 +149,8 @@ template<bool View> class pi {
   constexpr pi(std::string_view Target, std::string_view Data) noexcept : target(Target), data(Data) {}
 
 public:
-  select_type<View, const std::string_view, std::string> target;
-  select_type<View, const std::string_view, std::string> data;
+  select_type<View, const std::string_view, string<char>> target;
+  select_type<View, const std::string_view, string<char>> data;
 
   /// checks if this processing instruction is empty or valid
   explicit constexpr operator bool() const noexcept { return is_empty() || is_valid(); }
@@ -199,9 +199,9 @@ public:
   /// returns this processing instruction in XML PI form (`<?target data?>`).
   /// If both target and data are empty, returns an empty string.
   /// Otherwise, target and data are emitted as-is without validation.
-  constexpr std::string to_string() const {
+  constexpr string<char> to_string() const {
     if (is_empty(target, data)) return {};
-    std::string result(to_string_size(), '\0');
+    string<char> result(to_string_size(), '\0');
     to_string_into(result.data());
     return result;
   }
@@ -239,8 +239,8 @@ template<bool View> class attribute {
   constexpr attribute(std::string_view Name, std::string_view Value) noexcept : name(Name), value(Value) {}
 
 public:
-  select_type<View, const std::string_view, std::string> name;
-  select_type<View, const std::string_view, std::string> value;
+  select_type<View, const std::string_view, string<char>> name;
+  select_type<View, const std::string_view, string<char>> value;
 
   /// checks if this attribute is empty or valid
   explicit constexpr operator bool() const noexcept { return is_empty() || is_valid(); }
@@ -295,9 +295,9 @@ public:
   /// returns this attribute in XML attribute form (`name="value"`).
   /// If this attribute is empty, returns an empty string.
   /// Otherwise, name and value are emitted as-is without validation.
-  constexpr std::string to_string() const {
+  constexpr string<char> to_string() const {
     if (is_empty()) return {};
-    std::string result(to_string_size(), '\0');
+    string<char> result(to_string_size(), '\0');
     to_string_into(result.data());
     return result;
   }

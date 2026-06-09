@@ -20,13 +20,14 @@ define_error(file_not_initialized);
 define_error(file_invalid_buffer);
 define_error(file_open_failed);
 define_error(file_operation_failed);
-}
+} // namespace errors
 
 class file_handle;
 
 } // namespace yw
 
 #ifdef _WIN32
+#include <io.h>
 namespace yw::internal {
 inline std::expected<FILE*, error> _open_win(const std::filesystem::path& p, open_mode mode) {
   make_footprint;
@@ -233,6 +234,12 @@ public:
     else return unexpected_error(errors::file_operation_failed, "file_handle: write error");
   }
 
+  /// writes the contiguous range contents as raw bytes.
+  /// \return on success, the number of bytes written.
+  template<contiguous_range R> requires trivial<iter_value_t<R>> std::expected<size_t, error> write(R&& range) {
+    return write(std::ranges::data(range), std::ranges::size(range) * sizeof(iter_value_t<R>));
+  }
+
   /// writes exactly `bytes` bytes from `src` to the file.
   /// \return returns normally on success.
   /// \note returns an error if fewer than `bytes` bytes could be written.
@@ -249,12 +256,23 @@ public:
     return {};
   }
 
+  /// writes the entire contiguous range contents as raw bytes.
+  /// \return returns normally on success.
+  template<contiguous_range R> requires trivial<iter_value_t<R>> std::expected<void, error> write_exact(R&& range) {
+    return write_exact(std::ranges::data(range), std::ranges::size(range) * sizeof(iter_value_t<R>));
+  }
+
   /// writes a trivially copyable value to the file.
   /// \return returns normally on success.
   template<trivial T> std::expected<void, error> write_trivial(const T& v) {
     make_footprint;
     if (auto res = write_exact(&v, sizeof(T)); !res) return unexpected_error(res.error());
     else return {};
+  }
+
+  template<typename T> requires is_bounded_array<T> && same_as<iter_value_t<T>, char>
+  std::expected<void, error> write_literal(const T& arr) {
+    return write_exact(arr, (arraysize(arr) - 1) * sizeof(char));
   }
 
   std::expected<void, error> flush() {

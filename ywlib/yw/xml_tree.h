@@ -79,7 +79,7 @@ public:
     else return out;
   }
 
-  constexpr std::string to_string() const {
+  constexpr string<char> to_string() const {
     if (auto p = std::get_if<comment<View>>(&_value); p) return p->to_string();
     else if (auto p = std::get_if<pi<View>>(&_value); p) return p->to_string();
     else return {};
@@ -108,7 +108,7 @@ template<bool View> class element {
     : name(n), attributes(std::move(a)), children(std::move(c)) {}
 
 public:
-  select_type<View, const std::string_view, std::string> name;
+  select_type<View, const std::string_view, string<char>> name;
   std::vector<attribute<View>> attributes;
   std::vector<child<View>> children;
 
@@ -143,8 +143,8 @@ public:
   /// returns this element in XML element form.
   /// If this element is empty, returns an empty string.
   /// Otherwise, this element is emitted as-is without validation.
-  constexpr std::string to_string() const {
-    std::string result(to_string_size(), '\0');
+  constexpr string<char> to_string() const {
+    string<char> result(to_string_size(), '\0');
     to_string_into(result.data());
     return result;
   }
@@ -298,7 +298,7 @@ public:
   /// returns this child as string.
   /// If empty, returns an empty string.
   /// Otherwise, the stored value is emitted as-is without validation.
-  constexpr std::string to_string() const {
+  constexpr string<char> to_string() const {
     if (auto p = std::get_if<comment<View>>(&_value); p) return p->to_string();
     else if (auto p = std::get_if<pi<View>>(&_value); p) return p->to_string();
     else if (auto p = std::get_if<text<View>>(&_value); p) return p->to_string();

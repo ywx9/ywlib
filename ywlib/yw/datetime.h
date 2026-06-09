@@ -1,5 +1,5 @@
 #pragma once
-#include "yw/core.h"
+#include "yw/string.h"
 
 namespace yw {
 
@@ -26,11 +26,11 @@ struct date {
   template<typename Clock, typename Dur> constexpr date(const std::chrono::time_point<Clock, Dur>& tp) noexcept
     : date(std::chrono::year_month_day(std::chrono::floor<std::chrono::days>(tp))) {}
 
-  constexpr std::string string() const { return this->string<char>(); }
+  constexpr string<char> to_string() const { return to_string<char>(); }
 
-  template<char_type C> constexpr std::basic_string<C> string() const {
+  template<char_type C> constexpr string<C> to_string() const {
     const bool b = year < 0;
-    std::basic_string<C> r(10 + b, '0');
+    string<C> r(10 + b, '0');
     auto p = r.data();
     int y = b ? -year : year;
     if (b) *p++ = C('-');
@@ -61,13 +61,14 @@ struct time {
     : time(hms.hours().count(), hms.minutes().count(), hms.seconds().count()) {}
 
   template<typename Clock, typename Duration> time(const std::chrono::time_point<Clock, Duration>& tp)
-    : time(std::chrono::hh_mm_ss(
-        std::chrono::floor<std::chrono::seconds>(tp - std::chrono::floor<std::chrono::days>(tp)))) {}
+    : time(
+        std::chrono::hh_mm_ss(
+          std::chrono::floor<std::chrono::seconds>(tp - std::chrono::floor<std::chrono::days>(tp)))) {}
 
-  constexpr std::string string() const { return this->string<char>(); }
+  constexpr string<char> to_string() const { return to_string<char>(); }
 
-  template<char_type C> constexpr std::basic_string<C> string() const {
-    std::basic_string<C> r(8, {});
+  template<char_type C> constexpr string<C> to_string() const {
+    string<C> r(8, {});
     auto p = r.data();
     auto h = hour % 100;
     *p++ = C('0' + h / 10), *p++ = C('0' + h % 10), *p++ = C(':');
@@ -91,11 +92,11 @@ struct datetime {
   constexpr datetime(const yw::date& Date, const yw::time& Time) noexcept : date(Date), time(Time) {}
   template<typename Clock, typename Dur> datetime(const std::chrono::time_point<Clock, Dur>& tp) : date(tp), time(tp) {}
 
-  constexpr std::string string() const { return this->string<char>(); }
+  constexpr string<char> to_string() const { return to_string<char>(); }
 
-  template<char_type C> constexpr std::basic_string<C> string() const {
+  template<char_type C> constexpr string<C> to_string() const {
     const bool b = date.year < 0;
-    std::basic_string<C> r(19 + b, '0');
+    string<C> r(19 + b, '0');
     auto p = r.data();
     int y = b ? -date.year : date.year;
     if (b) *p++ = C('-');
@@ -136,11 +137,11 @@ struct datetimems : datetime {
     : datetime(tp),
       ms(unsigned(std::chrono::duration_cast<std::chrono::milliseconds>(tp.time_since_epoch()).count() % 1000)) {}
 
-  constexpr std::string string() const { return this->string<char>(); }
+  constexpr string<char> to_string() const { return to_string<char>(); }
 
-  template<char_type C> constexpr std::basic_string<C> string() const {
+  template<char_type C> constexpr string<C> to_string() const {
     const bool b = date.year < 0;
-    std::basic_string<C> r(23 + b, '0');
+    string<C> r(23 + b, '0');
     auto p = r.data();
     int y = b ? -date.year : date.year;
     if (b) *p++ = C('-');
@@ -193,4 +194,4 @@ template<typename C> struct formatter<yw::datetimems, C> {
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::datetimems& dtms, auto& ctx) const { return fmt.format(yw::unicode<C>(dtms.string()), ctx); }
 };
-}
+} // namespace std

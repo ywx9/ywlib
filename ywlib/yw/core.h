@@ -8,15 +8,13 @@
 #include <cstring>
 #include <expected>
 #include <filesystem>
-#include <format>
 #include <functional>
 #include <iterator>
 #include <memory>
 #include <numeric>
-#include <print>
 #include <ranges>
-#include <source_location>
 #include <string_view>
+#include <source_location>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -206,8 +204,8 @@ template<size_t I, typename T, typename... Ts> constexpr decltype(auto) _select(
 }
 } // namespace sys
 
-/// selects the I-th argument from the given arguments.
-/// \note If I is a bool value, selects the first argument if I is true.
+/// selects I-th argument from given arguments.
+/// \note If I is a bool value, the first argument is selected when I is true.
 template<std::convertible_to<size_t> auto I, typename... Ts>
 requires((is_bool<decltype(I)> && sizeof...(Ts) == 2) || (!is_bool<decltype(I)> && I < sizeof...(Ts)))
 constexpr decltype(auto) select(Ts&&... as) noexcept {
@@ -215,13 +213,13 @@ constexpr decltype(auto) select(Ts&&... as) noexcept {
   else return sys::_select<size_t(I)>(static_cast<Ts&&>(as)...);
 }
 
-/// selects the type of the I-th argument from the given types.
-/// \note If I is a bool value, selects the first type if I is true.
+/// selects I-th type.
+/// \note If I is a bool value, the first type is selected when I is true.
 template<std::convertible_to<size_t> auto I, typename... Ts> using select_type =
   remove_ref<decltype(select<I>(std::type_identity<Ts>{}...))>::type;
 
-/// selects the value of the I-th argument from the given arguments.
-/// \note If I is a bool value, selects the first argument if I is true.
+/// selects I-th value.
+/// \note If I is a bool value, the first argument is selected when I is true.
 template<std::convertible_to<size_t> auto I, auto... Vs> constexpr auto select_value = select<I>(Vs...);
 
 //////////////////////////////////////// MARK: add/copy_cvref
@@ -259,6 +257,11 @@ struct none {
   constexpr none& operator-=(none) noexcept { return *this; }
   constexpr none& operator*=(none) noexcept { return *this; }
   constexpr none& operator/=(none) noexcept { return *this; }
+  template<char_type C> constexpr std::basic_string_view<C> to_string() const noexcept {
+    constexpr C _str[] = {'n', 'o', 'n', 'e'};
+    return std::basic_string_view<C>(_str, 4);
+  }
+  constexpr std::basic_string_view<char> to_string() const noexcept { return to_string<char>(); }
 };
 
 template<typename T> concept is_none = same_as<remove_cv<T>, none>;
@@ -378,54 +381,55 @@ template<typename R, typename T = iter_value_t<R>> concept output_range = std::r
 
 template<typename S, typename I> concept sentinel_for = std::sentinel_for<S, I>;
 template<typename S, typename I> concept sized_sentinel_for = std::sized_sentinel_for<S, I>;
+}
 
 //////////////////////////////////////// MARK: char / string
 
-using namespace std::string_view_literals;
-using namespace std::string_literals;
+// using namespace std::string_view_literals;
+// using namespace std::string_literals;
 
-inline constexpr auto is_ascii = []<char_type C>(C c) noexcept { return 0x20 <= c && c < 0x7F; };
-inline constexpr auto is_digit = []<char_type C>(C c) noexcept { return '0' <= c && c <= '9'; };
-inline constexpr auto is_lower = []<char_type C>(C c) noexcept { return 'a' <= c && c <= 'z'; };
-inline constexpr auto is_upper = []<char_type C>(C c) noexcept { return 'A' <= c && c <= 'Z'; };
-inline constexpr auto is_alpha = []<char_type C>(C c) noexcept { return is_lower(c) || is_upper(c); };
-inline constexpr auto is_alnum = []<char_type C>(C c) noexcept { return is_alpha(c) || is_digit(c); };
-inline constexpr auto is_xdigit = []<char_type C>(C c) noexcept {
-  return is_digit(c) || (('a' <= c && c <= 'f') || ('A' <= c && c <= 'F'));
-};
+// inline constexpr auto is_ascii = []<char_type C>(C c) noexcept { return 0x20 <= c && c < 0x7F; };
+// inline constexpr auto is_digit = []<char_type C>(C c) noexcept { return '0' <= c && c <= '9'; };
+// inline constexpr auto is_lower = []<char_type C>(C c) noexcept { return 'a' <= c && c <= 'z'; };
+// inline constexpr auto is_upper = []<char_type C>(C c) noexcept { return 'A' <= c && c <= 'Z'; };
+// inline constexpr auto is_alpha = []<char_type C>(C c) noexcept { return is_lower(c) || is_upper(c); };
+// inline constexpr auto is_alnum = []<char_type C>(C c) noexcept { return is_alpha(c) || is_digit(c); };
+// inline constexpr auto is_xdigit = []<char_type C>(C c) noexcept {
+//   return is_digit(c) || (('a' <= c && c <= 'f') || ('A' <= c && c <= 'F'));
+// };
 
-template<typename S, typename C = iter_value_t<S>> concept stringable = requires {
-  requires char_type<C>;
-  requires std::convertible_to<S, std::basic_string_view<C>>;
-  requires std::constructible_from<std::basic_string_view<C>, S>;
-};
+// template<typename S, typename C = iter_value_t<S>> concept stringable = requires {
+//   requires char_type<C>;
+//   requires std::convertible_to<S, std::basic_string_view<C>>;
+//   requires std::constructible_from<std::basic_string_view<C>, S>;
+// };
 
-template<arithmetic T> constexpr auto stov = [](stringable<char> auto&& str) -> T {
-  const auto sv = std::string_view(str);
-  T result{};
-  std::from_chars(sv.data(), sv.data() + sv.size(), result);
-  return result;
-};
+// template<arithmetic T> constexpr auto stov = [](stringable<char> auto&& str) -> T {
+//   const auto sv = std::string_view(str);
+//   T result{};
+//   std::from_chars(sv.data(), sv.data() + sv.size(), result);
+//   return result;
+// };
 
-namespace internal {
-inline constexpr char utos_table_upper[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-inline constexpr char utos_table_lower[] = "0123456789abcdefghijklmnopqrstuvwxyz";
-template<unsigned Width, unsigned Base = 10, bool Upper = false, char_type C = char> requires(Base >= 2 && Base <= 36)
-constexpr C* utos(C* dest, uint64_t u) {
-  C* p = dest + Width;
-  auto table = Upper ? utos_table_upper : utos_table_lower;
-  while (p != dest) *(--p) = static_cast<C>(table[u % Base]), u /= Base;
-  return dest + Width;
-}
-} // namespace internal
+// namespace internal {
+// inline constexpr char utos_table_upper[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+// inline constexpr char utos_table_lower[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+// template<unsigned Width, unsigned Base = 10, bool Upper = false, char_type C = char> requires(Base >= 2 && Base <= 36)
+// constexpr C* utos(C* dest, uint64_t u) {
+//   C* p = dest + Width;
+//   auto table = Upper ? utos_table_upper : utos_table_lower;
+//   while (p != dest) *(--p) = static_cast<C>(table[u % Base]), u /= Base;
+//   return dest + Width;
+// }
+// } // namespace internal
 
 //////////////////////////////////////// MARK: vtos
 
-template<char_type C, size_t N> constexpr std::basic_string<C> _ascii_string(const char (&s)[N]) {
-  std::basic_string<C> r(N, '\0');
-  for (size_t i = 0; i < N; ++i) r[i] = static_cast<C>(s[i]);
-  return r;
-}
+// template<char_type C, size_t N> constexpr std::basic_string<C> _ascii_string(const char (&s)[N]) {
+//   std::basic_string<C> r(N, '\0');
+//   for (size_t i = 0; i < N; ++i) r[i] = static_cast<C>(s[i]);
+//   return r;
+// }
 
 // template<char_type C> constexpr std::basic_string<C> bool_to_string(bool value) {
 //   return value ? _ascii_string<C>("true") : _ascii_string<C>("false");
@@ -433,121 +437,121 @@ template<char_type C, size_t N> constexpr std::basic_string<C> _ascii_string(con
 
 // constexpr std::string bool_to_string(bool value) { return bool_to_string<char>(value); }
 
-template<char_type C> constexpr std::basic_string<C> uint_to_string(uint_type auto value) {
-  if (value == 0) return std::basic_string<C>(1, C('0'));
-  auto u = static_cast<uint64_t>(value);
-  unsigned keta = 0;
-  for (auto u_ = u; u_ != 0; u_ /= 10) ++keta;
-  std::basic_string<C> result(keta, '\0');
-  for (auto p = result.data() + keta; u != 0; u /= 10) *(--p) = static_cast<C>('0' + (u % 10));
-  return result;
-}
+// template<char_type C> constexpr std::basic_string<C> uint_to_string(uint_type auto value) {
+//   if (value == 0) return std::basic_string<C>(1, C('0'));
+//   auto u = static_cast<uint64_t>(value);
+//   unsigned keta = 0;
+//   for (auto u_ = u; u_ != 0; u_ /= 10) ++keta;
+//   std::basic_string<C> result(keta, '\0');
+//   for (auto p = result.data() + keta; u != 0; u /= 10) *(--p) = static_cast<C>('0' + (u % 10));
+//   return result;
+// }
 
-constexpr std::string uint_to_string(uint_type auto value) { return uint_to_string<char>(value); }
+// constexpr std::string uint_to_string(uint_type auto value) { return uint_to_string<char>(value); }
 
-template<char_type C> constexpr std::basic_string<C> int_to_string(integral auto value) {
-  if constexpr (uint_type<decltype(value)>) return uint_to_string<C>(value);
-  const bool minus = value < 0;
-  auto u = static_cast<uint64_t>(minus ? -value : value);
-  unsigned keta = 0;
-  for (auto u_ = u; u_ != 0; u_ /= 10) ++keta;
-  std::basic_string<C> result(keta + minus, '\0');
-  if (minus) result[0] = '-';
-  for (auto p = result.data() + result.size(); u != 0; u /= 10) *(--p) = static_cast<C>('0' + (u % 10));
-  return result;
-}
+// template<char_type C> constexpr std::basic_string<C> int_to_string(integral auto value) {
+//   if constexpr (uint_type<decltype(value)>) return uint_to_string<C>(value);
+//   const bool minus = value < 0;
+//   auto u = static_cast<uint64_t>(minus ? -value : value);
+//   unsigned keta = 0;
+//   for (auto u_ = u; u_ != 0; u_ /= 10) ++keta;
+//   std::basic_string<C> result(keta + minus, '\0');
+//   if (minus) result[0] = '-';
+//   for (auto p = result.data() + result.size(); u != 0; u /= 10) *(--p) = static_cast<C>('0' + (u % 10));
+//   return result;
+// }
 
-constexpr std::string int_to_string(integral auto value) { return int_to_string<char>(value); }
+// constexpr std::string int_to_string(integral auto value) { return int_to_string<char>(value); }
 
-template<char_type C> constexpr std::basic_string<C> float_to_string(floating auto value) {
-  using T = decltype(value);
-  using limits = std::numeric_limits<uint64_t>;
+// template<char_type C> constexpr std::basic_string<C> float_to_string(floating auto value) {
+//   using T = decltype(value);
+//   using limits = std::numeric_limits<uint64_t>;
 
-  if (std::isnan(value)) return _ascii_string<C>("nan");
-  if (std::isinf(value)) return value < 0 ? _ascii_string<C>("-inf") : _ascii_string<C>("inf");
+//   if (std::isnan(value)) return _ascii_string<C>("nan");
+//   if (std::isinf(value)) return value < 0 ? _ascii_string<C>("-inf") : _ascii_string<C>("inf");
 
-  const bool minus = std::signbit(value);
-  long double abs_value = static_cast<long double>(minus ? -value : value);
-  if (abs_value == 0) return minus ? _ascii_string<C>("-0") : _ascii_string<C>("0");
+//   const bool minus = std::signbit(value);
+//   long double abs_value = static_cast<long double>(minus ? -value : value);
+//   if (abs_value == 0) return minus ? _ascii_string<C>("-0") : _ascii_string<C>("0");
 
-  constexpr uint64_t scale = 1000000;
-  constexpr long double max_uint64 = static_cast<long double>(limits::max());
+//   constexpr uint64_t scale = 1000000;
+//   constexpr long double max_uint64 = static_cast<long double>(limits::max());
 
-  auto append_fixed6 = [](std::basic_string<C>& s, uint64_t frac) {
-    const size_t offset = s.size();
-    s.resize(offset + 6, C('0'));
-    internal::utos<6, 10, false, C>(s.data() + offset, frac);
-  };
+//   auto append_fixed6 = [](std::basic_string<C>& s, uint64_t frac) {
+//     const size_t offset = s.size();
+//     s.resize(offset + 6, C('0'));
+//     internal::utos<6, 10, false, C>(s.data() + offset, frac);
+//   };
 
-  auto append_sign = [&](std::basic_string<C>& s) {
-    if (minus) s += C('-');
-  };
+//   auto append_sign = [&](std::basic_string<C>& s) {
+//     if (minus) s += C('-');
+//   };
 
-  auto to_exponential = [&]() {
-    int exponent = 0;
-    long double normalized = abs_value;
-    while (normalized >= 10) {
-      normalized /= 10;
-      ++exponent;
-    }
-    uint64_t int_part = static_cast<uint64_t>(normalized);
-    uint64_t frac_part = static_cast<uint64_t>((normalized - int_part) * scale + 0.5L);
-    if (frac_part >= scale) {
-      ++int_part;
-      frac_part -= scale;
-      if (int_part >= 10) {
-        int_part = 1;
-        ++exponent;
-      }
-    }
+//   auto to_exponential = [&]() {
+//     int exponent = 0;
+//     long double normalized = abs_value;
+//     while (normalized >= 10) {
+//       normalized /= 10;
+//       ++exponent;
+//     }
+//     uint64_t int_part = static_cast<uint64_t>(normalized);
+//     uint64_t frac_part = static_cast<uint64_t>((normalized - int_part) * scale + 0.5L);
+//     if (frac_part >= scale) {
+//       ++int_part;
+//       frac_part -= scale;
+//       if (int_part >= 10) {
+//         int_part = 1;
+//         ++exponent;
+//       }
+//     }
 
-    std::basic_string<C> s;
-    append_sign(s);
-    s += uint_to_string<C>(int_part);
-    s += C('.');
-    append_fixed6(s, frac_part);
-    s += C('e');
-    s += C('+');
-    s += uint_to_string<C>(static_cast<uint64_t>(exponent));
-    return s;
-  };
+//     std::basic_string<C> s;
+//     append_sign(s);
+//     s += uint_to_string<C>(int_part);
+//     s += C('.');
+//     append_fixed6(s, frac_part);
+//     s += C('e');
+//     s += C('+');
+//     s += uint_to_string<C>(static_cast<uint64_t>(exponent));
+//     return s;
+//   };
 
-  if (abs_value >= max_uint64) return to_exponential();
+//   if (abs_value >= max_uint64) return to_exponential();
 
-  uint64_t int_part = static_cast<uint64_t>(abs_value);
-  uint64_t frac_part = static_cast<uint64_t>((abs_value - int_part) * scale + 0.5L);
-  if (frac_part >= scale) {
-    ++int_part;
-    frac_part -= scale;
-  }
+//   uint64_t int_part = static_cast<uint64_t>(abs_value);
+//   uint64_t frac_part = static_cast<uint64_t>((abs_value - int_part) * scale + 0.5L);
+//   if (frac_part >= scale) {
+//     ++int_part;
+//     frac_part -= scale;
+//   }
 
-  if (int_part >= limits::max()) return to_exponential();
+//   if (int_part >= limits::max()) return to_exponential();
 
-  std::basic_string<C> s;
-  append_sign(s);
-  s += uint_to_string<C>(int_part);
-  s += C('.');
-  append_fixed6(s, frac_part);
+//   std::basic_string<C> s;
+//   append_sign(s);
+//   s += uint_to_string<C>(int_part);
+//   s += C('.');
+//   append_fixed6(s, frac_part);
 
-  if (int_part != 0) {
-    while (!s.empty() && s.back() == C('0')) s.pop_back();
-    if (!s.empty() && s.back() == C('.')) s.pop_back();
-  }
-  return s;
-}
+//   if (int_part != 0) {
+//     while (!s.empty() && s.back() == C('0')) s.pop_back();
+//     if (!s.empty() && s.back() == C('.')) s.pop_back();
+//   }
+//   return s;
+// }
 
-constexpr std::string float_to_string(floating auto value) { return float_to_string<char>(value); }
+// constexpr std::string float_to_string(floating auto value) { return float_to_string<char>(value); }
 
-template<char_type C> constexpr std::basic_string<C> vtos(arithmetic auto value) {
-  if constexpr (is_bool<decltype(value)>) return bool_to_string<C>(value);
-  else if constexpr (integral<decltype(value)>) return int_to_string<C>(value);
-  else return float_to_string<C>(value);
-}
+// template<char_type C> constexpr std::basic_string<C> vtos(arithmetic auto value) {
+//   if constexpr (is_bool<decltype(value)>) return bool_to_string<C>(value);
+//   else if constexpr (integral<decltype(value)>) return int_to_string<C>(value);
+//   else return float_to_string<C>(value);
+// }
 
-constexpr std::string vtos(arithmetic auto value) { return vtos<char>(value); }
+// constexpr std::string vtos(arithmetic auto value) { return vtos<char>(value); }
 
 //////////////////////////////////////// MARK: GET
-
+namespace yw {
 template<typename T> inline constexpr size_t extent = select_type<requires {
   std::tuple_size<std::remove_reference_t<T>>::value;
 }, std::tuple_size<std::remove_reference_t<T>>, std::extent<std::remove_reference_t<T>>>::value;
@@ -600,210 +604,9 @@ template<typename C> struct formatter<yw::none, C> {
 };
 } // namespace std
 
-//////////////////////////////////////// MARK: unicode
-
-namespace yw {
-namespace internal {
-inline constexpr char32_t _unicode_s8_to_c32(const auto*& s) noexcept {
-  const auto c = char32_t(*s);
-  const auto i = unsigned(c >= 0xc0) + unsigned(c >= 0xe0) + unsigned(c >= 0xf0);
-  const auto j = i + 1 + unsigned(i != 0);
-  char32_t uc = char32_t(-int(i == 3) & s[i < 3 ? i : 3] & 0x3f);
-  uc |= char32_t((-int(i >= 2) & s[i < 2 ? i : 2] & 0x3f)) << (6 * (i >= 2 ? i - 2 : 0));
-  uc |= char32_t((-int(i >= 1) & s[i < 1 ? i : 1] & 0x3f)) << (6 * (i >= 1 ? i - 1 : 0));
-  uc |= char32_t(char8_t(c << j) >> j) << (6 * i);
-  s += i + 1;
-  return uc;
-}
-inline constexpr char32_t _unicode_s16_to_c32(const auto*& s) noexcept {
-  const auto c = char32_t(*s);
-  const bool b = (c & 0xff00) == 0xd800;
-  const auto uc = c ^ (-int(b) & (c ^ (0x10000 | ((c - 0xd800) << 10 | char32_t(s[b] - 0xdc00)))));
-  s += 1 + b;
-  return uc;
-}
-template<char_type C> inline constexpr void _unicode_c32_to_s8(char32_t uc, C*& s) noexcept {
-  const auto i = unsigned(uc >= 0x80) + unsigned(uc >= 0x800) + unsigned(uc >= 0x10000);
-  s[i < 3 ? i : 3] = C(0x80 | (uc & 0x3f));
-  s[i < 2 ? i : 2] = C(0x80 | ((uc >> (6 * (i > 1 ? i - 2 : 0))) & 0x3f));
-  s[i < 1 ? i : 1] = C(0x80 | ((uc >> (6 * (i > 0 ? i - 1 : 0))) & 0x3f));
-  *s = C(uint32_t(((i + (i >> 1)) << 4) + (-i & 0xb0)) | ((uc >> (6 * i)) & (0x3f >> i | -int(i == 0))));
-  s += i + 1;
-}
-template<char_type C> inline constexpr void _unicode_c32_to_s16(char32_t uc, C*& s) noexcept {
-  const bool b = uc >= 0x10000;
-  s[b] = C(0xdc00 | (uc & 0x3ff));
-  *s = C(uc ^ ((uc ^ (0xd800 | (uc >> 10))) & -int(b)));
-  s += 1 + b;
-}
-template<char_type In, char_type Out> constexpr Out* _unicode(const In* i, size_t n, Out* o) {
-  for (auto s = i, end = i + n; s < end;) {
-    char32_t uc;
-    if constexpr (same_as<In, char8_t>) uc = _unicode_s8_to_c32(s);
-    else if constexpr (same_as<In, char16_t>) uc = _unicode_s16_to_c32(s);
-    else uc = char32_t(*s++);
-    if constexpr (same_as<Out, char8_t>) _unicode_c32_to_s8(uc, o);
-    else if constexpr (same_as<Out, char16_t>) _unicode_c32_to_s16(uc, o);
-    else *o++ = Out(uc);
-  }
-  return o;
-}
-}
-
-template<char_type C> inline constexpr auto unicode = []<stringable S>(S&& s) -> std::basic_string<C> {
-  using From = iter_value_t<S>;
-  if constexpr (same_as<S&&, std::basic_string<C>&&>) return std::move(s);
-  if constexpr (same_as<From, C>) return std::basic_string<C>(std::basic_string_view<C>(s));
-  const auto sv_original = std::basic_string_view<From>(s);
-  if constexpr (sizeof(From) == sizeof(C))
-    return std::basic_string<C>(std::bit_cast<std::basic_string_view<C>>(sv_original));
-  using T = select_type<sizeof(From) / 2, char8_t, char16_t, char32_t>;
-  const auto sv = std::bit_cast<std::basic_string_view<T>>(sv_original);
-  constexpr auto scale = select_value<yw::max(int(sizeof(T)) - int(sizeof(C)), 0), 1, 3, 2, 4>;
-  auto r = std::basic_string<C>(sv.size() * scale, C{});
-  auto out = internal::_unicode(sv.data(), sv.size(), r.data());
-  r.resize(out - r.data());
-  return r;
-};
-} // namespace yw
-
-//////////////////////////////////////// MARK: format
-
-namespace yw {
-
-inline constexpr struct {
-  template<typename T> static constexpr auto operator()(const T& a) {
-    if constexpr (stringable<T>) {
-      using C = iter_value_t<T>;
-      return std::basic_string<C>(std::basic_string_view<C>(a));
-    } else if constexpr (arithmetic<T>) return vtos(a);
-    else if constexpr (is_pointer<remove_ref<T>>) {
-      if (std::is_constant_evaluated()) {
-        constexpr size_t width = sizeof(void*) * 2;
-        std::string s(width + 2, '0');
-        s[0] = '0';
-        s[1] = 'x';
-        return s;
-      } else return vtos(reinterpret_cast<size_t>(a));
-    } else if constexpr (same_as<T, std::filesystem::path>) {
-      if constexpr (same_as<std::filesystem::path::value_type, char>) return std::string(a.native());
-      else return unicode<char>(a.native());
-    } else return std::format("{}", a);
-  }
-
-  template<stringable S, typename... Ts> static std::basic_string<iter_value_t<S>> operator()(S&& fmt, Ts&&... as) {
-    using C = iter_value_t<S>;
-    if constexpr (same_as<C, char8_t>) {
-      auto s = operator()(unicode<char>(static_cast<S&&>(fmt)), static_cast<Ts&&>(as)...);
-      return std::basic_string<C>(reinterpret_cast<std::basic_string<C>&&>(std::move(s)));
-    } else if constexpr (same_as<C, char16_t>) {
-      auto s = operator()(unicode<wchar_t>(static_cast<S&&>(fmt)), static_cast<Ts&&>(as)...);
-      return std::basic_string<C>(reinterpret_cast<std::basic_string<C>&&>(std::move(s)));
-    } else if constexpr (same_as<C, char32_t>) {
-      auto s = operator()(unicode<wchar_t>(static_cast<S&&>(fmt)), static_cast<Ts&&>(as)...);
-      return unicode<C>(s);
-    } else if constexpr (included_in<std::filesystem::path, remove_cvref<Ts>...>) {
-      constexpr auto _to_string = []<typename T>(const T& a) -> decltype(auto) {
-        if constexpr (same_as<T, std::filesystem::path>) return unicode<C>(a.native());
-        else return a;
-      };
-      return operator()(static_cast<S&&>(fmt), _to_string(as)...);
-    } else if constexpr (((!stringable<Ts> && is_pointer<remove_ref<Ts>>) || ...)) {
-      constexpr auto _to_hex = []<typename T>(const T& a) -> decltype(auto) {
-        if constexpr (!stringable<T> && is_pointer<remove_ref<T>>) return static_cast<const void*>(a);
-        else return a;
-      };
-      return operator()(fmt, _to_hex(as)...);
-    } else if constexpr (((stringable<Ts> && different_from<iter_value_t<Ts>, C>) || ...)) {
-      constexpr auto _covert = []<typename S2>(const S2& s) -> decltype(auto) {
-        using C2 = iter_value_t<S2>;
-        if constexpr (stringable<S2> && different_from<C2, C>) return unicode<C>(std::basic_string<C2>(s));
-        else return s;
-      };
-      return operator()(static_cast<S&&>(fmt), _covert(as)...);
-    } else if constexpr (same_as<C, char>) return std::vformat(std::string_view(fmt), std::make_format_args(as...));
-    else return std::vformat(std::wstring_view(fmt), std::make_wformat_args(as...));
-  }
-} format;
-} // namespace yw
-
 //////////////////////////////////////// MARK: print
 
 namespace yw {
-
-namespace internal {
-template<bool Error, stringable S> void _print(S&& s) {
-#ifdef _WIN32
-  if constexpr (same_as<iter_value_t<S>, wchar_t>) {
-    if constexpr (Error) ::WriteConsoleW(::GetStdHandle(STD_ERROR_HANDLE), s.data(), unsigned(s.size()), 0, 0);
-    else ::WriteConsoleW(::GetStdHandle(STD_OUTPUT_HANDLE), s.data(), unsigned(s.size()), 0, 0);
-  } else return _print<Error>(unicode<wchar_t>(static_cast<S&&>(s)));
-#else
-  if constexpr (same_as<iter_value_t<S>, char>) {
-    if constexpr (Error) std::fputs((const char*)s.data(), stderr);
-    else std::fputs((const char*)s.data(), stdout);
-  } else return _print<Error>(unicode<char>(static_cast<S&&>(s)));
-#endif
-}
-} // namespace internal
-
-/// prints formatted string to standard output without newline.
-inline constexpr struct {
-  /// prints formatted string to standard output without newline.
-  template<typename S, typename... Ts> static void operator()(S&& fmt, Ts&&... as) {
-    auto s = yw::format(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
-    internal::_print<false>(s);
-  }
-
-  /// prints formatted string to standard error without newline.
-  template<typename S, typename... Ts> static void err(S&& fmt, Ts&&... as) {
-    auto s = yw::format(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
-    internal::_print<true>(s);
-  }
-} print_inline;
-
-/// prints formatted string to standard output with newline.
-inline constexpr struct {
-  /// prints newline to standard output.
-  static void operator()() { internal::_print<false>("\n"sv); }
-
-  /// prints formatted string to standard output with newline.
-  template<typename S, typename... Ts> static void operator()(S&& fmt, Ts&&... as) {
-    print_inline(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
-    operator()();
-  }
-
-  /// prints newline to standard error.
-  static void err() { internal::_print<true>("\n"sv); }
-
-  /// prints formatted string to standard error with newline.
-  template<typename S, typename... Ts> static void err(S&& fmt, Ts&&... as) {
-    print_inline.err(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
-    operator()();
-  }
-} print;
-
-//////////////////////////////////////// MARK: print_fallback
-
-/// prints formatted string and shows message box as fallback
-struct {
-  template<typename S, typename... Ts> static void operator()(S&& fmt, Ts&&... as) {
-    const auto s = format(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
-    print(s);
-#ifdef _WIN32
-    const auto ws = unicode<wchar_t>(s);
-    ::MessageBoxW(nullptr, ws.data(), L"Message", MB_OK | MB_TOPMOST | MB_TASKMODAL);
-#endif
-  }
-  template<typename S, typename... Ts> static void err(S&& fmt, Ts&&... as) {
-    const auto s = format(static_cast<S&&>(fmt), static_cast<Ts&&>(as)...);
-    print.err(s);
-#ifdef _WIN32
-    const auto ws = unicode<wchar_t>(s);
-    ::MessageBoxW(nullptr, ws.data(), L"Error", MB_OK | MB_TOPMOST | MB_ICONERROR | MB_TASKMODAL);
-#endif
-  }
-} print_fallback;
 
 /// MARK: unique_id
 
@@ -821,103 +624,7 @@ inline constexpr uint64_t unique_id(std::source_location loc = std::source_locat
   return h;
 }
 
-/// MARK: source_trace_buffer
 
-template<size_t N> requires(N != 0) class footprints_t {
-  std::array<const char*, N> _items{};
-  std::size_t _next = 0;
-
-public:
-  static constexpr size_t count = N;
-
-  void push(const char* s) noexcept {
-    if (!s) return;
-    _items[_next] = s;
-    _next = (_next + 1) % N;
-  }
-
-  void clear() noexcept {
-    _items.fill(nullptr);
-    _next = 0;
-  }
-
-  std::string dump() const noexcept {
-    size_t len = 0;
-    for (size_t i = 0; i < N; ++i)
-      if (_items[i]) len += std::char_traits<char>::length(_items[i]) + 1;
-    std::string out;
-    out.reserve(len);
-    for (size_t i = _next; i < N; ++i)
-      if (_items[i]) out += _items[i], out += '\n';
-    for (size_t i = 0; i < _next; ++i)
-      if (_items[i]) out += _items[i], out += '\n';
-    return out;
-  }
-
-  ~footprints_t() noexcept {
-    for (size_t i = _next; i < N; ++i)
-      if (_items[i]) std::fputs(_items[i], stdout), std::fputc('\n', stdout);
-    for (size_t i = 0; i < _next; ++i)
-      if (_items[i]) std::fputs(_items[i], stdout), std::fputc('\n', stdout);
-  }
-};
-
-inline footprints_t<32> footprint;
-
-#define make_footprint ::yw::footprint.push(ywlib_make_source_info)
 } // namespace yw
-
-//////////////////////////////////////// MARK: null_terminated
-
-namespace yw {
-template<char_type C> class null_terminated {
-  std::variant<std::basic_string<C>, std::basic_string_view<C>> _data;
-  template<typename S> static constexpr bool _is_array = is_bounded_array<remove_ref<S>> && same_as<iter_value_t<S>, C>;
-
-public:
-  constexpr null_terminated() : _data(std::basic_string_view<C>{}) {}
-  constexpr null_terminated(std::basic_string<C>& str) : _data(std::in_place_index_t<1>{}, str) {}
-  constexpr null_terminated(const std::basic_string<C>& str) : _data(std::in_place_index_t<1>{}, str) {}
-  constexpr null_terminated(std::basic_string<C>&& str) : _data(std::in_place_index_t<0>{}, std::move(str)) {}
-  constexpr null_terminated(const std::basic_string<C>&& str) : _data(std::in_place_index_t<0>{}, std::move(str)) {}
-
-  template<typename S> requires _is_array<S> constexpr null_terminated(const S& a)
-    : _data(std::in_place_index_t<1>{}, std::basic_string_view<C>(a, std::char_traits<C>::length(a))) {}
-
-  template<stringable S> requires(!_is_array<S>) constexpr null_terminated(S&& s) : _data() {
-    if constexpr (different_from<iter_value_t<S>, C>) _data.template emplace<0>(unicode<C>(static_cast<S&&>(s)));
-    else _data.template emplace<0>(std::basic_string<C>(std::basic_string_view<C>(static_cast<S&&>(s))));
-  }
-
-  constexpr operator std::basic_string_view<C>() const {
-    return std::visit([](const auto& v) { return std::basic_string_view<C>(v); }, _data);
-  }
-
-  bool empty() const noexcept {
-    return std::visit([](const auto& v) { return v.empty(); }, _data);
-  }
-  size_t size() const noexcept {
-    return std::visit([](const auto& v) { return v.size(); }, _data);
-  }
-  const C* data() const noexcept {
-    return std::visit([](const auto& v) { return v.data(); }, _data);
-  }
-  const C* begin() const noexcept {
-    return std::visit([](const auto& v) { return v.data(); }, _data);
-  }
-  const C* end() const noexcept {
-    return std::visit([](const auto& v) { return v.data() + v.size(); }, _data);
-  }
-};
-} // namespace yw
-namespace std {
-template<typename C> struct formatter<yw::null_terminated<C>, C> {
-  formatter<basic_string_view<C>, C> fmt;
-  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::null_terminated<C>& str, auto& ctx) const {
-    return fmt.format(static_cast<basic_string_view<C>>(str), ctx);
-  }
-};
-} // namespace std
 
 #undef ywlib_header_name

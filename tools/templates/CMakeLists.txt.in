@@ -40,6 +40,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     $<$<CONFIG:Release>:-Wl,--gc-sections>
     $<$<CONFIG:Release>:-s>
   )
+  add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND $<$<CONFIG:Release>:${CMAKE_STRIP}> $<$<CONFIG:Release>:--strip-all> $<$<CONFIG:Release>:$<TARGET_FILE:${PROJECT_NAME}>>
+  )
 endif()
 
 if("@LIBRARY@" STREQUAL "ywxlib")

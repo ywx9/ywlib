@@ -1,5 +1,5 @@
 #pragma once
-#include "yw/core.h"
+#include "yw/string.h"
 
 namespace yw {
 
@@ -15,10 +15,9 @@ struct error {
       return id == other.id;
     }
   } type;
-
-  int32_t system_code;
+  ministr<char> message;
   uint64_t position;
-  null_terminated<char> message;
+  int32_t system_code;
   mutable bool handled{true};
 
   constexpr ~error() noexcept;
@@ -29,28 +28,25 @@ struct error {
   constexpr error& operator=(error&& e) noexcept;
 
   explicit constexpr error(
-    decltype(error::type) e, null_terminated<char> msg = {}, int32_t sys_code = 0,
-    uint64_t pos = uint64_t(-1)) noexcept;
+    decltype(error::type) e, ministr<char> msg = {}, int32_t sys_code = 0, uint64_t pos = uint64_t(-1)) noexcept;
 
   explicit constexpr operator bool() const noexcept;
 
-  constexpr std::string to_string() const {
+  constexpr string<char> to_string() const {
     handled = true;
-    if (!std::is_constant_evaluated()) {
-      if (position != uint64_t(-1)) {
-        if (!message.empty()) {
-          if (system_code == 0) return std::format("{}: {} (offset={})", type.name, message, position);
-          else return std::format("{}: {} (code={}, offset={})", type.name, message, system_code, position);
-        } else if (system_code != 0) return std::format("{} (code={}, offset={})", type.name, system_code, position);
-        else return std::format("{} (offset={})", type.name, position);
-      } else {
-        if (!message.empty()) {
-          if (system_code == 0) return std::format("{}: {}", type.name, message);
-          else return std::format("{}: {} (code={})", type.name, message, system_code);
-        } else if (system_code != 0) return std::format("{} (code={})", type.name, system_code);
-        else return type.name;
-      }
-    } else return type.name; // C++26以降でないとconstexpr formatが使えないため簡易に
+    if (position != uint64_t(-1)) {
+      if (!message.empty()) {
+        if (system_code == 0) return yw::format(type.name, ": ", message, " (offset=", position, ")");
+        else return yw::format(type.name, ": ", message, " (code=", system_code, ", offset=", position, ")");
+      } else if (system_code != 0) return yw::format(type.name, " (code=", system_code, ", offset=", position, ")");
+      else return yw::format(type.name, " (offset=", position, ")");
+    } else {
+      if (!message.empty()) {
+        if (system_code == 0) return yw::format(type.name, ": ", message);
+        else return yw::format(type.name, ": ", message, " (code=", system_code, ")");
+      } else if (system_code != 0) return yw::format(type.name, " (code=", system_code, ")");
+      else return type.name;
+    }
   }
 };
 
@@ -71,8 +67,7 @@ define_error(unreachable);
 
 constexpr error::~error() {
   if (type != errors::success && !handled && !std::is_constant_evaluated()) {
-    print("unhandled error destroyed");
-    yw::print.err(to_string());
+    yw::print.err("unhandled error destroyed", "\n", to_string(), "\nFootprints:\n", footprint::dump());
   }
 }
 
@@ -92,8 +87,8 @@ constexpr error& error::operator=(const error& e) {
 }
 
 constexpr error::error(error&& e) noexcept
-  : type(std::exchange(e.type, errors::success)), system_code(std::exchange(e.system_code, 0)),
-    position(std::exchange(e.position, uint64_t(-1))), message(std::move(e.message)),
+  : type(std::exchange(e.type, errors::success)), message(std::move(e.message)),
+    position(std::exchange(e.position, uint64_t(-1))), system_code(std::exchange(e.system_code, 0)),
     handled(std::exchange(e.handled, true)) {}
 
 constexpr error& error::operator=(error&& e) noexcept {
@@ -105,8 +100,8 @@ constexpr error& error::operator=(error&& e) noexcept {
   return *this;
 }
 
-constexpr error::error(decltype(error::type) e, null_terminated<char> msg, int32_t sys_code, uint64_t pos) noexcept
-  : type(e), system_code(sys_code), message(std::move(msg)), position(pos), handled(e == errors::success) {}
+constexpr error::error(decltype(error::type) e, ministr<char> msg, int32_t sys_code, uint64_t pos) noexcept
+  : type(e), message(std::move(msg)), position(pos), system_code(sys_code), handled(e == errors::success) {}
 
 constexpr error::operator bool() const noexcept { return type != errors::success; }
 
@@ -114,7 +109,7 @@ constexpr error::operator bool() const noexcept { return type != errors::success
 
 inline std::unexpected<error> unexpected_error(error& e) { return std::unexpected(std::move(e)); }
 inline std::unexpected<error> unexpected_error(
-  decltype(error::type) e, null_terminated<char> msg = {}, int32_t sys_code = 0, uint64_t pos = uint64_t(-1)) {
+  decltype(error::type) e, string<char> msg = {}, int32_t sys_code = 0, uint64_t pos = uint64_t(-1)) {
   return std::unexpected(error(e, std::move(msg), sys_code, pos));
 }
 
@@ -122,7 +117,7 @@ inline std::unexpected<error> unexpected_error(
 
 namespace internal {
 [[noreturn]] inline void _fatal_error(const error& e, const char* source_info) {
-  print_fallback.err(format("Fatal error: {} at {}\nFootprints:\n{}", e, source_info, footprint.dump()));
+  print_fallback.err(format("Fatal error: {} at {}\nFootprints:\n{}", e, source_info, footprint::dump()));
   std::exit(e.system_code);
 }
 } // namespace internal

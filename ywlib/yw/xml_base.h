@@ -1,5 +1,5 @@
 #pragma once
-#include "yw/core.h"
+#include "yw/error.h"
 
 #ifdef ywlib_header_name
 #error "ywlib_header_name already defined unexpectedly"
@@ -8,7 +8,7 @@
 
 namespace yw::xml {
 
-template<bool View> using string_type = select_type<View, std::string_view, std::string>;
+template<bool View> using string_type = select_type<View, std::string_view, string<char>>;
 
 enum class child_type {
   unknown,
@@ -81,7 +81,7 @@ constexpr std::string_view _extract_reference(std::string_view& rest) {
 }
 
 constexpr std::unexpected<error> unexpected_error(
-  null_terminated<char> msg, const char* pos, std::string_view doc) {
+  ministr<char> msg, const char* pos, std::string_view doc) {
   if (!std::is_constant_evaluated()) make_footprint;
   const auto offset = uint64_t(pos - doc.data());
   const auto line = uint64_t(std::count(doc.data(), pos, '\n') + 1);
@@ -93,7 +93,7 @@ constexpr std::unexpected<error> unexpected_error(
   }
   const auto line_start = doc.data() + line_start_index;
   const auto column = uint64_t(pos - line_start + 1);
-  auto s = std::format("{} (line {}, column {})", msg, line, column);
+  auto s = format(msg, " (line ", line, ", column ", column, ")");
   return unexpected_error(errors::invalid_argument, std::move(s), 0, offset);
 }
 }

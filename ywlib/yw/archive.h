@@ -1,6 +1,4 @@
 #pragma once
-
-#include "yw/core.h"
 #include "yw/file.h"
 
 #ifdef ywlib_header_name
@@ -52,7 +50,7 @@ inline constexpr uint32_t footer_magic = 0x46415759; // 'YWAF'
 inline constexpr uint32_t max_name_size = 2048;
 
 struct entry {
-  std::string name;
+  string<char> name;
   uint64_t entry_offset;
   uint64_t data_offset;
   uint64_t data_length;
@@ -292,7 +290,7 @@ public:
     crc ^= 0xFFFFFFFF;
     if (auto res = _fh.write_trivial<uint32_t>(_to_le(crc)); !res) return unexpected_error(res.error());
     const auto data_offset = _footer_offset + sizeof(header) + sv.size();
-    _entries.emplace_back(std::string(sv), _footer_offset, data_offset, data_length, crc);
+    _entries.emplace_back(string<char>(sv), _footer_offset, data_offset, data_length, crc);
     _footer_offset = data_offset + data_length + sizeof(uint32_t);
     return {};
   }
@@ -341,7 +339,7 @@ inline std::expected<void, error> extract(
   for (const auto& e : archive->entries()) {
     auto data = archive->read(e.name);
     if (!data) return unexpected_error(data.error());
-    const auto out_path = dst_path / unicode<char>(e.name);
+    const auto out_path = dst_path / unicode<path::value_type>(e.name).view();
     std::filesystem::create_directories(out_path.parent_path());
     auto fh = yw::open(out_path, open_mode::create_always);
     if (!fh) return unexpected_error(fh.error());
