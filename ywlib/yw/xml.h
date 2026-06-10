@@ -27,7 +27,7 @@ template<bool View> class document {
 public:
   static constexpr bool view = View;
 
-  select_type<View, const std::string_view, string<char>> xml_declaration;
+  string_type<View> xml_declaration;
   std::vector<misc<View>> prolog;
   xml::element<View> element;
   std::vector<misc<View>> trailing_misc;
@@ -63,7 +63,7 @@ public:
   }
 
   /// checks if given content is valid for xml declaration
-  static constexpr bool is_valid_xml_declaration(std::string_view decl) noexcept {
+  static constexpr bool is_valid_xml_declaration(string_view<char> decl) noexcept {
     if (decl.empty()) return false;
     if (!decl.starts_with("<?xml"sv)) return false;
     if (decl.size() < 6 || !_is_s(decl[5])) return false;
@@ -137,21 +137,21 @@ public:
     return result;
   }
 
-  static constexpr std::expected<document<View>, error> parse(std::string_view doc) {
+  static constexpr std::expected<document<View>, error> parse(string_view<char> doc) {
     if (!std::is_constant_evaluated()) make_footprint;
-    std::string_view rest = doc;
+    string_view<char> rest = doc;
     const char* doc_end = doc.data() + doc.size();
     if (rest.size() >= 3 && char8_t(rest[0]) == 0xEF && char8_t(rest[1]) == 0xBB && char8_t(rest[2]) == 0xBF)
       rest.remove_prefix(3);
     _extract_whitespace(rest);
     string_type<View> xml_declaration;
     if (rest.starts_with("<?xml"sv)) {
-      const char* decl_begin = rest.data();
+      auto decl_begin = rest.begin();
       if (rest.size() < 6 || !_is_s(rest[5])) return unexpected_error("xml: invalid xml declaration", rest.data(), doc);
       const auto sr = std::ranges::search(rest, "?>"sv);
       if (sr.begin() == rest.end())
         return unexpected_error("xml: unterminated xml declaration (missing '?>')", rest.data(), doc);
-      xml_declaration = string_type<View>(decl_begin, sr.end());
+      xml_declaration = string_type<View>(string_view<char>(decl_begin, sr.end()));
       rest.remove_prefix(static_cast<size_t>(sr.end() - decl_begin));
       _extract_whitespace(rest);
     }
@@ -185,11 +185,14 @@ public:
 };
 
 /// opens and parses an XML document from a file
-inline std::expected<document<false>, error> open(const std::filesystem::path& path) {
+inline document<false> open(const std::filesystem::path& path) {
   make_footprint;
-  if (auto fh = yw::open(path, open_mode::read_existing); !fh) return unexpected_error(fh.error());
-  else if (auto size = fh->file_size(); !size) return unexpected_error(size.error());
-  else if (string<char> content(static_cast<size_t>(*size), '\0'); false) return {};
+  if (auto fh = yw::open(path, open_mode::read_existing); !fh) {
+    print.err(fh.error());
+    return {};
+  } else if (auto size = fh->file_size(); !size) {
+    return unexpected_error(size.error());
+  } else if (string<char> content(static_cast<size_t>(*size), '\0'); false) return {};
   else if (auto read = fh->read_exact(content.data(), content.size()); !read) return unexpected_error(read.error());
   else return document<false>::parse(content);
 }

@@ -11,10 +11,10 @@ namespace yw::xml {
 //////////////////////////////////////// MARK: comment
 
 template<bool View> class comment {
-  constexpr comment(std::string_view Content) noexcept : content(Content) {}
+  constexpr comment(string_view<char> Content) noexcept : content(Content) {}
 
 public:
-  select_type<View, const std::string_view, string<char>> content;
+  string_type<View> content;
 
   /// checks if content is empty or valid for comment
   explicit constexpr operator bool() const noexcept { return is_empty() || is_valid(); }
@@ -26,8 +26,9 @@ public:
   constexpr bool is_valid() const noexcept { return is_valid(content); }
 
   /// checks if given content is valid for comment
-  static constexpr bool is_valid(std::string_view Content) noexcept {
-    return !Content.empty() && Content.front() != '-' && Content.find("--"sv) == std::string_view::npos;
+  static constexpr bool is_valid(string_view<char> Content) noexcept {
+    return !Content.empty() && Content.front() != '-' &&
+           std::ranges::search(Content, "--"sv).begin() == Content.end();
   }
 
   /// returns string size returned by `to_string`
@@ -54,15 +55,15 @@ public:
     return result;
   }
 
-  static constexpr std::expected<comment<View>, error> parse(std::string_view& rest, std::string_view doc) {
+  static constexpr std::expected<comment<View>, error> parse(string_view<char>& rest, string_view<char> doc) {
     if (!std::is_constant_evaluated()) make_footprint;
     if (!rest.starts_with("<!--"sv)) return unexpected_error("xml: expected comment '<!--'", rest.data(), doc);
     rest.remove_prefix(4);
     if (rest.empty()) return unexpected_error("xml: unterminated comment (missing '-->')", rest.data(), doc);
     if (rest.front() == '-') return unexpected_error("xml: comment text must not start with '-'", rest.data(), doc);
-    if (const size_t end = rest.find("-->"sv); end == std::string_view::npos)
+    if (const size_t end = rest.find("-->"sv); end == string_view<char>::npos)
       return unexpected_error("xml: unterminated comment (missing '-->')", rest.data() + rest.size(), doc);
-    else if (auto text = rest.substr(0, end); text.find("--"sv) != std::string_view::npos)
+    else if (auto text = rest.substr(0, end); text.find("--"sv) != string_view<char>::npos)
       return unexpected_error("xml: comment text must not contain '--'", rest.data() + text.find("--"sv), doc);
     else return comment<View>((rest.remove_prefix(end + 3), text));
   }
@@ -71,10 +72,10 @@ public:
 //////////////////////////////////////// MARK: text
 
 template<bool View> class text {
-  constexpr text(std::string_view Content) noexcept : content(Content) {}
+  constexpr text(string_view<char> Content) noexcept : content(Content) {}
 
 public:
-  select_type<View, const std::string_view, string<char>> content;
+  string_type<View> content;
 
   /// checks if content is empty or valid for text
   explicit constexpr operator bool() const noexcept { return is_empty() || is_valid(); }
@@ -86,15 +87,15 @@ public:
   constexpr bool is_valid() const noexcept { return is_valid(content); }
 
   /// checks if given content is valid for text
-  static constexpr bool is_valid(std::string_view Content) noexcept {
-    std::string_view c = Content;
+  static constexpr bool is_valid(string_view<char> Content) noexcept {
+    string_view<char> c = Content;
     while (!c.empty()) {
       if (c.starts_with("<![CDATA["sv)) {
         c.remove_prefix(9);
         const auto sr = std::ranges::search(c, "]]>"sv);
         if (sr.begin() == c.end()) return false;
         if (const auto fr = std::ranges::find_if_not(c.begin(), sr.begin(), _is_char); fr != sr.begin()) return false;
-        c = std::string_view(std::to_address(sr.end()), c.data() + c.size() - std::to_address(sr.end()));
+        c = string_view<char>(std::to_address(sr.end()), c.data() + c.size() - std::to_address(sr.end()));
       } else if (c.front() == '&') {
         if (_extract_reference(c).empty()) return false;
       } else if (c.front() == '<') return false;
@@ -118,7 +119,7 @@ public:
   /// Otherwise, content is emitted as-is without validation.
   constexpr string<char> to_string() const { return string<char>(content); }
 
-  static constexpr std::expected<text<View>, error> parse(std::string_view& rest, std::string_view doc) {
+  static constexpr std::expected<text<View>, error> parse(string_view<char>& rest, string_view<char> doc) {
     if (!std::is_constant_evaluated()) make_footprint;
     const char* start = rest.data();
     while (!rest.empty()) {
@@ -128,7 +129,7 @@ public:
           return unexpected_error("xml: unterminated CDATA section (missing ']]>')", rest.data(), doc);
         else if (const auto fr = std::ranges::find_if_not(rest.begin(), sr.begin(), _is_char); fr != sr.begin())
           return unexpected_error("xml: invalid character in CDATA section", std::to_address(fr), doc);
-        else rest = std::string_view(std::to_address(sr.end()), rest.data() + rest.size() - std::to_address(sr.end()));
+        else rest = string_view<char>(std::to_address(sr.end()), rest.data() + rest.size() - std::to_address(sr.end()));
       } else if (rest.front() == '&') {
         const auto before = rest.data();
         if (const auto r = _extract_reference(rest); r.empty())
@@ -139,18 +140,18 @@ public:
       else if (!_is_char(rest.front())) return unexpected_error("xml: invalid character in text", rest.data(), doc);
       else rest.remove_prefix(1);
     }
-    return text<View>(std::string_view(start, rest.data()));
+    return text<View>(string_view<char>(start, rest.data()));
   }
 };
 
 ////////////////////////////////////////// MARK: pi
 
 template<bool View> class pi {
-  constexpr pi(std::string_view Target, std::string_view Data) noexcept : target(Target), data(Data) {}
+  constexpr pi(string_view<char> Target, string_view<char> Data) noexcept : target(Target), data(Data) {}
 
 public:
-  select_type<View, const std::string_view, string<char>> target;
-  select_type<View, const std::string_view, string<char>> data;
+  string_type<View> target;
+  string_type<View> data;
 
   /// checks if this processing instruction is empty or valid
   explicit constexpr operator bool() const noexcept { return is_empty() || is_valid(); }
@@ -164,7 +165,7 @@ public:
   constexpr bool is_valid() const noexcept { return is_valid(target, data); }
 
   /// checks if given target and data are valid for processing instruction
-  static constexpr bool is_valid(std::string_view target, std::string_view data) noexcept {
+  static constexpr bool is_valid(string_view<char> target, string_view<char> data) noexcept {
     if (target.empty()) return false;
     {
       auto rest = target;
@@ -206,7 +207,7 @@ public:
     return result;
   }
 
-  static constexpr std::expected<pi<View>, error> parse(std::string_view& rest, std::string_view doc) {
+  static constexpr std::expected<pi<View>, error> parse(string_view<char>& rest, string_view<char> doc) {
     if (!std::is_constant_evaluated()) make_footprint;
     if (!rest.starts_with("<?"sv))
       return unexpected_error("xml: expected processing instruction '<?'", rest.data(), doc);
@@ -227,8 +228,8 @@ public:
     if (sr.begin() == rest.end())
       return unexpected_error("xml: unterminated processing instruction (missing '?>')", data_start, doc);
 
-    auto data = std::string_view(data_start, static_cast<size_t>(std::to_address(sr.begin()) - data_start));
-    rest = std::string_view(std::to_address(sr.end()), rest.data() + rest.size() - std::to_address(sr.end()));
+    auto data = string_view<char>(data_start, static_cast<size_t>(std::to_address(sr.begin()) - data_start));
+    rest = string_view<char>(std::to_address(sr.end()), rest.data() + rest.size() - std::to_address(sr.end()));
     return pi<View>(target, data);
   }
 };
@@ -236,11 +237,11 @@ public:
 //////////////////////////////////////// MARK: attribute
 
 template<bool View> class attribute {
-  constexpr attribute(std::string_view Name, std::string_view Value) noexcept : name(Name), value(Value) {}
+  constexpr attribute(string_view<char> Name, string_view<char> Value) noexcept : name(Name), value(Value) {}
 
 public:
-  select_type<View, const std::string_view, string<char>> name;
-  select_type<View, const std::string_view, string<char>> value;
+  string_type<View> name;
+  string_type<View> value;
 
   /// checks if this attribute is empty or valid
   explicit constexpr operator bool() const noexcept { return is_empty() || is_valid(); }
@@ -249,7 +250,7 @@ public:
   constexpr bool is_empty() const noexcept { return is_empty(name, value); }
 
   /// checks if given name and value are empty. In writing, empty attribute is ignored.
-  static constexpr bool is_empty(std::string_view Name, std::string_view Value) noexcept {
+  static constexpr bool is_empty(string_view<char> Name, string_view<char> Value) noexcept {
     return Name.empty() && Value.empty();
   }
 
@@ -257,7 +258,7 @@ public:
   constexpr bool is_valid() const noexcept { return is_valid(name, value); }
 
   /// checks if given name and value are valid for attribute
-  static constexpr bool is_valid(std::string_view Name, std::string_view Value) noexcept {
+  static constexpr bool is_valid(string_view<char> Name, string_view<char> Value) noexcept {
     if (is_empty(Name, Value)) return false;
     {
       auto rest = Name;
@@ -302,7 +303,7 @@ public:
     return result;
   }
 
-  static constexpr std::expected<attribute<View>, error> parse(std::string_view& rest, std::string_view doc) {
+  static constexpr std::expected<attribute<View>, error> parse(string_view<char>& rest, string_view<char> doc) {
     if (!std::is_constant_evaluated()) make_footprint;
     const char* name_pos = rest.data();
     auto name = _extract_name(rest);
@@ -321,7 +322,7 @@ public:
       if (p == end) return unexpected_error("xml: unterminated attribute value", value_start, doc);
       else if (*p == quote) break;
       else if (*p == '&') {
-        std::string_view tmp(p, static_cast<size_t>(end - p));
+        string_view<char> tmp(p, static_cast<size_t>(end - p));
         if (auto r = _extract_reference(tmp); r.empty())
           return unexpected_error("xml: invalid character reference in attribute value", p, doc);
         p += static_cast<size_t>(tmp.data() - p);
@@ -329,12 +330,12 @@ public:
       else if (!_is_char(*p)) return unexpected_error("xml: invalid character in attribute value", p, doc);
       else ++p;
     }
-    auto value = std::string_view(value_start, static_cast<size_t>(p - value_start));
+    auto value = string_view<char>(value_start, static_cast<size_t>(p - value_start));
     const char* after_quote = p + 1;
-    rest = std::string_view(after_quote, static_cast<size_t>(end - after_quote));
+    rest = string_view<char>(after_quote, static_cast<size_t>(end - after_quote));
     return attribute<View>(name, value);
   }
 };
-}
+} // namespace yw::xml
 
 #undef ywlib_header_name

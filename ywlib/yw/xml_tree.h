@@ -85,17 +85,15 @@ public:
     else return {};
   }
 
-  static constexpr std::expected<misc<View>, error> parse(std::string_view& rest, std::string_view doc) {
+  static constexpr std::expected<misc<View>, error> parse(string_view<char>& rest, string_view<char> doc) {
     if (!std::is_constant_evaluated()) make_footprint;
     if (rest.starts_with("<!--"sv)) {
       if (auto res = comment<View>::parse(rest, doc); res) return misc<View>(std::move(*res));
-      else return unexpected_error(res.error());
+      else return std::unexpected(std::move(res.error()));
     } else if (rest.starts_with("<?"sv)) {
       if (auto res = pi<View>::parse(rest, doc); res) return misc<View>(std::move(*res));
-      else return unexpected_error(res.error());
-    } else {
-      return unexpected_error("xml: expected comment or processing instruction", rest.data(), doc);
-    }
+      else return std::unexpected(std::move(res.error()));
+    } else return unexpected_error("xml: expected comment or processing instruction", rest.data(), doc);
   }
 };
 
@@ -104,11 +102,11 @@ public:
 template<bool View> class child;
 
 template<bool View> class element {
-  constexpr element(std::string_view n, std::vector<attribute<View>> a, std::vector<child<View>> c) noexcept
+  constexpr element(string_view<char> n, std::vector<attribute<View>> a, std::vector<child<View>> c) noexcept
     : name(n), attributes(std::move(a)), children(std::move(c)) {}
 
 public:
-  select_type<View, const std::string_view, string<char>> name;
+  string_type<View> name;
   std::vector<attribute<View>> attributes;
   std::vector<child<View>> children;
 
@@ -149,51 +147,51 @@ public:
     return result;
   }
 
-  static constexpr std::expected<element, error> parse(std::string_view& rest, std::string_view doc);
+  static constexpr std::expected<element, error> parse(string_view<char>& rest, string_view<char> doc);
 
-  constexpr bool has_attribute(std::string_view attr_name) const noexcept {
+  constexpr bool has_attribute(string_view<char> attr_name) const noexcept {
     return get_if_attribute(attr_name) != nullptr;
   }
 
-  constexpr attribute<View>* get_if_attribute(std::string_view attr_name) noexcept {
+  constexpr attribute<View>* get_if_attribute(string_view<char> attr_name) noexcept {
     const auto it = std::ranges::find(attributes, attr_name, &attribute<View>::name);
     return it != attributes.end() ? std::addressof(*it) : nullptr;
   }
-  constexpr const attribute<View>* get_if_attribute(std::string_view attr_name) const noexcept {
+  constexpr const attribute<View>* get_if_attribute(string_view<char> attr_name) const noexcept {
     const auto it = std::ranges::find(attributes, attr_name, &attribute<View>::name);
     return it != attributes.end() ? std::addressof(*it) : nullptr;
   }
 
-  constexpr attribute<View>& get_attribute(std::string_view attr_name) {
+  constexpr attribute<View>& get_attribute(string_view<char> attr_name) {
     if (!std::is_constant_evaluated()) make_footprint;
     if (auto* p = get_if_attribute(attr_name); p) return *p;
     throw std::out_of_range("xml: attribute not found");
   }
-  constexpr const attribute<View>& get_attribute(std::string_view attr_name) const {
+  constexpr const attribute<View>& get_attribute(string_view<char> attr_name) const {
     if (!std::is_constant_evaluated()) make_footprint;
     if (auto* p = get_if_attribute(attr_name); p) return *p;
     throw std::out_of_range("xml: attribute not found");
   }
 
-  constexpr bool has_element(std::string_view element_name) const noexcept {
+  constexpr bool has_element(string_view<char> element_name) const noexcept {
     return get_if_first_element(element_name) != nullptr;
   }
 
-  constexpr element<View>* get_if_first_element(std::string_view element_name) noexcept;
-  constexpr const element<View>* get_if_first_element(std::string_view element_name) const noexcept;
+  constexpr element<View>* get_if_first_element(string_view<char> element_name) noexcept;
+  constexpr const element<View>* get_if_first_element(string_view<char> element_name) const noexcept;
 
-  constexpr element<View>& get_first_element(std::string_view element_name) {
+  constexpr element<View>& get_first_element(string_view<char> element_name) {
     if (!std::is_constant_evaluated()) make_footprint;
     if (auto* p = get_if_first_element(element_name); p) return *p;
     throw std::out_of_range("xml: element not found");
   }
-  constexpr const element<View>& get_first_element(std::string_view element_name) const {
+  constexpr const element<View>& get_first_element(string_view<char> element_name) const {
     if (!std::is_constant_evaluated()) make_footprint;
     if (auto* p = get_if_first_element(element_name); p) return *p;
     throw std::out_of_range("xml: element not found");
   }
 
-  constexpr size_t count_elements(std::string_view name) const noexcept;
+  constexpr size_t count_elements(string_view<char> name) const noexcept;
 };
 
 /////////////////////////////////////// MARK: child
@@ -306,7 +304,7 @@ public:
     else return {};
   }
 
-  static constexpr std::expected<child<View>, error> parse(std::string_view& rest, std::string_view doc) {
+  static constexpr std::expected<child<View>, error> parse(string_view<char>& rest, string_view<char> doc) {
     if (!std::is_constant_evaluated()) make_footprint;
     if (rest.front() == '<') {
       if (rest[1] == '!') {
@@ -337,7 +335,7 @@ template<bool View> constexpr bool element<View>::is_empty_element() const noexc
 template<bool View> constexpr bool element<View>::is_valid() const noexcept {
   if (is_empty()) return false;
   {
-    auto rest = std::string_view(name);
+    auto rest = string_view<char>(name);
     const auto parsed = _extract_name(rest);
     if (parsed.empty() || !rest.empty()) return false;
   }
@@ -394,7 +392,7 @@ template<bool View> constexpr char* element<View>::to_string_into(char* out) con
 }
 
 template<bool View> inline constexpr std::expected<element<View>, error> element<View>::parse(
-  std::string_view& rest, std::string_view doc) {
+  string_view<char>& rest, string_view<char> doc) {
   if (!std::is_constant_evaluated()) make_footprint;
   const char* doc_end = doc.data() + doc.size();
   if (rest.empty()) return unexpected_error("xml: unexpected end of input (expected start tag)", doc_end, doc);
@@ -439,7 +437,7 @@ template<bool View> inline constexpr std::expected<element<View>, error> element
 }
 
 template<bool View>
-constexpr element<View>* element<View>::get_if_first_element(std::string_view element_name) noexcept {
+constexpr element<View>* element<View>::get_if_first_element(string_view<char> element_name) noexcept {
   const auto it = std::ranges::find_if(children, [&](auto& child) {
     if (child.is_empty()) return false;
     if (auto* p = child.template get_if<element<View>>(); p) return p->name == element_name;
@@ -450,7 +448,7 @@ constexpr element<View>* element<View>::get_if_first_element(std::string_view el
 }
 
 template<bool View>
-constexpr const element<View>* element<View>::get_if_first_element(std::string_view element_name) const noexcept {
+constexpr const element<View>* element<View>::get_if_first_element(string_view<char> element_name) const noexcept {
   const auto it = std::ranges::find_if(children, [&](const auto& child) {
     if (child.is_empty()) return false;
     if (auto* p = child.template get_if<element<View>>(); p) return p->name == element_name;
@@ -460,13 +458,13 @@ constexpr const element<View>* element<View>::get_if_first_element(std::string_v
   return it->template get_if<element<View>>();
 }
 
-template<bool View> constexpr size_t element<View>::count_elements(std::string_view element_name) const noexcept {
+template<bool View> constexpr size_t element<View>::count_elements(string_view<char> element_name) const noexcept {
   return std::ranges::count_if(children, [&](const auto& child) {
     if (child.is_empty()) return false;
     if (auto* p = child.template get_if<element<View>>(); p) return p->name == element_name;
     return false;
   });
 }
-}
+} // namespace yw::xml
 
 #undef ywlib_header_name

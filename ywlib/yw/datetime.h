@@ -174,24 +174,24 @@ namespace std {
 template<typename C> struct formatter<yw::date, C> {
   formatter<basic_string<C>, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::date& d, auto& ctx) const { return fmt.format(yw::unicode<C>(d.string()), ctx); }
+  auto format(const yw::date& d, auto& ctx) const { return fmt.format(d.to_string<C>(), ctx); }
 };
 
 template<typename C> struct formatter<yw::time, C> {
   formatter<basic_string<C>, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::time& t, auto& ctx) const { return fmt.format(yw::unicode<C>(t.string()), ctx); }
+  auto format(const yw::time& t, auto& ctx) const { return fmt.format(t.to_string<C>(), ctx); }
 };
 
 template<typename C> struct formatter<yw::datetime, C> {
   formatter<basic_string<C>, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::datetime& dt, auto& ctx) const { return fmt.format(yw::unicode<C>(dt.string()), ctx); }
+  auto format(const yw::datetime& dt, auto& ctx) const { return fmt.format(dt.to_string<C>(), ctx); }
 };
 
 template<typename C> struct formatter<yw::datetimems, C> {
   formatter<basic_string<C>, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::datetimems& dtms, auto& ctx) const { return fmt.format(yw::unicode<C>(dtms.string()), ctx); }
+  auto format(const yw::datetimems& dtms, auto& ctx) const { return fmt.format(dtms.to_string<C>(), ctx); }
 };
 } // namespace std

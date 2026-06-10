@@ -1,10 +1,7 @@
 #pragma once
-#include "yw/core.h"
+#include "yw/error.h"
 
-#ifdef ywlib_header_name
-#error "ywlib_header_name already defined unexpectedly"
-#endif
-#define ywlib_header_name "yw/slotset.h"
+inline constexpr char yw_slotset[] = "yw/slotset.h";
 
 namespace yw::errors {
 define_error(invalid_slotid);
@@ -155,5 +152,3 @@ public:
   const_iterator end() const noexcept { return const_iterator(this, uint32_t(_slots.size())); }
 };
 } // namespace yw
-
-#undef ywlib_header_name

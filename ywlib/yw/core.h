@@ -13,8 +13,8 @@
 #include <memory>
 #include <numeric>
 #include <ranges>
-#include <string_view>
 #include <source_location>
+#include <string_view>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -24,14 +24,7 @@
 #include <windows.h>
 #endif
 
-#ifdef ywlib_header_name
-#error "ywlib_header_name already defined unexpectedly"
-#endif
-#define ywlib_header_name "yw/core.h"
-
-#define _ywlib_stringize(x) #x
-#define _ywlib_make_source_info(Header, Line) Header "(" _ywlib_stringize(Line) ")"
-#define ywlib_make_source_info _ywlib_make_source_info(ywlib_header_name, __LINE__)
+inline constexpr char yw_core[] = "yw/core.h";
 
 namespace yw {
 
@@ -381,176 +374,10 @@ template<typename R, typename T = iter_value_t<R>> concept output_range = std::r
 
 template<typename S, typename I> concept sentinel_for = std::sentinel_for<S, I>;
 template<typename S, typename I> concept sized_sentinel_for = std::sized_sentinel_for<S, I>;
-}
+} // namespace yw
 
-//////////////////////////////////////// MARK: char / string
+/// MARK: GET
 
-// using namespace std::string_view_literals;
-// using namespace std::string_literals;
-
-// inline constexpr auto is_ascii = []<char_type C>(C c) noexcept { return 0x20 <= c && c < 0x7F; };
-// inline constexpr auto is_digit = []<char_type C>(C c) noexcept { return '0' <= c && c <= '9'; };
-// inline constexpr auto is_lower = []<char_type C>(C c) noexcept { return 'a' <= c && c <= 'z'; };
-// inline constexpr auto is_upper = []<char_type C>(C c) noexcept { return 'A' <= c && c <= 'Z'; };
-// inline constexpr auto is_alpha = []<char_type C>(C c) noexcept { return is_lower(c) || is_upper(c); };
-// inline constexpr auto is_alnum = []<char_type C>(C c) noexcept { return is_alpha(c) || is_digit(c); };
-// inline constexpr auto is_xdigit = []<char_type C>(C c) noexcept {
-//   return is_digit(c) || (('a' <= c && c <= 'f') || ('A' <= c && c <= 'F'));
-// };
-
-// template<typename S, typename C = iter_value_t<S>> concept stringable = requires {
-//   requires char_type<C>;
-//   requires std::convertible_to<S, std::basic_string_view<C>>;
-//   requires std::constructible_from<std::basic_string_view<C>, S>;
-// };
-
-// template<arithmetic T> constexpr auto stov = [](stringable<char> auto&& str) -> T {
-//   const auto sv = std::string_view(str);
-//   T result{};
-//   std::from_chars(sv.data(), sv.data() + sv.size(), result);
-//   return result;
-// };
-
-// namespace internal {
-// inline constexpr char utos_table_upper[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-// inline constexpr char utos_table_lower[] = "0123456789abcdefghijklmnopqrstuvwxyz";
-// template<unsigned Width, unsigned Base = 10, bool Upper = false, char_type C = char> requires(Base >= 2 && Base <= 36)
-// constexpr C* utos(C* dest, uint64_t u) {
-//   C* p = dest + Width;
-//   auto table = Upper ? utos_table_upper : utos_table_lower;
-//   while (p != dest) *(--p) = static_cast<C>(table[u % Base]), u /= Base;
-//   return dest + Width;
-// }
-// } // namespace internal
-
-//////////////////////////////////////// MARK: vtos
-
-// template<char_type C, size_t N> constexpr std::basic_string<C> _ascii_string(const char (&s)[N]) {
-//   std::basic_string<C> r(N, '\0');
-//   for (size_t i = 0; i < N; ++i) r[i] = static_cast<C>(s[i]);
-//   return r;
-// }
-
-// template<char_type C> constexpr std::basic_string<C> bool_to_string(bool value) {
-//   return value ? _ascii_string<C>("true") : _ascii_string<C>("false");
-// }
-
-// constexpr std::string bool_to_string(bool value) { return bool_to_string<char>(value); }
-
-// template<char_type C> constexpr std::basic_string<C> uint_to_string(uint_type auto value) {
-//   if (value == 0) return std::basic_string<C>(1, C('0'));
-//   auto u = static_cast<uint64_t>(value);
-//   unsigned keta = 0;
-//   for (auto u_ = u; u_ != 0; u_ /= 10) ++keta;
-//   std::basic_string<C> result(keta, '\0');
-//   for (auto p = result.data() + keta; u != 0; u /= 10) *(--p) = static_cast<C>('0' + (u % 10));
-//   return result;
-// }
-
-// constexpr std::string uint_to_string(uint_type auto value) { return uint_to_string<char>(value); }
-
-// template<char_type C> constexpr std::basic_string<C> int_to_string(integral auto value) {
-//   if constexpr (uint_type<decltype(value)>) return uint_to_string<C>(value);
-//   const bool minus = value < 0;
-//   auto u = static_cast<uint64_t>(minus ? -value : value);
-//   unsigned keta = 0;
-//   for (auto u_ = u; u_ != 0; u_ /= 10) ++keta;
-//   std::basic_string<C> result(keta + minus, '\0');
-//   if (minus) result[0] = '-';
-//   for (auto p = result.data() + result.size(); u != 0; u /= 10) *(--p) = static_cast<C>('0' + (u % 10));
-//   return result;
-// }
-
-// constexpr std::string int_to_string(integral auto value) { return int_to_string<char>(value); }
-
-// template<char_type C> constexpr std::basic_string<C> float_to_string(floating auto value) {
-//   using T = decltype(value);
-//   using limits = std::numeric_limits<uint64_t>;
-
-//   if (std::isnan(value)) return _ascii_string<C>("nan");
-//   if (std::isinf(value)) return value < 0 ? _ascii_string<C>("-inf") : _ascii_string<C>("inf");
-
-//   const bool minus = std::signbit(value);
-//   long double abs_value = static_cast<long double>(minus ? -value : value);
-//   if (abs_value == 0) return minus ? _ascii_string<C>("-0") : _ascii_string<C>("0");
-
-//   constexpr uint64_t scale = 1000000;
-//   constexpr long double max_uint64 = static_cast<long double>(limits::max());
-
-//   auto append_fixed6 = [](std::basic_string<C>& s, uint64_t frac) {
-//     const size_t offset = s.size();
-//     s.resize(offset + 6, C('0'));
-//     internal::utos<6, 10, false, C>(s.data() + offset, frac);
-//   };
-
-//   auto append_sign = [&](std::basic_string<C>& s) {
-//     if (minus) s += C('-');
-//   };
-
-//   auto to_exponential = [&]() {
-//     int exponent = 0;
-//     long double normalized = abs_value;
-//     while (normalized >= 10) {
-//       normalized /= 10;
-//       ++exponent;
-//     }
-//     uint64_t int_part = static_cast<uint64_t>(normalized);
-//     uint64_t frac_part = static_cast<uint64_t>((normalized - int_part) * scale + 0.5L);
-//     if (frac_part >= scale) {
-//       ++int_part;
-//       frac_part -= scale;
-//       if (int_part >= 10) {
-//         int_part = 1;
-//         ++exponent;
-//       }
-//     }
-
-//     std::basic_string<C> s;
-//     append_sign(s);
-//     s += uint_to_string<C>(int_part);
-//     s += C('.');
-//     append_fixed6(s, frac_part);
-//     s += C('e');
-//     s += C('+');
-//     s += uint_to_string<C>(static_cast<uint64_t>(exponent));
-//     return s;
-//   };
-
-//   if (abs_value >= max_uint64) return to_exponential();
-
-//   uint64_t int_part = static_cast<uint64_t>(abs_value);
-//   uint64_t frac_part = static_cast<uint64_t>((abs_value - int_part) * scale + 0.5L);
-//   if (frac_part >= scale) {
-//     ++int_part;
-//     frac_part -= scale;
-//   }
-
-//   if (int_part >= limits::max()) return to_exponential();
-
-//   std::basic_string<C> s;
-//   append_sign(s);
-//   s += uint_to_string<C>(int_part);
-//   s += C('.');
-//   append_fixed6(s, frac_part);
-
-//   if (int_part != 0) {
-//     while (!s.empty() && s.back() == C('0')) s.pop_back();
-//     if (!s.empty() && s.back() == C('.')) s.pop_back();
-//   }
-//   return s;
-// }
-
-// constexpr std::string float_to_string(floating auto value) { return float_to_string<char>(value); }
-
-// template<char_type C> constexpr std::basic_string<C> vtos(arithmetic auto value) {
-//   if constexpr (is_bool<decltype(value)>) return bool_to_string<C>(value);
-//   else if constexpr (integral<decltype(value)>) return int_to_string<C>(value);
-//   else return float_to_string<C>(value);
-// }
-
-// constexpr std::string vtos(arithmetic auto value) { return vtos<char>(value); }
-
-//////////////////////////////////////// MARK: GET
 namespace yw {
 template<typename T> inline constexpr size_t extent = select_type<requires {
   std::tuple_size<std::remove_reference_t<T>>::value;
@@ -582,29 +409,19 @@ template<size_t I> inline constexpr auto get =                      //
 template<typename T, size_t I> concept gettable = requires { yw::get<I>(std::declval<T>()); };
 template<typename T, size_t I> concept nt_gettable = gettable<T, I> && noexcept(yw::get<I>(std::declval<T>()));
 template<typename T, size_t I> requires gettable<T, I> using element_t = decltype(get<I>(std::declval<T>()));
-
 } // namespace yw
 
-//////////////////////////////////////// MARK: std
+/// MARK: std
 
 namespace std {
-
 template<typename T> struct common_type<T, yw::none> : type_identity<yw::none> {};
 template<typename T> struct common_type<yw::none, T> : type_identity<yw::none> {};
 template<typename C> struct formatter<yw::none, C> {
   std::formatter<const C*, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::none, auto& ctx) const {
-    if constexpr (same_as<C, char>) return fmt.format("none", ctx);
-    else if constexpr (same_as<C, wchar_t>) return fmt.format(L"none", ctx);
-    else if constexpr (same_as<C, char8_t>) return fmt.format(u8"none", ctx);
-    else if constexpr (same_as<C, char16_t>) return fmt.format(u"none", ctx);
-    else if constexpr (same_as<C, char32_t>) return fmt.format(U"none", ctx);
-  }
+  auto format(const yw::none n, auto& ctx) const { fmt.format(n.to_string<C>(), ctx); }
 };
 } // namespace std
-
-//////////////////////////////////////// MARK: print
 
 namespace yw {
 
@@ -623,8 +440,4 @@ inline constexpr uint64_t unique_id(std::source_location loc = std::source_locat
   mix(hash(loc.file_name())), mix(hash(loc.function_name())), mix(loc.line()), mix(loc.column());
   return h;
 }
-
-
 } // namespace yw
-
-#undef ywlib_header_name

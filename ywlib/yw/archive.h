@@ -192,9 +192,9 @@ public:
   /// reads the data of an entry by name
   std::expected<std::vector<std::byte>, error> read(stringable<char> auto&& name) {
     make_footprint;
-    const std::string_view sv(name);
+    const string_view<char> sv(name);
     for (size_t i = 0; i < _entries.size(); ++i)
-      if (_entries[i].name == sv) return read(i);
+      if (_entries[i].name.view() == sv) return read(i);
     return unexpected_error(yw::errors::invalid_argument, "entry not found");
   }
 
@@ -222,9 +222,9 @@ public:
   /// verifies the CRC32 of an entry by name
   std::expected<bool, error> verify(stringable<char> auto&& name) {
     make_footprint;
-    const std::string_view sv(name);
+    const string_view<char> sv(name);
     for (size_t i = 0; i < _entries.size(); ++i)
-      if (_entries[i].name == sv) return verify(i);
+      if (_entries[i].name.view() == sv) return verify(i);
     return unexpected_error(yw::errors::invalid_argument, "entry not found");
   }
 
@@ -265,7 +265,7 @@ public:
   std::expected<void, error> append(stringable<char> auto&& name, const void* data, size_t data_length) {
     make_footprint;
     if (!data && data_length) return unexpected_error(yw::errors::invalid_argument, "null data pointer");
-    const std::string_view sv(name);
+    const string_view<char> sv(name);
     if (sv.size() == 0 || sv.size() > max_name_size)
       return unexpected_error(yw::errors::invalid_argument, "archive: invalid entry name length");
     if (_mode != open_mode::create_always && _mode != open_mode::create_new && _mode != open_mode::update_existing &&

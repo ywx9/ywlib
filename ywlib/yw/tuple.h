@@ -1,9 +1,11 @@
 #pragma once
 #include "yw/core.h"
 
+inline constexpr char yw_tuple[] = "yw/tuple.h";
+
 namespace yw {
 
-//////////////////////////////////////// MARK: sequence
+/// MARK: sequence
 
 template<auto... Vs> struct sequence;
 
@@ -78,7 +80,7 @@ template<auto... Vs> struct sequence {
   }
 };
 
-//////////////////////////////////////// MARK: typepack
+/// MARK: typepack
 
 template<typename... Ts> struct typepack;
 
@@ -113,7 +115,7 @@ template<typename... Ts> struct typepack {
   template<size_t I> requires(I < sizeof...(Ts)) constexpr const at<I> get() const noexcept;
 };
 
-//////////////////////////////////////// MARK: apply
+/// MARK: apply
 
 inline constexpr struct {
   struct internal {
@@ -136,23 +138,23 @@ template<typename F, typename Tp> concept nt_applyable =
   applyable<F, Tp> && noexcept(apply(std::declval<F>(), std::declval<Tp>()));
 template<typename F, typename Tp> using apply_result = decltype(apply(std::declval<F>(), std::declval<Tp>()));
 
-//////////////////////////////////////// MARK: build
+/// MARK: build
 
 template<typename T, typename Tp> concept buildable = applyable<decltype(construct<T>), Tp>;
 template<typename T, typename Tp> concept nt_buildable = nt_applyable<decltype(construct<T>), Tp>;
 template<typename T> inline constexpr auto build = []<typename Tp>(Tp&& Tuple) noexcept(nt_buildable<T, Tp>) -> T
   requires buildable<T, Tp> { return apply(construct<T>, static_cast<Tp&&>(Tuple)); };
 
-//////////////////////////////////////// MARK: vapply
+/// MARK: vapply
 
 inline constexpr struct {
   struct internal {
-    template<size_t I, size_t N, typename F, typename... Ts> requires (I == N)
+    template<size_t I, size_t N, typename F, typename... Ts> requires(I == N)
     static constexpr void operator()(F&, Ts&&...) noexcept {}
-    template<size_t I, size_t N, typename F, typename T, typename... Ts> requires (I < N)
+    template<size_t I, size_t N, typename F, typename T, typename... Ts> requires(I < N)
     static constexpr void operator()(F&& f, T&& t, Ts&&... ts) noexcept(
       nt_invocable<F&, element_t<T, I>, element_t<Ts, I>...> &&
-                  noexcept(operator()<I + 1, N>(f, static_cast<T&&>(t), static_cast<Ts&&>(ts)...))) {
+      noexcept(operator()<I + 1, N>(f, static_cast<T&&>(t), static_cast<Ts&&>(ts)...))) {
       invoke(f, get<I>(static_cast<T&&>(t)), get<I>(static_cast<Ts&&>(ts))...);
       operator()<I + 1, N>(f, static_cast<T&&>(t), static_cast<Ts&&>(ts)...);
     }
@@ -173,14 +175,14 @@ template<typename F, typename... Ts> concept vapplyable =
 template<typename F, typename... Ts> concept nt_vapplyable =
   vapplyable<F, Ts...> && noexcept(vapply(std::declval<F>(), std::declval<Ts>()...));
 
-//////////////////////////////////////// MARK: vassign
+/// MARK: vassign
 
 template<typename T, typename U> concept vassignable = vapplyable<decltype(assign), T, U>;
 template<typename T, typename U> concept nt_vassignable = nt_vapplyable<decltype(assign), T, U>;
 inline constexpr auto vassign = []<typename T, typename U>(T&& t, U&& u) noexcept(nt_vassignable<T, U>) -> void
   requires vassignable<T, U> { vapply(assign, static_cast<T&&>(t), static_cast<U&&>(u)); };
 
-//////////////////////////////////////// MARK: tuple
+/// MARK: tuple
 
 template<typename... Ts> struct tuple;
 template<typename... Ts> using tuple_base = typepack<Ts...>::template fore<sizeof...(Ts) - 1>::template expand<tuple>;
@@ -330,7 +332,7 @@ template<> struct tuple<> {
 
 template<typename... Ts> tuple(Ts...) -> tuple<Ts...>;
 
-//////////////////////////////////////// MARK: vapply_r
+/// MARK: vapply_r
 
 template<typename R> inline constexpr auto vapply_r = []<typename Fn, typename... Tps>(Fn&& fn, Tps&&... tps) -> R
   requires requires { requires((extent<R> == extent<Tps>) && ...); }
@@ -343,7 +345,7 @@ template<typename R> inline constexpr auto vapply_r = []<typename Fn, typename..
 
 } // namespace yw
 
-//////////////////////////////////////// MARK: std
+/// MARK: std
 
 namespace std {
 

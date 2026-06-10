@@ -14,6 +14,7 @@ struct error {
       requires same_as<remove_cvref<decltype(*this)>, remove_cvref<decltype(other)>> {
       return id == other.id;
     }
+    int32_t exit_code() const noexcept { return int32_t(uint32_t(id & 0xFFFFFFFF)); }
   } type;
   ministr<char> message;
   uint64_t position;
@@ -34,17 +35,18 @@ struct error {
 
   constexpr string<char> to_string() const {
     handled = true;
+    auto code = system_code ? system_code : type.exit_code();
     if (position != uint64_t(-1)) {
       if (!message.empty()) {
-        if (system_code == 0) return yw::format(type.name, ": ", message, " (offset=", position, ")");
-        else return yw::format(type.name, ": ", message, " (code=", system_code, ", offset=", position, ")");
-      } else if (system_code != 0) return yw::format(type.name, " (code=", system_code, ", offset=", position, ")");
+        if (code == 0) return yw::format(type.name, ": ", message, " (offset=", position, ")");
+        else return yw::format(type.name, ": ", message, " (code=", code, ", offset=", position, ")");
+      } else if (code != 0) return yw::format(type.name, " (code=", code, ", offset=", position, ")");
       else return yw::format(type.name, " (offset=", position, ")");
     } else {
       if (!message.empty()) {
-        if (system_code == 0) return yw::format(type.name, ": ", message);
-        else return yw::format(type.name, ": ", message, " (code=", system_code, ")");
-      } else if (system_code != 0) return yw::format(type.name, " (code=", system_code, ")");
+        if (code == 0) return yw::format(type.name, ": ", message);
+        else return yw::format(type.name, ": ", message, " (code=", code, ")");
+      } else if (code != 0) return yw::format(type.name, " (code=", code, ")");
       else return type.name;
     }
   }
@@ -67,7 +69,9 @@ define_error(unreachable);
 
 constexpr error::~error() {
   if (type != errors::success && !handled && !std::is_constant_evaluated()) {
-    yw::print.err("unhandled error destroyed", "\n", to_string(), "\nFootprints:\n", footprint::dump());
+    yw::print.err("Unhandled error goes off: ", to_string());
+    footprint::print(true);
+    std::exit(system_code ? system_code : type.exit_code());
   }
 }
 
@@ -105,40 +109,13 @@ constexpr error::error(decltype(error::type) e, ministr<char> msg, int32_t sys_c
 
 constexpr error::operator bool() const noexcept { return type != errors::success; }
 
-/// MARK: unexpected_error
-
-inline std::unexpected<error> unexpected_error(error& e) { return std::unexpected(std::move(e)); }
-inline std::unexpected<error> unexpected_error(
-  decltype(error::type) e, string<char> msg = {}, int32_t sys_code = 0, uint64_t pos = uint64_t(-1)) {
-  return std::unexpected(error(e, std::move(msg), sys_code, pos));
-}
-
 /// MARK: fatal_error
 
-namespace internal {
-[[noreturn]] inline void _fatal_error(const error& e, const char* source_info) {
-  print_fallback.err(format("Fatal error: {} at {}\nFootprints:\n{}", e, source_info, footprint::dump()));
-  std::exit(e.system_code);
+[[noreturn]] inline void fatal_error(const error& e) {
+  print_fallback.err(format("Fatal error: ", e));
+  footprint::print(true);
+  std::exit(e.system_code ? e.system_code : e.type.exit_code());
 }
-} // namespace internal
-
-#define fatal_error(e) ::yw::internal::_fatal_error(e, ywlib_make_source_info)
-
-/// MARK: assume
-
-namespace internal {
-template<typename T> T _assume(std::expected<T, yw::error>&& res, const char* source_info) {
-  if (!res) {
-    print_fallback.err(format("Assumption failed: {} at {}", res.error(), source_info));
-    std::exit(res.error().system_code);
-  }
-  if constexpr (is_void<T>) return;
-  else return std::move(*res);
-}
-} // namespace internal
-
-#define assume(res) ::yw::internal::_assume(std::move(res), ywlib_make_source_info)
-
 } // namespace yw
 
 //////////////////////////////////////// MARK: std::formatter

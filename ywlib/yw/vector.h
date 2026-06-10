@@ -1,6 +1,8 @@
 #pragma once
 #include "yw/tuple.h"
 
+inline constexpr char yw_vector[] = "yw/vector.h";
+
 namespace yw {
 
 template<std::regular T, size_t N> struct vector {

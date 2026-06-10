@@ -43,9 +43,9 @@ inline bool yes(
 
 /// MARK: unexpected_win32_error
 
-inline std::unexpected<error_trace> unexpected_win32_error(const char* msg, const source& src = {}) {
-  return unexpected_error(errors::operation_failed, msg, int32_t(::GetLastError()), uint64_t(-1), src);
-}
+// inline std::unexpected<error_trace> unexpected_win32_error(const char* msg, const source& src = {}) {
+//   return unexpected_error(errors::operation_failed, msg, int32_t(::GetLastError()), uint64_t(-1), src);
+// }
 
 /// MARK: desktop_client_size
 

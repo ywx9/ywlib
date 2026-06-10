@@ -1,14 +1,13 @@
 #pragma once
 #include "yw/core.h"
 
-#ifdef ywlib_header_name
-#error "ywlib_header_name already defined unexpectedly"
-#endif
-#define ywlib_header_name "yw/string.h"
+inline constexpr char yw_string[] = "yw/string.h";
 
 namespace yw {
 
 using path = std::filesystem::path;
+template<char_type C> using string_view = std::basic_string_view<C>;
+using namespace std::string_view_literals;
 
 inline constexpr auto is_ascii = []<char_type C>(C c) noexcept { return 0x20 <= c && c < 0x7F; };
 inline constexpr auto is_digit = []<char_type C>(C c) noexcept { return '0' <= c && c <= '9'; };
@@ -22,18 +21,19 @@ inline constexpr auto is_xdigit = []<char_type C>(C c) noexcept {
 
 template<typename S, typename C = iter_value_t<S>> concept stringable = requires {
   requires char_type<C>;
-  requires std::convertible_to<S, std::basic_string_view<C>>;
-  requires std::constructible_from<std::basic_string_view<C>, S>;
+  requires std::convertible_to<S, string_view<C>>;
+  requires std::constructible_from<string_view<C>, S>;
 };
 
-template<arithmetic T> constexpr auto stov = [](stringable<char> auto&& str) -> T {
-  const auto sv = std::string_view(str);
+template<arithmetic T> constexpr auto stov = [](stringable<char> auto&& str) -> std::optional<T> {
+  const auto sv = string_view<char>(str);
   T result{};
-  std::from_chars(sv.data(), sv.data() + sv.size(), result);
+  const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
+  if (ec != std::errc()) return {};
+  if (ptr != sv.data() + sv.size()) return {};
   return result;
 };
 
-template<char_type C> using string_view = std::basic_string_view<C>;
 
 /// MARK: string
 
@@ -147,6 +147,13 @@ public:
   constexpr string& pop_back() {
     if (_size > 0) --_size;
     if (_ptr) _ptr[_size] = C();
+    return *this;
+  }
+
+  constexpr string& push_back(C Char) {
+    reserve(_size + 1);
+    _ptr[_size++] = Char;
+    _ptr[_size] = C();
     return *this;
   }
 
@@ -511,88 +518,77 @@ public:
 /// 8-bytes minimalist string class.
 template<char_type C> class ministr {
   static_assert(same_as<C, remove_cv<C>>);
+  struct _s {
+    size_t size;
+    std::unique_ptr<C[]> ptr;
+  };
+  std::unique_ptr<_s> _p;
 
-  C* _p = nullptr;
-
-  static C* allocate(size_t Size) {
-    constexpr size_t header_size = 8 / sizeof(C);
-    const auto p = new C[Size + header_size + 1];
-    *(reinterpret_cast<size_t*>(p)) = Size;
-    p[header_size + Size] = C('\0');
+  static constexpr std::unique_ptr<_s> allocate(size_t Size) {
+    auto p = std::make_unique<_s>();
+    p->size = Size;
+    p->ptr = std::make_unique<C[]>(Size + 1);
+    p->ptr[Size] = C('\0');
     return p;
   }
 
-  size_t begin_index() const noexcept { return _p ? 8 / sizeof(C) : 0; }
-  size_t end_index() const noexcept { return _p ? 8 / sizeof(C) + *(reinterpret_cast<size_t*>(_p)) : 0; }
-
 public:
-  ~ministr() noexcept { delete[] _p; }
-  ministr() noexcept = default;
-  operator string_view<C>() const { return {data(), size()}; }
+  constexpr ~ministr() noexcept = default;
+  constexpr ministr() noexcept = default;
+  constexpr ministr(ministr&&) noexcept = default;
+  constexpr ministr& operator=(ministr&&) noexcept = default;
+  constexpr operator string_view<C>() const { return {data(), size()}; }
 
-  bool empty() const noexcept { return size() == 0; }
-  size_t size() const { return _p ? *(reinterpret_cast<size_t*>(_p)) : 0; }
-  C* begin() { return _p + begin_index(); }
-  const C* begin() const { return _p + begin_index(); }
-  C* end() { return _p + end_index(); }
-  const C* end() const { return _p + end_index(); }
-  C* data() { return _p + begin_index(); }
-  const C* data() const { return _p + begin_index(); }
-  C& operator[](size_t Index) { return _p[begin_index() + Index]; }
-  const C& operator[](size_t Index) const { return _p[begin_index() + Index]; }
+  constexpr bool empty() const noexcept { return !_p || _p->size == 0; }
+  constexpr size_t size() const { return _p ? _p->size : 0; }
+  constexpr C* begin() { return _p ? _p->ptr.get() : nullptr; }
+  constexpr const C* begin() const { return _p ? _p->ptr.get() : nullptr; }
+  constexpr C* end() { return _p ? _p->ptr.get() + _p->size : nullptr; }
+  constexpr const C* end() const { return _p ? _p->ptr.get() + _p->size : nullptr; }
+  constexpr C* data() { return _p ? _p->ptr.get() : nullptr; }
+  constexpr const C* data() const { return _p ? _p->ptr.get() : nullptr; }
+  constexpr C& operator[](size_t Index) { return _p->ptr[Index]; }
+  constexpr const C& operator[](size_t Index) const { return _p->ptr[Index]; }
 
-  ministr(size_t Size) : _p(allocate(static_cast<wchar_t>(Size))) {}
-  ministr(ministr&& Other) noexcept : _p(std::exchange(Other._p, nullptr)) {}
+  constexpr ministr(size_t Size) : _p(allocate(static_cast<wchar_t>(Size))) {}
 
-  ministr(const ministr& Other) {
+  constexpr ministr(const ministr& Other) {
     if (!Other._p) return;
-    const auto size = Other.size();
-    _p = allocate(size);
-    std::memcpy(_p + begin_index(), Other._p + Other.begin_index(), size * sizeof(C));
+    _p = allocate(Other._p->size);
+    std::memcpy(_p->ptr.get(), Other._p->ptr.get(), Other._p->size * sizeof(C));
   }
 
-  ministr& operator=(const ministr& Other) {
+  constexpr ministr& operator=(const ministr& Other) {
     if (this == &Other) return *this;
-    delete[] _p;
     if (Other._p) {
-      const auto size = Other.size();
-      _p = allocate(size);
-      std::memcpy(_p + begin_index(), Other._p + Other.begin_index(), size * sizeof(C));
+      _p = allocate(Other._p->size);
+      std::memcpy(_p->ptr.get(), Other._p->ptr.get(), Other._p->size * sizeof(C));
     } else _p = nullptr;
     return *this;
   }
 
-  ministr& operator=(ministr&& Other) noexcept {
-    if (this == &Other) return *this;
-    delete[] _p;
-    _p = std::exchange(Other._p, nullptr);
-    return *this;
-  }
-
-  template<stringable<C> S> requires different_from<remove_cvref<S>, ministr> ministr(S&& Str) {
+  template<stringable<C> S> requires different_from<remove_cvref<S>, ministr> constexpr ministr(S&& Str) {
     const auto sv = string_view<C>(Str);
     const auto size = sv.size();
     _p = allocate(size);
-    if (_p) std::memcpy(_p + begin_index(), sv.data(), size * sizeof(C));
+    std::memcpy(_p->ptr.get(), sv.data(), size * sizeof(C));
   }
 
-  template<input_range<C> R> requires (!stringable<R, C>) ministr(R&& Range) {
+  template<input_range<C> R> requires (!stringable<R, C>) constexpr ministr(R&& Range) {
     const auto n = static_cast<size_t>(std::ranges::distance(Range));
-    if (n == 0) return;
     _p = allocate(static_cast<wchar_t>(n));
-    if (_p) std::ranges::copy(Range, _p + begin_index());
+    if (_p) std::ranges::copy(Range, _p->ptr.get());
   }
 
   void resize(size_t Size) {
     if (const auto n = size(); Size < n) {
-      *(reinterpret_cast<size_t*>(_p)) = Size;
-      _p[begin_index() + Size] = C('\0');
+      this->_p->size = Size;
+      _p->ptr[Size] = C('\0');
     } else if (Size > n) {
-      auto p = allocate(static_cast<wchar_t>(Size));
-      std::memcpy(p + begin_index(), _p + begin_index(), n * sizeof(C));
-      std::memset(p + begin_index() + n, 0, (Size - n) * sizeof(C));
-      delete[] _p;
-      _p = p;
+      auto p = allocate(Size);
+      std::memcpy(p->ptr.get(), _p->ptr.get(), n * sizeof(C));
+      std::memset(p->ptr.get() + n, 0, (Size - n) * sizeof(C));
+      _p = std::move(p);
     }
   }
 };
@@ -600,32 +596,42 @@ public:
 /// MARK: footprint
 
 namespace footprint {
-inline constexpr size_t buffer_size = 32;
-inline std::array<const char*, buffer_size> buffer;
-inline size_t _next = 0;
-inline void push(const char* Str) noexcept {
+inline constexpr size_t buffer_size = 64;
+inline thread_local std::array<const char*, buffer_size> _headers;
+inline thread_local std::array<uint32_t, buffer_size> _lines;
+inline thread_local size_t _next = 0;
+inline void push(const char* Str, uint32_t Line) noexcept {
   if (!Str) return;
-  buffer[_next] = Str;
-  _next = (_next + 1) % buffer_size;
+  _headers[_next] = Str;
+  _lines[_next] = Line;
+  _next = yw::min(_next + 1, buffer_size - 1);
 }
-inline void clear() noexcept {
-  for (size_t i = 0; i < buffer_size; ++i) buffer[i] = nullptr;
-  _next = 0;
-}
-inline string<char> dump() noexcept {
-  size_t len = 0;
-  for (size_t i = 0; i < buffer_size; ++i)
-    if (buffer[i]) len += std::char_traits<char>::length(buffer[i]) + 1;
-  string<char> out(len);
-  for (size_t i = _next; i < buffer_size; ++i)
-    if (buffer[i]) out += buffer[i], out += '\n';
-  for (size_t i = 0; i < _next; ++i)
-    if (buffer[i]) out += buffer[i], out += '\n';
-  return out;
+inline void clear() noexcept { _next = 0; }
+inline void print(bool Error) noexcept {
+  auto f = Error ? stderr : stdout;
+  char b[6]{};
+  for (size_t i = _next; i-- > 0;) {
+    if (_headers[i]) {
+      std::fputs(" <- ", f);
+      std::fputs(_headers[i], f);
+      std::fputc('(', f);
+      auto l = _lines[i];
+      b[4] = '0' + char(l % 10);
+      b[3] = '0' + char((l / 10) % 10);
+      b[2] = '0' + char((l / 100) % 10);
+      b[1] = '0' + char((l / 1000) % 10);
+      b[0] = '0' + char((l / 10000) % 10);
+      size_t j = 0;
+      while (b[j] == '0') ++j;
+      std::fputs(b + j, f);
+      std::fputc(')', f);
+    }
+  }
 }
 } // namespace footprint
 
-#define make_footprint ::yw::footprint::push(ywlib_make_source_info)
+#define make_footprint(Header) ::yw::footprint::push(Header, __LINE__)
+#define clear_footprint ::yw::footprint::clear()
 } // namespace yw
 
 namespace std {
