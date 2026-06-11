@@ -1,8 +1,6 @@
 #pragma once
 #include "yw/core.h"
 
-inline constexpr char yw_string[] = "yw/string.h";
-
 namespace yw {
 
 using path = std::filesystem::path;
@@ -33,7 +31,6 @@ template<arithmetic T> constexpr auto stov = [](stringable<char> auto&& str) -> 
   if (ptr != sv.data() + sv.size()) return {};
   return result;
 };
-
 
 /// MARK: string
 
@@ -434,13 +431,17 @@ template<bool Error, bool NewLine, typename... Ts> void _print(Ts&&... Args) {
 } // namespace internal
 
 inline constexpr struct {
-  template<typename... Ts> static void operator()(Ts&&... Args) { internal::_print<false>(static_cast<Ts&&>(Args)...); }
-  template<typename... Ts> static void err(Ts&&... Args) { internal::_print<true>(static_cast<Ts&&>(Args)...); }
+  template<typename... Ts> static void operator()(Ts&&... Args) {
+    internal::_print<false, false>(static_cast<Ts&&>(Args)...);
+  }
+  template<typename... Ts> static void err(Ts&&... Args) { internal::_print<true, false>(static_cast<Ts&&>(Args)...); }
 } print_inline;
 
 inline constexpr struct {
   static void operator()() { internal::_print<false, true>(); }
-  template<typename... Ts> static void operator()(Ts&&... Args) { internal::_print<false, true>(static_cast<Ts&&>(Args)...); }
+  template<typename... Ts> static void operator()(Ts&&... Args) {
+    internal::_print<false, true>(static_cast<Ts&&>(Args)...);
+  }
   static void err() { internal::_print<true, true>(); }
   template<typename... Ts> static void err(Ts&&... Args) { internal::_print<true, true>(static_cast<Ts&&>(Args)...); }
 } print;
@@ -574,7 +575,7 @@ public:
     std::memcpy(_p->ptr.get(), sv.data(), size * sizeof(C));
   }
 
-  template<input_range<C> R> requires (!stringable<R, C>) constexpr ministr(R&& Range) {
+  template<input_range<C> R> requires(!stringable<R, C>) constexpr ministr(R&& Range) {
     const auto n = static_cast<size_t>(std::ranges::distance(Range));
     _p = allocate(static_cast<wchar_t>(n));
     if (_p) std::ranges::copy(Range, _p->ptr.get());
@@ -593,45 +594,55 @@ public:
   }
 };
 
-/// MARK: footprint
+/// MARK: source_line
 
-namespace footprint {
-inline constexpr size_t buffer_size = 64;
-inline thread_local std::array<const char*, buffer_size> _headers;
-inline thread_local std::array<uint32_t, buffer_size> _lines;
-inline thread_local size_t _next = 0;
-inline void push(const char* Str, uint32_t Line) noexcept {
-  if (!Str) return;
-  _headers[_next] = Str;
-  _lines[_next] = Line;
-  _next = yw::min(_next + 1, buffer_size - 1);
+namespace internal {
+inline constexpr auto find_last_slash(const char* it, const char* se) {
 }
-inline void clear() noexcept { _next = 0; }
-inline void print(bool Error) noexcept {
-  auto f = Error ? stderr : stdout;
-  char b[6]{};
-  for (size_t i = _next; i-- > 0;) {
-    if (_headers[i]) {
-      std::fputs(" <- ", f);
-      std::fputs(_headers[i], f);
-      std::fputc('(', f);
-      auto l = _lines[i];
-      b[4] = '0' + char(l % 10);
-      b[3] = '0' + char((l / 10) % 10);
-      b[2] = '0' + char((l / 100) % 10);
-      b[1] = '0' + char((l / 1000) % 10);
-      b[0] = '0' + char((l / 10000) % 10);
-      size_t j = 0;
-      while (b[j] == '0') ++j;
-      std::fputs(b + j, f);
-      std::fputc(')', f);
-    }
+} // namespace internal
+
+struct source_line {
+  const char* file;
+  uint32_t line;
+  consteval source_line(std::source_location Location = std::source_location::current()) {
+    const auto full = Location.file_name();
+    const auto n = std::char_traits<char>::length(full);
+    const auto f = _find_last_slash(full, full + n);
+    const auto d = _find_last_slash(full, f);
+    file = _find_last_slash(full, d);
+    line = Location.line();
   }
-}
-} // namespace footprint
+  constexpr string<char> to_string() const {
+    const auto file_len = std::char_traits<char>::length(file);
+    size_t keta = 0;
+    for (auto l = line; l > 0; l /= 10) ++keta;
+    string<char> result(file_len + keta + 2);
+    std::char_traits<char>::copy(result.data(), file, file_len);
+    auto p = result.data() + file_len;
+    *p++ = '(';
+    for (auto l = line; l > 0; l /= 10) p[--keta] = static_cast<char>('0' + (l % 10));
+    result.back() = ')';
+    return result;
+  }
 
-#define make_footprint(Header) ::yw::footprint::push(Header, __LINE__)
-#define clear_footprint ::yw::footprint::clear()
+private:
+  static constexpr const char* _find_last_slash(const char* it, const char* se) noexcept {
+    while (it < se--)
+      if (*se == '/' || *se == '\\') return se;
+    return it;
+  }
+};
+
+// consteval string_view<char> source_name(std::source_location Location = std::source_location::current()) {
+//   return string_view<char>(internal::find_last_slash(full, dir0), full + n);
+// }
+
+// consteval uint32_t source_line(std::source_location Location = std::source_location::current()) {
+//   return Location.line();
+// }
+
+// constexpr string<char> source_line(string_view<char> Source, uint32_t Line) {
+// }
 } // namespace yw
 
 namespace std {
@@ -650,5 +661,3 @@ template<typename C> struct formatter<yw::null_terminated<C>, C> {
   }
 };
 } // namespace std
-
-#undef ywlib_header_name

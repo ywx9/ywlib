@@ -24,8 +24,6 @@
 #include <windows.h>
 #endif
 
-inline constexpr char yw_core[] = "yw/core.h";
-
 namespace yw {
 
 using int8_t = std::int8_t;

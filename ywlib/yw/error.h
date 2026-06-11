@@ -3,120 +3,113 @@
 
 namespace yw {
 
-//////////////////////////////////////// MARK: error
-
-struct error {
-  /// error type defined by `define_error`
-  struct {
+class error {
+public:
+  struct kind {
+  public:
     const char* name;
-    uint64_t id;
-    constexpr bool operator==(const auto& other) const noexcept
-      requires same_as<remove_cvref<decltype(*this)>, remove_cvref<decltype(other)>> {
-      return id == other.id;
+    template<size_t N> constexpr kind(const char (&Name)[N]) : name(Name) {}
+    constexpr bool operator==(const kind& other) const noexcept { return name == other.name; }
+    constexpr string_view<char> to_string() const noexcept { return string_view<char>(name); }
+  };
+
+  struct slot {
+    error::kind kind;
+    string<char> message;
+    int32_t system_code;
+    uint64_t position;
+    std::vector<string<char>> locations;
+
+    void print() const {
+      if (system_code != 0) {
+        if (position == npos) yw::print.err(kind.to_string(), ": ", message, " (code=", system_code, ")");
+        else yw::print.err(kind.to_string(), ": ", message, " (code=", system_code, ", offset=", position, ")");
+      } else if (position != npos) yw::print.err(kind.to_string(), ": ", message, " (offset=", position, ")");
+      else yw::print.err(kind.to_string(), ": ", message);
+      if (locations.empty()) return;
+      yw::print.err("* ", locations.front());
+      for (size_t i = 1; i < locations.size(); ++i) yw::print.err("^ ", locations[i]);
     }
-    int32_t exit_code() const noexcept { return int32_t(uint32_t(id & 0xFFFFFFFF)); }
-  } type;
-  ministr<char> message;
-  uint64_t position;
-  int32_t system_code;
-  mutable bool handled{true};
+  };
 
-  constexpr ~error() noexcept;
-  constexpr error() noexcept;
-  constexpr error(const error& e);
-  constexpr error(error&& e) noexcept;
-  constexpr error& operator=(const error& e);
-  constexpr error& operator=(error&& e) noexcept;
+private:
+  inline static std::unique_ptr<slot> _current;
+  bool _ticking = false;
 
-  explicit constexpr error(
-    decltype(error::type) e, ministr<char> msg = {}, int32_t sys_code = 0, uint64_t pos = uint64_t(-1)) noexcept;
-
-  explicit constexpr operator bool() const noexcept;
-
-  constexpr string<char> to_string() const {
-    handled = true;
-    auto code = system_code ? system_code : type.exit_code();
-    if (position != uint64_t(-1)) {
-      if (!message.empty()) {
-        if (code == 0) return yw::format(type.name, ": ", message, " (offset=", position, ")");
-        else return yw::format(type.name, ": ", message, " (code=", code, ", offset=", position, ")");
-      } else if (code != 0) return yw::format(type.name, " (code=", code, ", offset=", position, ")");
-      else return yw::format(type.name, " (offset=", position, ")");
-    } else {
-      if (!message.empty()) {
-        if (code == 0) return yw::format(type.name, ": ", message);
-        else return yw::format(type.name, ": ", message, " (code=", code, ")");
-      } else if (code != 0) return yw::format(type.name, " (code=", code, ")");
-      else return type.name;
+public:
+  constexpr error(
+    error::kind Kind, string<char> Message = {}, int32_t SystemCode = 0, uint64_t Position = npos,
+    const source_line& Source = {}) {
+    if (_current) {
+      print.err("Error occurred while handling another error");
+      print.err("New Error: ");
+      slot new_error{Kind, std::move(Message), SystemCode, Position};
+      new_error.locations.push_back(Source.to_string());
+      new_error.print();
+      print.err("Previous Error: ");
+      _current->print();
+      std::exit(_current->system_code ? _current->system_code : EXIT_FAILURE);
     }
+    _current = std::make_unique<slot>(slot{Kind, std::move(Message), SystemCode, Position});
+    _current->locations.push_back(Source.to_string());
+    _ticking = true;
+  }
+
+  constexpr ~error() {
+    if (!_current || !_ticking) return;
+    print.err("Unhandled error goes off:");
+    _current->print();
+    std::exit(_current->system_code ? _current->system_code : EXIT_FAILURE);
+  }
+
+  constexpr error(error&& e) noexcept : _ticking(std::exchange(e._ticking, false)) {}
+  constexpr error& operator=(error&& e) noexcept {
+    if (this != &e) _ticking = std::exchange(e._ticking, false);
+    return *this;
+  }
+
+  explicit constexpr operator bool() const noexcept { return _current != nullptr; }
+  constexpr void sleep() noexcept {
+    _ticking = false;
+    _current.reset();
+  }
+
+  void print_as_warning() const {
+    print_inline.err("Warning: ");
+    _current->print();
+  }
+  void print_as_warning(bool Sleep) {
+    print_as_warning();
+    if (Sleep) sleep();
+  }
+
+  void relay(string_view<char> Source = source_name(), uint32_t Line = source_line()) {
+    auto location = source_line(Source, Line);
+    if (_current) _current->locations.push_back(std::move(location));
+  }
+
+  string<char> to_string() const {
+    if (!_current) return {};
+    const auto& c = *_current;
+    if (c.system_code != 0) {
+      if (c.position == npos) return yw::format(c.kind, ": ", c.message, " (code=", c.system_code, ")");
+      else return yw::format(c.kind, ": ", c.message, " (code=", c.system_code, ", offset=", c.position, ")");
+    } else if (c.position != npos) return yw::format(c.kind, ": ", c.message, " (offset=", c.position, ")");
+    else return yw::format(c.kind, ": ", c.message);
   }
 };
 
-//////////////////////////////////////// MARK: define_error macro
-
-/// adds new error definition in namespace yw::errors
-#define define_error(error_name) \
-  inline constexpr decltype(::yw::error::type) error_name = {#error_name, ::yw::unique_id()};
-
 namespace errors {
-define_error(success);
-define_error(invalid_argument);
-define_error(invalid_operation);
-define_error(operation_failed);
-define_error(not_initialized);
-define_error(unreachable);
+inline constexpr error::kind success{"success"};
+inline constexpr error::kind unreachable{"unreachable"};
+inline constexpr error::kind invalid_argument{"invalid argument"};
+inline constexpr error::kind invalid_operation{"invalid operation"};
+inline constexpr error::kind operation_failed{"operation failed"};
+inline constexpr error::kind not_initialized{"not initialized"};
 } // namespace errors
-
-constexpr error::~error() {
-  if (type != errors::success && !handled && !std::is_constant_evaluated()) {
-    yw::print.err("Unhandled error goes off: ", to_string());
-    footprint::print(true);
-    std::exit(system_code ? system_code : type.exit_code());
-  }
-}
-
-constexpr error::error() noexcept : type(errors::success), system_code(0), position(uint64_t(-1)), message() {}
-
-constexpr error::error(const error& e)
-  : type(e.type), system_code(e.system_code), position(e.position), message(e.message),
-    handled(type == errors::success) {}
-
-constexpr error& error::operator=(const error& e) {
-  type = e.type;
-  system_code = e.system_code;
-  position = e.position;
-  message = e.message;
-  handled = (type == errors::success);
-  return *this;
-}
-
-constexpr error::error(error&& e) noexcept
-  : type(std::exchange(e.type, errors::success)), message(std::move(e.message)),
-    position(std::exchange(e.position, uint64_t(-1))), system_code(std::exchange(e.system_code, 0)),
-    handled(std::exchange(e.handled, true)) {}
-
-constexpr error& error::operator=(error&& e) noexcept {
-  type = std::exchange(e.type, errors::success);
-  system_code = std::exchange(e.system_code, 0);
-  position = std::exchange(e.position, uint64_t(-1));
-  message = std::move(e.message);
-  handled = std::exchange(e.handled, true);
-  return *this;
-}
-
-constexpr error::error(decltype(error::type) e, ministr<char> msg, int32_t sys_code, uint64_t pos) noexcept
-  : type(e), message(std::move(msg)), position(pos), system_code(sys_code), handled(e == errors::success) {}
-
-constexpr error::operator bool() const noexcept { return type != errors::success; }
-
-/// MARK: fatal_error
-
-[[noreturn]] inline void fatal_error(const error& e) {
-  print_fallback.err(format("Fatal error: ", e));
-  footprint::print(true);
-  std::exit(e.system_code ? e.system_code : e.type.exit_code());
-}
 } // namespace yw
+
+namespace yw {} // namespace yw
 
 //////////////////////////////////////// MARK: std::formatter
 
