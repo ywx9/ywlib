@@ -596,11 +596,6 @@ public:
 
 /// MARK: source_line
 
-namespace internal {
-inline constexpr auto find_last_slash(const char* it, const char* se) {
-}
-} // namespace internal
-
 struct source_line {
   const char* file;
   uint32_t line;

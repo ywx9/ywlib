@@ -1,10 +1,8 @@
 #pragma once
 #include "yw/error.h"
 
-inline constexpr char yw_slotset[] = "yw/slotset.h";
-
 namespace yw::errors {
-define_error(invalid_slotid);
+inline constexpr error::kind invalid_slotid{"invalid slotid"};
 }
 
 namespace yw {
@@ -12,6 +10,11 @@ namespace yw {
 //////////////////////////////////////// MARK: slotset
 
 template<typename T> class slotset {
+  struct _slot {
+    std::unique_ptr<T> pointer{};
+    uint32_t generation = 1, next_free = uint32_t(-1);
+  };
+
 public:
   template<bool Const> class _iterator {
     friend class slotset;
@@ -60,11 +63,6 @@ public:
   using iterator = _iterator<false>;
   using const_iterator = _iterator<true>;
 
-  struct slot {
-    std::unique_ptr<T> pointer{};
-    uint32_t generation = 1, next_free = uint32_t(-1);
-  };
-
   struct slotid {
     using slot_type = T;
     using slotset_type = slotset<T>;
@@ -87,7 +85,7 @@ public:
   static_assert(sizeof(slotid) == 2 * sizeof(uint32_t));
 
 private:
-  std::vector<slot> _slots;
+  std::vector<_slot> _slots;
   uint32_t _free_head = uint32_t(-1);
 
 public:
@@ -112,16 +110,15 @@ public:
 
   /// erases the slot with the given slotid if it is valid
   std::expected<void, error> erase(const slotid i) noexcept {
-    make_footprint;
-    if (i.index >= _slots.size()) return unexpected_error(errors::invalid_slotid);
+    if (i.index >= _slots.size()) return std::unexpected(error(errors::invalid_slotid));
     if (auto& s = _slots[i.index]; s.generation == i.generation) {
       s.pointer.reset();
       s.generation++;
       s.next_free = _free_head;
       _free_head = i.index;
       return {};
-    } else if (s.generation < i.generation) return unexpected_error(errors::invalid_slotid);
-    else return unexpected_error(errors::invalid_slotid, "Slot has already been erased");
+    } else if (s.generation < i.generation) return std::unexpected(error(errors::invalid_slotid));
+    else return {}; // already erased
   }
 
   /// creates a new slot with the given pointer and returns its slotid
@@ -135,7 +132,7 @@ public:
       return slotid{i, s.generation};
     } else {
       const auto i = uint32_t(_slots.size());
-      _slots.push_back(slot{std::move(p), 1, uint32_t(-1)});
+      _slots.push_back(_slot{std::move(p), 1, uint32_t(-1)});
       return slotid{i, 1};
     }
   }
@@ -151,4 +148,61 @@ public:
   const_iterator begin() const noexcept { return const_iterator(this, 0); }
   const_iterator end() const noexcept { return const_iterator(this, uint32_t(_slots.size())); }
 };
+
+/// MARK: general_handle
+
+class general_handle {
+public:
+  struct slot {
+    slotset<slot>::slotid id;
+    yw::source_line source_line;
+  };
+
+protected:
+  slotset<slot>::slotid _id{};
+  explicit general_handle(slotset<slot>::slotid Id) : _id(Id) {}
+  template<typename Handle> Handle create_handle(const source_line& sl);
+
+public:
+  void clear();
+
+  ~general_handle() { clear(); }
+  general_handle() noexcept = default;
+  general_handle(const general_handle&) = delete;
+  general_handle& operator=(const general_handle&) = delete;
+  general_handle(general_handle&& Other) noexcept : _id(std::exchange(Other._id, {})) {}
+  general_handle& operator=(general_handle&& Other) noexcept {
+    if (this != &Other) {
+      clear();
+      _id = std::exchange(Other._id, {});
+    }
+    return *this;
+  }
+
+  slotset<slot>::slotid id() const noexcept { return _id; }
+  explicit operator bool() const noexcept;
+};
+
+namespace internal {
+inline slotset<general_handle::slot> general_slotset;
+}
+
+template<typename Handle> Handle general_handle::create_handle(const source_line& sl) {
+  static_assert(derived_from<Handle, general_handle>);
+  static_assert(derived_from<typename Handle::slot, general_handle::slot>);
+  static_assert(constructible<Handle, slotset<general_handle::slot>::slotid>);
+  const auto temp_id = internal::general_slotset.add(std::make_unique<typename Handle::slot>(sl));
+  const auto sp = internal::general_slotset.get(temp_id);
+  if (!sp) {
+    internal::general_slotset.erase(temp_id);
+    auto e = error(errors::operation_failed, "Failed to create handle");
+    e.add_footprint(sl).print_as_warning(true);
+    return {};
+  }
+  sp->id = temp_id;
+  sp->source_line = sl;
+  return Handle(temp_id);
+}
+
+general_handle::operator bool() const noexcept { return internal::general_slotset.contains(_id); }
 } // namespace yw

@@ -18,7 +18,21 @@ public:
     string<char> message;
     int32_t system_code;
     uint64_t position;
-    std::vector<string<char>> locations;
+    std::vector<source_line> locations;
+
+    constexpr string<char> to_string() const {
+      string<char> result;
+      if (system_code != 0) {
+        if (position == npos) result = yw::format(kind, ": ", message, " (code=", system_code, ")");
+        else result = yw::format(kind, ": ", message, " (code=", system_code, ", offset=", position, ")");
+      } else if (position != npos) result = yw::format(kind, ": ", message, " (offset=", position, ")");
+      else result = yw::format(kind, ": ", message);
+      if (!locations.empty()) {
+        result += yw::format("\n* ", locations.front());
+        for (size_t i = 1; i < locations.size(); ++i) result += yw::format("\n^ ", locations[i]);
+      }
+      return result;
+    }
 
     void print() const {
       if (system_code != 0) {
@@ -37,21 +51,23 @@ private:
   bool _ticking = false;
 
 public:
+  constexpr error() noexcept = default;
+
   constexpr error(
-    error::kind Kind, string<char> Message = {}, int32_t SystemCode = 0, uint64_t Position = npos,
+    error::kind Kind, string<char> Message = {}, int32_t Code = 0, uint64_t Position = npos,
     const source_line& Source = {}) {
     if (_current) {
       print.err("Error occurred while handling another error");
       print.err("New Error: ");
-      slot new_error{Kind, std::move(Message), SystemCode, Position};
-      new_error.locations.push_back(Source.to_string());
+      slot new_error{Kind, std::move(Message), Code, Position};
+      new_error.locations.push_back(Source);
       new_error.print();
       print.err("Previous Error: ");
       _current->print();
       std::exit(_current->system_code ? _current->system_code : EXIT_FAILURE);
     }
-    _current = std::make_unique<slot>(slot{Kind, std::move(Message), SystemCode, Position});
-    _current->locations.push_back(Source.to_string());
+    _current = std::make_unique<slot>(slot{Kind, std::move(Message), Code, Position});
+    _current->locations.push_back(Source);
     _ticking = true;
   }
 
@@ -63,12 +79,14 @@ public:
   }
 
   constexpr error(error&& e) noexcept : _ticking(std::exchange(e._ticking, false)) {}
+
   constexpr error& operator=(error&& e) noexcept {
     if (this != &e) _ticking = std::exchange(e._ticking, false);
     return *this;
   }
 
   explicit constexpr operator bool() const noexcept { return _current != nullptr; }
+
   constexpr void sleep() noexcept {
     _ticking = false;
     _current.reset();
@@ -83,19 +101,26 @@ public:
     if (Sleep) sleep();
   }
 
-  void relay(string_view<char> Source = source_name(), uint32_t Line = source_line()) {
-    auto location = source_line(Source, Line);
-    if (_current) _current->locations.push_back(std::move(location));
+  void print_as_fatal() const {
+    print_inline.err("Fatal Error: ");
+    if (!_current) std::exit(EXIT_FAILURE);
+    _current->print();
+    std::exit(_current->system_code ? _current->system_code : EXIT_FAILURE);
   }
 
-  string<char> to_string() const {
+  constexpr string<char> to_string() const {
     if (!_current) return {};
-    const auto& c = *_current;
-    if (c.system_code != 0) {
-      if (c.position == npos) return yw::format(c.kind, ": ", c.message, " (code=", c.system_code, ")");
-      else return yw::format(c.kind, ": ", c.message, " (code=", c.system_code, ", offset=", c.position, ")");
-    } else if (c.position != npos) return yw::format(c.kind, ": ", c.message, " (offset=", c.position, ")");
-    else return yw::format(c.kind, ": ", c.message);
+    return _current->to_string();
+  }
+
+  constexpr std::unexpected<error> relay(const source_line& Source = {}) & {
+    add_footprint(Source);
+    return std::unexpected(std::move(*this));
+  }
+
+  constexpr error& add_footprint(const source_line& Source = {}) {
+    if (_current) _current->locations.push_back(Source);
+    return *this;
   }
 };
 
