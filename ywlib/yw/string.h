@@ -627,17 +627,6 @@ private:
     return it;
   }
 };
-
-// consteval string_view<char> source_name(std::source_location Location = std::source_location::current()) {
-//   return string_view<char>(internal::find_last_slash(full, dir0), full + n);
-// }
-
-// consteval uint32_t source_line(std::source_location Location = std::source_location::current()) {
-//   return Location.line();
-// }
-
-// constexpr string<char> source_line(string_view<char> Source, uint32_t Line) {
-// }
 } // namespace yw
 
 namespace std {

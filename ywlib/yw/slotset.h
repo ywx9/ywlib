@@ -1,13 +1,15 @@
 #pragma once
 #include "yw/error.h"
+#include "yw/tuple.h"
 
 namespace yw::errors {
 inline constexpr error::kind invalid_slotid{"invalid slotid"};
-}
+inline constexpr error::kind slot_creation_failed{"slot creation failed"};
+} // namespace yw::errors
 
 namespace yw {
 
-//////////////////////////////////////// MARK: slotset
+/// MARK: slotset
 
 template<typename T> class slotset {
   struct _slot {
@@ -156,15 +158,16 @@ public:
   struct slot {
     slotset<slot>::slotid id;
     yw::source_line source_line;
+    void clear() noexcept { internal::general_slotset.erase(id); }
   };
 
 protected:
   slotset<slot>::slotid _id{};
   explicit general_handle(slotset<slot>::slotid Id) : _id(Id) {}
-  template<typename Handle> Handle create_handle(const source_line& sl);
+  template<typename Handle> static typename Handle::slot* create_slot(const source_line& sl);
 
 public:
-  void clear();
+  void clear() { internal::general_slotset.erase(_id); }
 
   ~general_handle() { clear(); }
   general_handle() noexcept = default;
@@ -187,21 +190,15 @@ namespace internal {
 inline slotset<general_handle::slot> general_slotset;
 }
 
-template<typename Handle> Handle general_handle::create_handle(const source_line& sl) {
+template<typename Handle> typename Handle::slot* general_handle::create_slot(const source_line& sl) {
   static_assert(derived_from<Handle, general_handle>);
   static_assert(derived_from<typename Handle::slot, general_handle::slot>);
   static_assert(constructible<Handle, slotset<general_handle::slot>::slotid>);
   const auto temp_id = internal::general_slotset.add(std::make_unique<typename Handle::slot>(sl));
   const auto sp = internal::general_slotset.get(temp_id);
-  if (!sp) {
-    internal::general_slotset.erase(temp_id);
-    auto e = error(errors::operation_failed, "Failed to create handle");
-    e.add_footprint(sl).print_as_warning(true);
-    return {};
-  }
-  sp->id = temp_id;
-  sp->source_line = sl;
-  return Handle(temp_id);
+  if (sp) sp->id = temp_id, sp->source_line = sl;
+  else internal::general_slotset.erase(temp_id);
+  return sp;
 }
 
 general_handle::operator bool() const noexcept { return internal::general_slotset.contains(_id); }

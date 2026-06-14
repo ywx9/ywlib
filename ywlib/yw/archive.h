@@ -1,42 +1,39 @@
 #pragma once
 #include "yw/file.h"
 
-#ifdef ywlib_header_name
-#error "ywlib_header_name already defined unexpectedly"
-#endif
-#define ywlib_header_name "yw/archive.h"
+/*
+# .ywa file
 
-/**
- * \note
- * .ywaファイル
- * 用途: Simplestな非圧縮アーカイブ
- * 規則:
- * - 数値フィールドはすべてリトルエンディアン
- * - エントリ間、エントリ-フッタ間のパディングは許容されない
- * - ただし、エントリ開始前にデータがあっても動作を保証する
- * - エントリ名は2048バイト未満のUTF-8文字列
- * - フッタでのオフセットの並びはエントリの順序と対応する
- * - CRC32は各エントリのデータに対してIEEE 802.3準拠で計算する
- *   - (poly=0x04C11DB7, init=0xFFFFFFFF, refin=true, refout=true, xorout=0xFFFFFFFF)
- *   - "123456789" => 0xCBF43926
- * 構造:
- * - エントリ[N]
- *   - マジックナンバ(4) == YWAE; (0x45415759)
- *   - ファイル名の長さ(4)
- *   - データの長さ(8)
- *   - ファイル名
- *   - データ
- *   - CRC32(4)
- * - フッタ
- *   - マジックナンバ(4) == YWAF; (0x46415759)
- *   - ファイル数(4) == N
- *   - 各エントリのファイル先頭からのオフセット(8 x N)
- *   - フッタのファイル先頭からのオフセット(8)
- */
+## Purpose
 
-namespace yw::errors {
-define_error(archive_invalid_format);
-}
+Simplest uncompressed archive
+
+## Rules
+
+- All numeric fields are in little-endian
+- No padding between entries or between entries and footer is allowed
+- The implementation guarantees to work even if there is data before the start of an entry
+- Entry names are UTF-8 strings less than 2048 bytes
+- The order of offsets in the footer corresponds to the order of entries
+- CRC32 is calculated for each entry's data according to IEEE 802.3
+  - (poly=0x04C11DB7, init=0xFFFFFFFF, refin=true, refout=true, xorout=0xFFFFFFFF)
+  - "123456789" => 0xCBF43926
+
+## Structure
+
+- Entry[N]
+  - Magic number(4) == YWAE; (0x45415759)
+  - File name length(4)
+  - Data length(8)
+  - File name
+  - Data
+  - CRC32(4)
+- Footer
+  - Magic number(4) == YWAF; (0x46415759)
+  - File count(4) == N
+  - Offsets of each entry from the beginning of the file(8 x N)
+  - Offset of the footer from the beginning of the file(8)
+*/
 
 namespace yw::archive {
 
@@ -70,22 +67,32 @@ struct header {
 };
 static_assert(sizeof(header) == 16);
 
-class handle {
-  file_handle _fh;
-  std::vector<entry> _entries;
-  uint64_t _entry_offset = 0, _footer_offset = 0;
-  open_mode _mode = open_mode::unknown;
-  explicit handle(file_handle&& fh, std::vector<entry>&& e, std::array<uint64_t, 2> offs, open_mode m)
-    : _fh(std::move(fh)), _entries(std::move(e)), _entry_offset(offs[0]), _footer_offset(offs[1]), _mode(m) {}
+class handle : public general_handle {
+public:
+  struct slot : general_handle::slot {
+    yw::file_handle file_handle;
+    std::vector<entry> entries;
+    uint64_t entry_offset = 0;
+    uint64_t footer_offset = 0;
+  };
+
+  using general_handle::general_handle;
+  using general_handle::operator bool;
+
+
+
+  // file_handle _fh;
+  // std::vector<entry> _entries;
+  // uint64_t _entry_offset = 0, _footer_offset = 0;
+  // explicit handle(file_handle&& fh, std::vector<entry>&& e, std::array<uint64_t, 2> offs, open_mode m)
+  //   : _fh(std::move(fh)), _entries(std::move(e)), _entry_offset(offs[0]), _footer_offset(offs[1]), _mode(m) {}
 
 public:
   /// creates `archive`
   static std::expected<handle, error> create(const std::filesystem::path& p, open_mode mode) {
-    make_footprint;
-    const auto e = yw::errors::archive_invalid_format;
     const open_mode fh_mode = mode == open_mode::append ? open_mode::update_or_create : mode;
     auto fh = yw::open(p, fh_mode);
-    if (!fh) return unexpected_error(fh.error());
+    if (!fh) return std::unexpected(error(errors::operation_failed, "failed to open archive file"));
     if (fh_mode == open_mode::create_always || fh_mode == open_mode::create_new)
       return handle(std::move(*fh), {}, {}, mode);
     uint64_t file_size{};
@@ -350,5 +357,3 @@ inline std::expected<void, error> extract(
   return {};
 }
 } // namespace yw::archive
-
-#undef ywlib_header_name

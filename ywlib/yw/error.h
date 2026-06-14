@@ -85,31 +85,48 @@ public:
     return *this;
   }
 
-  explicit constexpr operator bool() const noexcept { return _current != nullptr; }
+  explicit constexpr operator bool() const noexcept { return _current && _ticking; }
+  constexpr bool ticking() const noexcept { return _current && _ticking; }
 
   constexpr void sleep() noexcept {
     _ticking = false;
     _current.reset();
   }
 
-  void print_as_warning() const {
+  static void print_as_warning() {
     print_inline.err("Warning: ");
     _current->print();
   }
+
+  static void print_as_warning(const source_line& Add) {
+    print_inline.err("Warning: ");
+    if (!_current) return;
+    _current->locations.push_back(Add);
+    _current->print();
+  }
+
   void print_as_warning(bool Sleep) {
     print_as_warning();
     if (Sleep) sleep();
   }
 
-  void print_as_fatal() const {
+  static void print_as_fatal() {
     print_inline.err("Fatal Error: ");
     if (!_current) std::exit(EXIT_FAILURE);
     _current->print();
     std::exit(_current->system_code ? _current->system_code : EXIT_FAILURE);
   }
 
-  constexpr string<char> to_string() const {
-    if (!_current) return {};
+  static void print_as_fatal(const source_line& Add) {
+    print_inline.err("Fatal Error: ");
+    if (!_current) std::exit(EXIT_FAILURE);
+    _current->locations.push_back(Add);
+    _current->print();
+    std::exit(_current->system_code ? _current->system_code : EXIT_FAILURE);
+  }
+
+  static string<char> to_string() {
+    if (!_current) return "no error";
     return _current->to_string();
   }
 
@@ -118,7 +135,7 @@ public:
     return std::unexpected(std::move(*this));
   }
 
-  constexpr error& add_footprint(const source_line& Source = {}) {
+  constexpr error& add_footprint(const source_line& Source = {}) & {
     if (_current) _current->locations.push_back(Source);
     return *this;
   }
@@ -131,18 +148,23 @@ inline constexpr error::kind invalid_argument{"invalid argument"};
 inline constexpr error::kind invalid_operation{"invalid operation"};
 inline constexpr error::kind operation_failed{"operation failed"};
 inline constexpr error::kind not_initialized{"not initialized"};
+inline constexpr error::kind already_initialized{"already initialized"};
 } // namespace errors
 } // namespace yw
 
-namespace yw {} // namespace yw
-
-//////////////////////////////////////// MARK: std::formatter
+/// MARK: std::formatter
 
 namespace std {
 
-template<typename C> struct formatter<yw::error, C> {
-  formatter<basic_string<C>, C> fmt;
+template<> struct formatter<yw::error::kind, char> {
+  formatter<basic_string_view<char>, char> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::error& err, auto& ctx) const { return fmt.format(yw::unicode<C>(err.to_string()), ctx); }
+  auto format(const yw::error::kind& k, auto& ctx) const { return fmt.format(k.to_string(), ctx); }
+};
+
+template<> struct formatter<yw::error, char> {
+  formatter<basic_string<char>, char> fmt;
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::error& err, auto& ctx) const { return fmt.format(err.to_string(), ctx); }
 };
 } // namespace std
