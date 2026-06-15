@@ -157,19 +157,20 @@ class general_handle {
 public:
   struct slot {
     slotset<slot>::slotid id;
-    yw::source_line source_line;
-    void clear() noexcept { internal::general_slotset.erase(id); }
+    yw::source_line source_line = yw::source_line::here();
+    void clear() noexcept;
   };
 
 protected:
   slotset<slot>::slotid _id{};
   explicit general_handle(slotset<slot>::slotid Id) : _id(Id) {}
   template<typename Handle> static typename Handle::slot* create_slot(const source_line& sl);
+  template<typename Handle> static typename Handle::slot* get(slotset<slot>::slotid Id);
 
 public:
-  void clear() { internal::general_slotset.erase(_id); }
+  void clear() noexcept;
 
-  ~general_handle() { clear(); }
+  ~general_handle() noexcept { clear(); }
   general_handle() noexcept = default;
   general_handle(const general_handle&) = delete;
   general_handle& operator=(const general_handle&) = delete;
@@ -186,6 +187,9 @@ public:
   explicit operator bool() const noexcept;
 };
 
+using general_slot = general_handle::slot;
+using general_slotid = slotset<general_handle::slot>::slotid;
+
 namespace internal {
 inline slotset<general_handle::slot> general_slotset;
 }
@@ -193,13 +197,21 @@ inline slotset<general_handle::slot> general_slotset;
 template<typename Handle> typename Handle::slot* general_handle::create_slot(const source_line& sl) {
   static_assert(derived_from<Handle, general_handle>);
   static_assert(derived_from<typename Handle::slot, general_handle::slot>);
-  static_assert(constructible<Handle, slotset<general_handle::slot>::slotid>);
-  const auto temp_id = internal::general_slotset.add(std::make_unique<typename Handle::slot>(sl));
-  const auto sp = internal::general_slotset.get(temp_id);
+  static_assert(constructible<Handle>); // default constructible
+  const auto temp_id = internal::general_slotset.add(std::make_unique<typename Handle::slot>());
+  const auto sp = general_handle::get<Handle>(temp_id);
   if (sp) sp->id = temp_id, sp->source_line = sl;
   else internal::general_slotset.erase(temp_id);
   return sp;
 }
 
-general_handle::operator bool() const noexcept { return internal::general_slotset.contains(_id); }
+template<typename Handle> typename Handle::slot* general_handle::get(general_slotid Id) {
+  static_assert(derived_from<Handle, general_handle>);
+  static_assert(derived_from<typename Handle::slot, general_handle::slot>);
+  return static_cast<typename Handle::slot*>(internal::general_slotset.get(Id));
+}
+
+inline void general_handle::slot::clear() noexcept { internal::general_slotset.erase(id); }
+inline void general_handle::clear() noexcept { internal::general_slotset.erase(_id); }
+inline general_handle::operator bool() const noexcept { return internal::general_slotset.contains(_id); }
 } // namespace yw

@@ -597,16 +597,9 @@ public:
 /// MARK: source_line
 
 struct source_line {
-  const char* file;
-  uint32_t line;
-  consteval source_line(std::source_location Location = std::source_location::current()) {
-    const auto full = Location.file_name();
-    const auto n = std::char_traits<char>::length(full);
-    const auto f = _find_last_slash(full, full + n);
-    const auto d = _find_last_slash(full, f);
-    file = _find_last_slash(full, d);
-    line = Location.line();
-  }
+  const char* file = nullptr;
+  uint32_t line = 0;
+
   constexpr string<char> to_string() const {
     const auto file_len = std::char_traits<char>::length(file);
     size_t keta = 0;
@@ -620,7 +613,19 @@ struct source_line {
     return result;
   }
 
+  static consteval source_line here(std::source_location Location = std::source_location::current()) {
+    source_line sl;
+    const auto full = Location.file_name();
+    const auto n = std::char_traits<char>::length(full);
+    const auto f = _find_last_slash(full, full + n);
+    const auto d = _find_last_slash(full, f);
+    sl.file = _find_last_slash(full, d);
+    sl.line = Location.line();
+    return sl;
+  }
+
 private:
+  constexpr source_line() noexcept = default;
   static constexpr const char* _find_last_slash(const char* it, const char* se) noexcept {
     while (it < se--)
       if (*se == '/' || *se == '\\') return se;

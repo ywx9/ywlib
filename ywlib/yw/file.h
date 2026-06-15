@@ -121,7 +121,7 @@ namespace yw {
 
 /// MARK: file_handle
 
-class file_handle : general_handle {
+class file_handle : public general_handle {
 public:
   struct slot : general_handle::slot {
     std::FILE* file = nullptr;
@@ -196,7 +196,7 @@ public:
 
   using general_handle::general_handle;
 
-  file_handle(std::filesystem::path path, open_mode mode, const source_line& sl = {}) {
+  file_handle(std::filesystem::path path, open_mode mode, const source_line& sl = source_line::here()) {
     const auto sp = create_slot<file_handle>(sl);
     if (!sp) error(errors::slot_creation_failed).print_as_fatal(sl);
     sp->path = std::move(path);
@@ -312,8 +312,9 @@ public:
   std::expected<void, error> write_exact(const void* src, size_t bytes) {
     const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
     if (!sp) return std::unexpected(error(errors::invalid_slotid));
+    const auto p = static_cast<const std::byte*>(src);
     for (size_t total = 0; total < bytes;) {
-      if (auto res = sp->write(src + total, bytes - total); !res) return res.error().relay();
+      if (auto res = sp->write(p + total, bytes - total); !res) return res.error().relay();
       else if (*res == 0) return std::unexpected(error(errors::operation_failed, "incomplete write"));
       else total += *res;
     }
@@ -360,7 +361,9 @@ public:
   }
 };
 
-inline file_handle open(const std::filesystem::path& path, open_mode mode) { return file_handle(path, mode); }
+inline file_handle open(const std::filesystem::path& path, open_mode mode, const source_line& sl = source_line::here()) {
+  return file_handle(path, mode, sl);
+}
 } // namespace yw
 
 #undef ywlib_header_name

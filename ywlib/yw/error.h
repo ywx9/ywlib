@@ -55,7 +55,7 @@ public:
 
   constexpr error(
     error::kind Kind, string<char> Message = {}, int32_t Code = 0, uint64_t Position = npos,
-    const source_line& Source = {}) {
+    const source_line& Source = source_line::here()) {
     if (_current) {
       print.err("Error occurred while handling another error");
       print.err("New Error: ");
@@ -130,12 +130,12 @@ public:
     return _current->to_string();
   }
 
-  constexpr std::unexpected<error> relay(const source_line& Source = {}) & {
+  constexpr std::unexpected<error> relay(const source_line& Source = source_line::here()) & {
     add_footprint(Source);
     return std::unexpected(std::move(*this));
   }
 
-  constexpr error& add_footprint(const source_line& Source = {}) & {
+  constexpr error& add_footprint(const source_line& Source = source_line::here()) & {
     if (_current) _current->locations.push_back(Source);
     return *this;
   }
