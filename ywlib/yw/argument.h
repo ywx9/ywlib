@@ -11,6 +11,7 @@
 
 namespace yw::errors {
 inline constexpr error::kind invalid_command_line_argument{"invalid command line argument"};
+inline constexpr error::kind missing_required_argument{"missing required argument"};
 }
 
 namespace yw::argument {
@@ -137,8 +138,7 @@ public:
   };
 
   positional(string<char> Metavar, const source_line& sl = yw::source_line::here()) {
-    const auto temp_id = create_slot<positional>(sl);
-    const auto sp = general_handle::get<positional>(temp_id);
+    const auto sp = create_slot<positional>(sl);
     if (!sp) fatal_error(error(errors::slot_creation_failed));
     if (auto res = sp->init(std::move(Metavar)); !res) {
       res.error().add_footprint().print_as_warning(sl);
@@ -146,20 +146,32 @@ public:
     }
   }
 
-  auto& description(string<char> Desc) { return slot::get(id).description = std::move(Desc), *this; }
-  auto& required(bool Required = true) { return slot::get(id).required = Required, *this; }
-  auto& default_value(T Value) { return slot::get(id).default_value = std::move(Value), *this; }
+  auto& description(string<char> Desc) & noexcept {
+    general_handle::get<positional>(id())->description = std::move(Desc);
+    return *this;
+  }
 
-  const auto& value() const {
-    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
-    auto& s = slot::get(id);
-    if (s.specified) return *s.value;
-    if (!s.default_value.has_value()) fatal_error(error(errors::argument_invalid_usage, "No value available"));
-    return *s.default_value;
+  auto& required(bool Required = true) & noexcept {
+    general_handle::get<positional>(id())->required = Required;
+    return slot::get(id).required = Required, *this;
+  }
+
+  auto& default_value(T Value) & noexcept {
+    general_handle::get<positional>(id())->default_value = std::move(Value);
+    return *this;
+  }
+
+  const T& value() const {
+    if (!internal::parsed) error(errors::not_initialized, "Call before parsing").print_as_fatal();
+    const auto sp = general_handle::get<positional>(id());
+    if (!sp) error(errors::invalid_slotid).print_as_fatal();
+    if (sp->specified) return *sp->value;
+    if (!sp->default_value.has_value()) error(errors::invalid_command_line_argument, "missing value").print_as_fatal();
+    return *(sp->default_value);
   }
 
   bool has_value() const {
-    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
+    if (!internal::parsed) fatal_error(error(errors::not_initialized, "Call before parsing"));
     auto& s = slot::get(id);
     return s.specified || s.default_value.has_value();
   }
@@ -172,8 +184,7 @@ public:
 
 template<typename T> handle::positional<T> positional(string<char> Metavar) {
   const auto temp_id = general_handle::create_slot<handle::positional<T>>(yw::source_line::here());
-  const auto sp = general_slot::
-  auto res = handle::positional<T>::slot::create(std::move(Metavar));
+  const auto sp = general_slot::auto res = handle::positional<T>::slot::create(std::move(Metavar));
   if (!res) fatal_error(res.error());
   return std::move(*res);
 }
