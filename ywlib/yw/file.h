@@ -124,14 +124,17 @@ namespace yw {
 class file_handle : public general_handle {
 public:
   struct slot : general_handle::slot {
+    static const slot empty_slot;
     std::FILE* file = nullptr;
     std::filesystem::path path;
     open_mode mode = open_mode::unknown;
 
-    std::expected<void, error> open() {
+    std::expected<void, error> open(std::filesystem::path&& Path, open_mode Mode) {
       if (file) return std::unexpected(error(errors::already_initialized));
-      if (auto res = internal::_open(path, mode)) file = *res;
+      if (auto res = internal::_open(Path, Mode)) file = *res;
       else return res.error().relay();
+      this->path = std::move(Path);
+      this->mode = Mode;
       return {};
     }
 
@@ -199,39 +202,30 @@ public:
   file_handle(std::filesystem::path path, open_mode mode, const source_line& sl = source_line::here()) {
     const auto sp = create_slot<file_handle>(sl);
     if (!sp) error(errors::slot_creation_failed).print_as_fatal(sl);
-    sp->path = std::move(path);
-    sp->mode = mode;
-    if (auto res = sp->open()) _id = sp->id;
-    else res.error().print_as_warning(sl); // prints warning and leaves handle empty.
+    if (auto res = sp->open(std::move(path), mode); !res) {
+      this->clear();
+      res.error().add_footprint().print_as_warning(sl); // makes empty handle
+    } else _id = sp->id;
   }
 
-  const std::filesystem::path& path() const {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
-    if (!sp) error(errors::invalid_slotid).print_as_fatal();
-    return sp->path;
-  }
-
-  const open_mode& mode() const {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
-    if (!sp) error(errors::invalid_slotid).print_as_fatal();
-    return sp->mode;
-  }
+  const std::filesystem::path& path() const { ywlib_get_slot_member(path); }
+  const open_mode& mode() const { ywlib_get_slot_member(mode); }
 
   bool is_open() const noexcept {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
+    const auto sp = get_slot(this);
     return sp && sp->file != nullptr;
   }
 
   explicit operator bool() const noexcept { return is_open(); }
 
   std::expected<void, error> close() {
-    if (const auto sp = static_cast<slot*>(internal::general_slotset.get(_id)))
+    if (const auto sp = get_slot(this))
       if (auto res = sp->close(); !res) return res.error().relay();
     return {};
   }
 
   int64_t tell() const {
-    if (const auto sp = static_cast<slot*>(internal::general_slotset.get(_id))) {
+    if (const auto sp = get_slot(this)) {
       if (auto res = sp->tell()) return *res;
       else res.error().add_footprint().add_footprint(sp->source_line).print_as_warning();
     } else error(errors::invalid_slotid).print_as_warning();
@@ -239,14 +233,13 @@ public:
   }
 
   std::expected<void, error> seek(integral auto off, seek_whence w = seek_whence::begin) {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
-    if (!sp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = sp->seek(static_cast<int64_t>(off), w)) return {};
+    if (const auto sp = get_slot(this); !sp) return std::unexpected(error(errors::invalid_slotid));
+    else if (auto res = sp->seek(static_cast<int64_t>(off), w)) return {};
     else return res.error().relay();
   }
 
   int64_t file_size() const {
-    if (const auto sp = static_cast<slot*>(internal::general_slotset.get(_id))) {
+    if (const auto sp = get_slot(this)) {
       if (auto res = sp->size()) return *res;
       else res.error().add_footprint().add_footprint(sp->source_line).print_as_warning();
     } else error(errors::invalid_slotid).print_as_warning();
@@ -254,21 +247,20 @@ public:
   }
 
   std::expected<size_t, error> read(void* dst, size_t bytes) {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
-    if (!sp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = sp->read(dst, bytes)) return *res;
+    if (const auto sp = get_slot(this); !sp) return std::unexpected(error(errors::invalid_slotid));
+    else if (auto res = sp->read(dst, bytes)) return *res;
     else return res.error().relay();
   }
 
   std::expected<void, error> read_exact(void* dst, size_t bytes) {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
-    if (!sp) return std::unexpected(error(errors::invalid_slotid));
-    for (size_t total = 0; total < bytes;) {
-      if (auto res = sp->read(static_cast<std::byte*>(dst) + total, bytes - total); !res) return res.error().relay();
-      else if (*res == 0) return std::unexpected(error(errors::operation_failed, "unexpected end of file"));
-      else total += *res;
-    }
-    return {};
+    if (const auto sp = get_slot(this)) {
+      for (size_t total = 0; total < bytes;) {
+        if (auto res = sp->read(static_cast<std::byte*>(dst) + total, bytes - total); !res) return res.error().relay();
+        else if (*res == 0) return std::unexpected(error(errors::operation_failed, "unexpected end of file"));
+        else total += *res;
+      }
+      return {};
+    } else return std::unexpected(error(errors::invalid_slotid));
   }
 
   template<trivial T> std::expected<T, error> read_trivial() {
@@ -310,15 +302,15 @@ public:
   }
 
   std::expected<void, error> write_exact(const void* src, size_t bytes) {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
-    if (!sp) return std::unexpected(error(errors::invalid_slotid));
-    const auto p = static_cast<const std::byte*>(src);
-    for (size_t total = 0; total < bytes;) {
-      if (auto res = sp->write(p + total, bytes - total); !res) return res.error().relay();
-      else if (*res == 0) return std::unexpected(error(errors::operation_failed, "incomplete write"));
-      else total += *res;
-    }
-    return {};
+    if (const auto sp = get_slot(this)) {
+      const auto p = static_cast<const std::byte*>(src);
+      for (size_t total = 0; total < bytes;) {
+        if (auto res = sp->write(p + total, bytes - total); !res) return res.error().relay();
+        else if (*res == 0) return std::unexpected(error(errors::operation_failed, "incomplete write"));
+        else total += *res;
+      }
+      return {};
+    } else return std::unexpected(error(errors::invalid_slotid));
   }
 
   template<contiguous_iterator It, sentinel_for<It> Se> requires trivial<iter_value_t<It>>
@@ -341,16 +333,14 @@ public:
   }
 
   std::expected<void, error> flush() {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
-    if (!sp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = sp->flush()) return {};
+    if (const auto sp = get_slot(this); !sp) return std::unexpected(error(errors::invalid_slotid));
+    else if (auto res = sp->flush()) return {};
     else return res.error().relay();
   }
 
   std::expected<void, error> truncate_to_current() {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
-    if (!sp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = sp->truncate_to_current()) return {};
+    if (const auto sp = get_slot(this); !sp) return std::unexpected(error(errors::invalid_slotid));
+    else if (auto res = sp->truncate_to_current()) return {};
     else return res.error().relay();
   }
 
@@ -364,6 +354,6 @@ public:
 inline file_handle open(const std::filesystem::path& path, open_mode mode, const source_line& sl = source_line::here()) {
   return file_handle(path, mode, sl);
 }
-} // namespace yw
 
-#undef ywlib_header_name
+inline const file_handle::slot file_handle::slot::empty_slot{};
+} // namespace yw

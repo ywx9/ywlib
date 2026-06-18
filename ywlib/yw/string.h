@@ -43,11 +43,11 @@ template<char_type C> class string {
   C* _ptr = nullptr;
 
   constexpr size_t _get_preferred_capacity(size_t Size) const noexcept {
-    return yw::max(Size, 2 * std::bit_ceil(Size), size_t(256));
+    return yw::max(Size + 1, 2 * std::bit_ceil(Size), size_t(256));
   }
 
   constexpr string(is_none auto, size_t Size) // constructing in uninitialized state
-    : _size(Size), _capacity(_get_preferred_capacity(Size + 1)), _ptr(new C[_capacity]) {}
+    : _size(Size), _capacity(_get_preferred_capacity(Size)), _ptr(new C[_capacity]) {}
 
 public:
   constexpr ~string() noexcept { delete[] _ptr; }
@@ -73,14 +73,16 @@ public:
     if (this == &Other) return *this;
     delete[] _ptr;
     _size = Other._size;
-    _capacity = _get_preferred_capacity(_size + 1);
+    _capacity = _get_preferred_capacity(_size);
     _ptr = new C[_capacity];
     for (size_t i = 0; i < _size; ++i) _ptr[i] = Other._ptr[i];
     _ptr[_size] = C();
     return *this;
   }
 
-  constexpr string(size_t Size, C FillChar = C()) : string(none{}, Size) {
+  constexpr string(size_t Size) : string(Size, C()) {}
+
+  constexpr string(size_t Size, same_as<C> auto FillChar) : string(none{}, Size) {
     for (size_t i = 0; i < _size; ++i) _ptr[i] = FillChar;
     _ptr[_size] = C();
   }
@@ -125,7 +127,7 @@ public:
 
   constexpr void reserve(size_t Size) {
     if (_capacity > Size) return;
-    const auto new_capacity = _get_preferred_capacity(Size + 1);
+    const auto new_capacity = _get_preferred_capacity(Size);
     auto* new_ptr = new C[new_capacity];
     for (size_t i = 0; i < _size; ++i) new_ptr[i] = _ptr[i];
     new_ptr[_size] = C();
@@ -195,6 +197,9 @@ public:
 };
 
 template<stringable S> string(S&&) -> string<iter_value_t<S>>;
+template<char_type C> string(size_t, C) -> string<C>;
+
+template<char_type C> inline const string<C> empty_string{};
 
 /// MARK: bool_to_string
 
@@ -222,11 +227,12 @@ constexpr string<char> uint_to_string(unsigned_integral auto Value) { return uin
 
 template<char_type C> constexpr string<C> int_to_string(integral auto Value) {
   if constexpr (uint_type<decltype(Value)>) return uint_to_string<C>(Value);
+  if (Value == 0) return string<C>(1, C('0'));
   const bool minus = Value < 0;
   auto u = static_cast<uint64_t>(minus ? -Value : Value);
   unsigned keta = 0;
   for (auto u_ = u; u_ != 0; u_ /= 10) ++keta;
-  string<C> result(keta + minus, '\0');
+  string<C> result(keta + minus, C());
   if (minus) result[0] = '-';
   for (auto p = result.data() + result.size(); u != 0; u /= 10) *(--p) = static_cast<C>('0' + (u % 10));
   return result;
@@ -597,7 +603,7 @@ public:
 /// MARK: source_line
 
 struct source_line {
-  const char* file = nullptr;
+  const char* file = "";
   uint32_t line = 0;
 
   constexpr string<char> to_string() const {
@@ -623,6 +629,8 @@ struct source_line {
     sl.line = Location.line();
     return sl;
   }
+
+  static consteval source_line null() { return {}; }
 
 private:
   constexpr source_line() noexcept = default;

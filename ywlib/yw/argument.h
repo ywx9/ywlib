@@ -1,9 +1,9 @@
 #pragma once
 
-#include <map>
-
 #include "yw/slotset.h"
 #include "yw/tuple.h"
+
+#include <map>
 
 #ifdef _WIN32
 #include <shellapi.h>
@@ -12,12 +12,12 @@
 namespace yw::errors {
 inline constexpr error::kind invalid_command_line_argument{"invalid command line argument"};
 inline constexpr error::kind missing_required_argument{"missing required argument"};
-}
+} // namespace yw::errors
 
 namespace yw::argument {
 
 /// name of application used in help text. This is overwritten in parsing.
-inline string<char> application_name;
+inline string<char> program_name;
 
 /// description of application used in help text
 inline string<char> description;
@@ -75,6 +75,10 @@ template<typename T> requires(float_type<T>) struct converter<T> {
 /// MARK: handle
 
 class handle : public general_handle {
+protected:
+  inline static std::map<string<char>, general_slotid> name_map;
+  inline static std::vector<general_slotid> positionals;
+
 public:
   enum class type : uint8_t { flag, option, positional };
   class flag;
@@ -82,15 +86,16 @@ public:
   template<typename T> class positional;
 
   struct slot : general_handle::slot {
-    string<char> key;
-    string<char> metavar;
-    string<char> description;
+    string<char> key;                  // flag, option, positional
+    string<char> metavar;              // positional
+    string<char> description;          // flag, option, positional
+    string<char> value_string;         // option, positional
+    string<char> default_value_string; // option, positional
+    std::vector<string<char>> aliases; // flag, option
     handle::type type;
     bool required = false;
     bool multiple = false;
     bool specified = false;
-    std::expected<void, error> parse_value(string_view<char>) { return std::unexpected(error(errors::unreachable)); }
-    std::optional<string<char>> default_value_string() const { return std::nullopt; }
   };
 
   using general_handle::general_handle;
@@ -98,9 +103,6 @@ public:
 
 namespace internal {
 inline static bool parsed = false;
-inline static slotset<handle::slot> slots;
-inline static std::map<string<char>, general_slotid> name_map;
-inline static std::vector<general_slotid> positionals;
 } // namespace internal
 
 /// MARK: positional
@@ -108,408 +110,290 @@ inline static std::vector<general_slotid> positionals;
 template<typename T> class handle::positional : public handle {
 public:
   struct slot : handle::slot {
+    static const slot empty_slot;
     std::optional<T> value;
     std::optional<T> default_value;
 
-    std::expected<void, error> init(string<char> Metavar) {
-      key = uint_to_string(internal::positionals.size());
+    std::expected<void, error> init(string<char>&& Metavar) {
+      key = uint_to_string(positionals.size());
       metavar = std::move(Metavar);
       type = handle::type::positional;
-      internal::positionals.push_back(id);
+      positionals.push_back(id);
       return {};
     }
 
-    std::expected<void, error> parse_value(std::string_view Value) override {
-      if (auto res = converter<T>{}(Value); !res) {
-        yw::error& e = res.error();
-        e.message = format(e.message, " at #", key);
-        return std::unexpected(res.error());
+    std::expected<void, error> update_value() {
+      if (value.has_value()) return {};
+      if (!specified) {
+        if (default_value.has_value()) value = *default_value;
+        else return std::unexpected(error(errors::missing_required_argument));
+      } else if (auto res = converter<T>()(value_string); !res) {
+        auto& e = res.error();
+        e.message(format(e.message(), " at #", key));
+        return e.relay();
       } else value = std::move(*res);
-      specified = true;
       return {};
-    }
-
-    std::optional<string<char>> default_value_string() const override {
-      if (default_value.has_value()) {
-        if (auto res = converter<T>{}(*default_value); res) return *res;
-        else return std::nullopt;
-      } else return std::nullopt;
     }
   };
 
-  positional(string<char> Metavar, const source_line& sl = yw::source_line::here()) {
-    const auto sp = create_slot<positional>(sl);
-    if (!sp) fatal_error(error(errors::slot_creation_failed));
-    if (auto res = sp->init(std::move(Metavar)); !res) {
-      res.error().add_footprint().print_as_warning(sl);
-      return;
-    }
+  positional(string<char>&& Metavar, const source_line& sl = yw::source_line::here()) {
+    if (const auto sp = create_slot<positional>(sl); !sp) error(error(errors::slot_creation_failed)).print_as_fatal(sl);
+    else if (auto res = sp->init(std::move(Metavar)); !res) res.error().add_footprint().print_as_fatal(sl);
+    else _id = sp->id;
   }
 
-  auto& description(string<char> Desc) & noexcept {
-    general_handle::get<positional>(id())->description = std::move(Desc);
-    return *this;
+  template<typename Self> auto&& description(this Self&& self, string<char> Desc) noexcept
+    requires(!is_const<remove_ref<Self>>) {
+    const auto sp = self.get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).print_as_warning();
+    else sp->description = std::move(Desc);
+    return static_cast<Self&&>(self);
   }
 
-  auto& required(bool Required = true) & noexcept {
-    general_handle::get<positional>(id())->required = Required;
-    return slot::get(id).required = Required, *this;
+  template<typename Self> auto&& required(this Self&& self, bool Required = true) noexcept
+    requires(!is_const<remove_ref<Self>>) {
+    const auto sp = self.get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).print_as_warning();
+    else sp->required = Required;
+    return static_cast<Self&&>(self);
   }
 
-  auto& default_value(T Value) & noexcept {
-    general_handle::get<positional>(id())->default_value = std::move(Value);
-    return *this;
+  template<typename Self> auto&& default_value(this Self&& self, T Value) noexcept
+    requires(!is_const<remove_ref<Self>>) {
+    const auto sp = self.get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).print_as_fatal();
+    if (auto res = converter<T>{}(Value)) {
+      sp->default_value_string = std::move(*res);
+      sp->default_value = std::move(Value);
+    } else res.error().add_footprint().print_as_warning(sp->source_line);
+    return static_cast<Self&&>(self);
   }
 
   const T& value() const {
-    if (!internal::parsed) error(errors::not_initialized, "Call before parsing").print_as_fatal();
-    const auto sp = general_handle::get<positional>(id());
+    if (!internal::parsed) error(errors::invalid_operation, "value required before parsing").print_as_fatal();
+    const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).print_as_fatal();
-    if (sp->specified) return *sp->value;
-    if (!sp->default_value.has_value()) error(errors::invalid_command_line_argument, "missing value").print_as_fatal();
-    return *(sp->default_value);
+    if (auto res = sp->update_value(); !res) res.error().add_footprint().print_as_fatal(sp->source_line);
+    return *(sp->value);
   }
 
   bool has_value() const {
-    if (!internal::parsed) fatal_error(error(errors::not_initialized, "Call before parsing"));
-    auto& s = slot::get(id);
-    return s.specified || s.default_value.has_value();
+    const auto sp = get_slot(this);
+    return sp && (sp->specified || sp->default_value.has_value());
   }
 
   bool specified() const {
-    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
-    return slot::get(id).specified;
+    const auto sp = get_slot(this);
+    return sp && sp->specified;
   }
 };
 
-template<typename T> handle::positional<T> positional(string<char> Metavar) {
-  const auto temp_id = general_handle::create_slot<handle::positional<T>>(yw::source_line::here());
-  const auto sp = general_slot::auto res = handle::positional<T>::slot::create(std::move(Metavar));
-  if (!res) fatal_error(res.error());
-  return std::move(*res);
+template<typename T>
+handle::positional<T> positional(string<char> Metavar, const source_line& sl = yw::source_line::here()) {
+  return handle::positional<T>(std::move(Metavar), sl);
 }
 
 /// MARK: option
 
 template<typename T> class handle::option : public handle {
-  option(slotid Id) : handle(Id) {}
-
 public:
   struct slot : handle::slot {
-    std::vector<T> values;
+    static const slot empty_slot;
+    std::optional<std::vector<T>> values;
     std::optional<T> default_value;
 
-    static std::expected<option, error> create(string<char> Key) {
-      const auto id = internal::slots.add(std::make_unique<slot>());
-      const auto [it, b] = internal::name_map.emplace(Key, id);
-      if (!b) return unexpected_error(errors::argument_invalid_definition, format("Duplicate key: ", Key));
-      const auto sp = dynamic_cast<slot*>(internal::slots.get(id));
-      if (!sp) return unexpected_error(errors::operation_failed, "Failed to create option slot");
-      sp->id = id;
-      sp->key = std::move(Key);
-      sp->type = handle::type::option;
-      return option(id);
-    }
-
-    static slot& get(slotid Id) {
-      const auto sp = dynamic_cast<slot*>(internal::slots.get(Id));
-      if (!sp) fatal_error(error(errors::operation_failed, "Failed to get option slot"));
-      return *sp;
-    }
-
-    std::expected<void, error> parse_value(string_view<char> Value) override {
-      if (auto res = converter<T>{}(Value); !res) {
-        yw::error& e = res.error();
-        e.message = format(e.message, " as '", key, "'");
-        return unexpected_error(res.error());
-      } else if (multiple || values.empty()) values.push_back(std::move(*res));
-      specified = true;
+    std::expected<void, error> init(string<char> Key) {
+      const auto [it, b] = name_map.emplace(Key, id);
+      if (!b) return std::unexpected(error(errors::operation_failed, format("Duplicate key: ", Key)));
+      key = std::move(Key);
+      type = handle::type::option;
       return {};
     }
 
-    std::optional<string<char>> default_value_string() const override {
-      if (default_value.has_value()) {
-        if (auto res = converter<T>{}(*default_value); res) return *res;
-        else return std::nullopt;
-      } else return std::nullopt;
+    std::expected<void, error> update_value() {
+      if (values.has_value()) return {};
+      if (!specified) {
+        if (default_value.has_value()) values = std::vector<T>{*default_value};
+        else return std::unexpected(error(errors::missing_required_argument));
+        return {};
+      }
+      const auto x1f_count = std::ranges::count(value_string, '\x1f');
+      values = std::vector<T>();
+      values->reserve(x1f_count);
+      for (auto it = value_string.begin(), se = value_string.end(); it < se;) {
+        auto fr = std::ranges::find(it, se, '\x1f');
+        if (fr == se) break;
+        if (auto res = converter<T>{}(string_view<char>(it, fr)); !res) return res.error().relay();
+        else values->push_back(std::move(*res));
+        it = fr + 1;
+      }
+      return {};
     }
   };
 
-  auto& metavar(string<char> Metavar) { return slot::get(id).metavar = std::move(Metavar), *this; }
-  auto& description(string<char> Desc) { return slot::get(id).description = std::move(Desc), *this; }
-  auto& required(bool Required = true) { return slot::get(id).required = Required, *this; }
-  auto& multiple(bool Multiple = true) { return slot::get(id).multiple = Multiple, *this; }
-  auto& default_value(T Value) { return slot::get(id).default_value = std::move(Value), *this; }
+  option(string<char> Key, const source_line& sl = yw::source_line::here()) {
+    if (const auto sp = create_slot<option>(sl); !sp) error(errors::slot_creation_failed).print_as_fatal(sl);
+    else if (auto res = sp->init(std::move(Key)); !res) res.error().add_footprint().print_as_fatal(sl);
+    else _id = sp->id;
+  }
 
-  auto& alias(string<char> Alias) {
-    const auto [it, b] = internal::name_map.emplace(Alias, id);
-    if (!b) fatal_error(error(errors::argument_invalid_definition, format("Duplicate key: ", Alias)));
-    return *this;
+  template<typename Self> auto&& description(this Self&& self, string<char> Desc)
+    requires(!is_const<remove_ref<Self>>) {
+    const auto sp = self.get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).print_as_warning();
+    else sp->description = std::move(Desc);
+    return static_cast<Self&&>(self);
+  }
+
+  template<typename Self> auto&& required(this Self&& self, bool Required = true)
+    requires(!is_const<remove_ref<Self>>) {
+    const auto sp = self.get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).print_as_warning();
+    else sp->required = Required;
+    return static_cast<Self&&>(self);
+  }
+
+  template<typename Self> auto&& multiple(this Self&& self, bool Multiple = true)
+    requires(!is_const<remove_ref<Self>>) {
+    const auto sp = self.get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).print_as_warning();
+    else sp->multiple = Multiple;
+    return static_cast<Self&&>(self);
+  }
+
+  template<typename Self> auto&& default_value(this Self&& self, T Value)
+    requires(!is_const<remove_ref<Self>>) {
+    const auto sp = self.get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).print_as_fatal();
+    if (auto res = converter<T>{}(Value)) {
+      sp->default_value_string = std::move(*res);
+      sp->default_value = std::move(Value);
+    } else res.error().add_footprint().print_as_warning(sp->source_line);
+    return static_cast<Self&&>(self);
+  }
+
+  template<typename Self> auto&& alias(this Self&& self, string<char> Alias)
+    requires(!is_const<remove_ref<Self>>) {
+    const auto sp = self.get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).print_as_fatal();
+    const auto [it, b] = name_map.emplace(Alias, self.id());
+    if (!b) error(errors::operation_failed, format("Duplicate key: ", Alias)).print_as_warning();
+    else if (const auto sp = self.get_slot(&self); sp) sp->aliases.push_back(std::move(Alias));
+    return static_cast<Self&&>(self);
   }
 
   const auto& value() const {
-    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
-    auto& s = slot::get(id);
-    if (s.specified) return s.values.front();
-    if (!s.default_value.has_value()) fatal_error(error(errors::argument_invalid_usage, "No value available"));
-    return *s.default_value;
+    if (!internal::parsed) error(errors::invalid_operation, "value required before parsing").print_as_fatal();
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).print_as_fatal();
+    if (auto res = sp->update_value(); !res) res.error().add_footprint().print_as_fatal(sp->source_line);
+    const auto& values = *sp->values;
+    if (values.empty()) error(errors::missing_required_argument).print_as_fatal(sp->source_line);
+    return values.front();
   }
 
   const auto& values() const {
-    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
-    return slot::get(id).values;
+    if (!internal::parsed) error(errors::invalid_operation, "values required before parsing").print_as_fatal();
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).print_as_fatal();
+    if (auto res = sp->update_value(); !res) res.error().add_footprint().print_as_fatal(sp->source_line);
+    return *sp->values;
   }
 
   bool has_value() const {
-    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
-    const auto& s = slot::get(id);
-    return s.specified || s.default_value.has_value();
+    const auto sp = get_slot(this);
+    return sp && (sp->specified || sp->default_value.has_value());
   }
 
   bool specified() const {
-    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
-    return slot::get(id).specified;
+    const auto sp = get_slot(this);
+    return sp && sp->specified;
   }
 };
 
-template<typename T> handle::option<T> option(string<char> Name) {
-  auto res = handle::option<T>::slot::create(std::move(Name));
-  if (!res) fatal_error(res.error());
-  return std::move(*res);
+template<typename T> handle::option<T> option(string<char> Name, const source_line& sl = yw::source_line::here()) {
+  return handle::option<T>(std::move(Name), sl);
 }
 
 /// MARK: flag
 
 class handle::flag : public handle {
-  flag(slotid Id) : handle(Id) {}
-
 public:
   struct slot : handle::slot {
-    static std::expected<flag, error> create(string<char> Key) {
-      const auto id = internal::slots.add(std::make_unique<slot>());
-      const auto [it, b] = internal::name_map.emplace(Key, id);
-      if (!b) return std::unexpected(error(errors::argument_invalid_definition, format("Duplicate key: ", Key)));
-      const auto sp = dynamic_cast<slot*>(internal::slots.get(id));
-      if (!sp) return std::unexpected(error(errors::operation_failed, "Failed to create flag slot"));
-      sp->id = id;
-      sp->key = std::move(Key);
-      sp->type = handle::type::flag;
-      return flag(id);
-    }
+    static const slot empty_slot;
 
-    static slot& get(slotid Id) {
-      const auto sp = dynamic_cast<slot*>(internal::slots.get(Id));
-      if (!sp) fatal_error(error(errors::operation_failed, "Failed to get flag slot"));
-      return *sp;
+    std::expected<void, error> init(string<char>&& Key) {
+      const auto [it, b] = name_map.emplace(Key, id);
+      if (!b) return std::unexpected(error(errors::operation_failed, format("Duplicate key: ", Key)));
+      key = std::move(Key);
+      type = handle::type::flag;
+      return {};
     }
-
-    std::expected<void, error> parse_value(string_view<char> value) override { return {}; }
   };
 
-  auto& description(string<char> Desc) { return slot::get(id).description = std::move(Desc), *this; }
+  flag(string<char>&& Key, const source_line& sl = yw::source_line::here()) {
+    if (const auto sp = create_slot<flag>(sl); !sp) error(errors::slot_creation_failed).print_as_fatal(sl);
+    else if (auto res = sp->init(std::move(Key)); !res) res.error().add_footprint().print_as_fatal(sl);
+    else _id = sp->id;
+  }
 
-  auto& alias(string<char> Alias) {
-    const auto [it, b] = internal::name_map.emplace(Alias, id);
-    if (!b) fatal_error(error(errors::argument_invalid_definition, format("Duplicate key: ", Alias)));
-    return *this;
+  template<typename Self> auto&& description(this Self&& self, string<char> Desc)
+    requires(!is_const<remove_ref<Self>>) {
+    const auto sp = self.get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).print_as_warning();
+    else sp->description = std::move(Desc);
+    return static_cast<Self&&>(self);
+  }
+
+  template<typename Self> auto&& alias(this Self&& self, string<char> Alias)
+    requires(!is_const<remove_ref<Self>>) {
+    const auto sp = self.get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).print_as_fatal();
+    const auto [it, b] = name_map.emplace(Alias, self.id());
+    if (!b) error(errors::operation_failed, format("Duplicate key: ", Alias)).print_as_warning();
+    else sp->aliases.push_back(std::move(Alias));
+    return static_cast<Self&&>(self);
   }
 
   bool value() const {
-    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
-    return slot::get(id).specified;
+    if (!internal::parsed) error(errors::invalid_operation, "value required before parsing").print_as_fatal();
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).print_as_fatal();
+    return sp->specified;
   }
 
-  bool has_value() const {
-    if (!internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Call before parsing"));
-    return true;
-  }
+  bool has_value() const { return true; }
 
-  bool specified() const { return value(); }
+  bool specified() const {
+    const auto sp = get_slot(this);
+    return sp && sp->specified;
+  }
 };
 
-inline handle::flag flag(string<char> Name) {
-  auto res = handle::flag::slot::create(std::move(Name));
-  if (!res) fatal_error(res.error());
-  return std::move(*res);
+inline handle::flag flag(string<char> Key, const source_line& sl = yw::source_line::here()) {
+  return handle::flag(std::move(Key), sl);
 }
 
 /// MARK: print_help
-
-namespace internal {
-inline string<char> default_option_metavar(string_view<char> key) {
-  while (!key.empty() && key.front() == '-') key.remove_prefix(1);
-  string<char> out;
-  out.reserve(key.size());
-  for (const char c : key) {
-    if (c == '-') out.push_back('_');
-    else out.push_back(char(std::toupper(static_cast<unsigned char>(c))));
-  }
-  return out.empty() ? "VALUE" : out;
-}
-} // namespace internal
-
-inline void print_help() {
-  const string<char> app_name = name.empty() ? "app" : name;
-
-  auto default_option_metavar = [](string_view<char> key) {
-    while (!key.empty() && key.front() == '-') key.remove_prefix(1);
-
-    string<char> out;
-    out.reserve(key.size());
-
-    for (const char c : key) {
-      if (c == '-') out.push_back('_');
-      else out.push_back(char(std::toupper(static_cast<unsigned char>(c))));
-    }
-
-    return out.empty() ? string<char>("VALUE") : out;
-  };
-
-  auto display_metavar = [&](const handle::slot& slot) {
-    if (!slot.metavar.empty()) return slot.metavar;
-
-    if (slot.type == handle::type::option) { return default_option_metavar(slot.key); }
-
-    if (slot.type == handle::type::positional) { return string<char>("ARG"); }
-
-    return string<char>{};
-  };
-
-  auto names_of = [](const handle::slot& slot) {
-    std::vector<string<char>> names;
-    names.push_back(slot.key);
-    std::vector<string<char>> aliases;
-    for (const auto& [name, id] : internal::name_map)
-      if (id == slot.id && name != slot.key) aliases.push_back(name);
-    std::ranges::sort(aliases);
-    names.insert(names.end(), aliases.begin(), aliases.end());
-    return names;
-  };
-
-  auto primary_usage_name = [](const handle::slot& slot) { return slot.key; };
-
-  auto option_usage = [&](const handle::slot& slot) {
-    string<char> s = primary_usage_name(slot);
-    if (slot.type == handle::type::option) {
-      s += " ";
-      s += display_metavar(slot);
-    }
-    if (slot.multiple) s = format("[", s, "]...");
-    else if (!slot.required) s = format("[", s, "]");
-    return s;
-  };
-
-  auto option_lhs = [&](const handle::slot& slot) {
-    const auto names = names_of(slot);
-    string<char> lhs;
-    for (const auto& n : names) {
-      if (!lhs.empty()) lhs += ", ";
-      lhs += n;
-    }
-    if (lhs.empty()) lhs = slot.key;
-    if (slot.type == handle::type::option) {
-      lhs += " ";
-      lhs += display_metavar(slot);
-    }
-    return lhs;
-  };
-
-  auto append_note = [](string<char>& rhs, string_view<char> note) {
-    if (!rhs.empty()) rhs += " ";
-    rhs += note;
-  };
-
-  auto detail_text = [&](const handle::slot& slot) {
-    string<char> rhs;
-    if (!slot.description.empty()) { rhs += slot.description; }
-    if (slot.required) { append_note(rhs, "(required)"); }
-    if (slot.multiple) { append_note(rhs, "(multiple)"); }
-    if (auto dv = slot.default_value_string(); dv.has_value()) append_note(rhs, format("(default: ", *dv, ")"));
-    return rhs;
-  };
-
-  auto print_entry = [](string_view<char> lhs, string_view<char> rhs) {
-    if (rhs.empty()) print("  {}", lhs);
-    else print("  {:<24} {}", lhs, rhs);
-  };
-
-  if (!name.empty()) print("{}", name);
-  if (!description.empty()) print("{}", description);
-  if (!name.empty() || !description.empty()) print("");
-
-  auto usage = format("Usage: ", app_name);
-
-  for (const auto& slot : internal::slots) {
-    if (slot.type == handle::type::positional) continue;
-    usage += " ";
-    usage += option_usage(slot);
-  }
-
-  for (const auto pid : internal::positionals) {
-    const auto* p = internal::slots.get(pid);
-    if (!p) continue;
-
-    const auto mv = display_metavar(*p);
-
-    if (p->required) usage += format(" ", mv);
-    else usage += format(" [", mv, "]");
-  }
-
-  print(usage);
-
-  bool has_value_options = false;
-  for (const auto& slot : internal::slots) {
-    if (slot.type == handle::type::option) {
-      has_value_options = true;
-      break;
-    }
-  }
-
-  if (has_value_options) { print("Note: Options with values may be written as either --key VALUE or --key=VALUE."); }
-
-  print("");
-
-  print("Options:");
-  print_entry("--help, -h", "Show this help message and exit");
-
-  for (const auto& slot : internal::slots) {
-    if (slot.type == handle::type::positional) continue;
-
-    const auto lhs = option_lhs(slot);
-    const auto rhs = detail_text(slot);
-    print_entry(lhs, rhs);
-  }
-
-  if (!internal::positionals.empty()) {
-    print("");
-    print("Positional arguments:");
-
-    for (const auto pid : internal::positionals) {
-      const auto* p = internal::slots.get(pid);
-      if (!p) continue;
-
-      const auto lhs = display_metavar(*p);
-      const auto rhs = detail_text(*p);
-      print_entry(lhs, rhs);
-    }
-  }
-
-  if (!epilog.empty()) {
-    print("");
-    print("{}", epilog);
-  }
-}
+inline void print_help();
 
 /// MARK: parse helper
 
 namespace internal {
 
-inline std::vector<string<char>> collect_argv(int argc, char** argv, string<char>& program_name) {
+struct handle_access : handle {
+  using handle::name_map;
+  using handle::positionals;
+};
+
+inline void print_help() { argument::print_help(); }
+
+inline std::vector<string<char>> collect_argv(int argc, char** argv, string<char>& name) {
   std::vector<string<char>> args;
 #if defined(_WIN32) || defined(_WIN64)
   int c = 0;
   auto v = ::CommandLineToArgvW(::GetCommandLineW(), &c);
-  if (!v) fatal_win32_error(CommandLineToArgvW);
+  if (!v) error(errors::operation_failed, "CommandLineToArgvW failed", ::GetLastError()).print_as_fatal();
   args.reserve(static_cast<size_t>(c));
   for (int i = 0; i < c; ++i) args.emplace_back(unicode<char>(std::wstring_view(v[i])));
   ::LocalFree(v);
@@ -517,7 +401,7 @@ inline std::vector<string<char>> collect_argv(int argc, char** argv, string<char
   args.reserve(static_cast<size_t>(argc));
   for (int i = 0; i < argc; ++i) args.emplace_back(argv[i]);
 #endif
-  if (!args.empty() && name.empty()) program_name = unicode<char>(path(args.front().view()).stem().native());
+  if (!args.empty() && name.empty()) name = unicode<char>(path(args.front().view()).stem().native());
   return args;
 }
 
@@ -533,17 +417,30 @@ inline bool is_negative_number_token(string_view<char> tok) {
   return !(tok.size() < 2 || tok[0] != '-') && (is_digit(tok[1]) || tok[1] == '.');
 }
 
+inline handle::slot* get_argument_slot(general_slotid id) { return general_slot::get<handle>(id); }
+
+inline handle::slot* find_named_slot(string_view<char> key) {
+  const auto it = handle_access::name_map.find(string<char>(key));
+  if (it == handle_access::name_map.end()) return nullptr;
+  return get_argument_slot(it->second);
+}
+
+inline void append_option_value(handle::slot& slot, string_view<char> value) {
+  slot.value_string += value;
+  slot.value_string.push_back('\x1f');
+}
+
 inline void argument_error(ministr<char> msg) {
   print_help();
-  fatal_error(error(errors::argument_invalid_argument, std::move(msg)));
+  error(errors::invalid_command_line_argument, string<char>(msg)).print_as_fatal();
 }
 } // namespace internal
 
 /// MARK: parse
 
 inline void parse(int argc, char** argv) {
-  if (internal::parsed) fatal_error(error(errors::argument_invalid_usage, "Arguments have already been parsed"));
-  auto args = internal::collect_argv(argc, argv, argument::name);
+  if (internal::parsed) error(errors::invalid_operation, "Arguments have already been parsed").print_as_fatal();
+  auto args = internal::collect_argv(argc, argv, argument::program_name);
   bool after_double_dash = false;
   size_t positional_index = 0;
   for (size_t i = 1; i < args.size(); ++i) {
@@ -561,15 +458,11 @@ inline void parse(int argc, char** argv) {
         value = kv->second;
         specified = true;
       }
-      auto it = internal::name_map.find(string<char>(key));
-      if (it == internal::name_map.end()) {
-        if (key == "--help" || key == "-h") {
-          print_help();
-          std::exit(0);
-        }
-        internal::argument_error(format("Unknown option: ", key));
+      if (key == "--help" || key == "-h") {
+        internal::print_help();
+        std::exit(0);
       }
-      const auto sp = internal::slots.get(it->second);
+      auto* sp = internal::find_named_slot(key);
       if (!sp) internal::argument_error(format("Unknown option: ", key));
 
       if (sp->type == handle::type::option) {
@@ -579,31 +472,166 @@ inline void parse(int argc, char** argv) {
             value = next, specified = true, ++i;
         }
         if (!specified) internal::argument_error(format("Missing value for option: ", key));
-        if (auto res = sp->parse_value(value); !res) print_help(), fatal_error(res.error());
+        if (sp->specified && !sp->multiple)
+          internal::argument_error(format("Option does not accept multiple values: ", key));
+        sp->specified = true;
+        internal::append_option_value(*sp, value);
       } else if (specified) internal::argument_error(format("Unexpected value for flag: ", key));
       else sp->specified = true;
       continue;
     }
 
-    if (positional_index < internal::positionals.size()) {
-      const auto sp = internal::slots.get(internal::positionals[positional_index]);
+    if (positional_index < internal::handle_access::positionals.size()) {
+      auto* sp = internal::get_argument_slot(internal::handle_access::positionals[positional_index]);
       if (!sp) internal::argument_error(format("Unknown, positional argument: ", tok));
-      if (auto res = sp->parse_value(tok); !res) fatal_error(res.error());
+      sp->specified = true;
+      sp->value_string = tok;
       ++positional_index;
     } else internal::argument_error(format("Unexpected positional argument: ", tok));
   }
 
   bool missing = false;
   string<char> missing_message = "Missing required options";
-  for (const auto& slot : internal::slots) {
-    if (slot.required && !slot.specified) {
+  std::vector<general_slotid> checked;
+  checked.reserve(internal::handle_access::name_map.size() + internal::handle_access::positionals.size());
+
+  auto check_required = [&](general_slotid id) {
+    if (std::ranges::find(checked, id) != checked.end()) return;
+    checked.push_back(id);
+    const auto sp = internal::get_argument_slot(id);
+    if (sp && sp->required && !sp->specified) {
+      const auto label = sp->type == handle::type::positional ? sp->metavar : sp->key;
       if (!missing) {
         missing = true;
-        missing_message += format(": ", slot.key);
-      } else missing_message += format(", ", slot.key);
+        missing_message += format(": ", label);
+      } else missing_message += format(", ", label);
     }
-  }
+  };
+
+  for (const auto& [name, id] : internal::handle_access::name_map) check_required(id);
+  for (const auto id : internal::handle_access::positionals) check_required(id);
+
   if (missing) internal::argument_error(missing_message);
   internal::parsed = true;
+}
+
+template<typename T> inline const handle::positional<T>::slot handle::positional<T>::slot::empty_slot{};
+template<typename T> inline const handle::option<T>::slot handle::option<T>::slot::empty_slot{};
+inline const handle::flag::slot handle::flag::slot::empty_slot{};
+
+inline void print_help() {
+  auto default_option_metavar = [](string_view<char> key) {
+    while (!key.empty() && key.front() == '-') key.remove_prefix(1);
+    string<char> out;
+    out.reserve(key.size());
+    for (const char c : key) {
+      if (c == '-') out.push_back('_');
+      else out.push_back(char(std::toupper(static_cast<unsigned char>(c))));
+    }
+    return out.empty() ? string<char>("VALUE") : out;
+  };
+
+  auto display_metavar = [&](const handle::slot& slot) {
+    if (!slot.metavar.empty()) return slot.metavar;
+    if (slot.type == handle::type::option) return default_option_metavar(slot.key);
+    if (slot.type == handle::type::positional) return string<char>("ARG");
+    return string<char>{};
+  };
+
+  auto append_note = [](string<char>& rhs, string_view<char> note) {
+    if (!rhs.empty()) rhs += " ";
+    rhs += note;
+  };
+
+  auto detail_text = [&](const handle::slot& slot) {
+    string<char> rhs = slot.description;
+    if (slot.required) append_note(rhs, "(required)");
+    if (slot.multiple) append_note(rhs, "(multiple)");
+    if (!slot.default_value_string.empty()) append_note(rhs, format("(default: ", slot.default_value_string, ")"));
+    return rhs;
+  };
+
+  auto pad_right = [](string_view<char> text, size_t width) {
+    string<char> out(text);
+    if (out.size() < width) out.append(string(width - out.size(), ' '));
+    return out;
+  };
+
+  auto print_entry = [&](string_view<char> lhs, string_view<char> rhs) {
+    if (rhs.empty()) print("  ", lhs);
+    else print("  ", pad_right(lhs, 24), " ", rhs);
+  };
+
+  std::vector<general_slotid> option_ids;
+  option_ids.reserve(internal::handle_access::name_map.size());
+  for (const auto& [name, id] : internal::handle_access::name_map) {
+    const auto sp = internal::get_argument_slot(id);
+    if (!sp || sp->type == handle::type::positional || sp->key != name) continue;
+    if (std::ranges::find(option_ids, id) == option_ids.end()) option_ids.push_back(id);
+  }
+  std::ranges::sort(option_ids, [](general_slotid a, general_slotid b) {
+    if (a.index != b.index) return a.index < b.index;
+    return a.generation < b.generation;
+  });
+
+  if (!program_name.empty()) print(program_name);
+  if (!description.empty()) print(description);
+  if (!program_name.empty() || !description.empty()) print("");
+
+  string<char> usage = format("Usage: ", program_name.empty() ? "app" : program_name);
+  for (const auto id : option_ids) {
+    const auto sp = internal::get_argument_slot(id);
+    if (!sp) continue;
+    string<char> item = sp->key;
+    if (sp->type == handle::type::option) item += format(" ", display_metavar(*sp));
+    if (sp->multiple) item = format("[", item, "]...");
+    else if (!sp->required) item = format("[", item, "]");
+    usage += format(" ", item);
+  }
+  for (const auto id : internal::handle_access::positionals) {
+    const auto sp = internal::get_argument_slot(id);
+    if (!sp) continue;
+    const auto mv = display_metavar(*sp);
+    if (sp->required) usage += format(" ", mv);
+    else usage += format(" [", mv, "]");
+  }
+  print(usage);
+
+  bool has_value_options = false;
+  for (const auto id : option_ids) {
+    const auto sp = internal::get_argument_slot(id);
+    if (sp && sp->type == handle::type::option) {
+      has_value_options = true;
+      break;
+    }
+  }
+  if (has_value_options) print("Note: Options with values may be written as either --key VALUE or --key=VALUE.");
+
+  print("");
+  print("Options:");
+  print_entry("--help, -h", "Show this help message and exit");
+  for (const auto id : option_ids) {
+    const auto sp = internal::get_argument_slot(id);
+    if (!sp) continue;
+    string<char> lhs = sp->key;
+    for (const auto& alias : sp->aliases) lhs += format(", ", alias);
+    if (sp->type == handle::type::option) lhs += format(" ", display_metavar(*sp));
+    print_entry(lhs, detail_text(*sp));
+  }
+
+  if (!internal::handle_access::positionals.empty()) {
+    print("");
+    print("Positional arguments:");
+    for (const auto id : internal::handle_access::positionals) {
+      const auto sp = internal::get_argument_slot(id);
+      if (!sp) continue;
+      print_entry(display_metavar(*sp), detail_text(*sp));
+    }
+  }
+
+  if (!epilog.empty()) {
+    print("");
+    print(epilog);
+  }
 }
 } // namespace yw::argument

@@ -139,6 +139,16 @@ public:
     if (_current) _current->locations.push_back(Source);
     return *this;
   }
+
+  static const string<char>& message() {
+    if (!_current) return empty_string<char>;
+    return _current->message;
+  }
+
+  static void message(string<char> Message) {
+    if (!_current) return;
+    _current->message = std::move(Message);
+  }
 };
 
 namespace errors {

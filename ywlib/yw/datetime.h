@@ -68,7 +68,7 @@ struct time {
   constexpr string<char> to_string() const { return to_string<char>(); }
 
   template<char_type C> constexpr string<C> to_string() const {
-    string<C> r(8, {});
+    string<C> r(8);
     auto p = r.data();
     auto h = hour % 100;
     *p++ = C('0' + h / 10), *p++ = C('0' + h % 10), *p++ = C(':');

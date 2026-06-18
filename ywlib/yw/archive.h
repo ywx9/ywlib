@@ -83,15 +83,16 @@ static_assert(sizeof(header) == 16);
 class handle : public general_handle {
 public:
   struct slot : general_handle::slot {
+    static const slot empty_slot;
     yw::file_handle file_handle;
     std::vector<entry> entries;
     open_mode mode = open_mode::unknown;
     uint64_t entry_offset = 0;
     uint64_t footer_offset = 0;
 
-    std::expected<void, error> init(std::filesystem::path Path, open_mode Mode) {
+    std::expected<void, error> init(std::filesystem::path&& Path, open_mode Mode) {
       const auto fh_mode = Mode == open_mode::append ? open_mode::update_or_create : Mode;
-      if (auto fh = yw::open(Path, fh_mode)) file_handle = std::move(fh);
+      if (auto fh = yw::open(std::move(Path), fh_mode)) file_handle = std::move(fh);
       else return std::unexpected(error(errors::operation_failed, "failed to open archive file"));
       mode = Mode;
       if (fh_mode == open_mode::create_always || fh_mode == open_mode::create_new) return {};
@@ -169,43 +170,23 @@ public:
   handle(std::filesystem::path Path, open_mode Mode, const source_line& sl = source_line::here()) {
     const auto sp = create_slot<handle>(sl);
     if (!sp) error(errors::slot_creation_failed).print_as_fatal(sl);
-    if (auto res = sp->init(Path, Mode); !res) {
-      res.error().add_footprint().print_as_warning(sl);
-      return;
-    }
-    sp->source_line = sl;
-    _id = sp->id;
+    if (auto res = sp->init(std::move(Path), Mode); !res) {
+      this->clear();
+      res.error().add_footprint().print_as_warning(sl); // makes empty handle
+    } else _id = sp->id;
   }
 
   bool is_open() const noexcept {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
+    const auto sp = get_slot(this);
     return sp && sp->file_handle.is_open();
   }
 
-  const std::filesystem::path& path() const {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
-    if (!sp) error(errors::invalid_slotid).print_as_fatal();
-    return sp->file_handle.path();
-  }
-
-  open_mode mode() const {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
-    if (!sp) error(errors::invalid_slotid).print_as_warning();
-    return sp ? sp->mode : open_mode::unknown;
-  }
-
-  const std::vector<entry>& entries() const {
-    static const std::vector<entry> empty_entries;
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
-    if (!sp) {
-      error(errors::invalid_slotid).print_as_warning();
-      return empty_entries;
-    }
-    return sp->entries;
-  }
+  const std::filesystem::path& path() const { ywlib_get_slot_member(file_handle.path()); }
+  const open_mode& mode() const { ywlib_get_slot_member(mode); }
+  const std::vector<entry>& entries() const { ywlib_get_slot_member(entries); }
 
   std::expected<void, error> close() {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
+    const auto sp = get_slot(this);
     if (!sp) return std::unexpected(error(errors::invalid_slotid));
     if (!sp->file_handle.is_open()) return std::unexpected(error(errors::not_initialized));
     if (_is_write_mode(sp->mode))
@@ -216,7 +197,7 @@ public:
   }
 
   std::vector<std::byte> read(size_t index) {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
+    const auto sp = get_slot(this);
     if (!sp) {
       error(errors::invalid_slotid).print_as_warning();
       return {};
@@ -240,7 +221,7 @@ public:
 
   std::vector<std::byte> read(stringable<char> auto&& name) {
     const auto sv = string_view<char>(name);
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
+    const auto sp = get_slot(this);
     if (!sp) {
       error(errors::invalid_slotid).print_as_warning();
       return {};
@@ -252,7 +233,7 @@ public:
   }
 
   bool verify(size_t index) {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
+    const auto sp = get_slot(this);
     if (!sp) {
       error(errors::invalid_slotid).print_as_warning();
       return false;
@@ -283,7 +264,7 @@ public:
 
   bool verify(stringable<char> auto&& name) {
     const auto sv = string_view<char>(name);
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
+    const auto sp = get_slot(this);
     if (!sp) {
       error(errors::invalid_slotid).print_as_warning();
       return false;
@@ -295,7 +276,7 @@ public:
   }
 
   std::expected<void, error> flush() {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
+    const auto sp = get_slot(this);
     if (!sp) return std::unexpected(error(errors::invalid_slotid));
     if (!_is_write_mode(sp->mode))
       return std::unexpected(error(errors::invalid_operation, "archive not opened in write mode"));
@@ -312,7 +293,7 @@ public:
   }
 
   std::expected<void, error> remove(size_t n = npos) {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
+    const auto sp = get_slot(this);
     if (!sp) return std::unexpected(error(errors::invalid_slotid));
     if (!_is_write_mode(sp->mode))
       return std::unexpected(error(errors::invalid_operation, "archive not opened in write mode"));
@@ -329,7 +310,7 @@ public:
   }
 
   std::expected<void, error> append(stringable<char> auto&& name, const void* data, size_t data_length) {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
+    const auto sp = get_slot(this);
     if (!sp) return std::unexpected(error(errors::invalid_slotid));
     if (!data && data_length) return std::unexpected(error(errors::invalid_argument, "null data pointer"));
     const auto sv = string_view<char>(name);
@@ -355,7 +336,7 @@ public:
     const auto new_entry_offset = sp->footer_offset;
     const auto data_offset = new_entry_offset + sizeof(header) + sv.size();
     if (sp->entries.empty()) sp->entry_offset = new_entry_offset;
-    sp->entries.push_back(entry{string<char>(sv), new_entry_offset, data_offset, static_cast<uint64_t>(data_length), crc});
+    sp->entries.push_back(entry{string<char>(sv), new_entry_offset, data_offset, data_length, crc});
     sp->footer_offset = data_offset + data_length + sizeof(uint32_t);
     return {};
   }
@@ -404,4 +385,6 @@ inline std::expected<void, error> extract(const std::filesystem::path& src_path,
   if (auto res = archive.close(); !res) return res.error().relay();
   return {};
 }
+
+inline const handle::slot handle::slot::empty_slot{};
 } // namespace yw::archive
