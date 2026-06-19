@@ -1,10 +1,9 @@
 #pragma once
 #include "yw/error.h"
 
-#ifdef ywlib_header_name
-#error "ywlib_header_name already defined unexpectedly"
-#endif
-#define ywlib_header_name "yw/xml_base.h"
+namespace yw::errors {
+inline constexpr error::kind invalid_xml_document{"invalid XML document"};
+}
 
 namespace yw::xml {
 
@@ -80,22 +79,18 @@ constexpr string_view<char> _extract_reference(string_view<char>& rest) {
   return string_view<char>(start, consumed);
 }
 
-constexpr std::unexpected<error> unexpected_error(
-  ministr<char> msg, const char* pos, string_view<char> doc) {
-  if (!std::is_constant_evaluated()) make_footprint;
+constexpr std::unexpected<error> _unexpected_error(string_view<char> msg, const char* pos, string_view<char> doc, const source_line& sl = source_line::here()) {
   const auto offset = uint64_t(pos - doc.data());
-  const auto line = uint64_t(std::count(doc.data(), pos, '\n') + 1);
+  size_t line_count = 0;
   size_t line_start_index = 0;
-  if (offset > 0) {
-    const auto head = doc.substr(0, offset);
-    const size_t p = head.find_last_of('\n');
-    if (p != string_view<char>::npos) line_start_index = p + 1;
+  for (size_t i = 0; i < offset; ++i) {
+    if (doc[i] == '\n') {
+      ++line_count;
+      line_start_index = i + 1;
+    }
   }
-  const auto line_start = doc.data() + line_start_index;
-  const auto column = uint64_t(pos - line_start + 1);
-  auto s = format(msg, " (line ", line, ", column ", column, ")");
-  return unexpected_error(errors::invalid_argument, std::move(s), 0, offset);
+  return std::unexpected(error(
+    errors::invalid_xml_document,
+    format(msg, " (line ", line_count + 1, ", column ", offset - line_start_index + 1, ")"), 0, offset, sl));
 }
-}
-
-#undef ywlib_header_name
+} // namespace yw::xml

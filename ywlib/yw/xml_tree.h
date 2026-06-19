@@ -1,11 +1,6 @@
 #pragma once
 #include "yw/xml_node.h"
 
-#ifdef ywlib_header_name
-#error "ywlib_header_name already defined unexpectedly"
-#endif
-#define ywlib_header_name "yw/xml_tree.h"
-
 namespace yw::xml {
 
 /////////////////////////////////////// MARK: misc
@@ -28,8 +23,8 @@ public:
   /// checks if this misc is empty
   constexpr bool is_empty() const noexcept {
     if (std::holds_alternative<std::monostate>(_value)) return true;
-    else if (auto p = std::get_if<comment<View>>(&_value); p) return p->is_empty(p->content);
-    else if (auto p = std::get_if<pi<View>>(&_value); p) return p->is_empty(p->target, p->data);
+    else if (auto p = std::get_if<comment<View>>(&_value); p) return p->is_empty();
+    else if (auto p = std::get_if<pi<View>>(&_value); p) return p->is_empty();
     else return false;
   }
 
@@ -86,14 +81,13 @@ public:
   }
 
   static constexpr std::expected<misc<View>, error> parse(string_view<char>& rest, string_view<char> doc) {
-    if (!std::is_constant_evaluated()) make_footprint;
     if (rest.starts_with("<!--"sv)) {
       if (auto res = comment<View>::parse(rest, doc); res) return misc<View>(std::move(*res));
-      else return std::unexpected(std::move(res.error()));
+      else return res.error().relay();
     } else if (rest.starts_with("<?"sv)) {
       if (auto res = pi<View>::parse(rest, doc); res) return misc<View>(std::move(*res));
-      else return std::unexpected(std::move(res.error()));
-    } else return unexpected_error("xml: expected comment or processing instruction", rest.data(), doc);
+      else return res.error().relay();
+    } else return _unexpected_error("xml: expected comment or processing instruction", rest.data(), doc);
   }
 };
 
@@ -163,12 +157,10 @@ public:
   }
 
   constexpr attribute<View>& get_attribute(string_view<char> attr_name) {
-    if (!std::is_constant_evaluated()) make_footprint;
     if (auto* p = get_if_attribute(attr_name); p) return *p;
     throw std::out_of_range("xml: attribute not found");
   }
   constexpr const attribute<View>& get_attribute(string_view<char> attr_name) const {
-    if (!std::is_constant_evaluated()) make_footprint;
     if (auto* p = get_if_attribute(attr_name); p) return *p;
     throw std::out_of_range("xml: attribute not found");
   }
@@ -181,12 +173,10 @@ public:
   constexpr const element<View>* get_if_first_element(string_view<char> element_name) const noexcept;
 
   constexpr element<View>& get_first_element(string_view<char> element_name) {
-    if (!std::is_constant_evaluated()) make_footprint;
     if (auto* p = get_if_first_element(element_name); p) return *p;
     throw std::out_of_range("xml: element not found");
   }
   constexpr const element<View>& get_first_element(string_view<char> element_name) const {
-    if (!std::is_constant_evaluated()) make_footprint;
     if (auto* p = get_if_first_element(element_name); p) return *p;
     throw std::out_of_range("xml: element not found");
   }
@@ -305,24 +295,27 @@ public:
   }
 
   static constexpr std::expected<child<View>, error> parse(string_view<char>& rest, string_view<char> doc) {
-    if (!std::is_constant_evaluated()) make_footprint;
+    const char* doc_end = doc.data() + doc.size();
+    if (rest.empty()) return _unexpected_error("xml: unexpected end of input (expected child)", doc_end, doc);
     if (rest.front() == '<') {
+      if (rest.size() < 2) return _unexpected_error("xml: unexpected end of input after '<'", doc_end, doc);
       if (rest[1] == '!') {
+        if (rest.size() < 3) return _unexpected_error("xml: unexpected end of input after '<!'", doc_end, doc);
         if (rest[2] == '-') {
           if (auto res = comment<View>::parse(rest, doc)) return child<View>(std::move(*res));
-          else return unexpected_error(res.error());
+          else return res.error().relay();
         } else if (rest[2] == '[') {
           if (auto res = text<View>::parse(rest, doc)) return child<View>(std::move(*res));
-          else return unexpected_error(res.error());
-        } else return unexpected_error("xml: invalid child", rest.data(), doc);
+          else return res.error().relay();
+        } else return _unexpected_error("xml: invalid child", rest.data(), doc);
       } else if (rest[1] == '?') {
         if (auto res = pi<View>::parse(rest, doc)) return child<View>(std::move(*res));
-        else return unexpected_error(res.error());
-      } else if (rest[1] == '/') return unexpected_error("xml: unexpected end tag", rest.data(), doc);
+        else return res.error().relay();
+      } else if (rest[1] == '/') return _unexpected_error("xml: unexpected end tag", rest.data(), doc);
       else if (auto res = element<View>::parse(rest, doc)) return child<View>(std::move(*res));
-      else return unexpected_error(res.error());
+      else return res.error().relay();
     } else if (auto res = text<View>::parse(rest, doc)) return child<View>(std::move(*res));
-    else return unexpected_error(res.error());
+    else return res.error().relay();
   }
 };
 
@@ -393,44 +386,43 @@ template<bool View> constexpr char* element<View>::to_string_into(char* out) con
 
 template<bool View> inline constexpr std::expected<element<View>, error> element<View>::parse(
   string_view<char>& rest, string_view<char> doc) {
-  if (!std::is_constant_evaluated()) make_footprint;
   const char* doc_end = doc.data() + doc.size();
-  if (rest.empty()) return unexpected_error("xml: unexpected end of input (expected start tag)", doc_end, doc);
-  if (rest.front() != '<') return unexpected_error("xml: expected start tag '<'", rest.data(), doc);
+  if (rest.empty()) return _unexpected_error("xml: unexpected end of input (expected start tag)", doc_end, doc);
+  if (rest.front() != '<') return _unexpected_error("xml: expected start tag '<'", rest.data(), doc);
   rest.remove_prefix(1);
+  const char* name_pos = rest.data();
   auto name = _extract_name(rest);
-  if (name.empty()) return unexpected_error("xml: invalid element name", rest.data(), doc);
+  if (name.empty()) return _unexpected_error("xml: invalid element name", name_pos, doc);
   std::vector<attribute<View>> attributes;
   while (true) {
     _extract_whitespace(rest);
-    if (rest.empty()) return unexpected_error("xml: unterminated start tag", doc_end, doc);
+    if (rest.empty()) return _unexpected_error("xml: unterminated start tag", doc_end, doc);
     if (rest.front() == '/' || rest.front() == '>') break;
     const char* attr_pos = rest.data();
     if (auto res = attribute<View>::parse(rest, doc); res) {
       attribute<View>& attr = *res;
       if (std::ranges::find(attributes, attr.name, &attribute<View>::name) != attributes.end())
-        return unexpected_error("xml: duplicate attribute name", attr_pos, doc);
+        return _unexpected_error("xml: duplicate attribute name", attr_pos, doc);
       attributes.push_back(std::move(attr));
-    } else return unexpected_error(res.error());
+    } else return res.error().relay();
   }
   bool is_self_closing = false;
   if (rest.starts_with("/>"sv)) is_self_closing = true, rest.remove_prefix(2);
   else if (!rest.empty() && rest.front() == '>') rest.remove_prefix(1);
-  else return unexpected_error("xml: expected '>' or '/>' at end of start tag", rest.data(), doc);
+  else return _unexpected_error("xml: expected '>' or '/>' at end of start tag", rest.data(), doc);
   std::vector<child<View>> children;
   if (!is_self_closing) {
     while (true) {
-      if (rest.empty()) return unexpected_error("xml: unexpected end of input (missing end tag)", doc_end, doc);
+      if (rest.empty()) return _unexpected_error("xml: unexpected end of input (missing end tag)", doc_end, doc);
       if (rest.starts_with("</"sv)) break;
       if (auto res = child<View>::parse(rest, doc); res) children.push_back(std::move(*res));
-      else return unexpected_error(res.error());
+      else return res.error().relay();
     }
     rest.remove_prefix(2);
     auto end_name = _extract_name(rest);
-    if (end_name != name) return unexpected_error("xml: end tag name does not match start tag name", rest.data(), doc);
+    if (end_name != name) return _unexpected_error("xml: end tag name does not match start tag name", rest.data(), doc);
     _extract_whitespace(rest);
-    if (rest.empty() || rest.front() != '>')
-      return unexpected_error("xml: expected '>' at end of end tag", rest.data(), doc);
+    if (rest.empty() || rest.front() != '>') return _unexpected_error("xml: expected '>' at end of end tag", rest.data(), doc);
     rest.remove_prefix(1);
   }
   return element<View>(name, std::move(attributes), std::move(children));
@@ -466,5 +458,3 @@ template<bool View> constexpr size_t element<View>::count_elements(string_view<c
   });
 }
 } // namespace yw::xml
-
-#undef ywlib_header_name
