@@ -104,21 +104,21 @@ public:
   constexpr size_t size() const noexcept { return _size; }
   constexpr size_t capacity() const noexcept { return _capacity; }
 
-  constexpr auto data() noexcept { return _ptr; }
-  constexpr auto data() const noexcept { return _ptr; }
-  constexpr auto c_str() const noexcept { return _ptr ? _ptr : _empty; }
-  constexpr auto begin() noexcept { return _ptr; }
-  constexpr auto begin() const noexcept { return _ptr; }
-  constexpr auto end() noexcept { return _ptr + _size; }
-  constexpr auto end() const noexcept { return _ptr + _size; }
+  constexpr C* data() noexcept { return _ptr; }
+  constexpr const C* data() const noexcept { return _ptr; }
+  constexpr const C* c_str() const noexcept { return _ptr ? _ptr : _empty; }
+  constexpr C* begin() noexcept { return _ptr; }
+  constexpr const C* begin() const noexcept { return _ptr; }
+  constexpr C* end() noexcept { return _ptr + _size; }
+  constexpr const C* end() const noexcept { return _ptr + _size; }
 
-  constexpr auto& front() { return _ptr[0]; }
-  constexpr auto& front() const { return _ptr[0]; }
-  constexpr auto& back() { return _ptr[_size - 1]; }
-  constexpr auto& back() const { return _ptr[_size - 1]; }
+  constexpr C& front() { return _ptr[0]; }
+  constexpr const C& front() const { return _ptr[0]; }
+  constexpr C& back() { return _ptr[_size - 1]; }
+  constexpr const C& back() const { return _ptr[_size - 1]; }
 
-  constexpr auto& operator[](size_t Index) { return _ptr[Index]; }
-  constexpr auto& operator[](size_t Index) const { return _ptr[Index]; }
+  constexpr C& operator[](size_t Index) { return _ptr[Index]; }
+  constexpr const C& operator[](size_t Index) const { return _ptr[Index]; }
 
   constexpr void clear() noexcept {
     _size = 0;
@@ -621,11 +621,7 @@ struct source_line {
 
   static consteval source_line here(std::source_location Location = std::source_location::current()) {
     source_line sl;
-    const auto full = Location.file_name();
-    const auto n = std::char_traits<char>::length(full);
-    const auto f = _find_last_slash(full, full + n);
-    const auto d = _find_last_slash(full, f);
-    sl.file = _find_last_slash(full, d);
+    sl.file = Location.file_name() + current_dir_path_length();
     sl.line = Location.line();
     return sl;
   }
@@ -633,6 +629,11 @@ struct source_line {
   static consteval source_line null() { return {}; }
 
 private:
+  static consteval size_t current_dir_path_length() {
+    const auto n = std::char_traits<char>::length(std::source_location::current().file_name());
+    const auto m = std::char_traits<char>::length("ywlib/yw/string.h");
+    return n - m;
+  }
   constexpr source_line() noexcept = default;
   static constexpr const char* _find_last_slash(const char* it, const char* se) noexcept {
     while (it < se--)

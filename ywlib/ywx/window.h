@@ -3,7 +3,7 @@
 #include "ywx/ui_label.h"
 
 namespace yw::system {
-inline std::vector<unknown_slotid> primal_windows;
+inline std::vector<general_slotid> primal_windows;
 }
 
 namespace yw::window {
@@ -17,7 +17,7 @@ enum class type {
 template<type Type> struct options;
 template<type Type> class handle;
 
-//////////////////////////////////////// MARK: unknown window (base class)
+/// MARK: unknown window (base class)
 
 template<> struct options<type::unknown> {
   std::optional<int2> pos = {};
@@ -52,10 +52,10 @@ public:
     float focusring_width = 2.0f;
     bool focusring_dashed = false;
 
-    unknown_slotid child_control{};
-    unknown_slotid focused_control{};
-    unknown_slotid hovered_control{};
-    unknown_slotid captured_control{};
+    general_slotid child_control{};
+    general_slotid focused_control{};
+    general_slotid hovered_control{};
+    general_slotid captured_control{};
 
     bool dirty = true, messy = true, manually_drawn = false;
     bool visible = false, active = false;
@@ -69,52 +69,57 @@ public:
 
     //-- overrides --//
 
-    virtual unknown_slotid get_window_id() const override { return id; }
+    virtual general_slotid get_window_id() const override { return id; }
 
     virtual bool attachable() const override { return !child_control; }
-    virtual std::expected<void, error_trace> attach(unknown_slotid Child) override {
+
+    virtual std::expected<void, error> attach(general_slotid Child) override {
       child_control = Child;
       messy = true;
       return {};
     }
-    virtual std::expected<void, error_trace> detach(unknown_slotid Child) override {
-      if (child_control != Child) return unexpected_error(errors::invalid_argument, "Invalid child slot ID");
-      system::unknowns.erase(std::exchange(child_control, {}));
+
+    virtual std::expected<void, error> detach(general_slotid Child) override {
+      if (child_control != Child) return std::unexpected(error(errors::invalid_argument, "Invalid child slot ID"));
+      general_slot::erase(Child);
+      child_control = {};
       messy = true;
       return {};
     }
-    virtual std::expected<void, error_trace> make_dirty() override {
+
+    virtual std::expected<void, error> make_dirty() override {
       dirty = true;
       return {};
     }
-    virtual std::expected<void, error_trace> make_messy() override {
+
+    virtual std::expected<void, error> make_messy() override {
       messy = true;
       return {};
     }
 
     //-- functions --//
 
-    std::expected<void, error_trace> set_default_title() {
+    std::expected<void, error> set_default_title() {
       title.resize(MAX_PATH, L'\0');
       if (const auto n = ::GetModuleFileNameW(nullptr, title.data(), MAX_PATH)) title.resize(n);
-      else return unexpected_error(errors::operation_failed, "GetModuleFileNameW failed");
+      else return std::unexpected(error(errors::operation_failed, "GetModuleFileNameW failed"));
       return {};
     }
 
-    std::expected<void, error_trace> create_window() {
-      if (hwnd) return unexpected_error(errors::invalid_operation, "Window already created");
+    std::expected<void, error> create_window() {
+      if (hwnd) return std::unexpected(error(errors::invalid_operation, "Window already created"));
       hwnd = ::CreateWindowExW(
         exstyle, wclass().name().data(), title.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT, int(ui::arbitrary_value),
         int(ui::arbitrary_value), 0, 0, wclass().hinstance(), 0);
-      if (!hwnd) return unexpected_error(errors::operation_failed, "CreateWindowExW failed");
+      if (!hwnd) return std::unexpected(error(errors::operation_failed, "CreateWindowExW failed"));
       ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, std::bit_cast<LONG_PTR>(id));
       return {};
     }
 
-    std::expected<void, error_trace> calculate_frame_thickness() {
+    std::expected<void, error> calculate_frame_thickness() {
       RECT wr, cr;
-      if (!::GetWindowRect(hwnd, &wr)) return unexpected_error(errors::operation_failed, "GetWindowRect failed");
-      if (!::GetClientRect(hwnd, &cr)) return unexpected_error(errors::operation_failed, "GetClientRect failed");
+      if (!::GetWindowRect(hwnd, &wr)) return std::unexpected(error(errors::operation_failed, "GetWindowRect failed"));
+      if (!::GetClientRect(hwnd, &cr)) return std::unexpected(error(errors::operation_failed, "GetClientRect failed"));
       const auto left = (wr.right - wr.left - cr.right) / 2;
       frame_thickness = int4(left, wr.bottom - wr.top - cr.bottom - left, left, left);
       size = int2(cr.right, cr.bottom);
@@ -122,13 +127,13 @@ public:
       return {};
     }
 
-    std::expected<void, error_trace> set_window_pos() {
+    std::expected<void, error> set_window_pos() {
       if (!::SetWindowPos(hwnd, nullptr, pos.x, pos.y, size.x, size.y, SWP_NOZORDER | SWP_NOACTIVATE))
-        return unexpected_win32_error("SetWindowPos failed");
+        return std::unexpected(error(errors::operation_failed, "SetWindowPos failed"));
       return {};
     }
 
-    std::expected<void, error_trace> resize_rendertarget() {
+    std::expected<void, error> resize_rendertarget() {
       /// \note Avoid setting the render target size to zero
       const auto usz = vapply_r<uint2>(yw::max, size, uint2::fill(ui::arbitrary_value));
       if (usz != rendertarget.size()) {
@@ -136,23 +141,21 @@ public:
         if (!swapchain) {
           auto desc = DXGI_SWAP_CHAIN_DESC1(usz.x, usz.y, bitmap::dxgiformat, false, DXGI_SAMPLE_DESC(1, 0), {}, 2);
           desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT, desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-          const auto hr = dxgi().factory()->CreateSwapChainForHwnd(d3d().device(), hwnd, &desc, 0, 0, &swapchain.get());
-          if (FAILED(hr)) return unexpected_error(errors::operation_failed, "CreateSwapChain failed", int(hr));
-        } else if (const auto hr = swapchain->ResizeBuffers(0, usz.x, usz.y, DXGI_FORMAT_UNKNOWN, 0); FAILED(hr))
-          return unexpected_error(errors::operation_failed, "ResizeBuffers failed", int(hr));
+          hresult_test(dxgi*(.factory()->CreateSwapChainForHwnd, d3d().device(), hwnd, &desc, 0, 0, &swapchain.get()));
+        } else hresult_test(swapchain->ResizeBuffers, 0, usz.x, usz.y, DXGI_FORMAT_UNKNOWN, 0);
         if (auto res = bitmap::create(swapchain.get())) rendertarget = std::move(*res);
-        else return unexpected_error(res.error());
+        else return std::unexpected(res.error());
         messy = true, manually_drawn = false;
       }
       if (usz != controllayer.size()) {
         if (auto res = bitmap::create(usz)) controllayer = std::move(*res);
-        else return unexpected_error(res.error());
+        else return std::unexpected(res.error());
         messy = true, manually_drawn = false;
       }
       return {};
     }
 
-    std::expected<void, error_trace> update_controllayer() {
+    std::expected<void, error> update_controllayer() {
       if (!messy) return {};
       if (child_control) {
         const auto csp = system::get_slot_pointer<ui::control>(child_control);
@@ -168,7 +171,7 @@ public:
       return {};
     }
 
-    std::expected<void, error_trace> draw_controllayer() {
+    std::expected<void, error> draw_controllayer() {
       if (!dirty || !child_control) return {};
       const auto csp = system::get_slot_pointer<ui::control>(child_control);
       if (!csp) return unexpected_error(errors::invalid_slotid);
@@ -179,7 +182,7 @@ public:
       return {};
     }
 
-    std::expected<void, error_trace> draw() {
+    std::expected<void, error> draw() {
       if (!dirty) return {};
       auto d = rendertarget.begin_draw(background_color);
       if (!d) return unexpected_error(d.error());
@@ -198,7 +201,7 @@ public:
     }
 
     /// explicitly performs redrawing
-    std::expected<void, error_trace> redraw(bool Messy = false) {
+    std::expected<void, error> redraw(bool Messy = false) {
       Messy ? messy = true : dirty = true;
       if (auto res = update_controllayer(); !res) return unexpected_error(res.error());
       if (auto res = draw_controllayer(); !res) return unexpected_error(res.error());
@@ -279,14 +282,14 @@ public:
     _id = {};
   }
 
-  std::expected<void, error_trace> show(bool Visible = true) {
+  std::expected<void, error> show(bool Visible = true) {
     const auto wsp = system::get_slot_pointer<handle>(_id);
     if (!wsp) return unexpected_error(errors::invalid_slotid);
     if (wsp->visible = Visible) ::ShowWindow(wsp->hwnd, SW_SHOW);
     else ::ShowWindow(wsp->hwnd, SW_HIDE);
     return {};
   }
-  std::expected<void, error_trace> hide() {
+  std::expected<void, error> hide() {
     if (auto res = show(false); !res) return unexpected_error(res.error());
     return {};
   }
@@ -300,13 +303,13 @@ public:
     return uint2{};
   }
 
-  std::expected<void, error_trace> pos(int2 Pos) {
+  std::expected<void, error> pos(int2 Pos) {
     const auto wsp = system::get_slot_pointer<handle>(_id);
     if (!wsp) return unexpected_error(errors::invalid_slotid);
     if (::SetWindowPos(wsp->hwnd, nullptr, Pos.x, Pos.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE)) return {};
     else return unexpected_win32_error("SetWindowPos failed");
   }
-  std::expected<void, error_trace> pos(int2 Pos, uint2 Size) {
+  std::expected<void, error> pos(int2 Pos, uint2 Size) {
     const auto wsp = system::get_slot_pointer<handle>(_id);
     if (!wsp) return unexpected_error(errors::invalid_slotid);
     if (::SetWindowPos(wsp->hwnd, nullptr, Pos.x, Pos.y, Size.x, Size.y, SWP_NOZORDER | SWP_NOACTIVATE)) return {};
@@ -327,14 +330,14 @@ public:
     else return const_cast<const focusring_accessor>(focusring_accessor(*wsp));
   }
 
-  std::expected<void, error_trace> redraw(bool Messy = false) {
+  std::expected<void, error> redraw(bool Messy = false) {
     const auto wsp = system::get_slot_pointer<handle>(_id);
     if (!wsp) return unexpected_error(errors::invalid_slotid);
     if (auto res = wsp->redraw(Messy); !res) return unexpected_error(res.error());
     return {};
   }
 
-  std::expected<drawing, error_trace> begin_draw() {
+  std::expected<drawing, error> begin_draw() {
     const auto wsp = system::get_slot_pointer<handle>(_id);
     if (!wsp) return unexpected_error(errors::invalid_slotid);
     if (auto d = wsp->rendertarget.begin_draw()) return d;
@@ -355,11 +358,11 @@ template<> struct options<type::standard> {
 };
 
 template<> class handle<type::standard> : public handle<type::unknown> {
-  handle(unknown_slotid Id) : handle<type::unknown>(Id) {}
+  handle(general_slotid Id) : handle<type::unknown>(Id) {}
 
 public:
   struct slot : public handle<type::unknown>::slot {
-    static std::expected<handle, error_trace> open(options<type::standard> Options) {
+    static std::expected<handle, error> open(options<type::standard> Options) {
       const auto id = system::unknowns.add(std::make_unique<handle<type::standard>::slot>());
       const auto wsp = system::get_slot_pointer<handle<type::standard>>(id);
       if (!wsp) return unexpected_error(errors::invalid_slotid);
@@ -410,11 +413,11 @@ template<> struct options<type::custom> {
 };
 
 template<> class handle<type::custom> : public handle<type::unknown> {
-  handle(unknown_slotid Id) : handle<type::unknown>(Id) {}
+  handle(general_slotid Id) : handle<type::unknown>(Id) {}
 
 public:
   struct slot : public handle<type::unknown>::slot {
-    static std::expected<handle, error_trace> open(options<type::custom> Options) {
+    static std::expected<handle, error> open(options<type::custom> Options) {
       const auto id = system::unknowns.add(std::make_unique<handle<type::custom>::slot>());
       const auto wsp = system::get_slot_pointer<handle<type::custom>>(id);
       if (!wsp) return unexpected_error(errors::invalid_slotid);
@@ -441,12 +444,12 @@ public:
 
 /// \note window::open
 
-inline std::expected<handle<type::standard>, error_trace> open(options<type::standard> Options) {
+inline std::expected<handle<type::standard>, error> open(options<type::standard> Options) {
   if (auto res = handle<type::standard>::slot::open(std::move(Options))) return std::move(*res);
   else return unexpected_error(res.error());
 }
 
-template<type Type> std::expected<handle<Type>, error_trace> open(options<Type> Options) {
+template<type Type> std::expected<handle<Type>, error> open(options<Type> Options) {
   if (auto res = handle<Type>::slot::open(std::move(Options))) return std::move(*res);
   else return unexpected_error(res.error());
 }
@@ -459,7 +462,7 @@ namespace system {
 /// shows/hides tooltip window
 /// \param Pos relative position of control to window's client area
 /// \param Size size of control
-std::expected<void, error_trace> show_tooltip(float2 Pos, float2 Size, std::wstring Text) {
+std::expected<void, error> show_tooltip(float2 Pos, float2 Size, std::wstring Text) {
   constexpr DWORD style = WS_POPUP;
   constexpr DWORD exstyle = WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE;
   constexpr float margin = ui::arbitrary_value; // avoid tooltip being too close to the control
@@ -496,7 +499,7 @@ std::expected<void, error_trace> show_tooltip(float2 Pos, float2 Size, std::wstr
   return {};
 }
 
-window::handle<window::type::unknown>::slot* window_get_slot_pointer(unknown_slotid WindowId) noexcept {
+window::handle<window::type::unknown>::slot* window_get_slot_pointer(general_slotid WindowId) noexcept {
   return system::get_slot_pointer<window::handle<window::type::unknown>>(WindowId);
 }
 } // namespace system

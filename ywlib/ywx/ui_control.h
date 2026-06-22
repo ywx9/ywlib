@@ -1,11 +1,6 @@
 #pragma once
 #include "ywx/keys.h"
 
-namespace yw::errors {
-define_error(ui_invalid_size_policy);
-define_error(ui_not_attachable);
-}
-
 namespace yw::ui {
 
 /// MARK: accessor
@@ -61,13 +56,13 @@ struct color_pair {
 
 class control : public interface {
 protected:
-  template<typename Ctrl, derived_from<interface> Layout>
-  static std::expected<unknown_slotid, error_trace> create_control(Layout& layout) {
+  template<typename Handle, derived_from<interface> Layout>
+  static std::expected<general_slotid, error> create_control(Layout& layout) {
     const auto lid = layout.id();
     const auto lsp = system::get_slot_pointer<interface>(lid);
-    if (!lsp) return unexpected_error(errors::invalid_slotid);
-    if (!lsp->attachable()) return unexpected_error(errors::ui_not_attachable);
-    const auto cid = system::unknowns.add(std::make_unique<typename Ctrl::slot>());
+    if (!lsp) return std::unexpected(error(errors::invalid_slotid));
+    if (!lsp->attachable()) return std::unexpected(error(errors::invalid_operation, "Not attachable"));
+    const auto cid =
     if (const auto csp = system::get_slot_pointer<Ctrl>(cid)) {
       lsp->attach(cid);
       csp->id = cid;
@@ -88,7 +83,7 @@ protected:
 
   template<typename Mp> const auto& unsafe_get(Mp mp) const {
     const auto csp = dynamic_cast<class_type<Mp>*>(system::unknowns.get(_id));
-    if (!csp) fatal_error(errors::invalid_slotid);
+    if (!csp) error(errors::invalid_slotid).print_as_fatal();
     return csp->*mp;
   }
   template<typename Mp, typename T> void unsafe_set(Mp mp, T&& value) {
@@ -96,7 +91,7 @@ protected:
     if (!csp) fatal_error(errors::invalid_slotid);
     csp->*mp = static_cast<T&&>(value);
   }
-  template<typename Mp, typename T> std::expected<void, error_trace> safe_set(Mp mp, T&& value) {
+  template<typename Mp, typename T> std::expected<void, error> safe_set(Mp mp, T&& value) {
     const auto csp = dynamic_cast<class_type<Mp>*>(system::unknowns.get(_id));
     if (!csp) return unexpected_error(errors::invalid_slotid);
     csp->*mp = static_cast<T&&>(value);
@@ -107,8 +102,8 @@ public:
   /// MARK: slot
 
   struct slot : interface::slot {
-    unknown_slotid layout_id{};
-    unknown_slotid window_id{};
+    general_slotid layout_id{};
+    general_slotid window_id{};
     float4 margin = float4::fill(arbitrary_value);
     float4 padding = float4::fill(arbitrary_value);
     float2 minimum_size = float2::fill(arbitrary_value * 2);
@@ -151,15 +146,15 @@ public:
 
     //-- overrides --//
 
-    virtual unknown_slotid get_window_id() const override { return window_id; }
+    virtual general_slotid get_window_id() const override { return window_id; }
 
-    virtual std::expected<void, error_trace> make_dirty() override {
+    virtual std::expected<void, error> make_dirty() override {
       if (const auto wsp = system::get_slot_pointer<interface>(window_id))
         if (auto res = wsp->make_dirty(); !res) return unexpected_error(res.error());
       return {};
     }
 
-    virtual std::expected<void, error_trace> make_messy() override {
+    virtual std::expected<void, error> make_messy() override {
       if (const auto wsp = system::get_slot_pointer<interface>(window_id))
         if (auto res = wsp->make_messy(); !res) return unexpected_error(res.error());
       return {};
@@ -169,10 +164,10 @@ public:
 
     virtual float2 bounds() const { return size + margin.xy() + margin.zw(); }
     virtual bool focusable() const { return false; }
-    virtual unknown_slotid hittest(float2 Pt) const { return hittest_geometry(Pt) ? id : unknown_slotid{}; }
-    virtual unknown_slotid next_tab_stop(unknown_slotid Focused, bool Forward, bool& Found) const { return {}; }
+    virtual general_slotid hittest(float2 Pt) const { return hittest_geometry(Pt) ? id : general_slotid{}; }
+    virtual general_slotid next_tab_stop(general_slotid Focused, bool Forward, bool& Found) const { return {}; }
 
-    virtual std::expected<void, error_trace> draw_focusring(
+    virtual std::expected<void, error> draw_focusring(
       const yw::color& Color, float Offset, float Width, bool Dashed) {
       const auto& brush = yw::brush();
       brush.color(Color).dashed(Dashed);
@@ -183,17 +178,17 @@ public:
       return {};
     }
 
-    virtual std::expected<float2, error_trace> calculate_necessary_size() const {
+    virtual std::expected<float2, error> calculate_necessary_size() const {
       const auto inner = padding.xy() + padding.zw();
       return vapply_r<float2>(_calc_nec_size, size_policy, minimum_size, required_size, inner);
     }
 
-    virtual std::expected<void, error_trace> ensure_necessary_size() {
-      if (auto res = calculate_necessary_size()) return size = *res, std::expected<void, error_trace>{};
+    virtual std::expected<void, error> ensure_necessary_size() {
+      if (auto res = calculate_necessary_size()) return size = *res, std::expected<void, error>{};
       else return unexpected_error(res.error());
     }
 
-    virtual std::expected<void, error_trace> update_geometry(float2 Pos, float2 Area) {
+    virtual std::expected<void, error> update_geometry(float2 Pos, float2 Area) {
       constexpr float c[]{0.5f, 0.0f, 1.0f};
       const float2 cc{c[unsigned(alignment) % 3], c[(unsigned(alignment) / 3) % 3]};
       provided_pos = Pos;
@@ -210,7 +205,7 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error_trace> draw() const = 0;
+    virtual std::expected<void, error> draw() const = 0;
 
     virtual float2 ime_position() const { return {}; };
     virtual void ime_insert_text(std::wstring_view) {}
@@ -364,13 +359,13 @@ public:
   }
 
   const auto& tooltip() const { return unsafe_get(&slot::tooltip); }
-  std::expected<void, error_trace> tooltip(std::wstring Tooltip) {
+  std::expected<void, error> tooltip(std::wstring Tooltip) {
     if (auto res = safe_set(&slot::tooltip, std::move(Tooltip))) return {};
     else return unexpected_error(res.error());
   }
 
   const auto& on_hover() const { return unsafe_get(&slot::on_hover); }
-  std::expected<void, error_trace> on_hover(function<void, yw::hover_event> f) {
+  std::expected<void, error> on_hover(function<void, yw::hover_event> f) {
     if (auto res = safe_set(&slot::on_hover, std::move(f))) return {};
     else return unexpected_error(res.error());
   }

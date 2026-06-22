@@ -171,7 +171,7 @@ public:
     const auto sp = create_slot<handle>(sl);
     if (!sp) error(errors::slot_creation_failed).print_as_fatal(sl);
     if (auto res = sp->init(std::move(Path), Mode); !res) {
-      this->clear();
+      slot::erase(sp->id);
       res.error().add_footprint().print_as_warning(sl); // makes empty handle
     } else _id = sp->id;
   }

@@ -157,33 +157,32 @@ public:
 class general_handle {
 public:
   struct slot {
+    template<typename Handle> static typename Handle::slot* get(slotset<slot>::slotid Id) noexcept;
+    static void erase(slotset<slot>::slotid Id) noexcept;
     slotset<slot>::slotid id;
     yw::source_line source_line = source_line::null();
-    void erase() noexcept;
   };
 
 protected:
   slotset<slot>::slotid _id{};
   explicit general_handle(slotset<slot>::slotid Id) : _id(Id) {}
   template<typename Handle> static typename Handle::slot* create_slot(const source_line& sl);
-  template<typename Handle> static typename Handle::slot* get_slot(slotset<slot>::slotid id);
   template<typename Handle> static typename Handle::slot* get_slot(const Handle* Self) {
     static_assert(derived_from<Handle, general_handle>);
     static_assert(derived_from<typename Handle::slot, general_handle::slot>);
-    return slot::get_slot<Handle>(Self->_id);
+    return slot::get<Handle>(Self->_id);
   }
-  void erase_slot() noexcept;
 
 public:
 
-  ~general_handle() noexcept { erase_slot(); }
+  ~general_handle() noexcept { slot::erase(_id); }
   general_handle() noexcept = default;
   general_handle(const general_handle&) = delete;
   general_handle& operator=(const general_handle&) = delete;
   general_handle(general_handle&& Other) noexcept : _id(std::exchange(Other._id, {})) {}
   general_handle& operator=(general_handle&& Other) noexcept {
     if (this != &Other) {
-      erase_slot();
+      slot::erase(_id);
       _id = std::exchange(Other._id, {});
     }
     return *this;
@@ -200,11 +199,14 @@ namespace internal {
 inline slotset<general_handle::slot> general_slotset;
 }
 
-template<typename Handle> typename Handle::slot* general_handle::get_slot(general_slotid Id) {
+template<typename Handle> typename Handle::slot* general_handle::slot::get(general_slotid Id) noexcept {
   static_assert(derived_from<Handle, general_handle>);
   static_assert(derived_from<typename Handle::slot, general_handle::slot>);
   return static_cast<typename Handle::slot*>(internal::general_slotset.get(Id));
 }
+
+inline void general_handle::slot::erase(general_slotid Id) noexcept { internal::general_slotset.erase(Id); }
+
 
 template<typename Handle> typename Handle::slot* general_handle::create_slot(const source_line& sl) {
   static_assert(derived_from<Handle, general_handle>);
@@ -216,8 +218,6 @@ template<typename Handle> typename Handle::slot* general_handle::create_slot(con
   return sp;
 }
 
-inline void general_handle::slot::erase() noexcept { internal::general_slotset.erase(id); }
-inline void general_handle::erase_slot() noexcept { internal::general_slotset.erase(_id); }
 inline general_handle::operator bool() const noexcept { return internal::general_slotset.contains(_id); }
 
 #define ywlib_get_slot_member(name)                                                        \

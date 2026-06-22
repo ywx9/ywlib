@@ -48,15 +48,15 @@ inline uint2 desktop_client_size() {
 
 namespace system {
 inline class com_list_to_release {
-  std::vector<general_slotid> _ids;
+  std::vector<function<void>> _functions;
 
 public:
   ~com_list_to_release() { release(); }
   void release() {
-    for (const auto id : _ids | std::views::reverse) internal::general_slotset.erase(id);
+    for (const auto& func : _functions | std::views::reverse) func();
   }
-  void clear() { _ids.clear(); }
-  void push(general_slotid id) { _ids.push_back(id); }
+  void clear() { _functions.clear(); }
+  void push(function<void> func) { _functions.push_back(func); }
 } com_list_to_release;
 } // namespace system
 
@@ -77,15 +77,11 @@ public:
 
 /// MARK: wclass
 
-class wclass final : public general_handle {
-  static constexpr const source_line _source_line = source_line::here();
-  inline static general_slot* _sp = nullptr;
+class wclass {
+  inline static void* ptr = nullptr;
+  static LRESULT __stdcall wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 
-public:
-  struct slot : general_slot {
-    static slot* get() noexcept { return static_cast<slot*>(_sp); }
-    static LRESULT __stdcall wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
-
+  struct slot {
     WNDCLASSW wc{
       .style = CS_DBLCLKS,
       .lpfnWndProc = wndproc,
@@ -93,41 +89,45 @@ public:
       .hCursor = ::LoadCursorW(nullptr, IDC_ARROW),
       .lpszClassName = L"ywlib_window_class"};
 
-    std::expected<void, error> initialize() {
-      if (::RegisterClassW(&wc)) return {};
-      else if (::GetLastError() == ERROR_CLASS_ALREADY_EXISTS) return {};
-      else return std::unexpected(error(errors::operation_failed, "RegisterClassW failed"));
+    slot() {
+      if (!::RegisterClassW(&wc) && ::GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+        error(errors::operation_failed, "RegisterClassW failed").print_as_fatal();
+    }
+
+    static slot* get() noexcept {
+      if (!ptr) ptr = new slot();
+      return static_cast<slot*>(ptr);
     }
   };
 
-  explicit wclass() {
-    if (_sp) return;
-    const auto sp = general_handle::create_slot<wclass>(_source_line);
-    if (!sp) error(errors::slot_creation_failed).print_as_fatal(_source_line);
-    if (auto res = sp->initialize(); !res) res.error().print_as_fatal(_source_line);
-    _sp = sp;
-    _id = sp->id;
-  }
-
+public:
   HINSTANCE hinstance() const noexcept { return slot::get()->wc.hInstance; }
   null_terminated<wchar_t> name() const noexcept { return slot::get()->wc.lpszClassName; }
 };
 
 /// MARK: d3d
 
-class d3d final : public general_handle {
-  static constexpr const source_line _source_line = source_line::here();
-  inline static general_slot* _sp = nullptr;
+class d3d {
+  inline static void* ptr = nullptr;
 
-public:
-  struct slot : general_slot {
-    static slot* get() noexcept { return static_cast<slot*>(_sp); }
-
+  struct slot {
     ID3D11Device* device{};
     ID3D11DeviceContext* context{};
     ID3D11BlendState* blend_state{};
     ID3D11SamplerState* sampler_state{};
     ID3D11RasterizerState* rasterizer_state{};
+
+    slot() {
+      if (auto res = _init_device(); !res) res.error().print_as_fatal();
+      if (auto res = _init_blend_state(); !res) res.error().print_as_fatal();
+      if (auto res = _init_sampler_state(); !res) res.error().print_as_fatal();
+      if (auto res = _init_rasterizer_state(); !res) res.error().print_as_fatal();
+    }
+
+    static slot* get() noexcept {
+      if (!ptr) ptr = new slot();
+      return static_cast<slot*>(ptr);
+    }
 
     std::expected<void, error> _init_device() {
       const D3D_FEATURE_LEVEL _levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
@@ -175,169 +175,165 @@ public:
       context->RSSetState(rasterizer_state);
       return {};
     }
-
-    std::expected<void, error> initialize() {
-      if (auto res = _init_device(); !res) return res;
-      if (auto res = _init_blend_state(); !res) return res;
-      if (auto res = _init_sampler_state(); !res) return res;
-      if (auto res = _init_rasterizer_state(); !res) return res;
-      return {};
-    }
   };
 
-  explicit d3d() {
-    if (_sp) return;
-    const auto sp = general_handle::create_slot<d3d>(_source_line);
-    if (!sp) error(errors::slot_creation_failed).print_as_fatal(_source_line);
-    if (auto res = sp->initialize(); !res) res.error().print_as_fatal(_source_line);
-    _sp = sp;
-    _id = sp->id;
-  }
+public:
+  static ID3D11Device* device() noexcept { return slot::get()->device; }
+  static ID3D11DeviceContext* context() noexcept { return slot::get()->context; }
+  static ID3D11BlendState* blend_state() noexcept { return slot::get()->blend_state; }
+  static ID3D11RasterizerState* rasterizer_state() noexcept { return slot::get()->rasterizer_state; }
+  static ID3D11SamplerState* sampler_state() noexcept { return slot::get()->sampler_state; }
 
-  ID3D11Device* device() const noexcept { return slot::get()->device; }
-  ID3D11DeviceContext* context() const noexcept { return slot::get()->context; }
-  ID3D11BlendState* blend_state() const noexcept { return slot::get()->blend_state; }
-  ID3D11RasterizerState* rasterizer_state() const noexcept { return slot::get()->rasterizer_state; }
-  ID3D11SamplerState* sampler_state() const noexcept { return slot::get()->sampler_state; }
-};
+  static void pointlist() noexcept { context()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_POINTLIST); }
+  static void linelist() noexcept { context()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST); }
+  static void linestrip() noexcept { context()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP); }
+  static void trianglelist() noexcept { context()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); }
+  static void trianglestrip() noexcept { context()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP); }
+}; // namespace d3d
 
 /// MARK: dxgi
 
-class dxgi final : public general_handle {
-  static constexpr const source_line _source_line = source_line::here();
-  inline static general_slot* _sp = nullptr;
+class dxgi {
+  inline static void* ptr = nullptr;
 
-public:
-  struct slot : general_slot {
-    static slot* get() noexcept { return static_cast<slot*>(_sp); }
-
+  struct slot {
     IDXGIFactory2* factory{};
     IDXGIDevice2* device{};
 
-    std::expected<void, error> initialize() {
-      const auto d3d = yw::d3d();
+    slot() {
+      if (auto res = _init_factory(); !res) res.error().print_as_fatal();
+      if (auto res = _init_device(); !res) res.error().print_as_fatal();
+    }
+
+    static slot* get() noexcept {
+      if (!ptr) ptr = new slot();
+      return static_cast<slot*>(ptr);
+    }
+
+    std::expected<void, error> _init_factory() {
       hresult_test(::CreateDXGIFactory2, 0, __uuidof(IDXGIFactory2), reinterpret_cast<void**>(&factory));
-      hresult_test(d3d.device()->QueryInterface, __uuidof(IDXGIDevice2), reinterpret_cast<void**>(&device));
+      return {};
+    }
+
+    std::expected<void, error> _init_device() {
+      hresult_test(d3d().device()->QueryInterface, __uuidof(IDXGIDevice2), reinterpret_cast<void**>(&device));
       return {};
     }
   };
 
-  explicit dxgi() {
-    if (_sp) return;
-    const auto sp = general_handle::create_slot<dxgi>(_source_line);
-    if (!sp) error(errors::slot_creation_failed).print_as_fatal(_source_line);
-    if (auto res = sp->initialize(); !res) res.error().print_as_fatal(_source_line);
-    _sp = sp;
-    _id = sp->id;
-  }
-
-  IDXGIFactory2* factory() const noexcept { return slot::get()->factory; }
-  IDXGIDevice2* device() const noexcept { return slot::get()->device; }
+public:
+  static IDXGIFactory2* factory() noexcept { return slot::get()->factory; }
+  static IDXGIDevice2* device() noexcept { return slot::get()->device; }
 };
 
 /// MARK: d2d
 
-class d2d final : public general_handle {
-  static constexpr const source_line _source_line = source_line::here();
-  inline static general_slot* _sp = nullptr;
+class d2d {
+  inline static void* ptr = nullptr;
 
-public:
-  struct slot : general_slot {
-    static slot* get() noexcept { return static_cast<slot*>(_sp); }
-
+  struct slot {
     ID2D1Factory1* factory{};
     ID2D1Device* device{};
     ID2D1DeviceContext* context{};
 
-    std::expected<void, error> initialize() {
-      const auto dxgi = yw::dxgi();
+    slot() {
+      if (auto res = _init_factory(); !res) res.error().print_as_fatal();
+      if (auto res = _init_device(); !res) res.error().print_as_fatal();
+      if (auto res = _init_context(); !res) res.error().print_as_fatal();
+    }
+
+    static slot* get() noexcept {
+      if (!ptr) ptr = new slot();
+      return static_cast<slot*>(ptr);
+    }
+
+    std::expected<void, error> _init_factory() {
       const auto factory_type = D2D1_FACTORY_TYPE_SINGLE_THREADED;
       hresult_test(::D2D1CreateFactory, factory_type, __uuidof(ID2D1Factory1), reinterpret_cast<void**>(&factory));
-      hresult_test(factory->CreateDevice, dxgi.device(), &device);
+      return {};
+    }
+
+    std::expected<void, error> _init_device() {
+      hresult_test(factory->CreateDevice, dxgi().device(), &device);
+      return {};
+    }
+
+    std::expected<void, error> _init_context() {
       hresult_test(device->CreateDeviceContext, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &context);
       return {};
     }
   };
 
-  explicit d2d() {
-    if (_sp) return;
-    const auto sp = general_handle::create_slot<d2d>(_source_line);
-    if (!sp) error(errors::slot_creation_failed).print_as_fatal(_source_line);
-    if (auto res = sp->initialize(); !res) res.error().print_as_fatal(_source_line);
-    _sp = sp;
-    _id = sp->id;
-  }
+public:
+  static ID2D1Factory1* factory() noexcept { return slot::get()->factory; }
+  static ID2D1Device* device() noexcept { return slot::get()->device; }
+  static ID2D1DeviceContext* context() noexcept { return slot::get()->context; }
 
-  ID2D1Factory1* factory() const noexcept { return slot::get()->factory; }
-  ID2D1Device* device() const noexcept { return slot::get()->device; }
-  ID2D1DeviceContext* context() const noexcept { return slot::get()->context; }
-
-  void push_layer(ID2D1Geometry* Geom) const {
+  static void push_layer(ID2D1Geometry* Geom) noexcept {
     context()->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), Geom), nullptr);
   }
-  void pop_layer() const { context()->PopLayer(); }
+  static void pop_layer() noexcept { context()->PopLayer(); }
 };
 
 /// MARK: brush
 
-class brush final : public general_handle {
-  static constexpr const source_line _source_line = source_line::here();
-  inline static general_slot* _sp = nullptr;
+class brush {
+  inline static void* ptr = nullptr;
 
-public:
-  struct slot : general_slot {
-    static slot* get() noexcept { return static_cast<slot*>(_sp); }
-
+  struct slot {
     ID2D1SolidColorBrush* solid_brush{};
     ID2D1StrokeStyle* stroke_style{};
     ID2D1StrokeStyle* dashed_stroke_style{};
     yw::color color = colors::black;
     bool dashed = false;
 
-    std::expected<void, error> initialize() {
-      const auto& d2d = yw::d2d();
-      hresult_test(d2d.context()->CreateSolidColorBrush, D2D1::ColorF(D2D1::ColorF::Black), &solid_brush);
+    slot() {
+      if (auto res = _init_brush(); !res) res.error().print_as_fatal();
+      if (auto res = _init_styles(); !res) res.error().print_as_fatal();
+    }
+
+    static slot* get() noexcept {
+      if (!ptr) ptr = new slot();
+      return static_cast<slot*>(ptr);
+    }
+
+    std::expected<void, error> _init_brush() {
+      hresult_test(d2d().context()->CreateSolidColorBrush, D2D1::ColorF(D2D1::ColorF::Black), &solid_brush);
+      return {};
+    }
+
+    std::expected<void, error> _init_styles() {
       D2D1_STROKE_STYLE_PROPERTIES stroke_style_props{
         .startCap = D2D1_CAP_STYLE_ROUND,
         .endCap = D2D1_CAP_STYLE_ROUND,
         .dashCap = D2D1_CAP_STYLE_ROUND,
         .lineJoin = D2D1_LINE_JOIN_ROUND,
         .miterLimit = 10.0f};
-      hresult_test(d2d.factory()->CreateStrokeStyle, &stroke_style_props, nullptr, 0, &stroke_style);
+      hresult_test(d2d().factory()->CreateStrokeStyle, &stroke_style_props, nullptr, 0, &stroke_style);
       stroke_style_props.dashStyle = D2D1_DASH_STYLE_DASH;
-      hresult_test(d2d.factory()->CreateStrokeStyle, &stroke_style_props, nullptr, 0, &dashed_stroke_style);
+      hresult_test(d2d().factory()->CreateStrokeStyle, &stroke_style_props, nullptr, 0, &dashed_stroke_style);
       return {};
     }
   };
 
-  explicit brush() {
-    if (_sp) return;
-    const auto sp = general_handle::create_slot<brush>(_source_line);
-    if (!sp) error(errors::slot_creation_failed).print_as_fatal(_source_line);
-    if (auto res = sp->initialize(); !res) res.error().print_as_fatal(_source_line);
-    _sp = sp;
-    _id = sp->id;
-  }
+public:
+  static ID2D1SolidColorBrush* d2d_brush() noexcept { return slot::get()->solid_brush; }
+  static const yw::color& color() noexcept { return slot::get()->color; }
+  static bool dashed() noexcept { return slot::get()->dashed; }
 
-  ID2D1SolidColorBrush* d2d_brush() const noexcept { return slot::get()->solid_brush; }
-  const yw::color& color() const noexcept { return slot::get()->color; }
-  bool dashed() const noexcept { return slot::get()->dashed; }
-
-  ID2D1StrokeStyle* d2d_stroke() const noexcept {
+  static ID2D1StrokeStyle* d2d_stroke() noexcept {
     const auto sp = slot::get();
     return sp->dashed ? sp->dashed_stroke_style : sp->stroke_style;
   }
 
-  auto& color(const yw::color& Color) const noexcept {
+  static void color(const yw::color& Color) noexcept {
     const auto sp = slot::get();
     sp->color = Color;
     sp->solid_brush->SetColor(reinterpret_cast<const D2D1_COLOR_F*>(&Color));
-    return *this;
   }
 
-  auto& dashed(bool Dashed = true) const noexcept {
+  static void dashed(bool Dashed = true) noexcept {
     slot::get()->dashed = Dashed;
-    return *this;
   }
 };
 
@@ -397,21 +393,31 @@ inline const font_config font_config::default_{
 
 /// MARK: dwrite
 
-class dwrite final : public general_handle {
-  static constexpr const source_line _source_line = source_line::here();
-  inline static general_slot* _sp = nullptr;
+class dwrite {
+  inline static void* ptr = nullptr;
 
-public:
-  struct slot : general_slot {
-    static slot* get() noexcept { return reinterpret_cast<slot*>(_sp); }
-
+  struct slot {
     IDWriteFactory1* factory{};
     IDWriteTextFormat* text_format{};
 
-    std::expected<void, error> initialize() {
+    slot() {
+      if (auto res = _init_factory(); !res) res.error().print_as_fatal();
+      if (auto res = _init_text_format(); !res) res.error().print_as_fatal();
+    }
+
+    static slot* get() noexcept {
+      if (ptr) ptr = new slot();
+      return static_cast<slot*>(ptr);
+    }
+
+    std::expected<void, error> _init_factory() {
       hresult_test(
         ::DWriteCreateFactory, DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory1),
         reinterpret_cast<IUnknown**>(&factory));
+      return {};
+    }
+
+    std::expected<void, error> _init_text_format() {
       hresult_test(
         factory->CreateTextFormat, font_config::default_.name->c_str(), nullptr,
         DWRITE_FONT_WEIGHT(*font_config::default_.weight), DWRITE_FONT_STYLE(*font_config::default_.style),
@@ -422,112 +428,98 @@ public:
     }
   };
 
-  explicit dwrite() {
-    if (_sp) return;
-    const auto sp = general_handle::create_slot<dwrite>(_source_line);
-    if (!sp) error(errors::slot_creation_failed).print_as_fatal(_source_line);
-    if (auto res = sp->initialize(); !res) res.error().print_as_fatal(_source_line);
-    _sp = sp;
-    _id = sp->id;
-  }
-
-  IDWriteFactory1* factory() const noexcept { return slot::get()->factory; }
-  IDWriteTextFormat* text_format() const noexcept { return slot::get()->text_format; }
+  static IDWriteFactory1* factory() noexcept { return slot::get()->factory; }
+  static IDWriteTextFormat* text_format() noexcept { return slot::get()->text_format; }
 };
 
 /// MARK: coinit
 
-class coinit final : public general_handle {
-  static constexpr const source_line _source_line = source_line::here();
-  inline static general_slot* _sp = nullptr;
+class coinit {
+  inline static void* ptr = nullptr;
 
-public:
-  struct slot : general_slot {
-    static slot* get() noexcept { return static_cast<slot*>(_sp); }
+  struct slot {
+    slot() {
+      if (auto res = initialize(); !res) res.error().print_as_fatal();
+      system::com_list_to_release.push([]() { ::CoUninitialize(); });
+    }
 
     std::expected<void, error> initialize() {
       hresult_test(::CoInitializeEx, nullptr, COINIT_MULTITHREADED);
-      system::com_list_to_release.push(this->id);
       return {};
     }
   };
 
-  explicit coinit() {
-    if (_sp) return;
-    const auto sp = general_handle::create_slot<coinit>(_source_line);
-    if (!sp) error(errors::slot_creation_failed).print_as_fatal(_source_line);
-    if (auto res = sp->initialize(); !res) res.error().print_as_fatal(_source_line);
-    _sp = sp;
-    _id = sp->id;
+public:
+  coinit() {
+    if (!ptr) ptr = new slot();
   }
 };
 
 //// MARK: wic
 
-class wic final : public general_handle {
-  static constexpr const source_line _source_line = source_line::here();
-  inline static general_slot* _sp = nullptr;
+class wic {
+  inline static void* ptr = nullptr;
 
 public:
   struct slot : general_slot {
-    static slot* get() noexcept { return static_cast<slot*>(_sp); }
-
     ::IWICImagingFactory2* factory{};
 
-    std::expected<void, error> initialize() {
-      const auto& coinit = yw::coinit();
+    slot() {
+      const coinit coinit;
+      if (auto res = _init_factory(); !res) res.error().print_as_fatal();
+      system::com_list_to_release.push([&]() {
+        if (factory) factory->Release();
+      });
+    }
+
+    static slot* get() noexcept {
+      if (!ptr) ptr = new slot();
+      return static_cast<slot*>(ptr);
+    }
+
+    std::expected<void, error> _init_factory() {
       hresult_test(::CoCreateInstance, CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-      system::com_list_to_release.push(this->id);
       return {};
     }
   };
 
-  using unknown::operator bool;
-
-  explicit wic() {
-    if (auto res = initialize_singleton(); !res) fatal_error(res.error());
-    this->_id = singleton_id;
-  }
-
-  ::IWICImagingFactory2* factory() const noexcept {
-    if (const auto sp = system::get_slot_pointer<wic>(_id)) return sp->factory;
-    return nullptr;
-  }
+public:
+  static ::IWICImagingFactory2* factory() noexcept { return slot::get()->factory; }
 };
 
 /// MARK: xaudio2
 
-class xaudio2 final : public singleton<xaudio2> {
-public:
-  struct slot : singleton<xaudio2>::slot {
-    ::IXAudio2* device{};
-    ::IXAudio2MasteringVoice* mastering_voice{};
+class xaudio2 {
+  inline static void* ptr = nullptr;
 
-    std::expected<void, error> initialize() {
-      const auto& coinit = yw::coinit();
+public:
+  struct slot {
+    IXAudio2* device{};
+    IXAudio2MasteringVoice* mastering_voice{};
+
+    slot() {
+      const coinit coinit;
+      if (auto res = _init(); !res) res.error().print_as_fatal();
+      system::com_list_to_release.push([&]() {
+        if (mastering_voice) mastering_voice->DestroyVoice();
+        if (device) device->Release();
+      });
+    }
+
+    static slot* get() noexcept {
+      if (!ptr) ptr = new slot();
+      return static_cast<slot*>(ptr);
+    }
+
+    std::expected<void, error> _init() {
       hresult_test(::XAudio2Create, &device, 0, XAUDIO2_DEFAULT_PROCESSOR);
       hresult_test(device->CreateMasteringVoice, &mastering_voice);
-      system::com_list_to_release.push(this->id);
       return {};
     }
   };
 
-  using unknown::operator bool;
-
-  explicit xaudio2() {
-    if (auto res = initialize_singleton(); !res) fatal_error(res.error());
-    this->_id = singleton_id;
-  }
-
-  ::IXAudio2* device() const noexcept {
-    if (const auto sp = system::get_slot_pointer<xaudio2>(_id)) return sp->device;
-    return nullptr;
-  }
-
-  ::IXAudio2MasteringVoice* mastering_voice() const noexcept {
-    if (const auto sp = system::get_slot_pointer<xaudio2>(_id)) return sp->mastering_voice;
-    return nullptr;
-  }
+  static IXAudio2* device() noexcept { return slot::get()->device; }
+  static IXAudio2MasteringVoice* mastering_voice() noexcept { return slot::get()->mastering_voice; }
 };
 
 /// MARK: comptr
