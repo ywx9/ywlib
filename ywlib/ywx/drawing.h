@@ -3,162 +3,83 @@
 
 namespace yw {
 
-class drawing : public general_handle {
-  inline static general_slot* _sp = nullptr;
+class drawing {
+  inline static void* _target = nullptr;
+  inline static int _type = 0; // 0: none, 2: d2d, 3: d3d, other: invalid
+  source_line _source = source_line::here();
+  bool _active = false;
+
+  static std::expected<void, error> initialize(ID2D1Image* Target) {
+    if (_target || _type != 0) return std::unexpected(error(errors::invalid_operation, "already in drawing"));
+    d2d::context()->SetTarget(Target);
+    d2d::context()->BeginDraw();
+    _target = Target;
+    _type = 2;
+    return {};
+  }
+
+  static std::expected<void, error> initialize(ID3D11RenderTargetView* Target) {
+    if (_target || _type != 0) return std::unexpected(error(errors::invalid_operation, "already in drawing"));
+    d3d::context()->OMSetRenderTargets(1, &Target, nullptr);
+    _target = Target;
+    _type = 3;
+    return {};
+  }
+
+  static std::expected<void, error> initialize(ID3D11RenderTargetView* Target, ID3D11DepthStencilView* DepthStencil) {
+    if (_target || _type != 0) return std::unexpected(error(errors::invalid_operation, "already in drawing"));
+    d3d::context()->OMSetRenderTargets(1, &Target, DepthStencil);
+    _target = Target;
+    _type = 3;
+    return {};
+  }
+
+  drawing(const source_line& sl) : _source(sl), _active(true) {}
 
 public:
-  struct slot : general_slot {
-    static slot* get() noexcept { return static_cast<slot*>(_sp); }
-    std::variant<std::monostate, ID2D1Image*, ID3D11RenderTargetView*> target;
-
-    std::expected<void, error> release() {
-      if (target.index() == 1) {
-        const auto d2d = yw::d2d();
-        hresult_test(d2d.context()->EndDraw);
-        d2d.context()->SetTarget(nullptr);
-      } else if (target.index() == 2) d3d().context()->OMSetRenderTargets(0, nullptr, nullptr);
-      target = std::monostate();
-      return {};
-    }
-  };
-
+  drawing() noexcept = default;
   ~drawing() { close(); }
-  drawing(const source_line& sl = source_line::here()) {
-    if (_sp) return;
-    const auto sp = create_slot<drawing>(sl);
-    if (!sp) error(errors::slot_creation_failed).print_as_fatal(sl);
-    _sp = sp;
-  }
-  drawing(drawing&& Other) noexcept = default;
-  drawing& operator=(drawing&& Other) noexcept = default;
 
-  drawing(ID2D1Image* Target, const source_line& sl) : drawing(sl) {
-    const auto sp = slot::get();
-    if (sp->target.index() != 0) error(errors::invalid_operation, "already in drawing").print_as_fatal(sl);
-    const auto d2d = yw::d2d();
-    d2d.context()->SetTarget(Target);
-    d2d.context()->BeginDraw();
-    sp->target = Target;
-    _id = sp->id;
+  drawing(ID2D1Image* Target, const source_line& sl = source_line::here()) : _source(sl), _active(true) {
+    if (auto res = initialize(Target); !res) res.error().add_footprint().print_as_fatal(sl);
   }
 
-  drawing(ID3D11RenderTargetView* Target, const source_line& sl) : drawing(sl) {
-    const auto sp = slot::get();
-    if (sp->target.index() != 0) error(errors::invalid_operation, "already in drawing").print_as_fatal(sl);
-    const auto d3d = yw::d3d();
-    d3d.context()->OMSetRenderTargets(1, &Target, nullptr);
-    sp->target = Target;
-    _id = sp->id;
+  drawing(ID3D11RenderTargetView* Target, const source_line& sl = source_line::here()) : _source(sl), _active(true) {
+    if (auto res = initialize(Target); !res) res.error().add_footprint().print_as_fatal(sl);
   }
 
-  drawing(ID3D11RenderTargetView* Target, ID3D11DepthStencilView* DepthStencil, const source_line& sl) : drawing(sl) {
-    const auto sp = slot::get();
-    if (sp->target.index() != 0) error(errors::invalid_operation, "already in drawing").print_as_fatal(sl);
-    const auto d3d = yw::d3d();
-    d3d.context()->OMSetRenderTargets(1, &Target, DepthStencil);
-    sp->target = Target;
-    _id = sp->id;
+  drawing(ID3D11RenderTargetView* Target, ID3D11DepthStencilView* Depth, const source_line& sl = source_line::here())
+    : _source(sl), _active(true) {
+    if (auto res = initialize(Target, Depth); !res) res.error().add_footprint().print_as_fatal(sl);
   }
 
-  static bool not_drawing() noexcept { return !_sp || slot::get()->target.index() == 0; }
-  static bool d2d_drawing() noexcept { return _sp && slot::get()->target.index() == 1; }
-  static bool d3d_drawing() noexcept { return _sp && slot::get()->target.index() == 2; }
+  explicit operator bool() const noexcept { return _target != nullptr && _type != 0; }
+
+  static bool not_drawing() noexcept { return _target == nullptr && _type == 0; }
+  static bool d2d_drawing() noexcept { return _target != nullptr && _type == 2; }
+  static bool d3d_drawing() noexcept { return _target != nullptr && _type == 3; }
+
+  template<typename... As> requires constructible<drawing, As...>
+  static std::expected<drawing, error> create(As&&... Args) {
+    drawing d(sl);
+    if (auto res = d.initialize(static_cast<As&&>(Args)...)) return d;
+    else return res.error().relay();
+  }
 
   std::expected<void, error> close() {
+    if (!_active) return {};
     if (d2d_drawing()) {
-      const auto d2d = yw::d2d();
-      hresult_test(d2d.context()->EndDraw);
-      d2d.context()->SetTarget(nullptr);
+      hresult_test(d2d::context()->EndDraw);
+      d2d::context()->SetTarget(nullptr);
     } else if (d3d_drawing()) {
-      const auto d3d = yw::d3d();
-      d3d.context()->OMSetRenderTargets(0, nullptr, nullptr);
-    } else if (!_sp) return{};
-    slot::get()->target = std::monostate();
+      d3d::context()->OMSetRenderTargets(0, nullptr, nullptr);
+    }
+    _target = nullptr;
+    _type = 0;
+    _active = false;
     return {};
   }
 };
-
-// class drawing {
-//   inline static void* _target = nullptr;
-//   enum class target_type { none, d2d, d3d };
-//   inline static target_type _target_type = target_type::none;
-//   /// \note Errors often occur in the destructor -> close-> EndDraw. In this case,
-//   ///       the source location cannot be determined, so the position at the time of creation is retained instead.
-//   source _source;
-//   bool _active = false;
-//   drawing(const drawing&) = delete;
-//   drawing& operator=(const drawing&) = delete;
-//   explicit drawing(const source& src) : _source(src), _active(true) {}
-
-// public:
-//   ~drawing() noexcept { close(); }
-//   drawing() noexcept = default;
-//   drawing(drawing&& Other) : _source(std::move(Other._source)) {}
-//   drawing& operator=(drawing&& Other) {
-//     if (this == &Other) return *this;
-//     _source = Other._source;
-//     _active = std::exchange(Other._active, false);
-//     return *this;
-//   }
-
-//   static std::expected<drawing, error> create(ID2D1Image* Target, const source& Src = {}) {
-//     if (!not_drawing()) {
-//       if (d2d_drawing()) return unexpected_error(errors::invalid_operation, "already begun d2d drawing");
-//       else return unexpected_error(errors::invalid_operation, "already begun d3d drawing");
-//     } else if (Target == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
-//     const auto& d2d = yw::d2d();
-//     _target = Target;
-//     _target_type = target_type::d2d;
-//     d2d.context()->SetTarget(Target);
-//     d2d.context()->BeginDraw();
-//     return drawing(Src);
-//   }
-
-//   static std::expected<drawing, error> create(ID3D11RenderTargetView* Target, const source& Src = {}) {
-//     if (!not_drawing()) {
-//       if (d2d_drawing()) return unexpected_error(errors::invalid_operation, "already begun d2d drawing");
-//       else return unexpected_error(errors::invalid_operation, "already begun d3d drawing");
-//     } else if (Target == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
-//     const auto& d3d = yw::d3d();
-//     _target = Target;
-//     _target_type = target_type::d3d;
-//     d3d.context()->OMSetRenderTargets(1, &Target, nullptr);
-//     return drawing(Src);
-//   }
-
-//   static std::expected<drawing, error> create(
-//     ID3D11RenderTargetView* Target, ID3D11DepthStencilView* DepthStencil, const source& Src = {}) {
-//     if (!not_drawing()) {
-//       if (d2d_drawing()) return unexpected_error(errors::invalid_operation, "already begun d2d drawing");
-//       else return unexpected_error(errors::invalid_operation, "already begun d3d drawing");
-//     } else if (Target == nullptr) return unexpected_error(errors::invalid_argument, "null rendertarget");
-//     else if (DepthStencil == nullptr) return unexpected_error(errors::invalid_argument, "null depth stencil view");
-//     const auto& d3d = yw::d3d();
-//     _target = Target;
-//     _target_type = target_type::d3d;
-//     d3d.context()->OMSetRenderTargets(1, &Target, DepthStencil);
-//     return drawing(Src);
-//   }
-
-//   static bool d2d_drawing() noexcept { return _target_type == target_type::d2d; }
-//   static bool d3d_drawing() noexcept { return _target_type == target_type::d3d; }
-//   static bool not_drawing() noexcept { return _target_type == target_type::none; }
-
-//   std::expected<void, error> close() noexcept {
-//     try {
-//       if (!_active) return {};
-//       _active = false;
-//       if (d2d_drawing()) {
-//         const auto& d2d = yw::d2d();
-//         hresult_test(d2d.context()->EndDraw);
-//         d2d.context()->SetTarget(nullptr);
-//       } else if (d3d_drawing()) d3d().context()->OMSetRenderTargets(0, nullptr, nullptr);
-//       _target = nullptr;
-//       _target_type = target_type::none;
-//     } catch (...) { return unexpected_error(errors::operation_failed, "unknown error occurred while closing
-//     drawing"); } return {};
-//   }
-// };
 
 /// MARK: draw line
 
@@ -189,7 +110,7 @@ inline std::expected<void, error> fill_rectangle(float2 pos, float2 size) {
   return {};
 }
 
-//////////////////////////////////// MARK: draw/fill_round_rectangle
+/// MARK: draw/fill_round_rectangle
 
 inline std::expected<void, error> draw_round_rectangle(
   float2 pos, float2 size, float2 radius, float1 border_width = 1.0f) {
@@ -250,9 +171,8 @@ inline std::expected<void, error> fill_geometry(ID2D1Geometry* geometry) {
 
 //////////////////////////////////////// MARK: draw_text
 
-inline std::expected<void, error> draw_text(
-  float2 Pos, float2 Size, string_view<wchar_t> Text, IDWriteTextFormat* Format,
-  D2D1_DRAW_TEXT_OPTIONS Options = D2D1_DRAW_TEXT_OPTIONS_NONE) {
+inline std::expected<void, error> draw_text(float2 Pos, float2 Size, string_view<wchar_t> Text,
+  IDWriteTextFormat* Format, D2D1_DRAW_TEXT_OPTIONS Options = D2D1_DRAW_TEXT_OPTIONS_NONE) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "not in d2d drawing"));
   const auto d2d = yw::d2d();
   const auto brush = yw::brush();

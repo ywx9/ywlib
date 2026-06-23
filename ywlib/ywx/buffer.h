@@ -5,23 +5,13 @@ namespace yw {
 
 template<typename T> class staging_buffer;
 
-//////////////////////////////////////// MARK: BUFFER
+/// MARK: buffer
 
 template<typename T> class buffer {
 protected:
   comptr<::ID3D11Buffer> _buffer{};
   uint32_t _size{};
-
   buffer(uint1 Size) noexcept : _size(Size.x) {}
-  std::expected<void, error> validate_initialized(const char* message = "Uninitialized buffer") const {
-    if (_buffer) return {};
-    return std::unexpected(error(errors::not_initialized, message));
-  }
-
-  std::expected<void, error> validate_same_size(uint32_t size, const char* message = "Buffer size mismatch") const {
-    if (_size == size) return {};
-    return std::unexpected(error(errors::invalid_argument, message));
-  }
 
 public:
   using value_type = T;
@@ -33,27 +23,27 @@ public:
   buffer() noexcept = default;
 
   std::expected<void, error> copy_from(const buffer& src) {
-    if (auto res = src.validate_initialized("Uninitialized source buffer"); !res) return res.error().relay();
-    if (auto res = validate_initialized("Uninitialized destination buffer"); !res) return res.error().relay();
-    if (auto res = validate_same_size(src._size); !res) return res.error().relay();
-    d3d().context()->CopyResource(_buffer.get(), src._buffer.get());
+    if (!src) return std::unexpected(error(errors::invalid_argument, "uninitialized source buffer"));
+    if (!*this) return std::unexpected(error(errors::invalid_argument, "uninitialized destination buffer"));
+    if (src.size() != size()) return std::unexpected(error(errors::invalid_operation, "unmatched buffer sizes"));
+    d3d::context()->CopyResource(_buffer.get(), src._buffer.get());
     return {};
   }
 
   uint32_t size() const noexcept { return _size; }
   ID3D11Buffer* d3d_buffer() const { return _buffer.get(); }
 
-  std::expected<std::vector<T>, error> copy_to_cpu() const;
-  std::expected<std::vector<T>, error> copy_to_cpu(staging_buffer<T>&) const;
+  std::expected<void, error> copy_to_cpu(void* o) const;
+  std::vector<T> copy_to_cpu(const source_line& sl = source_line::here()) const;
 };
 
-//////////////////////////////////////// MARK: STAGING BUFFER
+/// MARK: staging_buffer
 
 template<typename T> class staging_buffer : public buffer<T> {
   std::expected<void, error> initialize(uint1 Size) {
     this->_size = Size.x;
     D3D11_BUFFER_DESC desc{UINT(sizeof(T)) * Size.x, D3D11_USAGE_STAGING, {}, D3D11_CPU_ACCESS_READ, {}, 0};
-    hresult_test(d3d().device()->CreateBuffer, &desc, nullptr, &this->_buffer.get());
+    hresult_test(d3d::device()->CreateBuffer, &desc, nullptr, &this->_buffer.get());
     return {};
   }
 
@@ -71,33 +61,46 @@ public:
     if (auto res = this->copy_from(b); !res) res.error().print_as_fatal(sl);
   }
 
-  std::expected<std::vector<T>, error> copy_to_cpu() const {
-    if (auto res = this->validate_initialized("Uninitialized staging buffer"); !res) return res.error().relay();
-    std::vector<T> Data(buffer<T>::size());
+  template<typename... As> requires constructible<staging_buffer, As...>
+  static std::expected<staging_buffer, error> create(As&&... Args) {
+    staging_buffer b;
+    if (auto res = b.initialize(static_cast<As&&>(Args)...)) return b;
+    else return res.error().relay();
+  }
+
+  std::expected<void, error> copy_to_cpu(void* o) const {
+    const auto n = buffer<T>::size();
+    if (n == 0) return std::unexpected(error(errors::invalid_operation, "empty buffer"));
     D3D11_MAPPED_SUBRESOURCE mapped;
-    hresult_test(d3d().context()->Map, buffer<T>::d3d_buffer(), 0, D3D11_MAP_READ, 0, &mapped);
-    std::memcpy(Data.data(), mapped.pData, buffer<T>::size() * sizeof(T));
-    d3d().context()->Unmap(buffer<T>::d3d_buffer(), 0);
+    if (const auto hr = d3d::context()->Map(buffer<T>::d3d_buffer(), 0, D3D11_MAP_READ, 0, &mapped); FAILED(hr))
+      return std::unexpected(error(errors::operation_failed, "failed to map staging buffer for reading"));
+    std::memcpy(o, mapped.pData, n * sizeof(T));
+    d3d::context()->Unmap(buffer<T>::d3d_buffer(), 0);
+    return {};
+  }
+
+  std::vector<T> copy_to_cpu(const source_line& sl = source_line::here()) const {
+    std::vector<T> Data(buffer<T>::size());
+    if (auto res = copy_to_cpu(Data.data()); !res) res.error().add_footprint().print_as_warning(sl);
     return Data;
   }
 };
 
 template<typename T> staging_buffer(const buffer<T>&) -> staging_buffer<T>;
 
-template<typename T> std::expected<std::vector<T>, error> buffer<T>::copy_to_cpu() const {
-  if (auto res = validate_initialized("Uninitialized buffer"); !res) return res.error().relay();
-  staging_buffer<T> staging(*this);
-  if (auto res = staging.copy_to_cpu()) return std::move(*res);
-  else return res.error().relay();
+template<typename T> inline std::expected<void, error> buffer<T>::copy_to_cpu(void* o) const {
+  if (auto stb = staging_buffer<T>::create(*this); !stb) return stb.error().relay();
+  else if (auto res = stb->copy_to_cpu(o); !res) return res.error().relay();
+  else return {};
 }
 
-template<typename T>
-std::expected<std::vector<T>, error> buffer<T>::copy_to_cpu(staging_buffer<T>& Staging) const {
-  if (auto res = Staging.copy_from(*this)) return Staging.copy_to_cpu();
-  else return res.error().relay();
+template<typename T> std::vector<T> buffer<T>::copy_to_cpu(const source_line& sl) const {
+  std::vector<T> Data(buffer<T>::size());
+  if (auto res = copy_to_cpu(Data.data()); !res) res.error().add_footprint().print_as_warning(sl);
+  return Data;
 }
 
-//////////////////////////////////////// MARK: CONSTANT BUFFER
+/// MARK: constant_buffer
 
 template<typename T> requires(sizeof(T) % 16 == 0) class constant_buffer : public buffer<T> {
   static constexpr D3D11_BUFFER_DESC desc{
@@ -106,7 +109,7 @@ template<typename T> requires(sizeof(T) % 16 == 0) class constant_buffer : publi
   std::expected<void, error> initialize(const T& Val) {
     this->_size = 1;
     D3D11_SUBRESOURCE_DATA srd(&Val, 0, 0);
-    hresult_test(d3d().device()->CreateBuffer, &desc, &srd, &this->_buffer.get());
+    hresult_test(d3d::device()->CreateBuffer, &desc, &srd, &this->_buffer.get());
     return {};
   }
 
@@ -120,12 +123,19 @@ public:
     if (auto res = initialize(Val); !res) res.error().print_as_fatal(sl);
   }
 
+  template<typename... As> requires constructible<constant_buffer, As...>
+  static std::expected<constant_buffer, error> create(As&&... Args) {
+    constant_buffer b;
+    if (auto res = b.initialize(static_cast<As&&>(Args)...)) return b;
+    else return res.error().relay();
+  }
+
   std::expected<void, error> set(const T& Val) {
     if (auto res = this->validate_initialized("Uninitialized constant buffer"); !res) return res.error().relay();
     D3D11_MAPPED_SUBRESOURCE mapped;
-    hresult_test(d3d().context()->Map, buffer<T>::d3d_buffer(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+    hresult_test(d3d::context()->Map, buffer<T>::d3d_buffer(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
     std::memcpy(mapped.pData, &Val, sizeof(T));
-    d3d().context()->Unmap(buffer<T>::d3d_buffer(), 0);
+    d3d::context()->Unmap(buffer<T>::d3d_buffer(), 0);
     return {};
   }
 };
@@ -144,11 +154,11 @@ template<typename T> class structured_buffer : public buffer<T> {
       UINT(sizeof(T)) * count, {}, D3D11_BIND_SHADER_RESOURCE, {}, D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, sizeof(T)};
     if (Data) {
       D3D11_SUBRESOURCE_DATA srd{Data, int(sizeof(T))};
-      hresult_test(d3d().device()->CreateBuffer, &bd, &srd, &(::ID3D11Buffer*&)*this);
-    } else hresult_test(d3d().device()->CreateBuffer, &bd, nullptr, &(::ID3D11Buffer*&)*this);
+      hresult_test(d3d::device()->CreateBuffer, &bd, &srd, &(::ID3D11Buffer*&)*this);
+    } else hresult_test(d3d::device()->CreateBuffer, &bd, nullptr, &(::ID3D11Buffer*&)*this);
     D3D11_BUFFER_SRV buffer_srv{.FirstElement = 0, .NumElements = count};
     D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{{}, D3D11_SRV_DIMENSION_BUFFER, buffer_srv};
-    hresult_test(d3d().device()->CreateShaderResourceView, (::ID3D11Buffer*)*this, &srv_desc, &_srv.get());
+    hresult_test(d3d::device()->CreateShaderResourceView, (::ID3D11Buffer*)*this, &srv_desc, &_srv.get());
     return {};
   }
 
@@ -169,8 +179,7 @@ public:
     if (auto res = initialize(Data, Size); !res) res.error().print_as_fatal(sl);
   }
 
-  template<contiguous_range<T> Rg>
-  structured_buffer(Rg&& rg, const source_line& sl = source_line::here()) {
+  template<contiguous_range<T> Rg> structured_buffer(Rg&& rg, const source_line& sl = source_line::here()) {
     if (auto res = initialize(yw::data(rg), yw::size(rg)); !res) res.error().print_as_fatal(sl);
   }
 
@@ -178,7 +187,7 @@ public:
     if (auto res = this->validate_initialized("Uninitialized structured buffer"); !res) return res.error().relay();
     if (Size.x != 0 && !Data) return std::unexpected(error(errors::invalid_argument, "null source data"));
     if (auto res = this->validate_same_size(Size.x); !res) return res.error().relay();
-    d3d().context()->UpdateSubresource((::ID3D11Buffer*)*this, 0, nullptr, Data, 0, 0);
+    d3d::context()->UpdateSubresource((::ID3D11Buffer*)*this, 0, nullptr, Data, 0, 0);
     return {};
   }
 };
@@ -196,11 +205,12 @@ template<typename T> class rw_structured_buffer : public buffer<T> {
     D3D11_BUFFER_DESC desc{UINT(sizeof(T)) * this->size(), {}, 0x80, {}, 0x40, sizeof(T)};
     if (Data) {
       D3D11_SUBRESOURCE_DATA srd{Data, int(sizeof(T))};
-      hresult_test(d3d().device()->CreateBuffer, &desc, &srd, &(::ID3D11Buffer*&)*this);
-    } else hresult_test(d3d().device()->CreateBuffer, &desc, nullptr, &(::ID3D11Buffer*&)*this);
-    hresult_test(d3d().device()->CreateUnorderedAccessView, (::ID3D11Buffer*)*this, nullptr, &_uav.get());
+      hresult_test(d3d::device()->CreateBuffer, &desc, &srd, &(::ID3D11Buffer*&)*this);
+    } else hresult_test(d3d::device()->CreateBuffer, &desc, nullptr, &(::ID3D11Buffer*&)*this);
+    hresult_test(d3d::device()->CreateUnorderedAccessView, (::ID3D11Buffer*)*this, nullptr, &_uav.get());
     return {};
   }
+
 public:
   using buffer<T>::operator ::ID3D11Buffer*&;
   using buffer<T>::operator ::ID3D11Buffer*;
@@ -222,7 +232,7 @@ public:
     if (auto res = this->validate_initialized("Uninitialized rw_structured_buffer"); !res) return res.error().relay();
     if (Size.x != 0 && !Data) return std::unexpected(error(errors::invalid_argument, "null source data"));
     if (auto res = this->validate_same_size(Size.x); !res) return res.error().relay();
-    d3d().context()->UpdateSubresource(buffer<T>::d3d_buffer(), 0, nullptr, Data, 0, 0);
+    d3d::context()->UpdateSubresource(buffer<T>::d3d_buffer(), 0, nullptr, Data, 0, 0);
     return {};
   }
 };

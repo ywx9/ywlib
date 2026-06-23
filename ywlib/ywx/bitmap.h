@@ -16,49 +16,43 @@ private:
   uint2 _size;
 
   std::expected<void, error> initialize(uint2 sz) {
-    const auto d2d = yw::d2d();
-    hresult_test(d2d.context()->CreateBitmap, D2D1_SIZE_U{sz.x, sz.y}, nullptr, 0, &properties, &_bitmap.get());
+    hresult_test(d2d::context()->CreateBitmap, D2D1_SIZE_U{sz.x, sz.y}, nullptr, 0, &properties, &_bitmap.get());
     _size = sz;
     return {};
   }
 
   std::expected<void, error> initialize(const std::filesystem::path& p) {
-    const auto d2d = yw::d2d();
-    const auto wic = yw::wic();
     comptr<IWICBitmapDecoder> decoder;
     const auto option = WICDecodeMetadataCacheOnLoad;
-    hresult_test(wic.factory()->CreateDecoderFromFilename, p.c_str(), nullptr, GENERIC_READ, option, &decoder.get());
+    hresult_test(wic::factory()->CreateDecoderFromFilename, p.c_str(), nullptr, GENERIC_READ, option, &decoder.get());
     comptr<IWICBitmapFrameDecode> frame;
     hresult_test(decoder->GetFrame, 0, &frame.get());
     comptr<IWICFormatConverter> converter;
-    hresult_test(wic.factory()->CreateFormatConverter, &converter.get());
-    hresult_test(
-      converter->Initialize, frame.get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0.0,
-      WICBitmapPaletteTypeMedianCut);
+    hresult_test(wic::factory()->CreateFormatConverter, &converter.get());
+    hresult_test(converter->Initialize, frame.get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr,
+      0.0, WICBitmapPaletteTypeMedianCut);
     hresult_test(converter->GetSize, &_size.x, &_size.y);
-    hresult_test(d2d.context()->CreateBitmapFromWicBitmap, converter.get(), &properties, &_bitmap.get());
+    hresult_test(d2d::context()->CreateBitmapFromWicBitmap, converter.get(), &properties, &_bitmap.get());
     return {};
   }
 
   std::expected<void, error> initialize(IDXGISwapChain1* sc) {
     if (!sc) return std::unexpected(error(errors::invalid_argument, "null swapchain"));
-    const auto d2d = yw::d2d();
     DXGI_SWAP_CHAIN_DESC1 scdesc{};
     hresult_test(sc->GetDesc1, &scdesc);
     _size = uint2{scdesc.Width, scdesc.Height};
     comptr<IDXGISurface> surface;
     hresult_test(sc->GetBuffer, 0, __uuidof(IDXGISurface), reinterpret_cast<void**>(&surface.get()));
     D2D1_BITMAP_PROPERTIES1 bp{pixelformat, 96.0f, 96.0f, D2D1_BITMAP_OPTIONS(3), nullptr};
-    hresult_test(d2d.context()->CreateBitmapFromDxgiSurface, surface.get(), &bp, &_bitmap.get());
+    hresult_test(d2d::context()->CreateBitmapFromDxgiSurface, surface.get(), &bp, &_bitmap.get());
     return {};
   }
 
   std::expected<void, error> initialize(ID2D1Bitmap1* bmp) {
     if (!bmp) return std::unexpected(error(errors::invalid_argument, "null bitmap"));
-    const auto d2d = yw::d2d();
     const auto [width, height] = bmp->GetPixelSize();
     _size = uint2{width, height};
-    hresult_test(d2d.context()->CreateBitmap, D2D1_SIZE_U{width, height}, nullptr, 0, &properties, &_bitmap.get());
+    hresult_test(d2d::context()->CreateBitmap, D2D1_SIZE_U{width, height}, nullptr, 0, &properties, &_bitmap.get());
     D2D1_RECT_U rect{0, 0, width, height};
     D2D1_POINT_2U pt{0, 0};
     hresult_test(_bitmap->CopyFromBitmap, &pt, bmp, &rect);
@@ -92,6 +86,13 @@ public:
     if (auto res = initialize(Bitmap); !res) res.error().print_as_fatal(sl);
   }
 
+  template<typename... As> requires constructible<bitmap, As...>
+  static std::expected<bitmap, error> create(As&&... Args) {
+    bitmap b;
+    if (auto res = b.initialize(static_cast<As&&>(Args)...)) return b;
+    else return res.error().relay();
+  }
+
   uint2 size() const noexcept { return _size; }
 
   drawing begin_draw(const source_line& sl = source_line::here()) {
@@ -102,26 +103,23 @@ public:
   drawing begin_draw(const color& clear_color, const source_line& sl = source_line::here()) {
     if (!*this) error(errors::invalid_operation, "drawing on uninitialized bitmap").print_as_fatal(sl);
     auto d = drawing(_bitmap.get(), sl);
-    yw::d2d().context()->Clear(reinterpret_cast<const D2D1::ColorF*>(&clear_color));
+    d2d::context()->Clear(reinterpret_cast<const D2D1::ColorF*>(&clear_color));
     return d;
   }
 
   std::expected<void, error> save_as(const std::filesystem::path& p, const GUID& FileFormat) const {
     if (!*this) return std::unexpected(error(errors::not_initialized));
-    const auto wic = yw::wic();
-    const auto d2d = yw::d2d();
     comptr<IWICStream> stream;
-    if (!wic.factory()) print("wic.factory() is null");
-    hresult_test(wic.factory()->CreateStream, &stream.get());
+    hresult_test(wic::factory()->CreateStream, &stream.get());
     hresult_test(stream->InitializeFromFilename, p.c_str(), GENERIC_WRITE);
     comptr<IWICBitmapEncoder> encoder;
-    hresult_test(wic.factory()->CreateEncoder, FileFormat, nullptr, &encoder.get());
+    hresult_test(wic::factory()->CreateEncoder, FileFormat, nullptr, &encoder.get());
     hresult_test(encoder->Initialize, stream.get(), WICBitmapEncoderNoCache);
     comptr<IWICBitmapFrameEncode> frame;
     hresult_test(encoder->CreateNewFrame, &frame.get(), nullptr);
     hresult_test(frame->Initialize, nullptr);
     comptr<IWICImageEncoder> image_encoder;
-    hresult_test(wic.factory()->CreateImageEncoder, d2d.device(), &image_encoder.get());
+    hresult_test(wic::factory()->CreateImageEncoder, d2d::device(), &image_encoder.get());
     hresult_test(image_encoder->WriteFrame, _bitmap.get(), frame.get(), nullptr);
     hresult_test(frame->Commit);
     hresult_test(encoder->Commit);
