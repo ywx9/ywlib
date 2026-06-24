@@ -174,7 +174,6 @@ protected:
   }
 
 public:
-
   ~general_handle() noexcept { slot::erase(_id); }
   general_handle() noexcept = default;
   general_handle(const general_handle&) = delete;

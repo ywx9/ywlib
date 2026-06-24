@@ -203,104 +203,119 @@ template<char_type C> inline const string<C> empty_string{};
 
 /// MARK: bool_to_string
 
-template<char_type C> constexpr string<C> bool_to_string(bool Value) {
-  constexpr C _true[] = {'t', 'r', 'u', 'e'};
-  constexpr C _false[] = {'f', 'a', 'l', 's', 'e'};
-  return Value ? string<C>(string_view<C>(_true, 4)) : string<C>(string_view<C>(_false, 5));
+template<char_type C> constexpr C* bool_to_string(bool Value, C* Out) {
+  if (Value) *Out++ = 't', *Out++ = 'r', *Out++ = 'u', *Out++ = 'e';
+  else *Out++ = 'f', *Out++ = 'a', *Out++ = 'l', *Out++ = 's', *Out++ = 'e';
+  return Out;
 }
+
+template<char_type C> constexpr string<C> bool_to_string(bool Value) {
+  string<C> result(Value ? 4 : 5);
+  bool_to_string<C>(Value, result.data());
+  return result;
+}
+
 constexpr string<char> bool_to_string(bool Value) { return bool_to_string<char>(Value); }
 
 /// MARK: uint_to_string
 
-template<char_type C> constexpr string<C> uint_to_string(unsigned_integral auto Value) {
-  if (Value == 0) return string<C>(1, C('0'));
-  auto u = static_cast<uint64_t>(Value);
+template<char_type C> constexpr C* uint_to_string(uint64_t Value, C* Out) {
+  if (Value == 0) {
+    *Out++ = '0';
+    return Out;
+  }
   unsigned keta = 0;
-  for (auto u_ = u; u_ > 0; u_ /= 10) ++keta;
-  string<C> result(keta);
-  for (auto p = result.data() + keta; u > 0; u /= 10) *--p = static_cast<C>('0' + (u % 10));
+  for (auto u = Value; u > 0; u /= 10) ++keta;
+  for (auto k = keta; k > 0;) Out[--k] = static_cast<C>('0' + (Value % 10)), Value /= 10;
+  return Out + keta;
+}
+
+template<char_type C> constexpr string<C> uint_to_string(unsigned_integral auto Value) {
+  string<C> result(19);
+  result.resize(uint_to_string<C>(Value, result.data()) - result.data());
   return result;
 }
+
 constexpr string<char> uint_to_string(unsigned_integral auto Value) { return uint_to_string<char>(Value); }
 
 /// MARK: int_to_string
 
-template<char_type C> constexpr string<C> int_to_string(integral auto Value) {
-  if constexpr (uint_type<decltype(Value)>) return uint_to_string<C>(Value);
-  if (Value == 0) return string<C>(1, C('0'));
-  const bool minus = Value < 0;
-  auto u = static_cast<uint64_t>(minus ? -Value : Value);
+template<char_type C> constexpr C* int_to_string(int64_t Value, C* Out) {
+  if (Value == 0) {
+    *Out++ = '0';
+    return Out;
+  }
+  if (Value < 0) {
+    *Out++ = '-';
+    Value = -Value;
+  }
   unsigned keta = 0;
-  for (auto u_ = u; u_ != 0; u_ /= 10) ++keta;
-  string<C> result(keta + minus, C());
-  if (minus) result[0] = '-';
-  for (auto p = result.data() + result.size(); u != 0; u /= 10) *(--p) = static_cast<C>('0' + (u % 10));
+  for (auto u = Value; u > 0; u /= 10) ++keta;
+  for (auto k = keta; k > 0;) Out[--k] = static_cast<C>('0' + (Value % 10)), Value /= 10;
+  return Out + keta;
+}
+
+template<char_type C> constexpr string<C> int_to_string(integral auto Value) {
+  if constexpr (uint_type<decltype(Value)>) return uint_to_string<C>(static_cast<uint64_t>(Value));
+  string<C> result(19);
+  result.resize(int_to_string<C>(Value, result.data()) - result.data());
   return result;
 }
+
 constexpr string<char> int_to_string(integral auto Value) { return int_to_string<char>(Value); }
 
 /// MARK: float_to_string
 
-template<char_type C> constexpr string<C> float_to_string(floating auto Value) {
-  using T = decltype(Value);
+template<char_type C> constexpr C* float_to_string(long double Value, C* Out) {
   using limits = std::numeric_limits<uint64_t>;
-  constexpr C _nan[] = {'n', 'a', 'n'};
-  constexpr C _inf[] = {'i', 'n', 'f'};
-  constexpr C _neg_inf[] = {'-', 'i', 'n', 'f'};
-  constexpr C _zero[] = {'0'};
-  constexpr C _neg_zero[] = {'-', '0'};
-  if (std::isnan(Value)) return string(string_view<C>(_nan, 3));
-  if (std::isinf(Value)) return Value < 0 ? string(string_view<C>(_neg_inf, 4)) : string(string_view<C>(_inf, 3));
-  const bool minus = std::signbit(Value);
-  long double abs_value = static_cast<long double>(minus ? -Value : Value);
-  if (abs_value == 0) return minus ? string(string_view<C>(_neg_zero, 2)) : string(string_view<C>(_zero, 1));
-  constexpr uint64_t scale = 1000000;
-  constexpr long double max_uint64 = static_cast<long double>(limits::max());
-  auto append_fixed6 = [](string<C>& s, uint64_t frac) {
-    const size_t offset = s.size();
-    s.resize(offset + 6, C('0'));
-    for (size_t i = 0; i < 6; ++i) {
-      s[offset + 5 - i] = C('0' + (frac % 10));
-      frac /= 10;
-    }
-  };
-  auto append_sign = [&](string<C>& s) {
-    if (minus) s += C('-');
-  };
-  auto to_exponential = [&]() {
-    int exponent = 0;
-    long double normalized = abs_value;
-    while (normalized >= 10) normalized /= 10, ++exponent;
-    uint64_t int_part = static_cast<uint64_t>(normalized);
-    uint64_t frac_part = static_cast<uint64_t>((normalized - int_part) * scale + 0.5L);
-    if (frac_part >= scale) {
-      ++int_part, frac_part -= scale;
-      if (int_part >= 10) int_part = 1, ++exponent;
-    }
-    string<C> s;
-    append_sign(s);
-    s += uint_to_string<C>(int_part), s += C('.');
-    append_fixed6(s, frac_part);
-    s += C('e'), s += C('+');
-    s += uint_to_string<C>(static_cast<uint64_t>(exponent));
-    return s;
-  };
-  if (abs_value >= max_uint64) return to_exponential();
-  uint64_t int_part = static_cast<uint64_t>(abs_value);
-  uint64_t frac_part = static_cast<uint64_t>((abs_value - int_part) * scale + 0.5L);
-  if (frac_part >= scale) ++int_part, frac_part -= scale;
-  if (int_part >= limits::max()) return to_exponential();
-  string<C> s;
-  append_sign(s);
-  s += uint_to_string<C>(int_part);
-  s += C('.');
-  append_fixed6(s, frac_part);
-  if (int_part != 0) {
-    while (!s.empty() && s.back() == C('0')) s.pop_back();
-    if (!s.empty() && s.back() == C('.')) s.pop_back();
+  if (std::isnan(Value)) {
+    *Out++ = 'n', *Out++ = 'a', *Out++ = 'n';
+    return Out;
+  } else if (std::signbit(Value)) *Out++ = '-', Value = -Value;
+  if (std::isinf(Value)) {
+    *Out++ = 'i', *Out++ = 'n', *Out++ = 'f';
+    return Out;
+  } else if (Value == 0) {
+    *Out++ = '0';
+    return Out;
   }
-  return s;
+  uint64_t int_part = 0, frac_part = 0, exponent = 0;
+  constexpr uint64_t scale = 1'000'000;
+  constexpr long double threshold = static_cast<long double>(uint64_t(1) << 63);
+  if (Value >= threshold) {
+    while (Value >= 10) Value /= 10, ++exponent;
+  }
+  int_part = static_cast<uint64_t>(Value);
+  frac_part = static_cast<uint64_t>((Value - int_part) * scale + 0.5L);
+  if (frac_part >= scale) {
+    ++int_part, frac_part = 0;
+    if (exponent && int_part == 10) int_part = 1, ++exponent;
+  }
+  if (frac_part == 0) {
+    if (int_part == 0) {
+      *Out++ = '0', *Out++ = '.', *Out++ = '0', *Out++ = '0';
+      *Out++ = '0', *Out++ = '0', *Out++ = '0', *Out++ = '0';
+    } else Out = uint_to_string<C>(int_part, Out);
+  } else {
+    Out = uint_to_string<C>(int_part, Out);
+    *Out++ = '.';
+    for (auto k = 100'000ull; frac_part != 0; frac_part %= k, k /= 10) {
+      *Out++ = '0' + frac_part / k;
+    }
+  }
+  if (exponent) {
+    *Out++ = 'e';
+    Out = uint_to_string<C>(exponent, Out);
+  }
+  return Out;
 }
+
+template<char_type C> constexpr string<C> float_to_string(floating auto Value) {
+  string<C> result(27);
+  result.resize(float_to_string<C>(Value, result.data()) - result.data());
+  return result;
+}
+
 constexpr string<char> float_to_string(floating auto value) { return float_to_string<char>(value); }
 
 /// MARK: vtos

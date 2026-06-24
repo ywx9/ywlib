@@ -19,6 +19,10 @@
   if (const auto hr = (func)(__VA_ARGS__); FAILED(hr)) \
   return std::unexpected(error(errors::operation_failed, #func " failed", int32_t(hr)))
 
+#define win32_bool_test(func, ...)                        \
+  if (!(func)(__VA_ARGS__))                               \
+  return std::unexpected(error(errors::operation_failed, #func " failed", int32_t(::GetLastError())))
+
 namespace yw {
 
 /// MARK: ok/yes
@@ -60,20 +64,49 @@ public:
 } com_list_to_release;
 } // namespace system
 
-/// MARK: instance
+/// MARK: interface
 
 /// base handle class for window and controls
-class interface : public general_handle {
+class interface {
 public:
-  struct slot : general_slot {
+  struct slot {
+    inline static slotset<slot> slots{};
+    template<typename H> static typename H::slot* get(slotset<slot>::slotid Id) noexcept {
+      return static_cast<typename H::slot*>(slots.get(Id));
+    }
+    slotset<slot>::slotid id;
+    yw::source_line source_line = source_line::null();
     virtual bool attachable() const { return false; }
-    virtual std::expected<void, error> attach(general_slotid Child) { return {}; }
-    virtual std::expected<void, error> detach(general_slotid Child) { return {}; }
+    virtual std::expected<void, error> attach(slotset<slot>::slotid Child) { return {}; }
+    virtual std::expected<void, error> detach(slotset<slot>::slotid Child) { return {}; }
     virtual std::expected<void, error> make_dirty() = 0;
     virtual std::expected<void, error> make_messy() = 0;
-    virtual general_slotid get_window_id() const = 0;
   };
+
+protected:
+  slotset<slot>::slotid _id{};
+  explicit interface(slotset<slot>::slotid Id) : _id(Id) {}
+  template<typename H> static typename H::slot* get_slot(const H* h) { return slot::get<H>(h->_id); }
+
+public:
+  using slotid = slotset<slot>::slotid;
+
+  virtual ~interface() noexcept { slot::slots.erase(_id); }
+  interface() noexcept = default;
+  interface(const interface&) = delete;
+  interface& operator=(const interface&) = delete;
+  interface(interface&& Other) noexcept : _id(std::exchange(Other._id, {})) {}
+  interface& operator=(interface&& Other) noexcept {
+    if (this != &Other) {
+      slot::slots.erase(_id);
+      _id = std::exchange(Other._id, {});
+    }
+    return *this;
+  }
+  slotset<slot>::slotid id() const noexcept { return _id; }
+  explicit operator bool() const noexcept;
 };
+
 
 /// MARK: wclass
 

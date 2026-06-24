@@ -142,7 +142,7 @@ public:
 
 template<typename T> constant_buffer(const T&) -> constant_buffer<T>;
 
-//////////////////////////////////////// MARK: STRUCTURED BUFFER
+/// MARK: structured_buffer
 
 template<typename T> class structured_buffer : public buffer<T> {
   comptr<::ID3D11ShaderResourceView> _srv{};
@@ -171,6 +171,7 @@ public:
   explicit operator ::ID3D11ShaderResourceView*() const noexcept { return _srv.get(); }
 
   structured_buffer() noexcept = default;
+
   structured_buffer(uint1 Size, const source_line& sl = source_line::here()) {
     if (auto res = initialize(nullptr, Size); !res) res.error().print_as_fatal(sl);
   }
@@ -183,6 +184,13 @@ public:
     if (auto res = initialize(yw::data(rg), yw::size(rg)); !res) res.error().print_as_fatal(sl);
   }
 
+  template<typename... Ts> requires constructible<structured_buffer, Ts...>
+  static std::expected<structured_buffer, error> create(Ts&&... Args) {
+    structured_buffer b;
+    if (auto res = b.initialize(static_cast<Ts&&>(Args)...)) return b;
+    else return res.error().relay();
+  }
+
   std::expected<void, error> copy_from(const T* Data, uint1 Size) {
     if (auto res = this->validate_initialized("Uninitialized structured buffer"); !res) return res.error().relay();
     if (Size.x != 0 && !Data) return std::unexpected(error(errors::invalid_argument, "null source data"));
@@ -190,12 +198,17 @@ public:
     d3d::context()->UpdateSubresource((::ID3D11Buffer*)*this, 0, nullptr, Data, 0, 0);
     return {};
   }
+
+  template<contiguous_range<T> Rg> std::expected<void, error> copy_from(Rg&& rg) {
+    if (auto res = copy_from(yw::data(rg), yw::size(rg)); !res) return res.error().relay();
+    return {};
+  }
 };
 
 template<typename T> structured_buffer(const buffer<T>&) -> structured_buffer<T>;
 template<typename T> structured_buffer(const T*, uint1) -> structured_buffer<T>;
 
-//////////////////////////////////////// MARK: RW STRUCTURED BUFFER
+/// MARK: rw_structured_buffer
 
 template<typename T> class rw_structured_buffer : public buffer<T> {
   comptr<::ID3D11UnorderedAccessView> _uav;
@@ -228,11 +241,23 @@ public:
     if (auto res = initialize(Data, Size); !res) res.error().print_as_fatal(sl);
   }
 
+  template<typename... Ts> requires constructible<rw_structured_buffer, Ts...>
+  static std::expected<rw_structured_buffer, error> create(Ts&&... Args) {
+    rw_structured_buffer b;
+    if (auto res = b.initialize(static_cast<Ts&&>(Args)...)) return b;
+    else return res.error().relay();
+  }
+
   std::expected<void, error> copy_from(const T* Data, uint1 Size) {
     if (auto res = this->validate_initialized("Uninitialized rw_structured_buffer"); !res) return res.error().relay();
     if (Size.x != 0 && !Data) return std::unexpected(error(errors::invalid_argument, "null source data"));
     if (auto res = this->validate_same_size(Size.x); !res) return res.error().relay();
     d3d::context()->UpdateSubresource(buffer<T>::d3d_buffer(), 0, nullptr, Data, 0, 0);
+    return {};
+  }
+
+  template<contiguous_range<T> Rg> std::expected<void, error> copy_from(Rg&& rg) {
+    if (auto res = copy_from(yw::data(rg), yw::size(rg)); !res) return res.error().relay();
     return {};
   }
 };

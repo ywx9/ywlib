@@ -25,9 +25,9 @@ public:
 
     explicit operator bool() const noexcept { return _fn && dll::_alive(_id); }
 
-    std::expected<Rt, error_trace> operator()(Ts... args) const {
-      if (!_fn) return unexpected_error(errors::not_initialized, "function is not initialized");
-      if (!dll::_alive(_id)) return unexpected_error(errors::operation_failed, "dll is already closed");
+    std::expected<Rt, error> operator()(Ts... args) const {
+      if (!_fn) return std::unexpected(error(errors::not_initialized));
+      if (!dll::_alive(_id)) return std::unexpected(error(errors::operation_failed, "dll is already closed"));
       if constexpr (is_void<Rt>) {
         _fn(static_cast<Ts&&>(args)...);
         return {};
@@ -65,17 +65,17 @@ public:
 
   ~dll() noexcept { close(); }
 
-  static std::expected<dll, error_trace> open(const std::filesystem::path& Path) {
-    if (Path.empty()) return unexpected_error(errors::invalid_argument, "Path is empty");
+  static std::expected<dll, error> open(const std::filesystem::path& Path) {
+    if (Path.empty()) return std::unexpected(error(errors::invalid_argument, "Path is empty"));
     const auto hm = ::LoadLibraryW(Path.c_str());
-    if (!hm) return unexpected_win32_error("LoadLibraryW failed");
+    if (!hm) return std::unexpected(error(errors::operation_failed, "LoadLibraryW failed"));
 
     std::unique_ptr<slot> sp{};
     try {
       sp = std::make_unique<slot>();
     } catch (...) {
       ::FreeLibrary(hm);
-      return unexpected_error(errors::operation_failed, "Failed to allocate dll slot");
+      return std::unexpected(error(errors::operation_failed, "Failed to allocate dll slot"));
     }
     sp->_hmodule = hm;
 
@@ -83,7 +83,7 @@ public:
     res._id = dlls.add(std::move(sp));
     if (!res._id) {
       ::FreeLibrary(hm);
-      return unexpected_error(errors::operation_failed, "Failed to register dll slot");
+      return std::unexpected(error(errors::operation_failed, "Failed to register dll slot"));
     }
     return res;
   }
@@ -99,15 +99,15 @@ public:
   }
 
   template<typename Rt, typename... Ts>
-  std::expected<function<Rt, Ts...>, error_trace> get_function(null_terminated<char> name) {
-    if (!_id) return unexpected_error(errors::not_initialized, "dll is not initialized");
-    if (name.empty()) return unexpected_error(errors::invalid_argument, "function name is empty");
+  std::expected<function<Rt, Ts...>, error> get_function(null_terminated<char> name) {
+    if (!_id) return std::unexpected(error(errors::not_initialized, "dll is not initialized"));
+    if (name.empty()) return std::unexpected(error(errors::invalid_argument, "function name is empty"));
     const auto sp = _slot_of(_id);
-    if (!sp || !sp->_hmodule) return unexpected_error(errors::operation_failed, "dll handle is not valid");
+    if (!sp || !sp->_hmodule) return std::unexpected(error(errors::operation_failed, "dll handle is not valid"));
 
     ::SetLastError(ERROR_SUCCESS);
     const auto p = ::GetProcAddress(sp->_hmodule, name.data());
-    if (!p) return unexpected_win32_error("GetProcAddress failed");
+    if (!p) return std::unexpected(error(errors::operation_failed, "GetProcAddress failed"));
     return function<Rt, Ts...>(_id, reinterpret_cast<Rt (*)(Ts...)>(p));
   }
 };

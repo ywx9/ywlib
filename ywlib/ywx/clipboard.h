@@ -12,24 +12,24 @@ inline class {
     }
   };
 
-  static std::expected<bitmap, error_trace> bitmap_from_pixels(uint2 size, const uint8_t* pixels, uint32_t stride) {
-    if (!pixels) return unexpected_error(errors::invalid_argument, "null pixel buffer");
+  static std::expected<bitmap, error> bitmap_from_pixels(uint2 size, const uint8_t* pixels, uint32_t stride) {
+    if (!pixels) return std::unexpected(error(errors::invalid_argument, "null pixel buffer"));
     auto bmp = bitmap::create(size);
-    if (!bmp) return unexpected_error(bmp.error());
+    if (!bmp) return bmp.error().relay();
     auto* p = static_cast<ID2D1Bitmap1*>(*bmp);
-    if (!p) return unexpected_error(errors::not_initialized, "bitmap not initialized");
+    if (!p) return std::unexpected(error(errors::not_initialized, "bitmap not initialized"));
     hresult_test(p->CopyFromMemory, nullptr, pixels, stride);
     return std::move(*bmp);
   }
 
-  static std::expected<std::vector<uint8_t>, error_trace> pixels_from_bitmap(
+  static std::expected<std::vector<uint8_t>, error> pixels_from_bitmap(
     const bitmap& b, uint2& size, uint32_t& stride) {
-    if (!b) return unexpected_error(errors::not_initialized, "bitmap not initialized");
+    if (!b) return std::unexpected(error(errors::not_initialized, "bitmap not initialized"));
 
     size = b.size();
     const uint32_t width = size.x;
     const uint32_t height = size.y;
-    if (width == 0 || height == 0) return unexpected_error(errors::invalid_argument, "invalid bitmap size");
+    if (width == 0 || height == 0) return std::unexpected(error(errors::invalid_argument, "invalid bitmap size"));
 
     comptr<::ID2D1Bitmap1> cpu_bmp;
     D2D1_BITMAP_PROPERTIES1 props{
@@ -41,7 +41,7 @@ inline class {
     hresult_test(d2d().context()->CreateBitmap, D2D1_SIZE_U{width, height}, nullptr, 0, &props, &cpu_bmp.get());
 
     auto* src = static_cast<ID2D1Bitmap1*>(b);
-    if (!src) return unexpected_error(errors::not_initialized, "bitmap not initialized");
+    if (!src) return std::unexpected(error(errors::not_initialized, "bitmap not initialized"));
     hresult_test(cpu_bmp->CopyFromBitmap, nullptr, src, nullptr);
     D2D1_MAPPED_RECT mapped{};
     hresult_test(cpu_bmp->Map, D2D1_MAP_OPTIONS_READ, &mapped);
@@ -57,110 +57,110 @@ inline class {
     return pixels;
   }
 
-  std::expected<guard, error_trace> open() const {
-    if (!::OpenClipboard(nullptr)) return unexpected_win32_error("OpenClipboard failed");
+  std::expected<guard, error> open() const {
+    win32_bool_test(::OpenClipboard, nullptr);
     return guard{true};
   }
 
-  std::expected<void, error_trace> empty_clipboard() const {
+  std::expected<void, error> empty_clipboard() const {
     if (::EmptyClipboard()) return {};
     const auto err = ::GetLastError();
     if (err == ERROR_CLIPBOARD_NOT_OPEN) {
-      if (!::OpenClipboard(::GetActiveWindow())) return unexpected_win32_error("OpenClipboard failed");
-      if (!::EmptyClipboard()) return unexpected_win32_error("EmptyClipboard failed");
+      win32_bool_test(::OpenClipboard, ::GetActiveWindow());
+      win32_bool_test(::EmptyClipboard);
       return {};
     }
-    return unexpected_error(errors::operation_failed, "EmptyClipboard failed", int32_t(err));
+    return std::unexpected(error(errors::operation_failed, "EmptyClipboard failed", int32_t(err)));
   }
 
-  std::expected<HANDLE, error_trace> get_clipboard_data(UINT format) const {
+  std::expected<HANDLE, error> get_clipboard_data(UINT format) const {
     if (auto h = ::GetClipboardData(format)) return h;
     const auto err = ::GetLastError();
     if (err == ERROR_CLIPBOARD_NOT_OPEN) {
-      if (!::OpenClipboard(::GetActiveWindow())) return unexpected_win32_error("OpenClipboard failed");
+      win32_bool_test(::OpenClipboard, ::GetActiveWindow());
       if (auto h2 = ::GetClipboardData(format)) return h2;
-      return unexpected_win32_error("GetClipboardData failed");
+      return std::unexpected(error(errors::operation_failed, "GetClipboardData failed", int32_t(::GetLastError())));
     }
-    return unexpected_error(errors::operation_failed, "GetClipboardData failed", int32_t(err));
+    return std::unexpected(error(errors::operation_failed, "GetClipboardData failed", int32_t(err)));
   }
 
 public:
-  std::expected<void, error_trace> clear() const {
+  std::expected<void, error> clear() const {
     if (auto g = open()) {
-      if (auto res = empty_clipboard(); !res) return unexpected_error(res.error());
+      if (auto res = empty_clipboard(); !res) return res.error().relay();
       return {};
-    } else return unexpected_error(g.error());
+    } else return g.error().relay();
   }
 
-  std::expected<bool, error_trace> has_text() const {
+  std::expected<bool, error> has_text() const {
     if (auto g = open()) {
       return ::IsClipboardFormatAvailable(CF_UNICODETEXT) != 0;
-    } else return unexpected_error(g.error());
+    } else return g.error().relay();
   }
 
-  std::expected<std::wstring, error_trace> text() const {
+  std::expected<std::wstring, error> text() const {
     if (auto g = open()) {
       if (!::IsClipboardFormatAvailable(CF_UNICODETEXT))
-        return unexpected_error(errors::invalid_operation, "clipboard does not contain text");
+        return std::unexpected(error(errors::invalid_operation, "clipboard does not contain text"));
       if (auto h = get_clipboard_data(CF_UNICODETEXT)) {
         if (auto p = static_cast<const wchar_t*>(::GlobalLock(*h))) {
           std::wstring s = p;
           ::GlobalUnlock(*h);
           return s;
-        } else return unexpected_win32_error("GlobalLock failed");
-      } else return unexpected_error(h.error());
-    } else return unexpected_error(g.error());
+        } else return std::unexpected(error(errors::operation_failed, "GlobalLock failed"));
+      } else return h.error().relay();
+    } else return g.error().relay();
   }
 
   template<stringable<wchar_t> S>
-  std::expected<void, error_trace> text(S&& value) const {
+  std::expected<void, error> text(S&& value) const {
     if (auto g = open()) {
-      if (auto res = empty_clipboard(); !res) return unexpected_error(res.error());
+      if (auto res = empty_clipboard(); !res) return res.error().relay();
       auto sv = std::wstring_view(value);
       const size_t bytes = (sv.size() + 1) * sizeof(wchar_t);
       HGLOBAL h = ::GlobalAlloc(GMEM_MOVEABLE, bytes);
-      if (!h) return unexpected_win32_error("GlobalAlloc failed");
+      if (!h) return std::unexpected(error(errors::operation_failed, "GlobalAlloc failed"));
       void* p = ::GlobalLock(h);
       if (!p) {
         ::GlobalFree(h);
-        return unexpected_win32_error("GlobalLock failed");
+        return std::unexpected(error(errors::operation_failed, "GlobalLock failed"));
       }
       std::memcpy(p, sv.data(), sv.size() * sizeof(wchar_t));
       static_cast<wchar_t*>(p)[sv.size()] = L'\0';
       ::GlobalUnlock(h);
       if (!::SetClipboardData(CF_UNICODETEXT, h)) {
         ::GlobalFree(h);
-        return unexpected_win32_error("SetClipboardData failed");
+        return std::unexpected(error(errors::operation_failed, "SetClipboardData failed", int32_t(::GetLastError())));
       }
       return {};
-    } else return unexpected_error(g.error());
+    } else return g.error().relay();
   }
 
-  std::expected<bool, error_trace> has_image() const {
+  std::expected<bool, error> has_image() const {
     if (auto g = open()) {
       return ::IsClipboardFormatAvailable(CF_DIBV5) != 0;
-    } else return unexpected_error(g.error());
+    } else return g.error().relay();
   }
 
-  std::expected<bitmap, error_trace> image() const {
+  std::expected<bitmap, error> image() const {
     if (auto g = open()) {
       if (!::IsClipboardFormatAvailable(CF_DIBV5))
-        return unexpected_error(errors::invalid_operation, "clipboard does not contain image");
+        return std::unexpected(error(errors::invalid_operation, "clipboard does not contain image"));
       if (auto h = get_clipboard_data(CF_DIBV5)) {
         if (auto hdr = static_cast<const BITMAPV5HEADER*>(::GlobalLock(*h))) {
           if (hdr->bV5Size < sizeof(BITMAPV5HEADER)) {
             ::GlobalUnlock(*h);
-            return unexpected_error(errors::invalid_argument, "invalid BITMAPV5HEADER size");
+            return std::unexpected(error(errors::invalid_argument, "invalid BITMAPV5HEADER size"));
           }
           if (hdr->bV5BitCount != 32) {
             ::GlobalUnlock(*h);
-            return unexpected_error(errors::invalid_argument, "clipboard image is not 32bpp");
+            return std::unexpected(error(errors::invalid_argument, "clipboard image is not 32bpp"));
           }
           const int32_t w = hdr->bV5Width;
           const int32_t hgt = hdr->bV5Height;
           if (w <= 0 || hgt == 0) {
             ::GlobalUnlock(*h);
-            return unexpected_error(errors::invalid_argument, "invalid image size");
+            return std::unexpected(error(errors::invalid_argument, "invalid image size"));
           }
           const uint32_t width = static_cast<uint32_t>(w);
           const uint32_t height = static_cast<uint32_t>(hgt > 0 ? hgt : -hgt);
@@ -177,19 +177,19 @@ public:
           }
           ::GlobalUnlock(*h);
           return bitmap_from_pixels(uint2{width, height}, pixels.data(), stride);
-        } else return unexpected_win32_error("GlobalLock failed");
-      } else return unexpected_error(h.error());
-    } else return unexpected_error(g.error());
+        } else return std::unexpected(error(errors::operation_failed, "GlobalLock failed"));
+      } else return h.error().relay();
+    } else return g.error().relay();
   }
 
-  std::expected<void, error_trace> image(const bitmap& b) const {
-    if (!b) return unexpected_error(errors::not_initialized, "bitmap not initialized");
+  std::expected<void, error> image(const bitmap& b) const {
+    if (!b) return std::unexpected(error(errors::not_initialized, "bitmap not initialized"));
     if (auto g = open()) {
-      if (auto res = empty_clipboard(); !res) return unexpected_error(res.error());
+      if (auto res = empty_clipboard(); !res) return res.error().relay();
       uint2 size{};
       uint32_t stride = 0;
       auto pixels_res = pixels_from_bitmap(b, size, stride);
-      if (!pixels_res) return unexpected_error(pixels_res.error());
+      if (!pixels_res) return pixels_res.error().relay();
       auto& pixels = *pixels_res;
       const uint32_t width = size.x;
       const uint32_t height = size.y;
@@ -210,11 +210,11 @@ public:
 
       const size_t total = sizeof(BITMAPV5HEADER) + pixels.size();
       HGLOBAL h = ::GlobalAlloc(GMEM_MOVEABLE, total);
-      if (!h) return unexpected_win32_error("GlobalAlloc failed");
+      if (!h) return std::unexpected(error(errors::operation_failed, "GlobalAlloc failed", int32_t(::GetLastError())));
       void* mem = ::GlobalLock(h);
       if (!mem) {
         ::GlobalFree(h);
-        return unexpected_win32_error("GlobalLock failed");
+        return std::unexpected(error(errors::operation_failed, "GlobalLock failed", int32_t(::GetLastError())));
       }
       std::memcpy(mem, &hdr, sizeof(BITMAPV5HEADER));
       std::memcpy(static_cast<uint8_t*>(mem) + sizeof(BITMAPV5HEADER), pixels.data(), pixels.size());
@@ -222,10 +222,10 @@ public:
 
       if (!::SetClipboardData(CF_DIBV5, h)) {
         ::GlobalFree(h);
-        return unexpected_win32_error("SetClipboardData failed");
+        return std::unexpected(error(errors::operation_failed, "SetClipboardData failed", int32_t(::GetLastError())));
       }
       return {};
-    } else return unexpected_error(g.error());
+    } else return g.error().relay();
   }
 } clipboard;
 

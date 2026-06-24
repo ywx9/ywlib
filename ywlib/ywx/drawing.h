@@ -61,7 +61,7 @@ public:
 
   template<typename... As> requires constructible<drawing, As...>
   static std::expected<drawing, error> create(As&&... Args) {
-    drawing d(sl);
+    drawing d{};
     if (auto res = d.initialize(static_cast<As&&>(Args)...)) return d;
     else return res.error().relay();
   }

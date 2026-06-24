@@ -1,4 +1,5 @@
 #pragma once
+#include "yw/string.h"
 #include "yw/tuple.h"
 
 inline constexpr char yw_vector[] = "yw/vector.h";
@@ -55,6 +56,22 @@ template<std::regular T, size_t N> struct vector {
   template<size_t I> requires(I < N) constexpr const auto&& get() const&& { return std::move(_vals[I]); }
 
   constexpr vector operator()() const noexcept { return *this; }
+
+  template<char_type C> constexpr string<C> to_string() const {
+    if (N == 0) return string<C>("()");
+    string<C> s;
+    s.reserve((8 * sizeof(T) + 2) * N);
+    s.push_back('(');
+    s.append(yw::format(operator[](0)));
+    for (size_t i = 1; i < N; ++i) {
+      s.push_back(',').push_back(' ');
+      s.append(yw::format(operator[](i)));
+    }
+    s.push_back(')');
+    return s;
+  }
+
+  constexpr string<char> to_string() const { return to_string<char>(); }
 };
 
 template<typename T, typename... Ts> vector(T&&, Ts&&...) -> vector<T, sizeof...(Ts) + 1>;
@@ -292,6 +309,17 @@ template<std::regular T> struct vector<T, 1> {
   template<size_t I> requires(I == 0) constexpr const T&& get() const&& noexcept { return std::move(x); }
 
   constexpr vector operator()() const noexcept { return *this; }
+
+  template<char_type C> constexpr string<C> to_string() const {
+    string<C> s;
+    s.reserve((8 * sizeof(T) + 2) * 1);
+    s.push_back('(');
+    s.append(yw::format(x));
+    s.push_back(')');
+    return s;
+  }
+
+  constexpr string<char> to_string() const { return to_string<char>(); }
 };
 
 //////////////////////////////////////// MARK: VECTOR2
@@ -347,6 +375,16 @@ template<std::regular T> struct vector<T, 2> {
   template<size_t I> requires(I < 2) constexpr const T&& get() const&& noexcept { return std::move(select<I>(x, y)); }
 
   constexpr vector operator()() const noexcept { return *this; }
+
+  template<char_type C> constexpr string<C> to_string() const {
+    string<C> s;
+    s.reserve((8 * sizeof(T) + 2) * 2);
+    s.push_back('(').append(yw::format(x)).push_back(',');
+    s.push_back(' ').append(yw::format(y)).push_back(')');
+    return s;
+  }
+
+  constexpr string<char> to_string() const { return to_string<char>(); }
 };
 
 //////////////////////////////////////// MARK: VECTOR3
@@ -413,6 +451,17 @@ template<std::regular T> struct vector<T, 3> {
   constexpr vector<T, 2> xy() const noexcept { return {x, y}; }
   constexpr vector<T, 2> xz() const noexcept { return {x, z}; }
   constexpr vector<T, 2> yz() const noexcept { return {y, z}; }
+
+  template<char_type C> constexpr string<C> to_string() const {
+    string<C> s;
+    s.reserve((8 * sizeof(T) + 2) * 3);
+    s.push_back('(').append(yw::format(x)).push_back(',');
+    s.push_back(' ').append(yw::format(y)).push_back(',');
+    s.push_back(' ').append(yw::format(z)).push_back(')');
+    return s;
+  }
+
+  constexpr string<char> to_string() const { return to_string<char>(); }
 };
 
 //////////////////////////////////////// MARK: VECTOR4
@@ -496,6 +545,16 @@ template<std::regular T> struct vector<T, 4> {
   constexpr vector<T, 2> yz() const noexcept { return {y, z}; }
   constexpr vector<T, 2> yw() const noexcept { return {y, w}; }
   constexpr vector<T, 2> zw() const noexcept { return {z, w}; }
+
+  template<char_type C> constexpr string<C> to_string() const {
+    string<C> s;
+    s.reserve((8 * sizeof(T) + 2) * 4);
+    s.push_back('(').append(yw::format(x)).push_back(',');
+    s.push_back(' ').append(yw::format(y)).push_back(',');
+    s.push_back(' ').append(yw::format(z)).push_back(',');
+    s.push_back(' ').append(yw::format(w)).push_back(')');
+    return s;
+  }
 };
 
 //////////////////////////////////////// MARK: SIMD
