@@ -45,6 +45,7 @@ struct key {
 static_assert(sizeof(key) == 1);
 
 namespace keys {
+inline constexpr key unknown{0};
 inline constexpr key lbutton{VK_LBUTTON};
 inline constexpr key rbutton{VK_RBUTTON};
 inline constexpr key mbutton{VK_MBUTTON};
@@ -182,6 +183,19 @@ struct key_event {
 };
 static_assert(sizeof(key_event) <= 8);
 
+enum class activation_source : uint8_t {
+  mouse,
+  keyboard,
+  program,
+};
+
+struct activate_event {
+  activation_source source = activation_source::program;
+  yw::key key{};
+  short2 pos{};
+};
+static_assert(sizeof(activate_event) <= 8);
+
 struct move_event {
   short2 pos;
   short2 delta;
@@ -240,6 +254,14 @@ template<> struct formatter<yw::key_event> {
   formatter<yw::string<char>> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::key_event& e, auto& ctx) const { return fmt.format(e.to_string(), ctx); }
+};
+
+template<> struct formatter<yw::activate_event> {
+  formatter<yw::string<char>> fmt;
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::activate_event& e, auto& ctx) const {
+    return fmt.format(format("activate_event(key:", e.key, ", pos:", e.pos, ")"), ctx);
+  }
 };
 
 template<> struct formatter<yw::move_event> {

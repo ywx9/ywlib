@@ -159,6 +159,7 @@ inline constexpr error::kind invalid_operation{"invalid operation"};
 inline constexpr error::kind operation_failed{"operation failed"};
 inline constexpr error::kind not_initialized{"not initialized"};
 inline constexpr error::kind already_initialized{"already initialized"};
+inline constexpr error::kind warning{"warning"};
 } // namespace errors
 } // namespace yw
 

@@ -57,6 +57,10 @@ public:
       captured_key = e.down ? e.key : key{};
     }
 
+    virtual void button_cancel_event() override {
+      captured_key = {};
+    }
+
     virtual void focus_event(bool focused) override {
       if (!focused) captured_key = {};
       if (auto res = make_dirty(); !res) fatal_error(res.error());
@@ -69,6 +73,20 @@ public:
       else if (captured_key == e.key) click_action(), captured_key = {};
       else captured_key = {};
       return e.key == keys::space || e.key == keys::enter;
+    }
+
+    virtual bool wants_space_activate() const override { return enabled; }
+    virtual bool wants_enter_activate() const override { return enabled; }
+
+    virtual void activate_event(yw::activate_event e) override {
+      if (!enabled) return;
+      captured_key = e.key;
+      click_action();
+      captured_key = {};
+    }
+
+    virtual void key_cancel_event() override {
+      captured_key = {};
     }
 
     void click_action() {

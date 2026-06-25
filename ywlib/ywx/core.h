@@ -71,6 +71,9 @@ class interface {
 public:
   struct slot {
     inline static slotset<slot> slots{};
+    template<typename H> static slotset<slot>::slotid add() {
+      return slots.add(std::make_unique<typename H::slot>());
+    }
     template<typename H> static typename H::slot* get(slotset<slot>::slotid Id) noexcept {
       return static_cast<typename H::slot*>(slots.get(Id));
     }
@@ -439,7 +442,7 @@ class dwrite {
     }
 
     static slot* get() noexcept {
-      if (ptr) ptr = new slot();
+      if (!ptr) ptr = new slot();
       return static_cast<slot*>(ptr);
     }
 

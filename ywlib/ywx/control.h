@@ -5,8 +5,6 @@ namespace yw {
 
 inline constexpr float arbitrary_value = 4.0f;
 
-namespace ui {
-
 enum class size_policy {
   free,        // sets size so that at least whole content is visible
   fixed,       // sets size to specified
@@ -24,7 +22,19 @@ enum class alignment : unsigned char {
   right_top = 0b0110,
   right_bottom = 0b1010,
 };
-}
+
+struct color_pair {
+  color background, foreground;
+  static color_pair auto_color() noexcept {
+    constexpr float hues[] = {240.0f, 120.0f, 0.0f, 270.0f, 180.0f, 30.0f, 210.0f, 60.0f, 300.0f};
+    static size_t color_index = 0;
+    const float h = hues[color_index++ % arraysize(hues)] / 180.0f * yw::pi;
+    return {hsl(h, 0.5f, 0.9f).to_srgb(), hsl(h, 0.5f, 0.2f).to_srgb()};
+  }
+  template<size_t I, typename Self> requires(I < 2) constexpr color& get(this Self&& self) noexcept {
+    return select<I>(self.background, self.foreground);
+  }
+};
 
 class control : public interface {
 public:
@@ -40,10 +50,17 @@ public:
     float2 size{};
     float2 radius = float2::fill(arbitrary_value);
     comptr<ID2D1Geometry> geometry{};
-    ui::alignment alignment = ui::alignment::center;
-    vector<ui::size_policy, 2> size_policy{};
+    yw::alignment alignment = yw::alignment::center;
+    vector<yw::size_policy, 2> size_policy{};
     bool visible = true;
     bool enabled = true;
+
+    static float calculate_necessary_width(yw::size_policy sp, float min, float req, float inner) noexcept {
+      const bool fixed = sp == yw::size_policy::fixed;
+      return yw::max(min, req * fixed, inner * !fixed);
+    }
+
+    //-- overrides --//
 
     std::expected<void, error> make_dirty() override {
       const auto wsp = slots.get(window_id);
@@ -58,6 +75,86 @@ public:
       wsp->make_messy();
       return {};
     }
+
+    //-- virtuals --//
+
+    virtual float2 bounds() const { return size + margin.xy() + margin.zw(); }
+
+    virtual std::expected<float2, error> calculate_necessary_size() const {
+      const auto inner = float2();
+      return vapply_r<float2>(calculate_necessary_width, size_policy, minimum_size, required_size, inner);
+    }
+
+    virtual std::expected<void, error> draw() const = 0;
+
+    virtual std::expected<void, error> draw_focusring(
+      const yw::color& Color, float Offset, float Width, bool Dashed) {
+      brush::color(Color);
+      brush::dashed(Dashed);
+      const auto pos_ = pos - float2::fill(Offset);
+      const auto size_ = size + float2::fill(Offset * 2);
+      const auto radius_ = radius + float2::fill(Offset);
+      if (auto res = draw_round_rectangle(pos_, size_, radius_, Width); !res) return res.error().relay();
+      brush::dashed(false);
+      return {};
+    }
+
+    virtual std::expected<void, error> ensure_necessary_size() {
+      if (auto res = calculate_necessary_size()) {
+        size = *res;
+        return {};
+      } else return res.error().relay();
+    }
+
+    virtual slotid find_next_tabstop(slotid Current, bool Forward, bool& Found) const {
+      return {};
+    }
+
+    virtual slotid hittest(float2 Pt) const {
+      if (!visible) return {};
+      if (const auto r = float4{pos, pos + size}; Pt.x < r.x || Pt.y < r.y || Pt.x > r.z || Pt.y > r.w) return {};
+      return id;
+    }
+
+    virtual std::expected<void, error> update_geometry(float2 Pos, float2 Area) {
+      constexpr float c[]{0.5f, 0.0f, 1.0f};
+      const float2 cc{c[unsigned(alignment) % 3], c[unsigned(alignment) / 3 % 3]};
+      provided_pos = Pos;
+      provided_area = Area;
+      const auto max_size = provided_area - margin.xy() - margin.zw();
+      if (size_policy.x == yw::size_policy::free) size.x = max_size.x;
+      if (size_policy.y == yw::size_policy::free) size.y = max_size.y;
+      pos = provided_pos + margin.xy() + (max_size - size) * cc;
+      ID2D1RoundedRectangleGeometry* geom{};
+      D2D1_ROUNDED_RECT rr{D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
+      hresult_test(d2d::factory()->CreateRoundedRectangleGeometry, &rr, &geom);
+      geometry.reset(geom);
+      return {};
+    }
+
+    virtual void button_event(yw::button_event e) {}
+    virtual void button_cancel_event() {}
+    virtual void char_event(wchar_t c) {}
+    virtual void click_event(yw::button_event e) {}
+    virtual void double_click_event(yw::button_event e) {}
+    virtual void drag_event(yw::drag_event e) {}
+    virtual void focus_event(bool) {}
+    virtual void hover_event(yw::hover_event e) {}
+    virtual bool key_event(yw::key_event e) { return false; }
+    virtual void key_cancel_event() {}
+    virtual bool wants_space_activate() const { return false; }
+    virtual bool wants_enter_activate() const { return false; }
+    virtual bool wants_text_input() const { return false; }
+    virtual void on_ime_start() {}
+    virtual void on_ime_composition(std::wstring_view) {}
+    virtual void on_ime_commit(std::wstring_view) {}
+    virtual void on_ime_end() {}
+    virtual bool has_ime_composition() const { return false; }
+    virtual void commit_ime_composition() {}
+    virtual void activate_event(yw::activate_event) {}
+    virtual void cancel_event() {}
+    virtual void move_event(yw::move_event e) {}
+    virtual void wheel_event(yw::wheel_event e) {}
   };
 };
 }

@@ -1,6 +1,7 @@
 #pragma once
 #include "ywx/text.h"
 #include "ywx/ui_frame.h"
+#include "ywx/window.h"
 
 namespace yw::ui {
 
@@ -8,27 +9,31 @@ class label : public frame {
 public:
   struct slot : public frame::slot {
     yw::text text;
-    ui::alignment text_alignment = ui::alignment::center;
+    yw::alignment text_alignment = yw::alignment::center;
+
+    float2 text_origin() const noexcept {
+      constexpr float c[]{0.5f, 0.0f, 1.0f};
+      const float2 cc{c[unsigned(text_alignment) % 3], c[unsigned(text_alignment) / 3 % 3]};
+      return pos + (size - text.bounds()) * cc;
+    }
 
     /// MARK: overrides
 
-    virtual std::expected<float2, error_trace> calculate_necessary_size() const override {
-      const float2 inner = text.bounds() + padding.xy() + padding.zw();
-      return vapply_r<float2>(_calc_nec_size, size_policy, minimum_size, required_size, inner);
+    virtual std::expected<float2, error> calculate_necessary_size() const override {
+      return vapply_r<float2>(calculate_necessary_width, size_policy, minimum_size, required_size, text.bounds());
     }
 
-    virtual std::expected<void, error_trace> ensure_necessary_size() override {
-      if (auto res = text.update(); !res) return unexpected_error(res.error());
-      if (auto res = calculate_necessary_size()) return size = *res, std::expected<void, error_trace>{};
-      else return unexpected_error(res.error());
+    virtual std::expected<void, error> ensure_necessary_size() override {
+      if (auto res = text.update(); !res) return res.error().relay();
+      if (auto res = calculate_necessary_size()) return size = *res, std::expected<void, error>{};
+      else return res.error().relay();
     }
 
-    virtual std::expected<void, error_trace> draw() const override {
+    virtual std::expected<void, error> draw() const override {
       if (!visible) return {};
-      if (auto res = draw_background(); !res) return unexpected_error(res.error());
-      const auto text_origin = calculate_content_origin(text.bounds(), padding, text_alignment);
-      if (auto res = text.draw(text_origin); !res) return unexpected_error(res.error());
-      if (auto res = draw_foreground(); !res) return unexpected_error(res.error());
+      if (auto res = draw_background(); !res) return res.error().relay();
+      if (auto res = text.draw(text_origin()); !res) return res.error().relay();
+      if (auto res = draw_foreground(); !res) return res.error().relay();
       return {};
     }
   };
@@ -42,8 +47,8 @@ public:
     ~text_accessor() noexcept {
       try {
         if (slot.text.messy())
-          if (auto res = slot.text.update(); !res) fatal_error(res.error());
-      } catch (...) { fatal_error(errors::unreachable, "Unhandled exception in ui::label::text_accessor destructor"); }
+          if (auto res = slot.text.update(); !res) res.error().print_as_fatal();
+      } catch (...) { error(errors::unreachable, "Unhandled exception in ui::label::text_accessor destructor").print_as_fatal(); }
     }
 
     const auto& string() const { return slot.text.string(); }
@@ -67,7 +72,7 @@ public:
     /// gets text alignment
     const auto& text_alignment() const { return slot.text.alignment(); }
     /// sets text alignment
-    auto& text_alignment(ui::alignment Alignment) {
+    auto& text_alignment(yw::alignment Alignment) {
       slot.text.alignment(Alignment);
       this->dirty = true;
       return *this;
@@ -85,7 +90,7 @@ public:
     /// gets alignment of text block
     const auto& alignment() const { return slot.text_alignment; }
     /// sets alignment of text block
-    auto& alignment(ui::alignment Alignment) {
+    auto& alignment(yw::alignment Alignment) {
       slot.text_alignment = Alignment;
       this->dirty = true;
       return *this;
@@ -97,13 +102,30 @@ public:
   using control::operator bool;
   label() noexcept = default;
 
-  static std::expected<label, error_trace> add(derived_from<unknown> auto& Layout) {
+  template<typename Layout> static std::expected<label, error> add(Layout& Layout_) {
+    const auto lsp = interface::slot::slots.get(Layout_.id());
+    if (!lsp) return std::unexpected(error(errors::invalid_slotid));
+    if (!lsp->attachable()) return std::unexpected(error(errors::invalid_operation, "Layout is not attachable"));
+    const auto id = interface::slot::add<label>();
+    const auto csp = interface::slot::get<label>(id);
+    if (!csp) return std::unexpected(error(errors::invalid_slotid));
+    csp->id = id;
+    csp->layout_id = Layout_.id();
+    if (const auto parent_control = dynamic_cast<control::slot*>(lsp)) csp->window_id = parent_control->window_id;
+    else if (const auto parent_window = dynamic_cast<window::handle<window::type::unknown>::slot*>(lsp)) csp->window_id = parent_window->id;
+    else {
+      interface::slot::slots.erase(id);
+      return std::unexpected(error(errors::invalid_operation, "Unsupported layout parent"));
+    }
+    if (auto res = lsp->attach(id); !res) {
+      interface::slot::slots.erase(id);
+      return res.error().relay();
+    }
     label lbl;
-    if (auto res = create_control<label>(Layout)) lbl._id = *res;
-    else return unexpected_error(res.error());
+    lbl._id = id;
     return std::move(lbl);
   }
 
-  template<typename Self> decltype(auto) text(this Self& self) { return create_accessor<text_accessor>(self); }
+  ywlib_make_accessor(text_accessor, label);
 };
 } // namespace yw::ui

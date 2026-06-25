@@ -1,3 +1,74 @@
+#pragma once
+#include "ywx/wndproc.h"
+
+namespace yw {
+
+/// MARK: mainloop
+
+inline class {
+public:
+  enum class state { running, error, quit };
+
+private:
+  state _state = state::quit;
+  bool _updated = true;
+  stopwatch _timer{};
+
+public:
+  error last_error{};
+  uint32_t max_messages_per_frame = 100;
+
+  double fps{}, spf{};
+
+  bool running() const noexcept { return _state == state::running; }
+  bool error() const noexcept { return _state == state::error; }
+  bool quit() const noexcept { return _state == state::quit; }
+
+  /// runs the mainloop
+  bool operator()() {
+    if (const auto& primals = window::handle<window::type::unknown>::slot::primals; primals.empty()) {
+      yw::error(errors::warning, "No primal windows exist. Exiting mainloop").print_as_warning();
+      return _state = state::quit, false;
+    } else {
+      if (_state == state::quit) _timer.restart();
+      _state = state::running;
+      for (const auto& wid : primals)
+        if (const auto wsp = interface::slot::get<window::handle<window::type::unknown>>(wid))
+          if (auto res = wsp->update_controllayer(); !res) {
+            last_error = std::move(res.error().add_footprint());
+            return _state = state::error, false;
+          } else if (auto res = wsp->draw_controllayer(); !res) {
+            last_error = std::move(res.error().add_footprint());
+            return _state = state::error, false;
+          } else if (auto res = wsp->draw(); !res) {
+            last_error = std::move(res.error().add_footprint());
+            return _state = state::error, false;
+          }
+      uint32_t processed_messages = 0;
+      for (MSG msg; ::PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);) {
+        if (msg.message == WM_QUIT) return _state = state::quit, false;
+        ::TranslateMessage(&msg);
+        ::DispatchMessageW(&msg);
+        if (last_error) return _state = state::error, false;
+        if (++processed_messages >= max_messages_per_frame) break;
+      }
+      for (const auto& wid : primals)
+        if (const auto wsp = interface::slot::get<window::handle<window::type::unknown>>(wid))
+          if (auto res = wsp->update_controllayer(); !res) {
+            last_error = std::move(res.error().add_footprint());
+            return _state = state::error, false;
+          }
+      fps = 1.0 / (spf = _timer.lap());
+      return _state == state::running;
+    }
+  }
+
+  /// runs the mainloop
+  explicit operator bool() { return operator()(); }
+} mainloop;
+
+} // namespace yw
+
 // #pragma once
 // // #include "ywx/ime.h"
 // #include "ywx/window.h"
@@ -118,8 +189,9 @@
 //     fcsp->move_event(move_event{local_pt, system::cursor_delta});
 //     const modifiers mods{(wp & MK_CONTROL) == MK_CONTROL, (wp & MK_SHIFT) == MK_SHIFT, keys::alt.pressed()};
 //     if ((wp & MK_LBUTTON) == MK_LBUTTON) fcsp->drag_event(drag_event{system::cursor_delta, keys::lbutton, mods});
-//     else if ((wp & MK_RBUTTON) == MK_RBUTTON) fcsp->drag_event(drag_event{system::cursor_delta, keys::rbutton, mods});
-//     else if ((wp & MK_MBUTTON) == MK_MBUTTON) fcsp->drag_event(drag_event{system::cursor_delta, keys::mbutton, mods});
+//     else if ((wp & MK_RBUTTON) == MK_RBUTTON) fcsp->drag_event(drag_event{system::cursor_delta, keys::rbutton,
+//     mods}); else if ((wp & MK_MBUTTON) == MK_MBUTTON) fcsp->drag_event(drag_event{system::cursor_delta,
+//     keys::mbutton, mods});
 //   }
 //   unknown_slotid new_hcid{};
 //   if (const auto csp = system::get_slot_pointer<ui::control>(ws.child_control)) new_hcid = csp->hittest(pt);
@@ -250,8 +322,8 @@
 //   case WM_KEYUP: internal::wm_keyup(*wsp, wp, lp); return 0;
 
 //   case WM_CHAR:
-//     if (const auto p = system::get_slot_pointer<ui::control>(wsp->focused_control)) p->char_event(static_cast<wchar_t>(wp));
-//     return 0;
+//     if (const auto p = system::get_slot_pointer<ui::control>(wsp->focused_control))
+//     p->char_event(static_cast<wchar_t>(wp)); return 0;
 
 //     /// MARK: Button events
 
@@ -310,7 +382,8 @@
 //     // }
 
 //     // case WM_IME_COMPOSITION:
-//     //   if (const auto fcsp = system::get_slot_pointer<ui::control>(wsp->focused_control); !fcsp) system::ime.hide();
+//     //   if (const auto fcsp = system::get_slot_pointer<ui::control>(wsp->focused_control); !fcsp)
+//     system::ime.hide();
 //     //   else if (HIMC himc = ::ImmGetContext(hwnd); !himc) system::ime.hide();
 //     //   else {
 //     //     if (lp & GCS_COMPSTR) {
