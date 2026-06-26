@@ -136,16 +136,16 @@ public:
     }
   };
 
-  positional(string<char>&& Metavar, const source_line& sl = yw::source_line::here()) {
-    if (const auto sp = create_slot<positional>(sl); !sp) error(error(errors::slot_creation_failed)).print_as_fatal(sl);
-    else if (auto res = sp->init(std::move(Metavar)); !res) res.error().add_footprint().print_as_fatal(sl);
+  positional(string<char>&& Metavar, const source_line& sl = here()) {
+    if (const auto sp = create_slot<positional>(sl); !sp) error(error(errors::slot_creation_failed)).go_off(sl); // fatal
+    else if (auto res = sp->init(std::move(Metavar)); !res) res.error().add_footprint().go_off(sl); // fatal
     else _id = sp->id;
   }
 
   template<typename Self> auto&& description(this Self&& self, string<char> Desc) noexcept
     requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).print_as_warning();
+    if (!sp) error(errors::invalid_slotid).go_off(true); // warning
     else sp->description = std::move(Desc);
     return static_cast<Self&&>(self);
   }
@@ -153,7 +153,7 @@ public:
   template<typename Self> auto&& required(this Self&& self, bool Required = true) noexcept
     requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).print_as_warning();
+    if (!sp) error(errors::invalid_slotid).go_off(true); // warning
     else sp->required = Required;
     return static_cast<Self&&>(self);
   }
@@ -161,19 +161,19 @@ public:
   template<typename Self> auto&& default_value(this Self&& self, T Value) noexcept
     requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).print_as_fatal();
+    if (!sp) error(errors::invalid_slotid).go_off(); // fatal
     if (auto res = converter<T>{}(Value)) {
       sp->default_value_string = std::move(*res);
       sp->default_value = std::move(Value);
-    } else res.error().add_footprint().print_as_warning(sp->source_line);
+    } else res.error().add_footprint().go_off(sp->source_line, true); // warning
     return static_cast<Self&&>(self);
   }
 
   const T& value() const {
-    if (!internal::parsed) error(errors::invalid_operation, "value required before parsing").print_as_fatal();
+    if (!internal::parsed) error(errors::invalid_operation, "value required before parsing").go_off(); // fatal
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).print_as_fatal();
-    if (auto res = sp->update_value(); !res) res.error().add_footprint().print_as_fatal(sp->source_line);
+    if (!sp) error(errors::invalid_slotid).go_off(); // fatal
+    if (auto res = sp->update_value(); !res) res.error().add_footprint().go_off(sp->source_line); // fatal
     return *(sp->value);
   }
 
@@ -189,7 +189,7 @@ public:
 };
 
 template<typename T>
-handle::positional<T> positional(string<char> Metavar, const source_line& sl = yw::source_line::here()) {
+handle::positional<T> positional(string<char> Metavar, const source_line& sl = here()) {
   return handle::positional<T>(std::move(Metavar), sl);
 }
 
@@ -231,16 +231,16 @@ public:
     }
   };
 
-  option(string<char> Key, const source_line& sl = yw::source_line::here()) {
-    if (const auto sp = create_slot<option>(sl); !sp) error(errors::slot_creation_failed).print_as_fatal(sl);
-    else if (auto res = sp->init(std::move(Key)); !res) res.error().add_footprint().print_as_fatal(sl);
+  option(string<char> Key, const source_line& sl = here()) {
+    if (const auto sp = create_slot<option>(sl); !sp) error(errors::slot_creation_failed).go_off(sl); // fatal
+    else if (auto res = sp->init(std::move(Key)); !res) res.error().add_footprint().go_off(sl); // fatal
     else _id = sp->id;
   }
 
   template<typename Self> auto&& description(this Self&& self, string<char> Desc)
     requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).print_as_warning();
+    if (!sp) error(errors::invalid_slotid).go_off(true); // warning
     else sp->description = std::move(Desc);
     return static_cast<Self&&>(self);
   }
@@ -248,7 +248,7 @@ public:
   template<typename Self> auto&& required(this Self&& self, bool Required = true)
     requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).print_as_warning();
+    if (!sp) error(errors::invalid_slotid).go_off(true); // warning
     else sp->required = Required;
     return static_cast<Self&&>(self);
   }
@@ -256,7 +256,7 @@ public:
   template<typename Self> auto&& multiple(this Self&& self, bool Multiple = true)
     requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).print_as_warning();
+    if (!sp) error(errors::invalid_slotid).go_off(true); // warning
     else sp->multiple = Multiple;
     return static_cast<Self&&>(self);
   }
@@ -264,39 +264,39 @@ public:
   template<typename Self> auto&& default_value(this Self&& self, T Value)
     requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).print_as_fatal();
+    if (!sp) error(errors::invalid_slotid).go_off(); // fatal
     if (auto res = converter<T>{}(Value)) {
       sp->default_value_string = std::move(*res);
       sp->default_value = std::move(Value);
-    } else res.error().add_footprint().print_as_warning(sp->source_line);
+    } else res.error().add_footprint().go_off(sp->source_line, true); // warning
     return static_cast<Self&&>(self);
   }
 
   template<typename Self> auto&& alias(this Self&& self, string<char> Alias)
     requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).print_as_fatal();
+    if (!sp) error(errors::invalid_slotid).go_off(); // fatal
     const auto [it, b] = name_map.emplace(Alias, self.id());
-    if (!b) error(errors::operation_failed, format("Duplicate key: ", Alias)).print_as_warning();
+    if (!b) error(errors::operation_failed, format("Duplicate key: ", Alias)).go_off(true); // warning
     else if (const auto sp = self.get_slot(&self); sp) sp->aliases.push_back(std::move(Alias));
     return static_cast<Self&&>(self);
   }
 
   const auto& value() const {
-    if (!internal::parsed) error(errors::invalid_operation, "value required before parsing").print_as_fatal();
+    if (!internal::parsed) error(errors::invalid_operation, "value required before parsing").go_off(); // fatal
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).print_as_fatal();
-    if (auto res = sp->update_value(); !res) res.error().add_footprint().print_as_fatal(sp->source_line);
+    if (!sp) error(errors::invalid_slotid).go_off(); // fatal
+    if (auto res = sp->update_value(); !res) res.error().add_footprint().go_off(sp->source_line); // fatal
     const auto& values = *sp->values;
-    if (values.empty()) error(errors::missing_required_argument).print_as_fatal(sp->source_line);
+    if (values.empty()) error(errors::missing_required_argument).go_off(sp->source_line); // fatal
     return values.front();
   }
 
   const auto& values() const {
-    if (!internal::parsed) error(errors::invalid_operation, "values required before parsing").print_as_fatal();
+    if (!internal::parsed) error(errors::invalid_operation, "values required before parsing").go_off(); // fatal
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).print_as_fatal();
-    if (auto res = sp->update_value(); !res) res.error().add_footprint().print_as_fatal(sp->source_line);
+    if (!sp) error(errors::invalid_slotid).go_off(); // fatal
+    if (auto res = sp->update_value(); !res) res.error().add_footprint().go_off(sp->source_line); // fatal
     return *sp->values;
   }
 
@@ -311,7 +311,7 @@ public:
   }
 };
 
-template<typename T> handle::option<T> option(string<char> Name, const source_line& sl = yw::source_line::here()) {
+template<typename T> handle::option<T> option(string<char> Name, const source_line& sl = here()) {
   return handle::option<T>(std::move(Name), sl);
 }
 
@@ -331,16 +331,16 @@ public:
     }
   };
 
-  flag(string<char>&& Key, const source_line& sl = yw::source_line::here()) {
-    if (const auto sp = create_slot<flag>(sl); !sp) error(errors::slot_creation_failed).print_as_fatal(sl);
-    else if (auto res = sp->init(std::move(Key)); !res) res.error().add_footprint().print_as_fatal(sl);
+  flag(string<char>&& Key, const source_line& sl = here()) {
+    if (const auto sp = create_slot<flag>(sl); !sp) error(errors::slot_creation_failed).go_off(sl); // fatal
+    else if (auto res = sp->init(std::move(Key)); !res) res.error().add_footprint().go_off(sl); // fatal
     else _id = sp->id;
   }
 
   template<typename Self> auto&& description(this Self&& self, string<char> Desc)
     requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).print_as_warning();
+    if (!sp) error(errors::invalid_slotid).go_off(true); // warning
     else sp->description = std::move(Desc);
     return static_cast<Self&&>(self);
   }
@@ -348,17 +348,17 @@ public:
   template<typename Self> auto&& alias(this Self&& self, string<char> Alias)
     requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).print_as_fatal();
+    if (!sp) error(errors::invalid_slotid).go_off(); // fatal
     const auto [it, b] = name_map.emplace(Alias, self.id());
-    if (!b) error(errors::operation_failed, format("Duplicate key: ", Alias)).print_as_warning();
+    if (!b) error(errors::operation_failed, format("Duplicate key: ", Alias)).go_off(true); // warning
     else sp->aliases.push_back(std::move(Alias));
     return static_cast<Self&&>(self);
   }
 
   bool value() const {
-    if (!internal::parsed) error(errors::invalid_operation, "value required before parsing").print_as_fatal();
+    if (!internal::parsed) error(errors::invalid_operation, "value required before parsing").go_off(); // fatal
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).print_as_fatal();
+    if (!sp) error(errors::invalid_slotid).go_off(); // fatal
     return sp->specified;
   }
 
@@ -370,7 +370,7 @@ public:
   }
 };
 
-inline handle::flag flag(string<char> Key, const source_line& sl = yw::source_line::here()) {
+inline handle::flag flag(string<char> Key, const source_line& sl = here()) {
   return handle::flag(std::move(Key), sl);
 }
 
@@ -393,7 +393,7 @@ inline std::vector<string<char>> collect_argv(int argc, char** argv, string<char
 #if defined(_WIN32) || defined(_WIN64)
   int c = 0;
   auto v = ::CommandLineToArgvW(::GetCommandLineW(), &c);
-  if (!v) error(errors::operation_failed, "CommandLineToArgvW failed", ::GetLastError()).print_as_fatal();
+  if (!v) error(errors::operation_failed, "CommandLineToArgvW failed", ::GetLastError()).go_off(); // fatal
   args.reserve(static_cast<size_t>(c));
   for (int i = 0; i < c; ++i) args.emplace_back(unicode<char>(std::wstring_view(v[i])));
   ::LocalFree(v);
@@ -432,14 +432,14 @@ inline void append_option_value(handle::slot& slot, string_view<char> value) {
 
 inline void argument_error(ministr<char> msg) {
   print_help();
-  error(errors::invalid_command_line_argument, string<char>(msg)).print_as_fatal();
+  error(errors::invalid_command_line_argument, string<char>(msg)).go_off(); // fatal
 }
 } // namespace internal
 
 /// MARK: parse
 
 inline void parse(int argc, char** argv) {
-  if (internal::parsed) error(errors::invalid_operation, "Arguments have already been parsed").print_as_fatal();
+  if (internal::parsed) error(errors::invalid_operation, "Arguments have already been parsed").go_off(); // fatal
   auto args = internal::collect_argv(argc, argv, argument::program_name);
   bool after_double_dash = false;
   size_t positional_index = 0;

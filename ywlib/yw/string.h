@@ -434,20 +434,32 @@ template<typename... Ts> constexpr string<char> format(Ts&&... Args) {
 /// MARK: print
 
 namespace internal {
-template<bool Error, bool NewLine, typename... Ts> void _print(Ts&&... Args) {
+template<bool Error, typename T> void _print_single(T&& Arg) {
 #ifdef _WIN32
-  string<wchar_t> s;
-  if constexpr (NewLine) ((s += internal::_format<wchar_t>(static_cast<Ts&&>(Args))), ..., (s += L'\n'));
-  else ((s += internal::_format<wchar_t>(static_cast<Ts&&>(Args))), ...);
-  if constexpr (Error) ::WriteConsoleW(::GetStdHandle(STD_ERROR_HANDLE), s.data(), unsigned(s.size()), 0, 0);
-  else ::WriteConsoleW(::GetStdHandle(STD_OUTPUT_HANDLE), s.data(), unsigned(s.size()), 0, 0);
+  if constexpr (stringable<T, wchar_t>) {
+    auto sv = string_view<wchar_t>(Arg);
+    if constexpr (Error) ::WriteConsoleW(::GetStdHandle(STD_ERROR_HANDLE), sv.data(), unsigned(sv.size()), 0, 0);
+    else ::WriteConsoleW(::GetStdHandle(STD_OUTPUT_HANDLE), sv.data(), unsigned(sv.size()), 0, 0);
+  } else {
+    auto s = format<wchar_t>(static_cast<T&&>(Arg));
+    if constexpr (Error) ::WriteConsoleW(::GetStdHandle(STD_ERROR_HANDLE), s.data(), unsigned(s.size()), 0, 0);
+    else ::WriteConsoleW(::GetStdHandle(STD_OUTPUT_HANDLE), s.data(), unsigned(s.size()), 0, 0);
+  }
 #else
-  string<char> s;
-  if constexpr (NewLine) ((s += internal::_format<char>(static_cast<Ts&&>(Args))), ..., (s += '\n'));
-  else ((s += internal::_format<char>(static_cast<Ts&&>(Args))), ...);
-  if constexpr (Error) std::fputs(s.data(), stderr);
-  else std::fputs(s.data(), stdout);
+  if constexpr (stringable<T, char>) {
+    auto sv = string_view<char>(Arg);
+    if constexpr (Error) std::fputs(sv.data(), stderr);
+    else std::fputs(sv.data(), stdout);
+  } else {
+    auto s = format<char>(static_cast<T&&>(Arg));
+    if constexpr (Error) std::fputs(s.data(), stderr);
+    else std::fputs(s.data(), stdout);
+  }
 #endif
+}
+template<bool Error, bool NewLine, typename... Ts> void _print(Ts&&... Args) {
+  ((_print_single<Error>(static_cast<Ts&&>(Args))), ...);
+  if constexpr (NewLine) _print_single<Error>('\n');
 }
 } // namespace internal
 
@@ -656,6 +668,10 @@ private:
     return it;
   }
 };
+
+consteval source_line here(std::source_location Location = std::source_location::current()) {
+  return source_line::here(Location);
+}
 } // namespace yw
 
 namespace std {

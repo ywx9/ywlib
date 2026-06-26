@@ -28,8 +28,8 @@ public:
   vertex_shader() noexcept = default;
 
   template<stringable<char> S>
-  vertex_shader(S&& Hlsl, const char* Entry = "vsmain", const source_line& sl = source_line::here()) {
-    if (auto res = initialize(string_view<char>(Hlsl), Entry); !res) res.error().add_footprint().print_as_fatal(sl);
+  vertex_shader(S&& Hlsl, const char* Entry = "vsmain", const source_line& sl = here()) {
+    if (auto res = initialize(string_view<char>(Hlsl), Entry); !res) res.error().add_footprint().go_off(sl);
   }
 
   template<typename... As> static std::expected<vertex_shader, error> create(As&&... Args) {
@@ -77,8 +77,8 @@ public:
   pixel_shader() noexcept = default;
 
   template<stringable<char> S>
-  pixel_shader(S&& Hlsl, const char* Entry = "psmain", const source_line& sl = source_line::here()) {
-    if (auto res = initialize(string_view<char>(Hlsl), Entry); !res) res.error().add_footprint().print_as_fatal(sl);
+  pixel_shader(S&& Hlsl, const char* Entry = "psmain", const source_line& sl = here()) {
+    if (auto res = initialize(string_view<char>(Hlsl), Entry); !res) res.error().add_footprint().go_off(sl);
   }
 
   template<typename... As> requires constructible<pixel_shader, As...>
@@ -128,8 +128,8 @@ public:
   geometry_shader() noexcept = default;
 
   template<stringable<char> S>
-  geometry_shader(S&& Hlsl, const char* Entry = "gsmain", const source_line& sl = source_line::here()) {
-    if (auto res = initialize(string_view<char>(Hlsl), Entry); !res) res.error().add_footprint().print_as_fatal(sl);
+  geometry_shader(S&& Hlsl, const char* Entry = "gsmain", const source_line& sl = here()) {
+    if (auto res = initialize(string_view<char>(Hlsl), Entry); !res) res.error().add_footprint().go_off(sl);
   }
 
   template<typename... As> requires constructible<geometry_shader, As...>
@@ -179,8 +179,8 @@ public:
   compute_shader() noexcept = default;
 
   template<stringable<char> S>
-  compute_shader(S&& Hlsl, const char* Entry = "csmain", const source_line& sl = source_line::here()) {
-    if (auto res = initialize(string_view<char>(Hlsl), Entry); !res) res.error().add_footprint().print_as_fatal(sl);
+  compute_shader(S&& Hlsl, const char* Entry = "csmain", const source_line& sl = here()) {
+    if (auto res = initialize(string_view<char>(Hlsl), Entry); !res) res.error().add_footprint().go_off(sl);
   }
 
   template<typename... As> requires constructible<compute_shader, As...>

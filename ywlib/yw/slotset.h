@@ -157,16 +157,39 @@ public:
 class general_handle {
 public:
   struct slot {
-    template<typename Handle> static typename Handle::slot* get(slotset<slot>::slotid Id) noexcept;
-    static void erase(slotset<slot>::slotid Id) noexcept;
+    inline static slotset<slot> slots{};
+    /// returns pointer to slot with given slotid if it is valid, or nullptr otherwise
+    template<typename Handle> static typename Handle::slot* get(slotset<slot>::slotid Id) noexcept {
+      static_assert(derived_from<Handle, general_handle>);
+      static_assert(derived_from<typename Handle::slot, general_handle::slot>);
+      return static_cast<typename Handle::slot*>(slots.get(Id));
+    }
+    /// erases slot with given slotid if it is valid
+    /// \note Nothing is done if the slotid is already erased. Error is returned if the slotid is invalid.
+    static std::expected<void, error> erase(slotset<slot>::slotid Id) noexcept {
+      if (auto res = slots.erase(Id)) return {};
+      else return res.error().relay();
+    }
     slotset<slot>::slotid id;
     yw::source_line source_line = source_line::null();
   };
 
 protected:
   slotset<slot>::slotid _id{};
-  explicit general_handle(slotset<slot>::slotid Id) : _id(Id) {}
-  template<typename Handle> static typename Handle::slot* create_slot(const source_line& sl);
+  /// returns pointer to slot
+  template<typename Handle> static typename Handle::slot* create_slot(const source_line& sl) {
+    static_assert(derived_from<Handle, general_handle>);
+    static_assert(derived_from<typename Handle::slot, general_handle::slot>);
+    const auto temp_id = slot::slots.add(std::make_unique<typename Handle::slot>());
+    const auto sp = slot::get<Handle>(temp_id);
+    if (!sp) {
+      slot::slots.erase(temp_id);
+      error(errors::slot_creation_failed).go_off(sl); // fatal
+    } else sp->id = temp_id, sp->source_line = sl;
+    return sp;
+  }
+  /// returns pointer to slot if the slotid is valid, or nullptr otherwise
+  /// \note The pointer to slot can be easily obtained by using `get_slot(this)` from the derived handle.
   template<typename Handle> static typename Handle::slot* get_slot(const Handle* Self) {
     static_assert(derived_from<Handle, general_handle>);
     static_assert(derived_from<typename Handle::slot, general_handle::slot>);
@@ -174,10 +197,14 @@ protected:
   }
 
 public:
+  /// \note The slot is automatically erased when the handle is destroyed.
   ~general_handle() noexcept { slot::erase(_id); }
+  /// \note The default constructor generates an invalid handle. Must not use before move assignment.
   general_handle() noexcept = default;
+  /// \note A handle must be unique so that the copy constructor and copy assignment operator are deleted.
   general_handle(const general_handle&) = delete;
   general_handle& operator=(const general_handle&) = delete;
+  /// \note The handle becomes invalid after being moved.
   general_handle(general_handle&& Other) noexcept : _id(std::exchange(Other._id, {})) {}
   general_handle& operator=(general_handle&& Other) noexcept {
     if (this != &Other) {
@@ -186,48 +213,12 @@ public:
     }
     return *this;
   }
-
+  /// returns id of slot linked to this handle
   slotset<slot>::slotid id() const noexcept { return _id; }
-  explicit operator bool() const noexcept;
+  /// checks if this handle is linked to valid slot
+  explicit operator bool() const noexcept { return slot::slots.contains(_id); }
 };
 
 using general_slot = general_handle::slot;
 using general_slotid = slotset<general_handle::slot>::slotid;
-
-namespace internal {
-inline slotset<general_handle::slot> general_slotset;
-}
-
-template<typename Handle> typename Handle::slot* general_handle::slot::get(general_slotid Id) noexcept {
-  static_assert(derived_from<Handle, general_handle>);
-  static_assert(derived_from<typename Handle::slot, general_handle::slot>);
-  return static_cast<typename Handle::slot*>(internal::general_slotset.get(Id));
-}
-
-inline void general_handle::slot::erase(general_slotid Id) noexcept { internal::general_slotset.erase(Id); }
-
-
-template<typename Handle> typename Handle::slot* general_handle::create_slot(const source_line& sl) {
-  static_assert(derived_from<Handle, general_handle>);
-  static_assert(derived_from<typename Handle::slot, general_handle::slot>);
-  const auto temp_id = internal::general_slotset.add(std::make_unique<typename Handle::slot>());
-  const auto sp = general_slot::get<Handle>(temp_id);
-  if (sp) sp->id = temp_id, sp->source_line = sl;
-  else internal::general_slotset.erase(temp_id);
-  return sp;
-}
-
-inline general_handle::operator bool() const noexcept { return internal::general_slotset.contains(_id); }
-
-#define ywlib_get_slot_member(name)                                                        \
-  if (const auto sp = static_cast<slot*>(::yw::internal::general_slotset.get(_id)); !sp) { \
-    ::yw::error(::yw::errors::invalid_slotid).print_as_warning();                          \
-    return slot::empty_slot.name;                                                          \
-  } else return sp->name
-
-#define ywlib_set_slot_member(name, value)                                                 \
-  if (const auto sp = static_cast<slot*>(::yw::internal::general_slotset.get(_id)); !sp) { \
-    ::yw::error(::yw::errors::invalid_slotid).print_as_warning();                          \
-  } else sp->name = value
-
 } // namespace yw

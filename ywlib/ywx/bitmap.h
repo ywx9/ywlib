@@ -67,23 +67,23 @@ public:
   ID2D1Bitmap1* d2d_bitmap() const noexcept { return _bitmap.get(); }
 
   /// creates empty bitmap with specified size
-  bitmap(uint2 Size, const source_line& sl = source_line::here()) {
-    if (auto res = initialize(Size); !res) res.error().print_as_fatal(sl);
+  bitmap(uint2 Size, const source_line& sl = here()) {
+    if (auto res = initialize(Size); !res) res.error().go_off(sl);
   }
 
   /// creates bitmap from image file
-  bitmap(const std::filesystem::path& p, const source_line& sl = source_line::here()) {
-    if (auto res = initialize(p); !res) res.error().print_as_fatal(sl);
+  bitmap(const std::filesystem::path& p, const source_line& sl = here()) {
+    if (auto res = initialize(p); !res) res.error().go_off(sl);
   }
 
   /// creates bitmap for rendertarget from swapchain
-  bitmap(IDXGISwapChain1* swapchain, const source_line& sl = source_line::here()) {
-    if (auto res = initialize(swapchain); !res) res.error().print_as_fatal(sl);
+  bitmap(IDXGISwapChain1* swapchain, const source_line& sl = here()) {
+    if (auto res = initialize(swapchain); !res) res.error().go_off(sl);
   }
 
   /// copies bitmap from another
-  bitmap(ID2D1Bitmap1* Bitmap, const source_line& sl = source_line::here()) {
-    if (auto res = initialize(Bitmap); !res) res.error().print_as_fatal(sl);
+  bitmap(ID2D1Bitmap1* Bitmap, const source_line& sl = here()) {
+    if (auto res = initialize(Bitmap); !res) res.error().go_off(sl);
   }
 
   template<typename... As> requires constructible<bitmap, As...>
@@ -95,13 +95,13 @@ public:
 
   uint2 size() const noexcept { return _size; }
 
-  drawing begin_draw(const source_line& sl = source_line::here()) {
-    if (!*this) error(errors::invalid_operation, "drawing on uninitialized bitmap").print_as_fatal(sl);
+  drawing begin_draw(const source_line& sl = here()) {
+    if (!*this) error(errors::invalid_operation, "drawing on uninitialized bitmap").go_off(sl);
     return drawing(_bitmap.get(), sl);
   }
 
-  drawing begin_draw(const color& clear_color, const source_line& sl = source_line::here()) {
-    if (!*this) error(errors::invalid_operation, "drawing on uninitialized bitmap").print_as_fatal(sl);
+  drawing begin_draw(const color& clear_color, const source_line& sl = here()) {
+    if (!*this) error(errors::invalid_operation, "drawing on uninitialized bitmap").go_off(sl);
     auto d = drawing(_bitmap.get(), sl);
     d2d::context()->Clear(reinterpret_cast<const D2D1::ColorF*>(&clear_color));
     return d;

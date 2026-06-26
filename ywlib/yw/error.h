@@ -1,158 +1,149 @@
 #pragma once
 #include "yw/string.h"
 
+/*
+# エラーハンドリング設計
+
+## 関数の戻り値型の決め方
+
+```
+if (not_fallible) return T;
+else if (is_internal_function) return std::expected<T, error>;
+else if (is_constructor) {
+  prepare("static std::expected<T, error> create(As&&...)");
+  return T(As...);
+} else if (is_setter_like) {
+  if (failed) error::go_off(true); // warning
+  else T::set(As...);
+} else if (return_value_is_essential) { // (e.g. file_handle::file_size())
+  if (failed) {
+    if (T::has_invalid_value) return T::invalid_value;
+    else error::go_off(); // fatal -> exit
+  }
+  return T;
+} else return std::expected<T, error>;
+*/
+
 namespace yw {
 
 class error {
 public:
   struct kind {
-  public:
     const char* name;
+    constexpr kind() noexcept : name("success") {}
     template<size_t N> constexpr kind(const char (&Name)[N]) : name(Name) {}
-    constexpr bool operator==(const kind& other) const noexcept { return name == other.name; }
     constexpr string_view<char> to_string() const noexcept { return string_view<char>(name); }
-  };
-
-  struct slot {
-    error::kind kind;
-    string<char> message;
-    int32_t system_code;
-    uint64_t position;
-    std::vector<source_line> locations;
-
-    constexpr string<char> to_string() const {
-      string<char> result;
-      if (system_code != 0) {
-        if (position == npos) result = yw::format(kind, ": ", message, " (code=", system_code, ")");
-        else result = yw::format(kind, ": ", message, " (code=", system_code, ", offset=", position, ")");
-      } else if (position != npos) result = yw::format(kind, ": ", message, " (offset=", position, ")");
-      else result = yw::format(kind, ": ", message);
-      if (!locations.empty()) {
-        result += yw::format("\n* ", locations.front());
-        for (size_t i = 1; i < locations.size(); ++i) result += yw::format("\n^ ", locations[i]);
-      }
-      return result;
-    }
-
-    void print() const {
-      if (system_code != 0) {
-        if (position == npos) yw::print.err(kind.to_string(), ": ", message, " (code=", system_code, ")");
-        else yw::print.err(kind.to_string(), ": ", message, " (code=", system_code, ", offset=", position, ")");
-      } else if (position != npos) yw::print.err(kind.to_string(), ": ", message, " (offset=", position, ")");
-      else yw::print.err(kind.to_string(), ": ", message);
-      if (locations.empty()) return;
-      yw::print.err("* ", locations.front());
-      for (size_t i = 1; i < locations.size(); ++i) yw::print.err("^ ", locations[i]);
-    }
+    constexpr bool operator==(const kind& other) const noexcept { return name == other.name; }
   };
 
 private:
-  inline static std::unique_ptr<slot> _current;
+  inline static error::kind _kind{};
+  inline static string<char> _message{};
+  inline static int32_t _system_code = 0;
+  inline static uint64_t _position = npos;
+  inline static std::vector<source_line> _footprints;
+
+  static void _print_error(error::kind Kind, string<char> Message, int32_t SystemCode, uint64_t Position) {
+    if (SystemCode != 0) {
+      if (Position == npos) print.err(Kind.to_string(), ": ", Message, " (code=", SystemCode, ")");
+      else print.err(Kind.to_string(), ": ", Message, " (code=", SystemCode, ", offset=", Position, ")");
+    } else if (Position != npos) print.err(Kind.to_string(), ": ", Message, " (offset=", Position, ")");
+    else if (Message.empty()) print.err(Kind.to_string());
+    else print.err(Kind.to_string(), ": ", Message);
+  }
+
+  static void _print_error() { _print_error(_kind, _message, _system_code, _position); }
+
+  static void _print_footprints() {
+    if (_footprints.empty()) return;
+    print.err("* ", _footprints.front());
+    for (size_t i = 1; i < _footprints.size(); ++i) print.err("^ ", _footprints[i]);
+  }
+
   bool _ticking = false;
 
 public:
   constexpr error() noexcept = default;
 
   constexpr error(
-    error::kind Kind, string<char> Message = {}, int32_t Code = 0, uint64_t Position = npos,
-    const source_line& Source = source_line::here()) {
-    if (_current) {
+    kind Kind, string<char> Message = {}, int32_t Code = 0, uint64_t Position = npos, const source_line& sl = here()) {
+    if (std::is_constant_evaluated()) throw "An error occurred in a constant expression";
+    if (!_footprints.empty()) {
       print.err("Error occurred while handling another error");
-      print.err("New Error: ");
-      slot new_error{Kind, std::move(Message), Code, Position};
-      new_error.locations.push_back(Source);
-      new_error.print();
-      print.err("Previous Error: ");
-      _current->print();
-      std::exit(_current->system_code ? _current->system_code : EXIT_FAILURE);
+      print_inline.err("New Error: ");
+      _print_error(Kind, Message, Code, Position);
+      print.err("* ", sl);
+      print_inline.err("Previous Error: ");
+      _print_error();
+      _print_footprints();
+      std::exit(_system_code ? _system_code : EXIT_FAILURE);
     }
-    _current = std::make_unique<slot>(slot{Kind, std::move(Message), Code, Position});
-    _current->locations.push_back(Source);
+    _kind = Kind;
+    _message = std::move(Message);
+    _system_code = Code;
+    _position = Position;
+    _footprints.push_back(sl);
     _ticking = true;
   }
 
   constexpr ~error() {
-    if (!_current || !_ticking) return;
+    if (!_ticking) return;
+    // cannnot print in constexpr context, so compile error expected in _ticking state
     print.err("Unhandled error goes off:");
-    _current->print();
-    std::exit(_current->system_code ? _current->system_code : EXIT_FAILURE);
+    _print_error();
+    _print_footprints();
+    std::exit(_system_code ? _system_code : EXIT_FAILURE);
   }
 
   constexpr error(error&& e) noexcept : _ticking(std::exchange(e._ticking, false)) {}
 
   constexpr error& operator=(error&& e) noexcept {
-    if (this != &e) _ticking = std::exchange(e._ticking, false);
+    if (this == &e) return *this;
+    if (_ticking) {
+      print.err("Error object is overwritten while ticking");
+      _print_error();
+      _print_footprints();
+      std::exit(_system_code ? _system_code : EXIT_FAILURE);
+    } else _ticking = std::exchange(e._ticking, false);
     return *this;
   }
 
-  explicit constexpr operator bool() const noexcept { return _current && _ticking; }
-  constexpr bool ticking() const noexcept { return _current && _ticking; }
+  explicit constexpr operator bool() const noexcept { return _ticking; }
+  static constexpr bool ticking() noexcept { return !_footprints.empty(); }
 
-  constexpr void sleep() noexcept {
+  void go_off(bool AsWarning = false) {
+    if (_footprints.empty()) return;
+    if (AsWarning) print_inline.err("Warning: ");
+    else print_inline.err("Fatal Error: ");
+    _print_error();
+    _print_footprints();
+    if (!AsWarning) std::exit(_system_code ? _system_code : EXIT_FAILURE);
     _ticking = false;
-    _current.reset();
   }
 
-  static void print_as_warning() {
-    print_inline.err("Warning: ");
-    _current->print();
+  void go_off(const source_line& Add, bool AsWarning = false) {
+    if (_footprints.empty()) return;
+    if (AsWarning) print_inline.err("Warning: ");
+    else print_inline.err("Fatal Error: ");
+    _print_error();
+    _footprints.push_back(Add);
+    _print_footprints();
+    if (!AsWarning) std::exit(_system_code ? _system_code : EXIT_FAILURE);
+    _ticking = false;
   }
 
-  static void print_as_warning(const source_line& Add) {
-    print_inline.err("Warning: ");
-    if (!_current) return;
-    _current->locations.push_back(Add);
-    _current->print();
-  }
-
-  void print_as_warning(bool Sleep) {
-    print_as_warning();
-    if (Sleep) sleep();
-  }
-
-  static void print_as_fatal() {
-    print_inline.err("Fatal Error: ");
-    if (!_current) std::exit(EXIT_FAILURE);
-    _current->print();
-    std::exit(_current->system_code ? _current->system_code : EXIT_FAILURE);
-  }
-
-  static void print_as_fatal(const source_line& Add) {
-    print_inline.err("Fatal Error: ");
-    if (!_current) std::exit(EXIT_FAILURE);
-    _current->locations.push_back(Add);
-    _current->print();
-    std::exit(_current->system_code ? _current->system_code : EXIT_FAILURE);
-  }
-
-  static string<char> to_string() {
-    if (!_current) return "no error";
-    return _current->to_string();
-  }
-
-  constexpr std::unexpected<error> relay(const source_line& Source = source_line::here()) & {
+  constexpr std::unexpected<error> relay(const source_line& Source = here()) & {
     add_footprint(Source);
     return std::unexpected(std::move(*this));
   }
 
-  constexpr error& add_footprint(const source_line& Source = source_line::here()) & {
-    if (_current) _current->locations.push_back(Source);
+  constexpr error& add_footprint(const source_line& Source = here()) & {
+    if (_ticking) _footprints.push_back(Source);
     return *this;
-  }
-
-  static const string<char>& message() {
-    if (!_current) return empty_string<char>;
-    return _current->message;
-  }
-
-  static void message(string<char> Message) {
-    if (!_current) return;
-    _current->message = std::move(Message);
   }
 };
 
 namespace errors {
-inline constexpr error::kind success{"success"};
 inline constexpr error::kind unreachable{"unreachable"};
 inline constexpr error::kind invalid_argument{"invalid argument"};
 inline constexpr error::kind invalid_operation{"invalid operation"};
@@ -171,11 +162,5 @@ template<> struct formatter<yw::error::kind, char> {
   formatter<basic_string_view<char>, char> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::error::kind& k, auto& ctx) const { return fmt.format(k.to_string(), ctx); }
-};
-
-template<> struct formatter<yw::error, char> {
-  formatter<basic_string<char>, char> fmt;
-  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::error& err, auto& ctx) const { return fmt.format(err.to_string(), ctx); }
 };
 } // namespace std

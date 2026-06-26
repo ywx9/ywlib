@@ -79,7 +79,8 @@ constexpr string_view<char> _extract_reference(string_view<char>& rest) {
   return string_view<char>(start, consumed);
 }
 
-constexpr std::unexpected<error> _unexpected_error(string_view<char> msg, const char* pos, string_view<char> doc, const source_line& sl = source_line::here()) {
+constexpr std::unexpected<error> _unexpected_error(
+  string_view<char> msg, const char* pos, string_view<char> doc, const source_line& sl = here()) {
   const auto offset = uint64_t(pos - doc.data());
   size_t line_count = 0;
   size_t line_start_index = 0;

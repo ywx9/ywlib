@@ -6,7 +6,7 @@ namespace yw {
 class drawing {
   inline static void* _target = nullptr;
   inline static int _type = 0; // 0: none, 2: d2d, 3: d3d, other: invalid
-  source_line _source = source_line::here();
+  source_line _source = here();
   bool _active = false;
 
   static std::expected<void, error> initialize(ID2D1Image* Target) {
@@ -40,17 +40,17 @@ public:
   drawing() noexcept = default;
   ~drawing() { close(); }
 
-  drawing(ID2D1Image* Target, const source_line& sl = source_line::here()) : _source(sl), _active(true) {
-    if (auto res = initialize(Target); !res) res.error().add_footprint().print_as_fatal(sl);
+  drawing(ID2D1Image* Target, const source_line& sl = here()) : _source(sl), _active(true) {
+    if (auto res = initialize(Target); !res) res.error().add_footprint().go_off(sl);
   }
 
-  drawing(ID3D11RenderTargetView* Target, const source_line& sl = source_line::here()) : _source(sl), _active(true) {
-    if (auto res = initialize(Target); !res) res.error().add_footprint().print_as_fatal(sl);
+  drawing(ID3D11RenderTargetView* Target, const source_line& sl = here()) : _source(sl), _active(true) {
+    if (auto res = initialize(Target); !res) res.error().add_footprint().go_off(sl);
   }
 
-  drawing(ID3D11RenderTargetView* Target, ID3D11DepthStencilView* Depth, const source_line& sl = source_line::here())
+  drawing(ID3D11RenderTargetView* Target, ID3D11DepthStencilView* Depth, const source_line& sl = here())
     : _source(sl), _active(true) {
-    if (auto res = initialize(Target, Depth); !res) res.error().add_footprint().print_as_fatal(sl);
+    if (auto res = initialize(Target, Depth); !res) res.error().add_footprint().go_off(sl);
   }
 
   explicit operator bool() const noexcept { return _target != nullptr && _type != 0; }

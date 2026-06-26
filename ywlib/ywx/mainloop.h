@@ -27,7 +27,7 @@ public:
   /// runs the mainloop
   bool operator()() {
     if (const auto& primals = window::handle<window::type::unknown>::slot::primals; primals.empty()) {
-      yw::error(errors::warning, "No primal windows exist. Exiting mainloop").print_as_warning();
+      yw::error(errors::warning, "No primal windows exist. Exiting mainloop").go_off(true);
       return _state = state::quit, false;
     } else {
       if (_state == state::quit) _timer.restart();

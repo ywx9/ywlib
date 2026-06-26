@@ -34,7 +34,7 @@ public:
   ID3D11Buffer* d3d_buffer() const { return _buffer.get(); }
 
   std::expected<void, error> copy_to_cpu(void* o) const;
-  std::vector<T> copy_to_cpu(const source_line& sl = source_line::here()) const;
+  std::vector<T> copy_to_cpu(const source_line& sl = here()) const;
 };
 
 /// MARK: staging_buffer
@@ -53,12 +53,12 @@ public:
   using buffer<T>::operator ::ID3D11Buffer*;
 
   staging_buffer() noexcept = default;
-  staging_buffer(uint1 Size, const source_line& sl = source_line::here()) {
-    if (auto res = initialize(Size); !res) res.error().print_as_fatal(sl);
+  staging_buffer(uint1 Size, const source_line& sl = here()) {
+    if (auto res = initialize(Size); !res) res.error().go_off(sl); // fatal
   }
 
-  staging_buffer(const buffer<T>& b, const source_line& sl = source_line::here()) : staging_buffer(b.size(), sl) {
-    if (auto res = this->copy_from(b); !res) res.error().print_as_fatal(sl);
+  staging_buffer(const buffer<T>& b, const source_line& sl = here()) : staging_buffer(b.size(), sl) {
+    if (auto res = this->copy_from(b); !res) res.error().go_off(sl); // fatal
   }
 
   template<typename... As> requires constructible<staging_buffer, As...>
@@ -79,9 +79,9 @@ public:
     return {};
   }
 
-  std::vector<T> copy_to_cpu(const source_line& sl = source_line::here()) const {
+  std::vector<T> copy_to_cpu(const source_line& sl = here()) const {
     std::vector<T> Data(buffer<T>::size());
-    if (auto res = copy_to_cpu(Data.data()); !res) res.error().add_footprint().print_as_warning(sl);
+    if (auto res = copy_to_cpu(Data.data()); !res) res.error().add_footprint().go_off(sl, true); // warning
     return Data;
   }
 };
@@ -96,7 +96,7 @@ template<typename T> inline std::expected<void, error> buffer<T>::copy_to_cpu(vo
 
 template<typename T> std::vector<T> buffer<T>::copy_to_cpu(const source_line& sl) const {
   std::vector<T> Data(buffer<T>::size());
-  if (auto res = copy_to_cpu(Data.data()); !res) res.error().add_footprint().print_as_warning(sl);
+  if (auto res = copy_to_cpu(Data.data()); !res) res.error().add_footprint().go_off(sl, true); // warning
   return Data;
 }
 
@@ -119,8 +119,8 @@ public:
   using buffer<T>::operator ::ID3D11Buffer*;
 
   constant_buffer() noexcept = default;
-  constant_buffer(const T& Val, const source_line& sl = source_line::here()) {
-    if (auto res = initialize(Val); !res) res.error().print_as_fatal(sl);
+  constant_buffer(const T& Val, const source_line& sl = here()) {
+    if (auto res = initialize(Val); !res) res.error().go_off(sl); // fatal
   }
 
   template<typename... As> requires constructible<constant_buffer, As...>
@@ -172,16 +172,16 @@ public:
 
   structured_buffer() noexcept = default;
 
-  structured_buffer(uint1 Size, const source_line& sl = source_line::here()) {
-    if (auto res = initialize(nullptr, Size); !res) res.error().print_as_fatal(sl);
+  structured_buffer(uint1 Size, const source_line& sl = here()) {
+    if (auto res = initialize(nullptr, Size); !res) res.error().go_off(sl); // fatal
   }
 
-  structured_buffer(const T* Data, uint1 Size, const source_line& sl = source_line::here()) {
-    if (auto res = initialize(Data, Size); !res) res.error().print_as_fatal(sl);
+  structured_buffer(const T* Data, uint1 Size, const source_line& sl = here()) {
+    if (auto res = initialize(Data, Size); !res) res.error().go_off(sl); // fatal
   }
 
-  template<contiguous_range<T> Rg> structured_buffer(Rg&& rg, const source_line& sl = source_line::here()) {
-    if (auto res = initialize(yw::data(rg), yw::size(rg)); !res) res.error().print_as_fatal(sl);
+  template<contiguous_range<T> Rg> structured_buffer(Rg&& rg, const source_line& sl = here()) {
+    if (auto res = initialize(yw::data(rg), yw::size(rg)); !res) res.error().go_off(sl); // fatal
   }
 
   template<typename... Ts> requires constructible<structured_buffer, Ts...>
@@ -233,12 +233,12 @@ public:
   explicit operator ::ID3D11UnorderedAccessView*() const noexcept { return _uav.get(); }
 
   rw_structured_buffer() noexcept = default;
-  rw_structured_buffer(uint1 Size, const source_line& sl = source_line::here()) {
-    if (auto res = initialize(nullptr, Size); !res) res.error().print_as_fatal(sl);
+  rw_structured_buffer(uint1 Size, const source_line& sl = here()) {
+    if (auto res = initialize(nullptr, Size); !res) res.error().go_off(sl); // fatal
   }
 
-  rw_structured_buffer(const T* Data, uint1 Size, const source_line& sl = source_line::here()) {
-    if (auto res = initialize(Data, Size); !res) res.error().print_as_fatal(sl);
+  rw_structured_buffer(const T* Data, uint1 Size, const source_line& sl = here()) {
+    if (auto res = initialize(Data, Size); !res) res.error().go_off(sl); // fatal
   }
 
   template<typename... Ts> requires constructible<rw_structured_buffer, Ts...>
@@ -249,9 +249,9 @@ public:
   }
 
   std::expected<void, error> copy_from(const T* Data, uint1 Size) {
-    if (auto res = this->validate_initialized("Uninitialized rw_structured_buffer"); !res) return res.error().relay();
-    if (Size.x != 0 && !Data) return std::unexpected(error(errors::invalid_argument, "null source data"));
-    if (auto res = this->validate_same_size(Size.x); !res) return res.error().relay();
+    if (!*this) return std::unexpected(error(errors::invalid_argument, "uninitialized rw_structured_buffer"));
+    if (Size.x != 0 || !Data) return std::unexpected(error(errors::invalid_argument, "null source data"));
+    if (Size.x != this->size()) return std::unexpected(error(errors::invalid_operation, "unmatched buffer sizes"));
     d3d::context()->UpdateSubresource(buffer<T>::d3d_buffer(), 0, nullptr, Data, 0, 0);
     return {};
   }

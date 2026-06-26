@@ -317,9 +317,9 @@ public:
     return {};
   }
 
-  drawing begin_draw(const source_line& sl = source_line::here()) {
+  drawing begin_draw(const source_line& sl = here()) {
     const auto wsp = interface::slot::get<handle>(_id);
-    if (!wsp) error(errors::invalid_slotid).print_as_fatal(sl);
+    if (!wsp) error(errors::invalid_slotid).go_off(sl);
     return wsp->rendertarget.begin_draw(sl);
   }
 };
@@ -384,9 +384,9 @@ public:
   }
 }; // standard window
 
-inline handle<type::standard> open(options<type::standard> Options, const yw::source_line& sl = source_line::here()) {
+inline handle<type::standard> open(options<type::standard> Options, const yw::source_line& sl = here()) {
   auto res = handle<type::standard>::slot::open(std::move(Options), sl);
-  if (!res) res.error().add_footprint().print_as_fatal(sl);
+  if (!res) res.error().add_footprint().go_off(sl);
   return std::move(*res);
 }
 

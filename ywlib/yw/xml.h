@@ -175,7 +175,7 @@ inline document<false> open(const std::filesystem::path& path) {
   if (!fh) return {};
   auto doc = document<false>::parse(fh.read_as_string());
   if (doc) return std::move(*doc);
-  doc.error().add_footprint().print_as_warning();
+  doc.error().add_footprint().go_off(true); // warning
   return {};
 }
 } // namespace yw::xml

@@ -127,7 +127,7 @@ class wclass {
 
     slot() {
       if (!::RegisterClassW(&wc) && ::GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
-        error(errors::operation_failed, "RegisterClassW failed").print_as_fatal();
+        error(errors::operation_failed, "RegisterClassW failed").go_off();
     }
 
     static slot* get() noexcept {
@@ -154,10 +154,10 @@ class d3d {
     ID3D11RasterizerState* rasterizer_state{};
 
     slot() {
-      if (auto res = _init_device(); !res) res.error().print_as_fatal();
-      if (auto res = _init_blend_state(); !res) res.error().print_as_fatal();
-      if (auto res = _init_sampler_state(); !res) res.error().print_as_fatal();
-      if (auto res = _init_rasterizer_state(); !res) res.error().print_as_fatal();
+      if (auto res = _init_device(); !res) res.error().go_off();
+      if (auto res = _init_blend_state(); !res) res.error().go_off();
+      if (auto res = _init_sampler_state(); !res) res.error().go_off();
+      if (auto res = _init_rasterizer_state(); !res) res.error().go_off();
     }
 
     static slot* get() noexcept {
@@ -237,8 +237,8 @@ class dxgi {
     IDXGIDevice2* device{};
 
     slot() {
-      if (auto res = _init_factory(); !res) res.error().print_as_fatal();
-      if (auto res = _init_device(); !res) res.error().print_as_fatal();
+      if (auto res = _init_factory(); !res) res.error().go_off();
+      if (auto res = _init_device(); !res) res.error().go_off();
     }
 
     static slot* get() noexcept {
@@ -273,9 +273,9 @@ class d2d {
     ID2D1DeviceContext* context{};
 
     slot() {
-      if (auto res = _init_factory(); !res) res.error().print_as_fatal();
-      if (auto res = _init_device(); !res) res.error().print_as_fatal();
-      if (auto res = _init_context(); !res) res.error().print_as_fatal();
+      if (auto res = _init_factory(); !res) res.error().go_off();
+      if (auto res = _init_device(); !res) res.error().go_off();
+      if (auto res = _init_context(); !res) res.error().go_off();
     }
 
     static slot* get() noexcept {
@@ -324,8 +324,8 @@ class brush {
     bool dashed = false;
 
     slot() {
-      if (auto res = _init_brush(); !res) res.error().print_as_fatal();
-      if (auto res = _init_styles(); !res) res.error().print_as_fatal();
+      if (auto res = _init_brush(); !res) res.error().go_off();
+      if (auto res = _init_styles(); !res) res.error().go_off();
     }
 
     static slot* get() noexcept {
@@ -437,8 +437,8 @@ class dwrite {
     IDWriteTextFormat* text_format{};
 
     slot() {
-      if (auto res = _init_factory(); !res) res.error().print_as_fatal();
-      if (auto res = _init_text_format(); !res) res.error().print_as_fatal();
+      if (auto res = _init_factory(); !res) res.error().go_off();
+      if (auto res = _init_text_format(); !res) res.error().go_off();
     }
 
     static slot* get() noexcept {
@@ -464,6 +464,7 @@ class dwrite {
     }
   };
 
+public:
   static IDWriteFactory1* factory() noexcept { return slot::get()->factory; }
   static IDWriteTextFormat* text_format() noexcept { return slot::get()->text_format; }
 };
@@ -475,7 +476,7 @@ class coinit {
 
   struct slot {
     slot() {
-      if (auto res = initialize(); !res) res.error().print_as_fatal();
+      if (auto res = initialize(); !res) res.error().go_off();
       system::com_list_to_release.push([]() { ::CoUninitialize(); });
     }
 
@@ -502,7 +503,7 @@ public:
 
     slot() {
       const coinit coinit;
-      if (auto res = _init_factory(); !res) res.error().print_as_fatal();
+      if (auto res = _init_factory(); !res) res.error().go_off();
       system::com_list_to_release.push([&]() {
         if (factory) factory->Release();
       });
@@ -535,7 +536,7 @@ public:
 
     slot() {
       const coinit coinit;
-      if (auto res = _init(); !res) res.error().print_as_fatal();
+      if (auto res = _init(); !res) res.error().go_off();
       system::com_list_to_release.push([&]() {
         if (mastering_voice) mastering_voice->DestroyVoice();
         if (device) device->Release();

@@ -21,7 +21,7 @@ inline modifiers get_modifiers(WPARAM wp) {
     .ctrl = (wp & MK_CONTROL) != 0, .shift = (wp & MK_SHIFT) != 0, .alt = (::GetKeyState(VK_MENU) & 0x8000) != 0};
 }
 
-inline void report(error&& err) { err.add_footprint().print_as_fatal(); }
+inline void report(error&& err) { err.add_footprint().go_off(); }
 
 inline void report(std::expected<void, error>&& res) {
   if (res) return;
@@ -379,7 +379,7 @@ inline LRESULT on_nc_destroy(window::handle<window::type::unknown>::slot* wsp, H
 
 } // namespace internal
 
-inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) noexcept {
+inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   const auto wid = static_cast<interface::slotid>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
   const auto wsp = interface::slot::get<window::handle<window::type::unknown>>(wid);
   if (!wsp) return ::DefWindowProcW(hwnd, msg, wp, lp);

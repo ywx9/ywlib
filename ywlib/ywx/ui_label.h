@@ -47,8 +47,8 @@ public:
     ~text_accessor() noexcept {
       try {
         if (slot.text.messy())
-          if (auto res = slot.text.update(); !res) res.error().print_as_fatal();
-      } catch (...) { error(errors::unreachable, "Unhandled exception in ui::label::text_accessor destructor").print_as_fatal(); }
+          if (auto res = slot.text.update(); !res) res.error().go_off();
+      } catch (...) { error(errors::unreachable, "Unhandled exception in ui::label::text_accessor destructor").go_off(); }
     }
 
     const auto& string() const { return slot.text.string(); }

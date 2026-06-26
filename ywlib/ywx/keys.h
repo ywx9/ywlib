@@ -260,7 +260,7 @@ template<> struct formatter<yw::activate_event> {
   formatter<yw::string<char>> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::activate_event& e, auto& ctx) const {
-    return fmt.format(format("activate_event(key:", e.key, ", pos:", e.pos, ")"), ctx);
+    return fmt.format(yw::format("activate_event(key:", e.key, ", pos:", e.pos, ")"), ctx);
   }
 };
 

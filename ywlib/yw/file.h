@@ -124,19 +124,9 @@ namespace yw {
 class file_handle : public general_handle {
 public:
   struct slot : general_handle::slot {
-    static const slot empty_slot;
     std::FILE* file = nullptr;
     std::filesystem::path path;
     open_mode mode = open_mode::unknown;
-
-    std::expected<void, error> open(std::filesystem::path&& Path, open_mode Mode) {
-      if (file) return std::unexpected(error(errors::already_initialized));
-      if (auto res = internal::_open(Path, Mode)) file = *res;
-      else return res.error().relay();
-      this->path = std::move(Path);
-      this->mode = Mode;
-      return {};
-    }
 
     std::expected<void, error> seek(int64_t off, seek_whence w) {
       if (!file) return std::unexpected(error(errors::not_initialized));
@@ -197,23 +187,42 @@ public:
     }
   };
 
-  using general_handle::general_handle;
+  file_handle() noexcept = default;
 
-  file_handle(std::filesystem::path path, open_mode mode, const source_line& sl = source_line::here()) {
-    const auto sp = create_slot<file_handle>(sl);
-    if (!sp) error(errors::slot_creation_failed).print_as_fatal(sl);
-    if (auto res = sp->open(std::move(path), mode); !res) {
-      slot::erase(sp->id);
-      res.error().add_footprint().print_as_warning(sl); // makes empty handle
-    } else _id = sp->id;
+  file_handle(std::filesystem::path path, open_mode mode, const source_line& sl = here()) {
+    if (auto res = initialize(std::move(path), mode, sl); !res) {
+      slot::erase(std::exchange(_id, {}));
+      res.error().add_footprint().go_off(sl, true); // warning
+    }
   }
 
-  const std::filesystem::path& path() const { ywlib_get_slot_member(path); }
-  const open_mode& mode() const { ywlib_get_slot_member(mode); }
+  template<typename... As> requires constructible<file_handle, As...>
+  static std::expected<file_handle, error> create(As&&... Args) {
+    file_handle fh;
+    if (auto res = fh.initialize(static_cast<As&&>(Args)...); !res) {
+      slot::erase(std::exchange(fh._id, {}));
+      return res.error().relay();
+    } else return std::move(fh);
+  }
+
+  const std::filesystem::path& path() const {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off(); // fatal
+    return sp->path;
+  }
+
+  open_mode mode() const {
+    if (const auto sp = get_slot(this); !sp) {
+      error(errors::invalid_slotid).go_off(true); // warning
+      return open_mode::unknown;
+    } else return sp->mode;
+  }
 
   bool is_open() const noexcept {
-    const auto sp = get_slot(this);
-    return sp && sp->file != nullptr;
+    if (const auto sp = get_slot(this); !sp) {
+      error(errors::invalid_slotid).go_off(true); // warning
+      return false;
+    } else return sp->file != nullptr;
   }
 
   explicit operator bool() const noexcept { return is_open(); }
@@ -227,8 +236,8 @@ public:
   int64_t tell() const {
     if (const auto sp = get_slot(this)) {
       if (auto res = sp->tell()) return *res;
-      else res.error().add_footprint().add_footprint(sp->source_line).print_as_warning();
-    } else error(errors::invalid_slotid).print_as_warning();
+      else res.error().add_footprint().go_off(sp->source_line, true); // warning
+    } else error(errors::invalid_slotid).go_off(true);                // warning
     return 0;
   }
 
@@ -241,8 +250,8 @@ public:
   int64_t file_size() const {
     if (const auto sp = get_slot(this)) {
       if (auto res = sp->size()) return *res;
-      else res.error().add_footprint().add_footprint(sp->source_line).print_as_warning();
-    } else error(errors::invalid_slotid).print_as_warning();
+      else res.error().add_footprint().go_off(sp->source_line, true); // warning
+    } else error(errors::invalid_slotid).go_off(true);                // warning
     return 0;
   }
 
@@ -275,25 +284,25 @@ public:
   }
 
   string<char> read_as_string(size_t Max = npos) {
-    if (const auto sp = static_cast<slot*>(internal::general_slotset.get(_id))) {
+    if (const auto sp = get_slot(this)) {
       if (auto res = sp->size()) {
         string<char> result(yw::min(static_cast<size_t>(*res), Max));
-        if (auto res = read_exact(result.data(), result.capacity())) return result;
-        else res.error().add_footprint().add_footprint(sp->source_line).print_as_warning();
-      } else res.error().add_footprint().add_footprint(sp->source_line).print_as_warning();
+        if (auto res = read_exact(result.data(), result.size())) return result;
+        else res.error().add_footprint().go_off(sp->source_line, true); // warning
+      } else res.error().add_footprint().go_off(sp->source_line, true); // warning
     }
     return {};
   }
 
   std::expected<size_t, error> write(const void* src, size_t bytes) {
-    const auto sp = static_cast<slot*>(internal::general_slotset.get(_id));
-    if (!sp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = sp->write(src, bytes)) return *res;
+    if (const auto sp = get_slot(this); !sp) return std::unexpected(error(errors::invalid_slotid));
+    else if (auto res = sp->write(src, bytes)) return *res;
     else return res.error().relay();
   }
 
-  template<contiguous_iterator It, sentinel_for<It> Se> requires trivial<iter_value_t<It>>
+  template<contiguous_iterator It, sized_sentinel_for<It> Se> requires trivial<iter_value_t<It>>
   std::expected<size_t, error> write(It first, Se last) {
+    if (first >= last) return std::unexpected(error(errors::invalid_argument, "invalid iterator range"));
     return write(std::to_address(first), std::ranges::distance(first, last) * sizeof(iter_value_t<It>));
   }
 
@@ -313,8 +322,9 @@ public:
     } else return std::unexpected(error(errors::invalid_slotid));
   }
 
-  template<contiguous_iterator It, sentinel_for<It> Se> requires trivial<iter_value_t<It>>
+  template<contiguous_iterator It, sized_sentinel_for<It> Se> requires trivial<iter_value_t<It>>
   std::expected<void, error> write_exact(It first, Se last) {
+    if (first >= last) return std::unexpected(error(errors::invalid_argument, "invalid iterator range"));
     return write_exact(std::to_address(first), std::ranges::distance(first, last) * sizeof(iter_value_t<It>));
   }
 
@@ -324,7 +334,7 @@ public:
 
   template<trivial T> std::expected<void, error> write_trivial(const T& v) {
     if (auto res = write_exact(&v, sizeof(T))) return {};
-    else return std::unexpected(error(res.error()));
+    else return res.error().relay();
   }
 
   template<typename T> requires is_bounded_array<T> && same_as<iter_value_t<T>, char>
@@ -349,11 +359,22 @@ public:
     if (auto res = close(); !res) return res.error().relay();
     return {};
   }
+
+private:
+  std::expected<void, error> initialize(std::filesystem::path&& Path, open_mode Mode, const source_line& sl) {
+    const auto sp = create_slot<file_handle>(sl);
+    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
+    if (auto res = internal::_open(Path, Mode)) sp->file = *res;
+    else return res.error().relay();
+    sp->path = std::move(Path);
+    sp->mode = Mode;
+    _id = sp->id;
+    return {};
+  }
 };
 
-inline file_handle open(const std::filesystem::path& path, open_mode mode, const source_line& sl = source_line::here()) {
+inline file_handle open(
+  const std::filesystem::path& path, open_mode mode, const source_line& sl = here()) {
   return file_handle(path, mode, sl);
 }
-
-inline const file_handle::slot file_handle::slot::empty_slot{};
 } // namespace yw

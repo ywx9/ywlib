@@ -316,12 +316,12 @@ public:
   explicit operator ID2D1PathGeometry*&() & noexcept { return _geometry.get(); }
   explicit operator ID2D1PathGeometry*() const& noexcept { return _geometry.get(); }
 
-  svgpath(float2 Size, string_view<char> Svg, const source_line& sl = source_line::here()) {
-    if (auto res = initialize(Size, Svg); !res) res.error().add_footprint().print_as_fatal(sl);
+  svgpath(float2 Size, string_view<char> Svg, const source_line& sl = here()) {
+    if (auto res = initialize(Size, Svg); !res) res.error().add_footprint().go_off(sl);
   }
 
-  svgpath(const svgpath& Other, const source_line& sl = source_line::here()) {
-    if (auto res = initialize(Other); !res) res.error().add_footprint().print_as_fatal(sl);
+  svgpath(const svgpath& Other, const source_line& sl = here()) {
+    if (auto res = initialize(Other); !res) res.error().add_footprint().go_off(sl);
   }
 
   ID2D1PathGeometry* get() const noexcept { return _geometry.get(); }

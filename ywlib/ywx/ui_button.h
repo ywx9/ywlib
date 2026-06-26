@@ -133,7 +133,7 @@ public:
 
   const auto& pressed_overlay_color() const {
     const auto csp = interface::slot::get<button>(_id);
-    if (!csp) error(errors::invalid_slotid).print_as_fatal();
+    if (!csp) error(errors::invalid_slotid).go_off();
     return csp->pressed_overlay_color;
   }
   std::expected<void, error> pressed_overlay_color(const color& c) {
@@ -146,7 +146,7 @@ public:
 
   const auto& on_click() const {
     const auto csp = interface::slot::get<button>(_id);
-    if (!csp) error(errors::invalid_slotid).print_as_fatal();
+    if (!csp) error(errors::invalid_slotid).go_off();
     return csp->on_click;
   }
   std::expected<void, error> on_click(function<void, yw::key> f) {
@@ -158,7 +158,7 @@ public:
 
   const auto& on_focus() const {
     const auto csp = interface::slot::get<button>(_id);
-    if (!csp) error(errors::invalid_slotid).print_as_fatal();
+    if (!csp) error(errors::invalid_slotid).go_off();
     return csp->on_focus;
   }
   std::expected<void, error> on_focus(function<void, bool> f) {
