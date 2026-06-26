@@ -13,7 +13,7 @@ public:
 
 private:
   comptr<ID2D1Bitmap1> _bitmap;
-  uint2 _size;
+  uint2 _size{};
 
   std::expected<void, error> initialize(uint2 sz) {
     hresult_test(d2d::context()->CreateBitmap, D2D1_SIZE_U{sz.x, sz.y}, nullptr, 0, &properties, &_bitmap.get());
@@ -95,16 +95,30 @@ public:
 
   uint2 size() const noexcept { return _size; }
 
-  drawing begin_draw(const source_line& sl = here()) {
+  drawing begin_draw(const source_line& sl) {
     if (!*this) error(errors::invalid_operation, "drawing on uninitialized bitmap").go_off(sl);
     return drawing(_bitmap.get(), sl);
   }
 
-  drawing begin_draw(const color& clear_color, const source_line& sl = here()) {
+  drawing begin_draw(const color& clear_color, const source_line& sl) {
     if (!*this) error(errors::invalid_operation, "drawing on uninitialized bitmap").go_off(sl);
     auto d = drawing(_bitmap.get(), sl);
     d2d::context()->Clear(reinterpret_cast<const D2D1::ColorF*>(&clear_color));
     return d;
+  }
+
+  std::expected<drawing, error> begin_draw() {
+    if (!*this) return std::unexpected(error(errors::invalid_operation, "drawing on uninitialized bitmap"));
+    if (auto res = drawing::create(_bitmap.get()); !res) return res.error().relay();
+    else return std::move(*res);
+  }
+
+  std::expected<drawing, error> begin_draw(const color& clear_color) {
+    if (!*this) return std::unexpected(error(errors::invalid_operation, "drawing on uninitialized bitmap"));
+    if (auto res = drawing::create(_bitmap.get())) {
+      d2d::context()->Clear(reinterpret_cast<const D2D1::ColorF*>(&clear_color));
+      return std::move(*res);
+    } else return res.error().relay();
   }
 
   std::expected<void, error> save_as(const std::filesystem::path& p, const GUID& FileFormat) const {

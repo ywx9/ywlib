@@ -379,8 +379,8 @@ template<std::regular T> struct vector<T, 2> {
   template<char_type C> constexpr string<C> to_string() const {
     string<C> s;
     s.reserve((8 * sizeof(T) + 2) * 2);
-    s.push_back('(').append(yw::format(x)).push_back(',');
-    s.push_back(' ').append(yw::format(y)).push_back(')');
+    s.push_back(C('(')).append(yw::format<C>(x)).push_back(C(','));
+    s.push_back(C(' ')).append(yw::format<C>(y)).push_back(C(')'));
     return s;
   }
 
@@ -455,9 +455,9 @@ template<std::regular T> struct vector<T, 3> {
   template<char_type C> constexpr string<C> to_string() const {
     string<C> s;
     s.reserve((8 * sizeof(T) + 2) * 3);
-    s.push_back('(').append(yw::format(x)).push_back(',');
-    s.push_back(' ').append(yw::format(y)).push_back(',');
-    s.push_back(' ').append(yw::format(z)).push_back(')');
+    s.push_back(C('(')).append(yw::format<C>(x)).push_back(C(','));
+    s.push_back(C(' ')).append(yw::format<C>(y)).push_back(C(','));
+    s.push_back(C(' ')).append(yw::format<C>(z)).push_back(C(')'));
     return s;
   }
 
@@ -549,10 +549,10 @@ template<std::regular T> struct vector<T, 4> {
   template<char_type C> constexpr string<C> to_string() const {
     string<C> s;
     s.reserve((8 * sizeof(T) + 2) * 4);
-    s.push_back('(').append(yw::format(x)).push_back(',');
-    s.push_back(' ').append(yw::format(y)).push_back(',');
-    s.push_back(' ').append(yw::format(z)).push_back(',');
-    s.push_back(' ').append(yw::format(w)).push_back(')');
+    s.push_back(C('(')).append(yw::format<C>(x)).push_back(C(','));
+    s.push_back(C(' ')).append(yw::format<C>(y)).push_back(C(','));
+    s.push_back(C(' ')).append(yw::format<C>(z)).push_back(C(','));
+    s.push_back(C(' ')).append(yw::format<C>(w)).push_back(C(')'));
     return s;
   }
 };

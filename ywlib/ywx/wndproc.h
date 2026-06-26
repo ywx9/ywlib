@@ -373,6 +373,7 @@ inline LRESULT on_nc_destroy(window::handle<window::type::unknown>::slot* wsp, H
   interface::slot::slots.erase(id);
   std::erase(window::handle<window::type::unknown>::slot::primals, id);
   ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+  print(here(), "window destroyed, remaining windows: ", window::handle<window::type::unknown>::slot::primals.size());
   if (window::handle<window::type::unknown>::slot::primals.empty()) ::PostQuitMessage(0);
   return 0;
 }
@@ -380,7 +381,7 @@ inline LRESULT on_nc_destroy(window::handle<window::type::unknown>::slot* wsp, H
 } // namespace internal
 
 inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-  const auto wid = static_cast<interface::slotid>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+  const auto wid = std::bit_cast<interface::slotid>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
   const auto wsp = interface::slot::get<window::handle<window::type::unknown>>(wid);
   if (!wsp) return ::DefWindowProcW(hwnd, msg, wp, lp);
   switch (msg) {

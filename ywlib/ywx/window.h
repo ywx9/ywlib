@@ -172,7 +172,8 @@ public:
     }
 
     std::expected<void, error> set_window_pos() {
-      if (!::SetWindowPos(hwnd, nullptr, pos.x, pos.y, size.x, size.y, SWP_NOZORDER | SWP_NOACTIVATE))
+      const auto area = size + frame_thickness.xy() + frame_thickness.zw();
+      if (!::SetWindowPos(hwnd, nullptr, pos.x, pos.y, area.x, area.y, SWP_NOZORDER | SWP_NOACTIVATE))
         return std::unexpected(error(errors::operation_failed, "SetWindowPos failed"));
       return {};
     }
@@ -221,7 +222,7 @@ public:
       if (!csp) return std::unexpected(error(errors::invalid_slotid));
       auto d = controllayer.begin_draw(colors::transparent);
       if (auto res = csp->draw(); !res) return res.error().relay();
-      if (auto res = d.close(); !res) return res.error().relay();
+      if (auto res = d->close(); !res) return res.error().relay();
       return {};
     }
 
@@ -236,7 +237,7 @@ public:
         auto res = fcsp->draw_focusring(focusring_color, focusring_offset, focusring_width, focusring_dashed);
         if (!res) return res.error().relay();
       }
-      if (auto res = d.close(); !res) return res.error().relay();
+      if (auto res = d->close(); !res) return res.error().relay();
       if (swapchain) swapchain->Present(0, 0);
       dirty = false;
       return {};
@@ -361,6 +362,7 @@ public:
       if (Options.pos.has_value()) wsp->pos = *Options.pos;
       if (Options.size.has_value()) wsp->size = vapply_r<int2>(yw::max, *Options.size, wsp->size);
       if (auto res = wsp->set_window_pos(); !res) return res.error().relay();
+      if (auto res = wsp->resize_rendertarget(); !res) return res.error().relay();
       /// \note rendertarget and controllayer are getting updated in WM_SIZE
       wsp->messy = true, wsp->manually_drawn = false, wsp->active = true;
       if (wsp->visible = Options.show) ::ShowWindow(wsp->hwnd, SW_SHOW);
