@@ -1,9 +1,166 @@
 #pragma once
+#include "yw/datetime.h"
 #include "yw/slotset.h"
 
-#include <fcntl.h>
+namespace yw::file {
+
+using path = std::filesystem::path;
+
+enum class kind {
+  unknown,
+  regular = static_cast<int>(std::filesystem::file_type::regular),
+  directory = static_cast<int>(std::filesystem::file_type::directory),
+  symlink = static_cast<int>(std::filesystem::file_type::symlink),
+};
+
+struct info {
+  kind kind = kind::unknown;
+  uint64_t size = 0; // regular file only
+  bool exists = false;
+  bool read_only = false;
+  datetime last_write_time{{0, 0, 0}, {0, 0, 0}};
+};
+
+inline bool exists(const path& path) {
+  std::error_code ec;
+  const bool result = std::filesystem::exists(path, ec);
+  if (ec) error(errors::operation_failed, "failed to check file existence", int32_t(ec.value())).go_off(true);
+  return result;
+}
+
+inline bool is_file(const path& path) {
+  std::error_code ec;
+  const bool result = std::filesystem::is_regular_file(path, ec);
+  if (ec) error(errors::operation_failed, "failed to check regular file", int32_t(ec.value())).go_off(true);
+  return result;
+}
+
+inline bool is_directory(const path& path) {
+  std::error_code ec;
+  const bool result = std::filesystem::is_directory(path, ec);
+  if (ec) error(errors::operation_failed, "failed to check directory", int32_t(ec.value())).go_off(true);
+  return result;
+}
+
+inline uint64_t size(const path& path) {
+  std::error_code ec;
+  const auto result = std::filesystem::file_size(path, ec);
+  if (ec) {
+    error(errors::operation_failed, "failed to get file size", int32_t(ec.value())).go_off(true);
+    return 0;
+  } else return static_cast<uint64_t>(result);
+}
+
+namespace internal {
+inline datetime to_datetime(const std::filesystem::file_time_type& tp) {
+  const auto sys_tp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+    tp - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
+  return datetime(sys_tp);
+}
+} // namespace internal
+
+inline datetime last_write_time(const path& path) {
+  std::error_code ec;
+  const auto result = std::filesystem::last_write_time(path, ec);
+  if (ec) {
+    error(errors::operation_failed, "failed to get last write time", int32_t(ec.value())).go_off(true);
+    return datetime{{0, 0, 0}, {0, 0, 0}};
+  } else return internal::to_datetime(result);
+}
+
+inline info stat(const path& path) {
+  info result;
+  std::error_code ec;
+  const auto st = std::filesystem::status(path, ec);
+  if (ec) {
+    error(errors::operation_failed, "failed to get file status", int32_t(ec.value())).go_off(true);
+    return result;
+  }
+  result.exists = std::filesystem::exists(st);
+  switch (st.type()) {
+  case std::filesystem::file_type::regular: result.kind = kind::regular; break;
+  case std::filesystem::file_type::directory: result.kind = kind::directory; break;
+  case std::filesystem::file_type::symlink: result.kind = kind::symlink; break;
+  default: result.kind = kind::unknown; break;
+  }
+  result.read_only = (st.permissions() & (std::filesystem::perms::owner_write | std::filesystem::perms::group_write |
+                                           std::filesystem::perms::others_write)) == std::filesystem::perms::none;
+  if (!result.exists) return result;
+  if (result.kind == kind::regular) result.size = file::size(path);
+
+  const auto modified = std::filesystem::last_write_time(path, ec);
+  if (ec) error(errors::operation_failed, "failed to get last write time", int32_t(ec.value())).go_off(true);
+  else result.last_write_time = internal::to_datetime(modified);
+  return result;
+}
+inline std::expected<void, error> rename(const path& from, const path& to) {
+  std::error_code ec;
+  std::filesystem::rename(from, to, ec);
+  if (ec) return std::unexpected(error(errors::operation_failed, "failed to rename file", int32_t(ec.value())));
+  return {};
+}
+
+inline std::expected<void, error> copy_file(const path& from, const path& to, bool overwrite) {
+  std::error_code ec;
+  const auto options =
+    overwrite ? std::filesystem::copy_options::overwrite_existing : std::filesystem::copy_options::none;
+  if (!std::filesystem::copy_file(from, to, options, ec) && ec)
+    return std::unexpected(error(errors::operation_failed, "failed to copy file", int32_t(ec.value())));
+  return {};
+}
+
+inline std::expected<void, error> remove_file(const path& path) {
+  std::error_code ec;
+  if (!std::filesystem::remove(path, ec) && ec)
+    return std::unexpected(error(errors::operation_failed, "failed to remove file", int32_t(ec.value())));
+  return {};
+}
+
+inline std::expected<void, error> resize_file(const path& path, uint64_t size) {
+  std::error_code ec;
+  std::filesystem::resize_file(path, size, ec);
+  if (ec) return std::unexpected(error(errors::operation_failed, "failed to resize file", int32_t(ec.value())));
+  return {};
+}
+
+inline std::expected<void, error> create_directory(const path& path, bool recursive) {
+  std::error_code ec;
+  if (recursive) std::filesystem::create_directories(path, ec);
+  else std::filesystem::create_directory(path, ec);
+  if (ec) return std::unexpected(error(errors::operation_failed, "failed to create directory", int32_t(ec.value())));
+  return {};
+}
+
+inline std::expected<void, error> remove_directory(const path& path, bool recursive) {
+  std::error_code ec;
+  if (recursive) std::filesystem::remove_all(path, ec);
+  else if (!std::filesystem::remove(path, ec) && ec)
+    return std::unexpected(error(errors::operation_failed, "failed to remove directory", int32_t(ec.value())));
+  if (ec) return std::unexpected(error(errors::operation_failed, "failed to remove directory", int32_t(ec.value())));
+  return {};
+}
+
+std::vector<path> list_files(const path& directory, bool recursive = false) {
+  std::vector<path> result;
+  std::error_code ec;
+  if (recursive) {
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(directory, ec)) {
+      if (ec) error(errors::operation_failed, "failed to list files", int32_t(ec.value())).go_off(true);
+      if (entry.is_regular_file()) result.push_back(entry.path());
+    }
+  } else {
+    for (const auto& entry : std::filesystem::directory_iterator(directory, ec)) {
+      if (ec) error(errors::operation_failed, "failed to list files", int32_t(ec.value())).go_off(true);
+      if (entry.is_regular_file()) result.push_back(entry.path());
+    }
+  }
+  return result;
+}
+} // namespace yw::file
 
 namespace yw {
+
+/// MARK: file_handle
 
 enum class open_mode { unknown, read_existing, update_existing, create_always, create_new, append, update_or_create };
 enum class seek_whence { begin = SEEK_SET, current = SEEK_CUR, end = SEEK_END };
@@ -16,6 +173,8 @@ inline constexpr error::kind invalid_file_format{"invalid file format"};
 class file_handle;
 
 } // namespace yw
+
+#include <fcntl.h>
 
 #ifdef _WIN32
 #include <io.h>
@@ -373,8 +532,7 @@ private:
   }
 };
 
-inline file_handle open(
-  const std::filesystem::path& path, open_mode mode, const source_line& sl = here()) {
+inline file_handle open(const std::filesystem::path& path, open_mode mode, const source_line& sl = here()) {
   return file_handle(path, mode, sl);
 }
 } // namespace yw

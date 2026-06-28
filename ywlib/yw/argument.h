@@ -615,7 +615,7 @@ inline void print_help() {
     if (!sp) continue;
     string<char> lhs = sp->key;
     for (const auto& alias : sp->aliases) lhs += format(", ", alias);
-    if (sp->type == handle::type::option) lhs += format(" ", display_metavar(*sp));
+    // if (sp->type == handle::type::option) lhs += format(" ", display_metavar(*sp));
     print_entry(lhs, detail_text(*sp));
   }
 

@@ -14,13 +14,13 @@ class viewport {
   static constexpr float max_perspective_deg = 179.0f;
   inline static comptr<ID3D11DepthStencilState> _dss; /// for Reverse-Z
 
-  static std::expected<void, error_trace> _init_dss() {
+  static std::expected<void, error> _init_dss() {
     if (_dss) return {};
     D3D11_DEPTH_STENCIL_DESC depth_stencil_desc{};
     depth_stencil_desc.DepthEnable = TRUE;
     depth_stencil_desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
     depth_stencil_desc.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL;
-    hresult_test(d3d().device()->CreateDepthStencilState, &depth_stencil_desc, &_dss.get());
+    hresult_test(d3d::device()->CreateDepthStencilState, &depth_stencil_desc, &_dss.get());
     return {};
   }
 
@@ -30,79 +30,83 @@ class viewport {
     return _finite(value.x) && _finite(value.y) && _finite(value.z) && _finite(value.w);
   }
 
-  static std::expected<void, error_trace> _validate_size(uint2 Size) {
-    if (Size.x == 0 || Size.y == 0) return unexpected_error(errors::invalid_argument, "viewport size must be non-zero");
+  static std::expected<void, error> _validate_size(uint2 Size) {
+    if (Size.x == 0 || Size.y == 0)
+      return std::unexpected(error(errors::invalid_argument, "viewport size must be non-zero"));
     return {};
   }
 
-  static std::expected<void, error_trace> _validate_perspective(float fov_deg) {
-    if (!_finite(fov_deg)) return unexpected_error(errors::invalid_argument, "perspective fov must be finite");
+  static std::expected<void, error> _validate_perspective(float fov_deg) {
+    if (!_finite(fov_deg)) return std::unexpected(error(errors::invalid_argument, "perspective fov must be finite"));
     if (fov_deg < min_perspective_deg || fov_deg > max_perspective_deg)
-      return unexpected_error(errors::invalid_argument, "perspective fov must be in [1, 179] degrees");
+      return std::unexpected(error(errors::invalid_argument, "perspective fov must be in [1, 179] degrees"));
     return {};
   }
 
-  static std::expected<void, error_trace> _validate_orthographic(float magnification) {
-    if (!_finite(magnification)) return unexpected_error(errors::invalid_argument, "orthographic magnification must be finite");
+  static std::expected<void, error> _validate_orthographic(float magnification) {
+    if (!_finite(magnification))
+      return std::unexpected(error(errors::invalid_argument, "orthographic magnification must be finite"));
     if (magnification <= 0.0f)
-      return unexpected_error(errors::invalid_argument, "orthographic magnification must be greater than zero");
+      return std::unexpected(error(errors::invalid_argument, "orthographic magnification must be greater than zero"));
     return {};
   }
 
-  static std::expected<void, error_trace> _validate_far(float Far) {
-    if (!_finite(Far)) return unexpected_error(errors::invalid_argument, "far plane must be finite");
-    if (Far <= 0.0f) return unexpected_error(errors::invalid_argument, "far plane must be greater than zero");
+  static std::expected<void, error> _validate_far(float Far) {
+    if (!_finite(Far)) return std::unexpected(error(errors::invalid_argument, "far plane must be finite"));
+    if (Far <= 0.0f) return std::unexpected(error(errors::invalid_argument, "far plane must be greater than zero"));
     return {};
   }
 
-  static std::expected<void, error_trace> _validate_vector(const float4& value, const char* name) {
-    if (!_finite(value)) return unexpected_error(errors::invalid_argument, std::format("{} must be finite", name));
+  static std::expected<void, error> _validate_vector(const float4& value, const char* name) {
+    if (!_finite(value))
+      return std::unexpected(error(errors::invalid_argument, std::format("{} must be finite", name)));
     return {};
   }
 
-  std::expected<void, error_trace> _recreate_targets(uint2 Size) {
-    if (auto res = _validate_size(Size); !res) return unexpected_error(res.error());
+  std::expected<void, error> _recreate_targets(uint2 Size) {
+    if (auto res = _validate_size(Size); !res) return res.error().relay();
     if (auto res = bitmap::create(Size)) _bitmap = std::move(*res);
-    else return unexpected_error(res.error());
+    else return res.error().relay();
     comptr<IDXGISurface> surface;
     hresult_test(_bitmap.d2d_bitmap()->GetSurface, &surface.get());
     hresult_test(surface->QueryInterface, &_texture.get());
     D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{bitmap::dxgiformat, D3D11_SRV_DIMENSION_TEXTURE2D};
     srv_desc.Texture2D.MipLevels = 1;
-    hresult_test(d3d().device()->CreateShaderResourceView, _texture.get(), &srv_desc, &_srv.get());
+    hresult_test(d3d::device()->CreateShaderResourceView, _texture.get(), &srv_desc, &_srv.get());
     D3D11_TEXTURE2D_DESC tex_desc{
       Size.x, Size.y, 1, 1, DXGI_FORMAT_D32_FLOAT, DXGI_SAMPLE_DESC(1, 0), {}, D3D11_BIND_DEPTH_STENCIL};
-    hresult_test(d3d().device()->CreateTexture2D, &tex_desc, nullptr, &_depth.get());
-    hresult_test(d3d().device()->CreateDepthStencilView, _depth.get(), nullptr, &_dsv.get());
+    hresult_test(d3d::device()->CreateTexture2D, &tex_desc, nullptr, &_depth.get());
+    hresult_test(d3d::device()->CreateDepthStencilView, _depth.get(), nullptr, &_dsv.get());
     D3D11_RENDER_TARGET_VIEW_DESC rtv_desc{bitmap::dxgiformat, D3D11_RTV_DIMENSION_TEXTURE2D};
-    hresult_test(d3d().device()->CreateRenderTargetView, _texture.get(), &rtv_desc, &_rtv.get());
+    hresult_test(d3d::device()->CreateRenderTargetView, _texture.get(), &rtv_desc, &_rtv.get());
     return {};
   }
 
-  std::expected<void, error_trace> _validate_state() const {
-    if (!*this) return unexpected_error(errors::not_initialized, "Viewport not initialized");
-    if (auto res = _validate_size(_bitmap.size()); !res) return unexpected_error(res.error());
-    if (auto res = _validate_far(_far); !res) return unexpected_error(res.error());
-    if (auto res = _validate_vector(position, "position"); !res) return unexpected_error(res.error());
-    if (auto res = _validate_vector(rotation, "rotation"); !res) return unexpected_error(res.error());
-    if (auto res = _validate_vector(offset, "offset"); !res) return unexpected_error(res.error());
+  std::expected<void, error> _validate_state() const {
+    if (!*this) return std::unexpected(error(errors::not_initialized, "Viewport not initialized"));
+    if (auto res = _validate_size(_bitmap.size()); !res) return res.error().relay();
+    if (auto res = _validate_far(_far); !res) return res.error().relay();
+    if (auto res = _validate_vector(position, "position"); !res) return res.error().relay();
+    if (auto res = _validate_vector(rotation, "rotation"); !res) return res.error().relay();
+    if (auto res = _validate_vector(offset, "offset"); !res) return res.error().relay();
     if (_orthographic) {
-      if (auto res = _validate_orthographic(_factor); !res) return unexpected_error(res.error());
+      if (auto res = _validate_orthographic(_factor); !res) return res.error().relay();
     } else {
-      if (auto res = _validate_perspective(_factor * 180.0f / float(pi)); !res) return unexpected_error(res.error());
+      if (auto res = _validate_perspective(_factor * 180.0f / float(pi)); !res)
+        return res.error().relay();
     }
     return {};
   }
 
-  std::expected<void, error_trace> _prepare_render(const color* clear_color) {
-    if (!*this) return unexpected_error(errors::not_initialized, "Viewport not initialized");
+  std::expected<void, error> _prepare_render(const color* clear_color) {
+    if (!*this) return std::unexpected(error(errors::not_initialized, "Viewport not initialized"));
     if (clear_color) {
-      d3d().context()->ClearDepthStencilView(_dsv.get(), D3D11_CLEAR_DEPTH, 0.0f, 0);
-      d3d().context()->ClearRenderTargetView(_rtv.get(), &clear_color->r);
+      d3d::context()->ClearDepthStencilView(_dsv.get(), D3D11_CLEAR_DEPTH, 0.0f, 0);
+      d3d::context()->ClearRenderTargetView(_rtv.get(), &clear_color->r);
     }
     D3D11_VIEWPORT vp{0.0f, 0.0f, float(_bitmap.size().x), float(_bitmap.size().y), 0.0f, 1.0f};
-    d3d().context()->RSSetViewports(1, &vp);
-    d3d().context()->OMSetDepthStencilState(_dss.get(), 0);
+    d3d::context()->RSSetViewports(1, &vp);
+    d3d::context()->OMSetDepthStencilState(_dss.get(), 0);
     return {};
   }
 
@@ -156,46 +160,46 @@ public:
 
   viewport() noexcept = default;
 
-  static std::expected<viewport, error_trace> create(uint2 Size) {
-    if (auto res = _init_dss(); !res) return unexpected_error(res.error());
+  static std::expected<viewport, error> create(uint2 Size) {
+    if (auto res = _init_dss(); !res) return res.error().relay();
     viewport vp;
-    if (auto res = vp._recreate_targets(Size); !res) return unexpected_error(res.error());
+    if (auto res = vp._recreate_targets(Size); !res) return res.error().relay();
     if (auto res = yw::constant_buffer<cb>::create(vp._cb_value)) vp._cb = std::move(*res);
-    else return unexpected_error(res.error());
+    else return res.error().relay();
     return vp;
   }
 
-  std::expected<void, error_trace> resize(uint2 Size) {
-    if (auto res = _init_dss(); !res) return unexpected_error(res.error());
-    if (auto res = _recreate_targets(Size); !res) return unexpected_error(res.error());
+  std::expected<void, error> resize(uint2 Size) {
+    if (auto res = _init_dss(); !res) return res.error().relay();
+    if (auto res = _recreate_targets(Size); !res) return res.error().relay();
     return {};
   }
 
-  std::expected<void, error_trace> perspective(float1 fov_deg) {
-    if (auto res = _validate_perspective(fov_deg.x); !res) return unexpected_error(res.error());
+  std::expected<void, error> perspective(float1 fov_deg) {
+    if (auto res = _validate_perspective(fov_deg.x); !res) return res.error().relay();
     _factor = fov_deg.x * float(pi) / 180.0f;
     _orthographic = false;
     return {};
   }
 
-  std::expected<void, error_trace> orthographic(float1 magnification) {
-    if (auto res = _validate_orthographic(magnification.x); !res) return unexpected_error(res.error());
+  std::expected<void, error> orthographic(float1 magnification) {
+    if (auto res = _validate_orthographic(magnification.x); !res) return res.error().relay();
     _factor = magnification.x;
     _orthographic = true;
     return {};
   }
 
   float far_() const noexcept { return _far; }
-  std::expected<void, error_trace> far_(float1 Far) {
-    if (auto res = _validate_far(Far.x); !res) return unexpected_error(res.error());
+  std::expected<void, error> far_(float1 Far) {
+    if (auto res = _validate_far(Far.x); !res) return res.error().relay();
     _far = Far.x;
     return {};
   }
 
-  std::expected<void, error_trace> set_pose(float4 Position, float4 Rotation, float4 Offset = {}) {
-    if (auto res = _validate_vector(Position, "position"); !res) return unexpected_error(res.error());
-    if (auto res = _validate_vector(Rotation, "rotation"); !res) return unexpected_error(res.error());
-    if (auto res = _validate_vector(Offset, "offset"); !res) return unexpected_error(res.error());
+  std::expected<void, error> set_pose(float4 Position, float4 Rotation, float4 Offset = {}) {
+    if (auto res = _validate_vector(Position, "position"); !res) return res.error().relay();
+    if (auto res = _validate_vector(Rotation, "rotation"); !res) return res.error().relay();
+    if (auto res = _validate_vector(Offset, "offset"); !res) return res.error().relay();
     position = Position;
     rotation = Rotation;
     offset = Offset;
@@ -204,8 +208,8 @@ public:
 
   /// sets `rotation.x` (pitch) and `rotation.y` (yaw) so that camera faces `Target`.
   /// this function ignores `offset` and uses only `position`.
-  std::expected<void, error_trace> look_at(float4 Target) {
-    if (auto res = _validate_vector(Target, "target"); !res) return unexpected_error(res.error());
+  std::expected<void, error> look_at(float4 Target) {
+    if (auto res = _validate_vector(Target, "target"); !res) return res.error().relay();
     constexpr float eps = 1e-6f;
     const float dx = Target.x - position.x;
     const float dy = Target.y - position.y;
@@ -241,8 +245,8 @@ public:
   const auto& bitmap() const noexcept { return _bitmap; }
   const auto& constant_buffer() const noexcept { return _cb; }
 
-  std::expected<void, error_trace> update() {
-    if (auto res = _validate_state(); !res) return unexpected_error(res.error());
+  std::expected<void, error> update() {
+    if (auto res = _validate_state(); !res) return res.error().relay();
     auto& vm = _cb_value.view;
     auto& pm = _cb_value.projection;
     auto& vpm = _cb_value.view_projection;
@@ -274,31 +278,31 @@ public:
     _mm_storeu_ps(vpm.x.data(), _mm_mul_ps(m.x, mm_set1(pm.x.x)));
     _mm_storeu_ps(vpm.y.data(), _mm_mul_ps(m.y, mm_set1(pm.y.y)));
     _cb_value.camera_pos = position;
-    if (auto res = _cb.set(_cb_value); !res) return unexpected_error(res.error());
+    if (auto res = _cb.set(_cb_value); !res) return res.error().relay();
     return {};
   }
 
-  std::expected<void, error_trace> clear_depth() {
-    d3d().context()->ClearDepthStencilView(_dsv.get(), D3D11_CLEAR_DEPTH, 0.0f, 0);
+  std::expected<void, error> clear_depth() {
+    d3d::context()->ClearDepthStencilView(_dsv.get(), D3D11_CLEAR_DEPTH, 0.0f, 0);
     return {};
   }
 
-  std::expected<void, error_trace> clear(const color& Clear = colors::transparent) {
-    d3d().context()->ClearDepthStencilView(_dsv.get(), D3D11_CLEAR_DEPTH, 0.0f, 0);
-    d3d().context()->ClearRenderTargetView(_rtv.get(), &Clear.r);
+  std::expected<void, error> clear(const color& Clear = colors::transparent) {
+    d3d::context()->ClearDepthStencilView(_dsv.get(), D3D11_CLEAR_DEPTH, 0.0f, 0);
+    d3d::context()->ClearRenderTargetView(_rtv.get(), &Clear.r);
     return {};
   }
 
-  std::expected<drawing, error_trace> begin_render() {
-    if (auto res = _prepare_render(nullptr); !res) return unexpected_error(res.error());
-    if (auto res = drawing::create(_rtv.get(), _dsv.get(), source{})) return std::move(*res);
-    else return unexpected_error(res.error());
+  std::expected<drawing, error> begin_render() {
+    if (auto res = _prepare_render(nullptr); !res) return res.error().relay();
+    if (auto res = drawing::create(_rtv.get(), _dsv.get())) return std::move(*res);
+    else return res.error().relay();
   }
 
-  std::expected<drawing, error_trace> begin_render(const color& Clear) {
-    if (auto res = _prepare_render(&Clear); !res) return unexpected_error(res.error());
-    if (auto res = drawing::create(_rtv.get(), _dsv.get(), source{})) return std::move(*res);
-    else return unexpected_error(res.error());
+  std::expected<drawing, error> begin_render(const color& Clear) {
+    if (auto res = _prepare_render(&Clear); !res) return res.error().relay();
+    if (auto res = drawing::create(_rtv.get(), _dsv.get())) return std::move(*res);
+    else return res.error().relay();
   }
 };
 } // namespace yw

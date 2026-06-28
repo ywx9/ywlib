@@ -3,9 +3,11 @@
 
 namespace yw {
 
+/// d2d/d3d描画を管理するクラス
+/// class that manages d2d/d3d drawing
 class drawing {
   inline static void* _target = nullptr;
-  inline static int _type = 0; // 0: none, 2: d2d, 3: d3d, other: invalid
+  inline static int _type = 0; // 0: none, 2: d2d, 3: d3d, other: invalid (undefined behavior)
   source_line _source = here();
   bool _active = false;
 

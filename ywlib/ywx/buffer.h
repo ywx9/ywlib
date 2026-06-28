@@ -131,7 +131,7 @@ public:
   }
 
   std::expected<void, error> set(const T& Val) {
-    if (auto res = this->validate_initialized("Uninitialized constant buffer"); !res) return res.error().relay();
+    if (!*this) return std::unexpected(error(errors::invalid_operation, "uninitialized constant buffer"));
     D3D11_MAPPED_SUBRESOURCE mapped;
     hresult_test(d3d::context()->Map, buffer<T>::d3d_buffer(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
     std::memcpy(mapped.pData, &Val, sizeof(T));

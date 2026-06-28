@@ -25,6 +25,8 @@
 
 namespace yw {
 
+inline constexpr float arbitrary_value = 4.0f;
+
 /// MARK: ok/yes
 
 inline bool ok(
@@ -82,8 +84,8 @@ public:
     virtual bool attachable() const { return false; }
     virtual std::expected<void, error> attach(slotset<slot>::slotid Child) { return {}; }
     virtual std::expected<void, error> detach(slotset<slot>::slotid Child) { return {}; }
-    virtual std::expected<void, error> make_dirty() = 0;
-    virtual std::expected<void, error> make_messy() = 0;
+    virtual std::expected<void, error> make_dirty() { return {}; }
+    virtual std::expected<void, error> make_messy() { return {}; }
   };
 
 protected:
@@ -137,8 +139,8 @@ class wclass {
   };
 
 public:
-  HINSTANCE hinstance() const noexcept { return slot::get()->wc.hInstance; }
-  null_terminated<wchar_t> name() const noexcept { return slot::get()->wc.lpszClassName; }
+  static HINSTANCE hinstance() noexcept { return slot::get()->wc.hInstance; }
+  static const wchar_t* name() noexcept { return slot::get()->wc.lpszClassName; }
 };
 
 /// MARK: d3d
