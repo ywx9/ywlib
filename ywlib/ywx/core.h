@@ -80,10 +80,11 @@ public:
       return static_cast<typename H::slot*>(slots.get(Id));
     }
     slotset<slot>::slotid id;
-    yw::source_line source_line = source_line::null();
+    yw::source_line source = source_line::null();
     virtual bool attachable() const { return false; }
     virtual std::expected<void, error> attach(slotset<slot>::slotid Child) { return {}; }
     virtual std::expected<void, error> detach(slotset<slot>::slotid Child) { return {}; }
+    virtual std::expected<void, error> make_none() { return {}; }
     virtual std::expected<void, error> make_dirty() { return {}; }
     virtual std::expected<void, error> make_messy() { return {}; }
   };

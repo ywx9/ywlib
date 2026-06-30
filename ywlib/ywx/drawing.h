@@ -42,6 +42,19 @@ public:
   drawing() noexcept = default;
   ~drawing() { close(); }
 
+  drawing(const drawing&) = delete;
+  drawing& operator=(const drawing&) = delete;
+
+  drawing(drawing&& Other) noexcept : _source(Other._source), _active(std::exchange(Other._active, false)) {}
+
+  drawing& operator=(drawing&& Other) noexcept {
+    if (this == &Other) return *this;
+    close();
+    _source = Other._source;
+    _active = std::exchange(Other._active, false);
+    return *this;
+  }
+
   drawing(ID2D1Image* Target, const source_line& sl = here()) : _source(sl), _active(true) {
     if (auto res = initialize(Target); !res) res.error().add_footprint().go_off(sl);
   }
@@ -64,8 +77,10 @@ public:
   template<typename... As> requires constructible<drawing, As...>
   static std::expected<drawing, error> create(As&&... Args) {
     drawing d{};
-    if (auto res = d.initialize(static_cast<As&&>(Args)...)) return d;
-    else return res.error().relay();
+    if (auto res = d.initialize(static_cast<As&&>(Args)...)) {
+      d._active = true;
+      return d;
+    } else return res.error().relay();
   }
 
   std::expected<void, error> close() {

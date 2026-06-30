@@ -21,3 +21,6 @@ python tools/build.py --dll
 - Do not introduce external Python dependencies.
 - Preserve existing namespace and file layout.
 - Do not change public APIs unless explicitly requested.
+
+## Notes
+- Read source files and comments as UTF-8 by default. Do not rely on PowerShell's default text encoding when inspecting files.
