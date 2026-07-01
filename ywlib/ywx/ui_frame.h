@@ -61,13 +61,13 @@ public:
 
     //-- create function --//
 
-    template<derived_from<interface> T>
-    static std::expected<slot*, error> create(T& Layout, bool AutoColor, const source_line& sl) {
+    template<derived_from<frame> H, derived_from<interface> L>
+    static std::expected<typename H::slot*, error> create(L& Layout, bool AutoColor, const source_line& sl) {
       const auto lsp = slot::get<interface>(Layout.id());
       if (!lsp) return std::unexpected(error(errors::invalid_slotid));
       if (!lsp->attachable()) return std::unexpected(error(errors::invalid_operation, "not attachable"));
-      const auto temp_id = slot::add<frame>();
-      const auto sp = slot::get<frame>(temp_id);
+      const auto temp_id = slot::add<H>();
+      const auto sp = slot::get<H>(temp_id);
       if (!sp) return std::unexpected(error(errors::slot_creation_failed));
       sp->id = temp_id;
       sp->source = sl;
@@ -83,13 +83,13 @@ public:
   frame() noexcept = default;
 
   frame(derived_from<interface> auto& Parent, bool AutoColor = true, const source_line& sl = here()) {
-    if (auto res = slot::create(Parent, AutoColor, sl)) _id = (*res)->id;
+    if (auto res = slot::create<frame>(Parent, AutoColor, sl)) _id = (*res)->id;
     else res.error().add_footprint().go_off(sl);
   }
 
   template<typename... Ts> requires constructible<frame, Ts...>
   static std::expected<frame, error> create(Ts&&... Args) {
-    if (auto res = slot::create(static_cast<Ts&&>(Args)...)) {
+    if (auto res = slot::create<frame>(static_cast<Ts&&>(Args)...)) {
       frame f;
       f._id = (*res)->id;
       return f;
@@ -108,12 +108,12 @@ public:
 
   //-- setter --//
 
-  auto& background_color(const color& c) noexcept { ywlib_control_set(this, colors.background, c, make_dirty); }
-  auto& background_image(bitmap b) noexcept { ywlib_control_set(this, bg_image, std::move(b), make_dirty); }
-  auto& background_image_opacity(float1 f) noexcept { ywlib_control_set(this, bg_image_opacity, f.x, make_dirty); }
-  auto& border_color(const color& c) noexcept { ywlib_control_set(this, colors.border, c, make_dirty); }
-  auto& border_thickness(float1 f) noexcept { ywlib_control_set(this, border_thickness, f.x, make_dirty); }
-  auto& border_dashed(bool b) noexcept { ywlib_control_set(this, border_dashed, b, make_dirty); }
-  auto& crop_content(bool b) noexcept { ywlib_control_set(this, crop_content, b, make_dirty); }
+  auto& background_color(const color& c) noexcept { ywlib_control_set(this, colors.background, c, paint_dirty); }
+  auto& background_image(bitmap b) noexcept { ywlib_control_set(this, bg_image, std::move(b), paint_dirty); }
+  auto& background_image_opacity(float1 f) noexcept { ywlib_control_set(this, bg_image_opacity, f.x, paint_dirty); }
+  auto& border_color(const color& c) noexcept { ywlib_control_set(this, colors.border, c, paint_dirty); }
+  auto& border_thickness(float1 f) noexcept { ywlib_control_set(this, border_thickness, f.x, paint_dirty); }
+  auto& border_dashed(bool b) noexcept { ywlib_control_set(this, border_dashed, b, paint_dirty); }
+  auto& crop_content(bool b) noexcept { ywlib_control_set(this, crop_content, b, paint_dirty); }
 };
 } // namespace yw::ui

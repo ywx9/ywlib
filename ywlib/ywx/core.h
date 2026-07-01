@@ -85,8 +85,9 @@ public:
     virtual std::expected<void, error> attach(slotset<slot>::slotid Child) { return {}; }
     virtual std::expected<void, error> detach(slotset<slot>::slotid Child) { return {}; }
     virtual std::expected<void, error> make_none() { return {}; }
-    virtual std::expected<void, error> make_dirty() { return {}; }
-    virtual std::expected<void, error> make_messy() { return {}; }
+    virtual std::expected<void, error> make_paint_dirty() { return {}; }
+    virtual std::expected<void, error> make_geometry_dirty() { return {}; }
+    virtual std::expected<void, error> make_layout_dirty() { return {}; }
   };
 
 protected:

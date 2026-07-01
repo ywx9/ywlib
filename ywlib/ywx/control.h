@@ -8,11 +8,11 @@ namespace yw {
   if (!s) error(errors::invalid_slotid).go_off(); \
   return s->mop
 
-#define ywlib_control_set(h, mop, val, make)     \
-  const auto s = get_slot(h);                           \
-  if (!s) error(errors::invalid_slotid).go_off();       \
-  s->mop = val;                                         \
-  if (auto res = s->make(); !res) res.error().go_off(); \
+#define ywlib_control_set(h, mop, val, dirty)             \
+  const auto s = get_slot(h);                             \
+  if (!s) error(errors::invalid_slotid).go_off();         \
+  s->mop = val;                                           \
+  if (auto res = s->make_##dirty(); !res) res.error().go_off(); \
   return *this
 
 class control : public interface {
@@ -57,14 +57,20 @@ public:
       return yw::max(min, req * fixed, inner * !fixed);
     }
 
-    virtual std::expected<void, error> make_dirty() override {
-      if (const auto wsp = slot::get<interface>(window_id)) wsp->make_dirty();
+    virtual std::expected<void, error> make_paint_dirty() override {
+      if (const auto wsp = slot::get<interface>(window_id)) wsp->make_paint_dirty();
       else return std::unexpected(error(errors::invalid_slotid));
       return {};
     }
 
-    virtual std::expected<void, error> make_messy() override {
-      if (const auto wsp = slot::get<interface>(window_id)) wsp->make_messy();
+    virtual std::expected<void, error> make_geometry_dirty() override {
+      if (const auto wsp = slot::get<interface>(window_id)) wsp->make_geometry_dirty();
+      else return std::unexpected(error(errors::invalid_slotid));
+      return {};
+    }
+
+    virtual std::expected<void, error> make_layout_dirty() override {
+      if (const auto wsp = slot::get<interface>(window_id)) wsp->make_layout_dirty();
       else return std::unexpected(error(errors::invalid_slotid));
       return {};
     }
@@ -94,6 +100,8 @@ public:
       const auto max_size = Area - margin.xy() - margin.zw();
       provided_pos = Pos;
       provided_area = Area;
+      if (auto res = get_necessary_size()) size = *res;
+      else return res.error().relay();
       if (policy.x == size_policy::free) size.x = max_size.x;
       if (policy.y == size_policy::free) size.y = max_size.y;
       pos = Pos + _offset(max_size);
@@ -112,8 +120,42 @@ public:
   const auto& required_size() const noexcept { ywlib_control_get(this, required_size); }
   const auto& pos() const noexcept { ywlib_control_get(this, pos); }
   const auto& size() const noexcept { ywlib_control_get(this, size); }
+  const auto& width() const noexcept { ywlib_control_get(this, size).x; }
+  const auto& height() const noexcept { ywlib_control_get(this, size).y; }
   const auto& radius() const noexcept { ywlib_control_get(this, radius); }
   const auto& align() const noexcept { ywlib_control_get(this, align); }
   const auto& policy() const noexcept { ywlib_control_get(this, policy); }
+
+  //-- setter --//
+
+  auto& margin(float4 v) noexcept { ywlib_control_set(this, margin, v, layout_dirty); }
+  auto& minimum_size(float2 v) noexcept { ywlib_control_set(this, minimum_size, v, layout_dirty); }
+  auto& size(float2 Size) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->required_size = Size;
+    sp->policy = vector2<size_policy>::fill(size_policy::fixed);
+    if (auto res = sp->make_layout_dirty(); !res) res.error().go_off();
+    return *this;
+  }
+  auto& width(float1 Width) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->required_size.x = Width.x;
+    sp->policy.x = size_policy::fixed;
+    if (auto res = sp->make_layout_dirty(); !res) res.error().go_off();
+    return *this;
+  }
+  auto& height(float1 Height) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->required_size.y = Height.x;
+    sp->policy.y = size_policy::fixed;
+    if (auto res = sp->make_layout_dirty(); !res) res.error().go_off();
+    return *this;
+  }
+  auto& radius(float2 v) noexcept { ywlib_control_set(this, radius, v, geometry_dirty); }
+  auto& align(alignment v) noexcept { ywlib_control_set(this, align, v, geometry_dirty); }
+  auto& policy(vector2<size_policy> v) noexcept { ywlib_control_set(this, policy, v, layout_dirty); }
 };
 } // namespace yw

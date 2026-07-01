@@ -56,8 +56,9 @@ public:
 
     slotid control_id{};
 
-    bool messy = false;
-    bool dirty = false;
+    bool layout_dirty = false;
+    bool geometry_dirty = false;
+    bool paint_dirty = false;
     bool drawn = false;
     bool resizing = false;
 
@@ -82,17 +83,33 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> make_dirty() override {
-      dirty = true;
+    virtual std::expected<void, error> make_paint_dirty() override {
+      paint_dirty = true;
       return {};
     }
 
-    virtual std::expected<void, error> make_messy() override {
-      messy = true;
+    virtual std::expected<void, error> make_geometry_dirty() override {
+      geometry_dirty = true;
+      paint_dirty = true;
+      return {};
+    }
+
+    virtual std::expected<void, error> make_layout_dirty() override {
+      layout_dirty = true;
+      geometry_dirty = true;
+      paint_dirty = true;
       return {};
     }
 
     //-- functions --//
+
+    std::expected<uint2, error> get_necessary_size() const {
+      const auto csp = slot::get<control>(control_id);
+      if (!csp) return uint2::fill(arbitrary_value);
+      const auto margin = csp->margin.xy() + csp->margin.zw();
+      if (auto res = csp->get_necessary_size(); !res) return res.error().relay();
+      else return vapply_r<uint2>(yw::max, vapply_r<uint2>(yw::ceil, *res + margin), uint2::fill(arbitrary_value));
+    }
 
     std::expected<void, error> update_rendertarget() {
       if (size == rendertarget.size()) return {};
@@ -111,20 +128,20 @@ public:
 
     std::expected<void, error> update() {
       const auto csp = slot::get<control>(control_id);
-      if (csp)
-        if (auto res = csp->get_necessary_size(); !res) return res.error().relay();
-        else size = vapply_r<uint2>(yw::max, size, vapply_r<uint2>(yw::ceil, *res));
+      if (auto res = get_necessary_size(); !res) return res.error().relay();
+      else size = vapply_r<uint2>(yw::max, size, *res);
       const bool size_changed = size != rendertarget.size();
       if (size_changed) {
         const auto area = size + frame_thickness.xy() + frame_thickness.zw();
         win32_bool_test(::SetWindowPos, hwnd, 0, 0, 0, area.x, area.y, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
         if (auto res = update_rendertarget(); !res) return res.error().relay();
-        messy = true;
-        dirty = true;
+        layout_dirty = true;
+        geometry_dirty = true;
+        paint_dirty = true;
       }
-      if (csp && (messy || !csp->geometry))
+      if (csp && (layout_dirty || geometry_dirty || !csp->geometry))
         if (auto res = csp->relocate({}, float2(float(size.x), float(size.y))); !res) return res.error().relay();
-      if (csp && (dirty || messy || !csp->geometry || size_changed)) {
+      if (csp && (paint_dirty || geometry_dirty || layout_dirty || !csp->geometry || size_changed)) {
         if (auto res = controllayer.begin_draw(colors::transparent)) {
           auto d = std::move(*res);
           if (auto rr = csp->redraw(); !rr) return rr.error().relay();
@@ -142,8 +159,9 @@ public:
         } else return res.error().relay();
       }
       hresult_test(swapchain->Present, 1, 0);
-      messy = false;
-      dirty = false;
+      layout_dirty = false;
+      geometry_dirty = false;
+      paint_dirty = false;
       drawn = false;
       return {};
     }
@@ -161,21 +179,22 @@ public:
       sp->style = op.get_style();
       sp->exstyle = op.get_exstyle();
       sp->hwnd = ::CreateWindowExW(
-        sp->exstyle, wclass::name(), sp->title.c_str(), sp->style, CW_USEDEFAULT, CW_USEDEFAULT, int(arbitrary_value),
-        int(arbitrary_value), nullptr, nullptr, wclass::hinstance(), nullptr);
+        sp->exstyle, wclass::name(), sp->title.c_str(), sp->style & ~WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
+        int(arbitrary_value), int(arbitrary_value), nullptr, nullptr, wclass::hinstance(), nullptr);
       if (!sp->hwnd) return std::unexpected(error(errors::operation_failed, "CreateWindowExW failed"));
       ::SetWindowLongPtrW(sp->hwnd, GWLP_USERDATA, std::bit_cast<LONG_PTR>(sp->id));
       windows.push_back(sp->id);
       RECT wr{}, cr{};
       win32_bool_test(::GetWindowRect, sp->hwnd, &wr);
       win32_bool_test(::GetClientRect, sp->hwnd, &cr);
-      const auto left = (wr.right - wr.left) / 2;
+      const auto left = (wr.right - wr.left - cr.right) / 2;
       sp->frame_thickness = int4(left, wr.bottom - wr.top - cr.bottom - left, left, left);
       sp->pos = op.pos.value_or(int2(wr.left, wr.top));
       sp->size = vapply_r<uint2>(yw::max, op.size.value_or(int2(cr.right, cr.bottom)), uint2::fill(arbitrary_value));
       const auto area = sp->size + sp->frame_thickness.xy() + sp->frame_thickness.zw();
       win32_bool_test(::SetWindowPos, sp->hwnd, 0, sp->pos.x, sp->pos.y, area.x, area.y, SWP_NOZORDER | SWP_NOACTIVATE);
       if (auto res = sp->update_rendertarget(); !res) return res.error().relay();
+      if (sp->style & WS_VISIBLE) ::ShowWindow(sp->hwnd, SW_SHOW);
       return sp;
     }
   };
@@ -230,6 +249,95 @@ public:
     } else return res.error().relay();
   }
 
-  const auto& size() const { ywlib_control_get(this, size); }
+  //-- getter --//
+
+  HWND hwnd() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->hwnd;
+  }
+
+  const auto& frame_thickness() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->frame_thickness;
+  }
+
+  const auto& pos() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->pos;
+  }
+
+  const auto& size() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->size;
+  }
+
+  const auto& style() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->style;
+  }
+
+  const auto& exstyle() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->exstyle;
+  }
+
+  const auto& title() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->title;
+  }
+
+  const auto& background_color() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->background_color;
+  }
+
+  //-- setter --//
+
+  auto& pos(int2 v) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->pos = v;
+    const auto area = sp->size + sp->frame_thickness.xy() + sp->frame_thickness.zw();
+    if (!::SetWindowPos(sp->hwnd, 0, v.x, v.y, area.x, area.y, SWP_NOZORDER | SWP_NOACTIVATE))
+      error(errors::operation_failed, "SetWindowPos failed", int32_t(::GetLastError())).go_off();
+    return *this;
+  }
+
+  auto& size(int2 v) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    if (auto res = sp->get_necessary_size(); !res) res.error().go_off();
+    else sp->size = vapply_r<uint2>(yw::max, v, *res);
+    const auto area = sp->size + sp->frame_thickness.xy() + sp->frame_thickness.zw();
+    if (!::SetWindowPos(sp->hwnd, 0, sp->pos.x, sp->pos.y, area.x, area.y, SWP_NOZORDER | SWP_NOACTIVATE))
+      error(errors::operation_failed, "SetWindowPos failed", int32_t(::GetLastError())).go_off();
+    if (auto res = sp->make_layout_dirty(); !res) res.error().go_off();
+    return *this;
+  }
+
+  auto& title(string<wchar_t> v) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->title = std::move(v);
+    if (!::SetWindowTextW(sp->hwnd, sp->title.c_str()))
+      error(errors::operation_failed, "SetWindowTextW failed", int32_t(::GetLastError())).go_off();
+    return *this;
+  }
+
+  auto& background_color(const color& c) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->background_color = c;
+    if (auto res = sp->make_paint_dirty(); !res) res.error().go_off();
+    return *this;
+  }
 };
 } // namespace yw
