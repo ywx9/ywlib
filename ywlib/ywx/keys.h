@@ -1,5 +1,5 @@
 #pragma once
-#include "ywx/core.h"
+#include <ywlib>
 
 namespace yw {
 
@@ -9,7 +9,7 @@ struct modifiers {
   bool alt : 1;
   string<char> to_string() const {
     string<char> s("(ctrl:0, shift:0, alt:0)");
-    s[6] = '0' + ctrl, s[15] = '0' + shift, s[23] = '0' + alt;
+    s[6] = '0' + ctrl, s[15] = '0' + shift, s[22] = '0' + alt;
     return s;
   }
 };
@@ -183,19 +183,6 @@ struct key_event {
 };
 static_assert(sizeof(key_event) <= 8);
 
-enum class activation_source : uint8_t {
-  mouse,
-  keyboard,
-  program,
-};
-
-struct activate_event {
-  activation_source source = activation_source::program;
-  yw::key key{};
-  short2 pos{};
-};
-static_assert(sizeof(activate_event) <= 8);
-
 struct move_event {
   short2 pos;
   short2 delta;
@@ -254,14 +241,6 @@ template<> struct formatter<yw::key_event> {
   formatter<yw::string<char>> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::key_event& e, auto& ctx) const { return fmt.format(e.to_string(), ctx); }
-};
-
-template<> struct formatter<yw::activate_event> {
-  formatter<yw::string<char>> fmt;
-  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::activate_event& e, auto& ctx) const {
-    return fmt.format(yw::format("activate_event(key:", e.key, ", pos:", e.pos, ")"), ctx);
-  }
 };
 
 template<> struct formatter<yw::move_event> {

@@ -19,8 +19,8 @@
   if (const auto hr = (func)(__VA_ARGS__); FAILED(hr)) \
   return std::unexpected(error(errors::operation_failed, #func " failed", int32_t(hr)))
 
-#define win32_bool_test(func, ...)                        \
-  if (!(func)(__VA_ARGS__))                               \
+#define win32_bool_test(func, ...) \
+  if (!(func)(__VA_ARGS__))        \
   return std::unexpected(error(errors::operation_failed, #func " failed", int32_t(::GetLastError())))
 
 namespace yw {
@@ -73,9 +73,7 @@ class interface {
 public:
   struct slot {
     inline static slotset<slot> slots{};
-    template<typename H> static slotset<slot>::slotid add() {
-      return slots.add(std::make_unique<typename H::slot>());
-    }
+    template<typename H> static slotset<slot>::slotid add() { return slots.add(std::make_unique<typename H::slot>()); }
     template<typename H> static typename H::slot* get(slotset<slot>::slotid Id) noexcept {
       return static_cast<typename H::slot*>(slots.get(Id));
     }
@@ -85,9 +83,8 @@ public:
     virtual std::expected<void, error> attach(slotset<slot>::slotid Child) { return {}; }
     virtual std::expected<void, error> detach(slotset<slot>::slotid Child) { return {}; }
     virtual std::expected<void, error> make_none() { return {}; }
-    virtual std::expected<void, error> make_paint_dirty() { return {}; }
-    virtual std::expected<void, error> make_geometry_dirty() { return {}; }
-    virtual std::expected<void, error> make_layout_dirty() { return {}; }
+    virtual std::expected<void, error> make_dirty() { return {}; }
+    virtual std::expected<void, error> make_messy() { return {}; }
   };
 
 protected:
@@ -113,7 +110,6 @@ public:
   slotset<slot>::slotid id() const noexcept { return _id; }
   explicit operator bool() const noexcept;
 };
-
 
 /// MARK: wclass
 
@@ -372,9 +368,7 @@ public:
     sp->solid_brush->SetColor(reinterpret_cast<const D2D1_COLOR_F*>(&Color));
   }
 
-  static void dashed(bool Dashed = true) noexcept {
-    slot::get()->dashed = Dashed;
-  }
+  static void dashed(bool Dashed = true) noexcept { slot::get()->dashed = Dashed; }
 };
 
 /// MARK: font_config

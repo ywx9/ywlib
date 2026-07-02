@@ -15,7 +15,10 @@ public:
 
   bool operator()() {
     if (window::slot::windows.empty()) return false;
-    if (!(_count++)) _timer.restart();
+    if (!(_count++)) {
+      _timer.restart();
+      ::GetCursorPos(reinterpret_cast<POINT*>(&window::slot::cursor_pos));
+    }
     while (::PeekMessageW(&_msg, nullptr, 0, 0, PM_REMOVE)) {
       if (_msg.message == WM_QUIT) return false;
       ::TranslateMessage(&_msg);

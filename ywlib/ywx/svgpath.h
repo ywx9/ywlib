@@ -312,6 +312,8 @@ private:
 
 public:
   svgpath() = default;
+  svgpath(svgpath&&) noexcept = default;
+  svgpath& operator=(svgpath&&) noexcept = default;
   explicit operator bool() const noexcept { return static_cast<bool>(_geometry); }
   explicit operator ID2D1PathGeometry*&() & noexcept { return _geometry.get(); }
   explicit operator ID2D1PathGeometry*() const& noexcept { return _geometry.get(); }

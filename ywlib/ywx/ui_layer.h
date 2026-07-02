@@ -3,12 +3,10 @@
 
 namespace yw::ui {
 
-template<bool Vertical> class layout : public frame {
+class layer : public frame {
 public:
   struct slot : public frame::slot {
     std::vector<slotid> controls{};
-
-    //-- override functions --//
 
     virtual bool attachable() const override { return true; }
 
@@ -31,14 +29,14 @@ public:
 
     virtual slotid find_next_tabstop(slotid Focused, bool Forward, bool& Found) const override {
       if (!Forward) {
-        for (auto it = controls.rbegin(); it != controls.rend(); ++it) {
-          if (const auto csp = interface::slot::get<control>(*it))
+        for (const auto& cid : controls) {
+          if (const auto csp = interface::slot::get<control>(cid))
             if (const auto next = csp->find_next_tabstop(Focused, Forward, Found)) return next;
         }
         return {};
       }
-      for (const auto& cid : controls) {
-        if (const auto csp = interface::slot::get<control>(cid))
+      for (auto it = controls.rbegin(); it != controls.rend(); ++it) {
+        if (const auto csp = interface::slot::get<control>(*it))
           if (const auto next = csp->find_next_tabstop(Focused, Forward, Found)) return next;
       }
       return {};
@@ -49,11 +47,8 @@ public:
       for (const auto& cid : controls) {
         const auto csp = interface::slot::get<control>(cid);
         if (!csp) return std::unexpected(error(errors::invalid_slotid));
-        if (auto res = csp->get_necessary_size()) {
-          const auto bounds = *res + csp->margin.xy() + csp->margin.zw();
-          yw::get<!Vertical>(inner) = yw::max(yw::get<!Vertical>(inner), yw::get<!Vertical>(bounds));
-          yw::get<Vertical>(inner) += yw::get<Vertical>(bounds);
-        } else return res.error().relay();
+        if (auto res = csp->get_necessary_size()) inner = yw::max(inner, *res + csp->margin.xy() + csp->margin.zw());
+        else return res.error().relay();
       }
       inner += padding.xy() + padding.zw();
       return vapply_r<float2>(_necessary_size, policy, minimum_size, required_size, inner);
@@ -61,8 +56,8 @@ public:
 
     virtual slotid hittest(float2 Pt) const override {
       if (!visible) return {};
-      for (const auto& cid : controls) {
-        if (const auto csp = interface::slot::get<control>(cid))
+      for (auto it = controls.rbegin(); it != controls.rend(); ++it) {
+        if (const auto csp = interface::slot::get<control>(*it))
           if (const auto hit = csp->hittest(Pt)) return hit;
       }
       return frame::slot::hittest(Pt);
@@ -87,7 +82,6 @@ public:
     virtual std::expected<void, error> relocate() override {
       const auto max_size = provided_area - margin.xy() - margin.zw();
       if (auto res = set_size_to_necessary(); !res) return res.error().relay();
-      const auto extra = max_size - size;
       if (policy.x == size_policy::free) size.x = max_size.x;
       if (policy.y == size_policy::free) size.y = max_size.y;
       pos = provided_pos + _offset(max_size);
@@ -95,47 +89,11 @@ public:
       D2D1_ROUNDED_RECT rr{D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
       hresult_test(d2d::factory()->CreateRoundedRectangleGeometry, &rr, &geom);
       geometry.reset(geom);
-      if (extra[Vertical] > 0) {
-        unsigned free_count = 0;
-        for (const auto& cid : controls) {
-          const auto csp = interface::slot::get<control>(cid);
-          if (!csp) return std::unexpected(error(errors::invalid_slotid));
-          free_count += (csp->policy[Vertical] == size_policy::free);
-        }
-        const auto cross = size[!Vertical] - padding[!Vertical] - padding[2 + !Vertical];
-        float2 offset = padding.xy();
-        if (free_count > 0) {
-          const auto extra_per_free = extra[Vertical] / float(free_count);
-          for (const auto& cid : controls) {
-            const auto csp = interface::slot::get<control>(cid);
-            if (!csp) return std::unexpected(error(errors::invalid_slotid));
-            float2 area = csp->bounds();
-            area[Vertical] += extra_per_free * (csp->policy[Vertical] == size_policy::free);
-            area[!Vertical] = cross;
-            if (auto res = csp->relocate(pos + offset, area); !res) return res.error().relay();
-            offset[Vertical] += area[Vertical];
-          }
-        } else {
-          const auto extra_per_control = extra[Vertical] / float(controls.size());
-          for (const auto& cid : controls) {
-            const auto csp = interface::slot::get<control>(cid);
-            if (!csp) return std::unexpected(error(errors::invalid_slotid));
-            float2 area = csp->bounds();
-            area[Vertical] += extra_per_control;
-            area[!Vertical] = cross;
-            if (auto res = csp->relocate(pos + offset, area); !res) return res.error().relay();
-            offset[Vertical] += area[Vertical];
-          }
-        }
-      } else {
-        float2 offset = padding.xy();
-        for (const auto& cid : controls) {
-          const auto csp = interface::slot::get<control>(cid);
-          if (!csp) return std::unexpected(error(errors::invalid_slotid));
-          float2 area = csp->bounds();
-          if (auto res = csp->relocate(pos + offset, area); !res) return res.error().relay();
-          offset[Vertical] += area[Vertical];
-        }
+      const float2 area = size - padding.xy() - padding.zw();
+      for (const auto& cid : controls) {
+        const auto csp = interface::slot::get<control>(cid);
+        if (!csp) return std::unexpected(error(errors::invalid_slotid));
+        if (auto res = csp->relocate(pos + padding.xy(), area); !res) return res.error().relay();
       }
       return {};
     }
@@ -146,9 +104,7 @@ public:
         const auto csp = interface::slot::get<control>(cid);
         if (!csp) return std::unexpected(error(errors::invalid_slotid));
         if (auto res = csp->set_size_to_necessary(); !res) return res.error().relay();
-        const auto bounds = csp->bounds();
-        inner[!Vertical] = yw::max(inner[!Vertical], bounds[!Vertical]);
-        inner[Vertical] += bounds[Vertical];
+        inner = yw::max(inner, csp->bounds());
       }
       inner += padding.xy() + padding.zw();
       size = vapply_r<float2>(_necessary_size, policy, minimum_size, required_size, inner);
@@ -157,10 +113,10 @@ public:
   };
 
   using control::operator bool;
-  layout() noexcept = default;
+  layer() noexcept = default;
 
-  layout(derived_from<interface> auto& Parent, const source_line& sl = here()) {
-    if (auto res = frame::slot::create<layout>(Parent, false, sl)) {
+  layer(derived_from<interface> auto& Parent, const source_line& sl = here()) {
+    if (auto res = frame::slot::create<layer>(Parent, false, sl)) {
       const auto sp = *res;
       _id = sp->id;
       sp->margin = {};
@@ -170,11 +126,11 @@ public:
     } else res.error().add_footprint().go_off(sl);
   }
 
-  template<typename... Ts> requires constructible<layout, Ts...>
-  static std::expected<layout, error> create(Ts&&... Args) {
-    if (auto res = frame::slot::create<layout>(static_cast<Ts&&>(Args)...)) {
+  template<typename... Ts> requires constructible<layer, Ts...>
+  static std::expected<layer, error> create(Ts&&... Args) {
+    if (auto res = frame::slot::create<layer>(static_cast<Ts&&>(Args)...)) {
       const auto sp = *res;
-      layout l;
+      layer l;
       l._id = sp->id;
       sp->margin = {};
       sp->padding = {};
@@ -184,10 +140,10 @@ public:
     } else return res.error().relay();
   }
 
-  template<typename Layout> static std::expected<layout, error> add(Layout& Layout_) { return create(Layout_); }
+  template<typename Layout> static std::expected<layer, error> add(Layout& Layout_) { return create(Layout_); }
 
   template<typename Ctrl> std::expected<void, error> erase(Ctrl& Control) {
-    const auto csp = interface::slot::get<layout>(_id);
+    const auto csp = interface::slot::get<layer>(_id);
     if (!csp) return std::unexpected(error(errors::invalid_slotid));
     const auto cid = Control.id();
     if (auto it = std::find(csp->controls.begin(), csp->controls.end(), cid); it != csp->controls.end()) {
@@ -196,11 +152,11 @@ public:
       if (auto res = csp->make_messy(); !res) return res.error().relay();
       return {};
     }
-    return std::unexpected(error(errors::invalid_argument, "Control not found in layout"));
+    return std::unexpected(error(errors::invalid_argument, "Control not found in layer"));
   }
 
   std::expected<void, error> clear() {
-    const auto csp = interface::slot::get<layout>(_id);
+    const auto csp = interface::slot::get<layer>(_id);
     if (!csp) return std::unexpected(error(errors::invalid_slotid));
     for (const auto& cid : csp->controls) interface::slot::slots.erase(cid);
     csp->controls.clear();
@@ -208,7 +164,4 @@ public:
     return {};
   }
 };
-
-using horizontal_layout = layout<false>;
-using vertical_layout = layout<true>;
 } // namespace yw::ui

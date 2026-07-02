@@ -21,6 +21,7 @@ struct color_pair {
 class frame : public control {
 public:
   struct slot : control::slot {
+    float4 padding = float4::fill(arbitrary_value);
     color_pair colors;
     bitmap bg_image;
     float bg_image_opacity = 1.0f;
@@ -52,7 +53,16 @@ public:
 
     //-- override functions --//
 
+    virtual std::expected<float2, error> get_necessary_size() const override {
+      const auto inner = padding.xy() + padding.zw();
+      return vapply_r<float2>(_necessary_size, policy, minimum_size, required_size, inner);
+    }
+
     virtual std::expected<void, error> redraw() override {
+      if (geometry_dirty) {
+        geometry_dirty = false;
+        if (auto res = relocate(); !res) return res.error().relay();
+      }
       if (!visible) return {};
       if (auto res = _draw_background(); !res) return res.error().relay();
       if (auto res = _draw_foreground(); !res) return res.error().relay();
@@ -98,6 +108,7 @@ public:
 
   //-- getter --//
 
+  const auto& padding() const noexcept { ywlib_control_get(this, padding); }
   const auto& background_color() const noexcept { ywlib_control_get(this, colors.background); }
   const auto& background_image() const noexcept { ywlib_control_get(this, bg_image); }
   const auto& background_image_opacity() const noexcept { ywlib_control_get(this, bg_image_opacity); }
@@ -108,12 +119,13 @@ public:
 
   //-- setter --//
 
-  auto& background_color(const color& c) noexcept { ywlib_control_set(this, colors.background, c, paint_dirty); }
-  auto& background_image(bitmap b) noexcept { ywlib_control_set(this, bg_image, std::move(b), paint_dirty); }
-  auto& background_image_opacity(float1 f) noexcept { ywlib_control_set(this, bg_image_opacity, f.x, paint_dirty); }
-  auto& border_color(const color& c) noexcept { ywlib_control_set(this, colors.border, c, paint_dirty); }
-  auto& border_thickness(float1 f) noexcept { ywlib_control_set(this, border_thickness, f.x, paint_dirty); }
-  auto& border_dashed(bool b) noexcept { ywlib_control_set(this, border_dashed, b, paint_dirty); }
-  auto& crop_content(bool b) noexcept { ywlib_control_set(this, crop_content, b, paint_dirty); }
+  auto& padding(float4 f) noexcept { ywlib_control_set(this, padding, f, messy); }
+  auto& background_color(const color& c) noexcept { ywlib_control_set(this, colors.background, c, dirty); }
+  auto& background_image(bitmap b) noexcept { ywlib_control_set(this, bg_image, std::move(b), dirty); }
+  auto& background_image_opacity(float1 f) noexcept { ywlib_control_set(this, bg_image_opacity, f.x, dirty); }
+  auto& border_color(const color& c) noexcept { ywlib_control_set(this, colors.border, c, dirty); }
+  auto& border_thickness(float1 f) noexcept { ywlib_control_set(this, border_thickness, f.x, dirty); }
+  auto& border_dashed(bool b) noexcept { ywlib_control_set(this, border_dashed, b, dirty); }
+  auto& crop_content(bool b) noexcept { ywlib_control_set(this, crop_content, b, dirty); }
 };
 } // namespace yw::ui

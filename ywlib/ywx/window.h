@@ -44,6 +44,7 @@ public:
 
   struct slot : interface::slot {
     inline static std::vector<slotid> windows{};
+    inline static int2 cursor_pos{}; // in screen coordinates
     HWND hwnd{};
     int4 frame_thickness{};
     int2 pos{}, size{};
@@ -55,10 +56,18 @@ public:
     color background_color = colors::white;
 
     slotid control_id{};
+    slotid focused_control_id{};
+    slotid hovered_control_id{};
+    slotid mouse_capture_control_id{};
+    slotid keyboard_capture_control_id{};
 
-    bool layout_dirty = false;
-    bool geometry_dirty = false;
-    bool paint_dirty = false;
+    TRACKMOUSEEVENT track_mouse_event{sizeof(TRACKMOUSEEVENT), TME_LEAVE};
+
+    function<bool, button_event> on_button_down{};
+    function<bool, button_event> on_button_up{};
+
+    bool messy = false;
+    bool dirty = false;
     bool drawn = false;
     bool resizing = false;
 
@@ -83,22 +92,22 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> make_paint_dirty() override {
-      paint_dirty = true;
+    virtual std::expected<void, error> make_dirty() override {
+      dirty = true;
       return {};
     }
 
-    virtual std::expected<void, error> make_geometry_dirty() override {
-      geometry_dirty = true;
-      paint_dirty = true;
+    virtual std::expected<void, error> make_messy() override {
+      messy = true;
       return {};
     }
 
-    virtual std::expected<void, error> make_layout_dirty() override {
-      layout_dirty = true;
-      geometry_dirty = true;
-      paint_dirty = true;
-      return {};
+    virtual void button_event(yw::button_event e) {
+      const auto csp = slot::get<control>(control_id);
+      if (csp && csp->button_event(e)) return;
+      if (e.down) {
+        if (on_button_down) on_button_down(e);
+      } else if (on_button_up) on_button_up(e);
     }
 
     //-- functions --//
@@ -127,7 +136,6 @@ public:
     }
 
     std::expected<void, error> update() {
-      const auto csp = slot::get<control>(control_id);
       if (auto res = get_necessary_size(); !res) return res.error().relay();
       else size = vapply_r<uint2>(yw::max, size, *res);
       const bool size_changed = size != rendertarget.size();
@@ -135,17 +143,22 @@ public:
         const auto area = size + frame_thickness.xy() + frame_thickness.zw();
         win32_bool_test(::SetWindowPos, hwnd, 0, 0, 0, area.x, area.y, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
         if (auto res = update_rendertarget(); !res) return res.error().relay();
-        layout_dirty = true;
-        geometry_dirty = true;
-        paint_dirty = true;
+        messy = true;
       }
-      if (csp && (layout_dirty || geometry_dirty || !csp->geometry))
-        if (auto res = csp->relocate({}, float2(float(size.x), float(size.y))); !res) return res.error().relay();
-      if (csp && (paint_dirty || geometry_dirty || layout_dirty || !csp->geometry || size_changed)) {
-        if (auto res = controllayer.begin_draw(colors::transparent)) {
-          auto d = std::move(*res);
-          if (auto rr = csp->redraw(); !rr) return rr.error().relay();
-        } else return res.error().relay();
+      const auto csp = slot::get<control>(control_id);
+      if (messy) {
+        if (csp)
+          if (auto res = csp->relocate({}, float2(float(size.x), float(size.y))); !res) return res.error().relay();
+        dirty = true;
+      }
+      if (dirty) {
+        if (auto d = controllayer.begin_draw(colors::transparent)) {
+          if (csp) {
+            if (auto rr = csp->redraw(); !rr) return rr.error().relay();
+            if (track_mouse_event.hwndTrack != nullptr) hovered_control_id = csp->hittest(cursor_pos - pos);
+          }
+          if (auto res = d->close(); !res) return res.error().relay();
+        } else return d.error().relay();
       }
       if (drawn) {
         if (auto res = rendertarget.begin_draw()) {
@@ -159,9 +172,8 @@ public:
         } else return res.error().relay();
       }
       hresult_test(swapchain->Present, 1, 0);
-      layout_dirty = false;
-      geometry_dirty = false;
-      paint_dirty = false;
+      messy = false;
+      dirty = false;
       drawn = false;
       return {};
     }
@@ -299,6 +311,18 @@ public:
     return sp->background_color;
   }
 
+  const auto& on_button_down() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->on_button_down;
+  }
+
+  const auto& on_button_up() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->on_button_up;
+  }
+
   //-- setter --//
 
   auto& pos(int2 v) noexcept {
@@ -319,7 +343,7 @@ public:
     const auto area = sp->size + sp->frame_thickness.xy() + sp->frame_thickness.zw();
     if (!::SetWindowPos(sp->hwnd, 0, sp->pos.x, sp->pos.y, area.x, area.y, SWP_NOZORDER | SWP_NOACTIVATE))
       error(errors::operation_failed, "SetWindowPos failed", int32_t(::GetLastError())).go_off();
-    if (auto res = sp->make_layout_dirty(); !res) res.error().go_off();
+    if (auto res = sp->make_messy(); !res) res.error().go_off();
     return *this;
   }
 
@@ -336,7 +360,21 @@ public:
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->background_color = c;
-    if (auto res = sp->make_paint_dirty(); !res) res.error().go_off();
+    if (auto res = sp->make_dirty(); !res) res.error().go_off();
+    return *this;
+  }
+
+  auto& on_button_down(function<bool, button_event> f) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->on_button_down = std::move(f);
+    return *this;
+  }
+
+  auto& on_button_up(function<bool, button_event> f) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->on_button_up = std::move(f);
     return *this;
   }
 };
