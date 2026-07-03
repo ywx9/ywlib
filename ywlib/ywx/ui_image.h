@@ -74,12 +74,12 @@ public:
     } else return res.error().relay();
   }
 
-  const auto& content() const noexcept { ywlib_control_get(this, content); }
-  const auto& content_mode() const noexcept { ywlib_control_get(this, content_mode); }
-  const auto& crop_content() const noexcept { ywlib_control_get(this, crop_content); }
+  const auto& content() const noexcept { ywlib_control_get(content); }
+  const auto& content_mode() const noexcept { ywlib_control_get(content_mode); }
+  const auto& crop_content() const noexcept { ywlib_control_get(crop_content); }
 
-  auto& content(bitmap b) noexcept { ywlib_control_set(this, content, std::move(b), messy); }
-  auto& content_mode(image_size_mode m) noexcept { ywlib_control_set(this, content_mode, m, dirty); }
-  auto& crop_content(bool b) noexcept { ywlib_control_set(this, crop_content, b, dirty); }
+  auto& content(this auto& self, bitmap b) noexcept { ywlib_control_set(content, std::move(b), messy); }
+  auto& content_mode(this auto& self, image_size_mode m) noexcept { ywlib_control_set(content_mode, m, dirty); }
+  auto& crop_content(this auto& self, bool b) noexcept { ywlib_control_set(crop_content, b, dirty); }
 };
 } // namespace yw::ui

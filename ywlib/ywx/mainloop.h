@@ -1,12 +1,12 @@
 #pragma once
 #include "ywx/window.h"
+#include "ywx/tooltip.h"
 
 namespace yw {
 
 inline class {
   MSG _msg{};
   uint64_t _count = 0;
-  double _last_elapsed = 0.0;
   stopwatch _timer{};
 
 public:
@@ -30,6 +30,7 @@ public:
       else if (auto res = wsp->update(); !res) res.error().go_off();
       else ++it;
     }
+
     return true;
   }
 } mainloop;

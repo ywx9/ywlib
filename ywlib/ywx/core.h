@@ -420,6 +420,11 @@ struct font_config {
   std::optional<font_style> style = std::nullopt;
   std::optional<font_stretch> stretch = std::nullopt;
   static const font_config default_;
+  const wchar_t* get_name() const noexcept { return name ? name->c_str() : L""; }
+  float get_size() const noexcept { return size.value_or(16.0f); }
+  font_weight get_weight() const noexcept { return weight.value_or(font_weight::normal); }
+  font_style get_style() const noexcept { return style.value_or(font_style::normal); }
+  font_stretch get_stretch() const noexcept { return stretch.value_or(font_stretch::normal); }
 };
 
 inline const font_config font_config::default_{

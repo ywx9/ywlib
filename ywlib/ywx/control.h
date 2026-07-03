@@ -4,17 +4,17 @@
 
 namespace yw {
 
-#define ywlib_control_get(h, mop)                 \
-  const auto s = get_slot(h);                     \
+#define ywlib_control_get(mop)                    \
+  const auto s = get_slot(this);                  \
   if (!s) error(errors::invalid_slotid).go_off(); \
   return s->mop
 
-#define ywlib_control_set(h, mop, val, dirty)                   \
-  const auto s = get_slot(h);                                   \
+#define ywlib_control_set(mop, val, dirty)                      \
+  const auto s = get_slot(&self);                               \
   if (!s) error(errors::invalid_slotid).go_off();               \
   s->mop = val;                                                 \
   if (auto res = s->make_##dirty(); !res) res.error().go_off(); \
-  return *this
+  return self;
 
 class control : public interface {
 public:
@@ -47,6 +47,7 @@ public:
     float2 pos{};
     float2 size{};
     float2 radius = float2::fill(arbitrary_value);
+    string<wchar_t> tooltip{};
     comptr<ID2D1Geometry> geometry{};
     alignment align = alignment::center;
     vector2<size_policy> policy = {}; // free
@@ -130,52 +131,62 @@ public:
 
     //-- events --//
 
-    virtual bool button_event(button_event e) { return false; }
+    virtual bool button_event(yw::button_event e) { return false; }
+    virtual bool click_event(yw::button_event e) { return false; }
+    virtual bool double_click_event(yw::button_event e) { return false; }
+    virtual bool drag_event(yw::drag_event e) { return false; }
+    virtual bool hover_event(yw::hover_event e) { return false; }
+    virtual bool key_event(yw::key_event e) { return false; }
+    virtual bool move_event(yw::move_event e) { return false; }
+    virtual bool wheel_event(yw::wheel_event e) { return false; }
   };
 
   //-- getter --//
 
-  const auto& margin() const noexcept { ywlib_control_get(this, margin); }
-  const auto& minimum_size() const noexcept { ywlib_control_get(this, minimum_size); }
-  const auto& required_size() const noexcept { ywlib_control_get(this, required_size); }
-  const auto& pos() const noexcept { ywlib_control_get(this, pos); }
-  const auto& size() const noexcept { ywlib_control_get(this, size); }
-  const auto& width() const noexcept { ywlib_control_get(this, size).x; }
-  const auto& height() const noexcept { ywlib_control_get(this, size).y; }
-  const auto& radius() const noexcept { ywlib_control_get(this, radius); }
-  const auto& align() const noexcept { ywlib_control_get(this, align); }
-  const auto& policy() const noexcept { ywlib_control_get(this, policy); }
+  const auto& margin() const noexcept { ywlib_control_get(margin); }
+  const auto& minimum_size() const noexcept { ywlib_control_get(minimum_size); }
+  const auto& required_size() const noexcept { ywlib_control_get(required_size); }
+  const auto& pos() const noexcept { ywlib_control_get(pos); }
+  const auto& size() const noexcept { ywlib_control_get(size); }
+  const auto& width() const noexcept { ywlib_control_get(size).x; }
+  const auto& height() const noexcept { ywlib_control_get(size).y; }
+  const auto& radius() const noexcept { ywlib_control_get(radius); }
+  const auto& align() const noexcept { ywlib_control_get(align); }
+  const auto& policy() const noexcept { ywlib_control_get(policy); }
 
   //-- setter --//
 
-  auto& margin(float4 v) noexcept { ywlib_control_set(this, margin, v, messy); }
-  auto& minimum_size(float2 v) noexcept { ywlib_control_set(this, minimum_size, v, messy); }
-  auto& size(float2 Size) noexcept {
-    const auto sp = get_slot(this);
+  auto& margin(this auto& self, float4 v) noexcept { ywlib_control_set(margin, v, messy); }
+  auto& minimum_size(this auto& self, float2 v) noexcept { ywlib_control_set(minimum_size, v, messy); }
+
+  auto& size(this auto& self, float2 Size) noexcept {
+    const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->required_size = Size;
     sp->policy = vector2<size_policy>::fill(size_policy::fixed);
     if (auto res = sp->make_messy(); !res) res.error().go_off();
-    return *this;
+    return self;
   }
-  auto& width(float1 Width) noexcept {
-    const auto sp = get_slot(this);
+  auto& width(this auto& self, float1 Width) noexcept {
+    const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->required_size.x = Width.x;
     sp->policy.x = size_policy::fixed;
     if (auto res = sp->make_messy(); !res) res.error().go_off();
-    return *this;
+    return self;
   }
-  auto& height(float1 Height) noexcept {
-    const auto sp = get_slot(this);
+  auto& height(this auto& self, float1 Height) noexcept {
+    const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->required_size.y = Height.x;
     sp->policy.y = size_policy::fixed;
     if (auto res = sp->make_messy(); !res) res.error().go_off();
-    return *this;
+    return self;
   }
-  auto& radius(float2 v) noexcept { ywlib_control_set(this, radius, v, geometry_dirty); }
-  auto& align(alignment v) noexcept { ywlib_control_set(this, align, v, geometry_dirty); }
-  auto& policy(vector2<size_policy> v) noexcept { ywlib_control_set(this, policy, v, messy); }
+
+  auto& radius(this auto& self, float2 v) noexcept { ywlib_control_set(radius, v, geometry_dirty); }
+  auto& align(this auto& self, alignment v) noexcept { ywlib_control_set(align, v, geometry_dirty); }
+  auto& policy(this auto& self, vector2<size_policy> v) noexcept { ywlib_control_set(policy, v, messy); }
+  auto& tooltip(this auto& self, string<wchar_t> v) noexcept { ywlib_control_set(tooltip, std::move(v), none); }
 };
 } // namespace yw

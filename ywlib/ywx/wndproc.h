@@ -19,17 +19,28 @@ inline modifiers _make_mods() noexcept {
 
 inline LRESULT _process_wm_cursor(window::slot* wsp, UINT msg, WPARAM wp, LPARAM lp) {
   switch (msg) {
-  case WM_MOUSEMOVE:
+  case WM_MOUSEMOVE: {
     window::slot::cursor_pos.x = std::bit_cast<int16_t>(LOWORD(lp));
     window::slot::cursor_pos.y = std::bit_cast<int16_t>(HIWORD(lp));
+    const auto local_pos = window::slot::cursor_pos;
     ::ClientToScreen(wsp->hwnd, reinterpret_cast<POINT*>(&window::slot::cursor_pos));
     if (!wsp->track_mouse_event.hwndTrack) {
       wsp->track_mouse_event.hwndTrack = wsp->hwnd;
       ::TrackMouseEvent(&wsp->track_mouse_event);
     }
+    const auto csp = interface::slot::get<control>(wsp->control_id);
+    if (!csp) return 0;
+    const auto hit = csp->hittest(local_pos);
+    if (auto res = wsp->update_hovered_control(hit, local_pos, true); !res) res.error().go_off();
     return 0;
+  }
   case WM_MOUSELEAVE:
     wsp->track_mouse_event.hwndTrack = nullptr;
+    if (const auto hcsp = interface::slot::get<control>(wsp->hovered_control_id)) {
+      const auto pos = window::slot::cursor_pos - wsp->pos;
+      hcsp->hover_event({.pos = pos, .type = hover_event::type::leave});
+      wsp->hovered_control_id = {};
+    }
     return 0;
   }
   return 0;
@@ -93,8 +104,7 @@ inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
   switch (msg) {
 
   case WM_MOUSEMOVE:
-  case WM_MOUSELEAVE:
-    return internal::_process_wm_cursor(wsp, msg, wp, lp);
+  case WM_MOUSELEAVE: return internal::_process_wm_cursor(wsp, msg, wp, lp);
 
   case WM_GETMINMAXINFO:
   case WM_SIZE:

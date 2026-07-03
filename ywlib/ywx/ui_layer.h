@@ -56,8 +56,8 @@ public:
 
     virtual slotid hittest(float2 Pt) const override {
       if (!visible) return {};
-      for (auto it = controls.rbegin(); it != controls.rend(); ++it) {
-        if (const auto csp = interface::slot::get<control>(*it))
+      for (const auto& cid : controls | std::views::reverse) {
+        if (const auto csp = interface::slot::get<control>(cid))
           if (const auto hit = csp->hittest(Pt)) return hit;
       }
       return frame::slot::hittest(Pt);

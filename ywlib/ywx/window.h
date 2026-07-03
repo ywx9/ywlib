@@ -1,6 +1,7 @@
 #pragma once
-#include "ywx/bitmap.h"
-#include "ywx/keys.h"
+#include <ywx/bitmap.h>
+#include <ywx/keys.h>
+#include <ywx/ui_label.h>
 
 namespace yw {
 
@@ -20,12 +21,12 @@ public:
     std::optional<int2> size{};
     bool has_border = true;
     bool has_caption = true;
-    bool resizeable = true;
+    bool resizable = true;
     bool visible = true;
     DWORD get_style() const noexcept {
       DWORD s = has_caption ? WS_CAPTION | WS_SYSMENU : WS_POPUP;
       if (has_border) s |= WS_BORDER;
-      if (resizeable) s |= WS_THICKFRAME;
+      if (resizable) s |= WS_THICKFRAME;
       if (visible) s |= WS_VISIBLE;
       return s;
     }
@@ -40,6 +41,15 @@ public:
     DWORD exstyle = WS_EX_ACCEPTFILES;
     DWORD get_style() const noexcept { return style; }
     DWORD get_exstyle() const noexcept { return exstyle; }
+  };
+
+  struct tooltip {
+    yw::text text{};
+    color text_color = colors::white;
+    color background_color = colors::black;
+    float2 offset = float2::fill(arbitrary_value);
+    float2 padding = float2::fill(arbitrary_value);
+    double delay = 0.5;
   };
 
   struct slot : interface::slot {
@@ -62,6 +72,8 @@ public:
     slotid keyboard_capture_control_id{};
 
     TRACKMOUSEEVENT track_mouse_event{sizeof(TRACKMOUSEEVENT), TME_LEAVE};
+
+
 
     function<bool, button_event> on_button_down{};
     function<bool, button_event> on_button_up{};
@@ -120,6 +132,16 @@ public:
       else return vapply_r<uint2>(yw::max, vapply_r<uint2>(yw::ceil, *res + margin), uint2::fill(arbitrary_value));
     }
 
+    std::expected<void, error> update_hovered_control(slotid New, float2 Pos, bool Moved) {
+      if (New != hovered_control_id) {
+        if (const auto csp = slot::get<control>(hovered_control_id)) csp->hover_event({Pos, hover_event::type::leave});
+        hovered_control_id = New;
+        if (const auto csp = slot::get<control>(hovered_control_id)) csp->hover_event({Pos, hover_event::type::enter});
+      } else if (Moved)
+        if (const auto csp = slot::get<control>(hovered_control_id)) csp->hover_event({Pos, hover_event::type::move});
+      return {};
+    }
+
     std::expected<void, error> update_rendertarget() {
       if (size == rendertarget.size()) return {};
       rendertarget = {};
@@ -155,7 +177,10 @@ public:
         if (auto d = controllayer.begin_draw(colors::transparent)) {
           if (csp) {
             if (auto rr = csp->redraw(); !rr) return rr.error().relay();
-            if (track_mouse_event.hwndTrack != nullptr) hovered_control_id = csp->hittest(cursor_pos - pos);
+            if (track_mouse_event.hwndTrack != nullptr) {
+              const auto hit = csp->hittest(cursor_pos - pos);
+              if (auto res = update_hovered_control(hit, cursor_pos - pos, false); !res) return res.error().relay();
+            }
           }
           if (auto res = d->close(); !res) return res.error().relay();
         } else return d.error().relay();
@@ -177,6 +202,7 @@ public:
       drawn = false;
       return {};
     }
+
 
     //-- create function --//
 
@@ -232,14 +258,14 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  std::expected<window, error> create(options Options, const source_line& sl = here()) {
+  static std::expected<window, error> create(options Options, const source_line& sl = here()) {
     window w;
     if (auto res = slot::create(std::move(Options), sl)) w._id = (*res)->id;
     else return res.error().relay();
     return w;
   }
 
-  std::expected<window, error> create(window_options_like auto Options, const source_line& sl = here()) {
+  static std::expected<window, error> create(window_options_like auto Options, const source_line& sl = here()) {
     window w;
     if (auto res = slot::create(std::move(Options), sl)) w._id = (*res)->id;
     else return res.error().relay();
@@ -248,6 +274,16 @@ public:
 
   std::expected<void, error> close() {
     if (const auto sp = slot::get<window>(_id); sp) win32_bool_test(::DestroyWindow, sp->hwnd);
+    return {};
+  }
+
+  std::expected<void, error> show() {
+    if (const auto sp = slot::get<window>(_id); sp) win32_bool_test(::ShowWindow, sp->hwnd, SW_SHOW);
+    return {};
+  }
+
+  std::expected<void, error> hide() {
+    if (const auto sp = slot::get<window>(_id); sp) win32_bool_test(::ShowWindow, sp->hwnd, SW_HIDE);
     return {};
   }
 

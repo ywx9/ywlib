@@ -95,18 +95,18 @@ public:
     } else return res.error().relay();
   }
 
-  const auto& content() const noexcept { ywlib_control_get(this, content); }
-  const auto& content_mode() const noexcept { ywlib_control_get(this, content_mode); }
-  const auto& fill_color() const noexcept { ywlib_control_get(this, fill_color); }
-  const auto& stroke_color() const noexcept { ywlib_control_get(this, stroke_color); }
-  const auto& stroke_width() const noexcept { ywlib_control_get(this, stroke_width); }
-  const auto& crop_content() const noexcept { ywlib_control_get(this, crop_content); }
+  const auto& content() const noexcept { ywlib_control_get(content); }
+  const auto& content_mode() const noexcept { ywlib_control_get(content_mode); }
+  const auto& fill_color() const noexcept { ywlib_control_get(fill_color); }
+  const auto& stroke_color() const noexcept { ywlib_control_get(stroke_color); }
+  const auto& stroke_width() const noexcept { ywlib_control_get(stroke_width); }
+  const auto& crop_content() const noexcept { ywlib_control_get(crop_content); }
 
-  auto& content(svgpath p) noexcept { ywlib_control_set(this, content, std::move(p), messy); }
-  auto& content_mode(geometry_size_mode m) noexcept { ywlib_control_set(this, content_mode, m, dirty); }
-  auto& fill_color(const color& c) noexcept { ywlib_control_set(this, fill_color, c, dirty); }
-  auto& stroke_color(const color& c) noexcept { ywlib_control_set(this, stroke_color, c, dirty); }
-  auto& stroke_width(float1 f) noexcept { ywlib_control_set(this, stroke_width, f.x, dirty); }
-  auto& crop_content(bool b) noexcept { ywlib_control_set(this, crop_content, b, dirty); }
+  auto& content(this auto& self, svgpath p) noexcept { ywlib_control_set(content, std::move(p), messy); }
+  auto& content_mode(this auto& self, geometry_size_mode m) noexcept { ywlib_control_set(content_mode, m, dirty); }
+  auto& fill_color(this auto& self, const color& c) noexcept { ywlib_control_set(fill_color, c, dirty); }
+  auto& stroke_color(this auto& self, const color& c) noexcept { ywlib_control_set(stroke_color, c, dirty); }
+  auto& stroke_width(this auto& self, float1 f) noexcept { ywlib_control_set(stroke_width, f.x, dirty); }
+  auto& crop_content(this auto& self, bool b) noexcept { ywlib_control_set(crop_content, b, dirty); }
 };
 } // namespace yw::ui
