@@ -1,6 +1,5 @@
 #pragma once
-#include "ywx/window.h"
-#include "ywx/tooltip.h"
+#include <ywx/window.h>
 
 namespace yw {
 
@@ -12,6 +11,7 @@ inline class {
 public:
   /// permits 'while (mainloop) { ... }' to run the main loop
   explicit operator bool() { return operator()(); }
+  double elapsed() const noexcept { return _timer.elapsed(); }
 
   bool operator()() {
     if (window::slot::windows.empty()) return false;
@@ -27,7 +27,7 @@ public:
     for (auto it = window::slot::windows.begin(); it != window::slot::windows.end();) {
       const auto wsp = interface::slot::get<window>(*it);
       if (!wsp || !wsp->hwnd) it = window::slot::windows.erase(it);
-      else if (auto res = wsp->update(); !res) res.error().go_off();
+      else if (auto res = wsp->update(elapsed()); !res) res.error().go_off();
       else ++it;
     }
 

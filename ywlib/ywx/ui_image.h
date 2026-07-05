@@ -1,4 +1,6 @@
 #pragma once
+#include <variant>
+
 #include <ywx/bitmap.h>
 #include <ywx/control.h>
 
@@ -6,15 +8,17 @@ namespace yw::ui {
 
 class image : public control {
 public:
-  enum class image_size_mode : unsigned char {
-    none,
-    stretch
+  struct scaled_content {
+    float2 value = float2::fill(1.0f);
+  };
+
+  struct sized_content {
+    float2 value{};
   };
 
   struct slot : control::slot {
     bitmap content{};
-    image_size_mode content_mode = image_size_mode::none;
-    bool crop_content = true;
+    std::variant<scaled_content, sized_content> content_transform = scaled_content{};
 
     static std::expected<slot*, error> create(derived_from<interface> auto& Parent, const source_line& sl) {
       const auto psp = interface::slot::get<interface>(Parent.id());
@@ -32,7 +36,24 @@ public:
       return sp;
     }
 
-    float2 _content_size() const noexcept { return float2(float(content.size().x), float(content.size().y)); }
+    float2 _original_content_size() const noexcept {
+      if (!content) return {};
+      return float2(float(content.size().x), float(content.size().y));
+    }
+
+    float2 _content_scale() const noexcept {
+      if (!content) return float2::fill(1.0f);
+      if (const auto* scaled = std::get_if<scaled_content>(&content_transform)) return scaled->value;
+      const auto original = _original_content_size();
+      if (original.x <= 0.0f || original.y <= 0.0f) return float2::fill(1.0f);
+      return std::get<sized_content>(content_transform).value / original;
+    }
+
+    float2 _content_size() const noexcept {
+      if (!content) return {};
+      if (const auto* sized = std::get_if<sized_content>(&content_transform)) return sized->value;
+      return _original_content_size() * std::get<scaled_content>(content_transform).value;
+    }
 
     float2 _content_offset(float2 DrawSize) const noexcept {
       constexpr float c[]{0.5f, 0.0f, 1.0f};
@@ -46,14 +67,14 @@ public:
 
     virtual std::expected<void, error> redraw() override {
       if (!visible || !content) return {};
-      const auto draw_size = content_mode == image_size_mode::stretch ? size : _content_size();
+      const auto draw_size = _content_size();
       const auto draw_pos = pos + _content_offset(draw_size);
-      if (crop_content) d2d::push_layer(geometry.get());
+      d2d::push_layer(geometry.get());
       if (auto res = draw_bitmap(draw_pos, draw_size, content); !res) {
-        if (crop_content) d2d::pop_layer();
+        d2d::pop_layer();
         return res.error().relay();
       }
-      if (crop_content) d2d::pop_layer();
+      d2d::pop_layer();
       return {};
     }
   };
@@ -75,11 +96,40 @@ public:
   }
 
   const auto& content() const noexcept { ywlib_control_get(content); }
-  const auto& content_mode() const noexcept { ywlib_control_get(content_mode); }
-  const auto& crop_content() const noexcept { ywlib_control_get(crop_content); }
+  float2 content_size() const noexcept {
+    const auto s = get_slot(this);
+    if (!s) error(errors::invalid_slotid).go_off();
+    return s->_content_size();
+  }
+  float2 content_scale() const noexcept {
+    const auto s = get_slot(this);
+    if (!s) error(errors::invalid_slotid).go_off();
+    return s->_content_scale();
+  }
 
   auto& content(this auto& self, bitmap b) noexcept { ywlib_control_set(content, std::move(b), messy); }
-  auto& content_mode(this auto& self, image_size_mode m) noexcept { ywlib_control_set(content_mode, m, dirty); }
-  auto& crop_content(this auto& self, bool b) noexcept { ywlib_control_set(crop_content, b, dirty); }
+  auto& content_size(this auto& self, float2 v) noexcept {
+    const auto s = get_slot(&self);
+    if (!s) error(errors::invalid_slotid).go_off();
+    if (v.x <= 0.0f || v.y <= 0.0f) {
+      error(errors::invalid_argument, format("content_size must be positive: ", v)).go_off(false);
+      return self;
+    }
+    s->content_transform = sized_content{v};
+    if (auto res = s->make_messy(); !res) res.error().go_off();
+    return self;
+  }
+  auto& content_scale(this auto& self, float2 v) noexcept {
+    const auto s = get_slot(&self);
+    if (!s) error(errors::invalid_slotid).go_off();
+    if (v.x <= 0.0f || v.y <= 0.0f) {
+      error(errors::invalid_argument, format("content_scale must be positive: ", v)).go_off(false);
+      return self;
+    }
+    s->content_transform = scaled_content{v};
+    if (auto res = s->make_messy(); !res) res.error().go_off();
+    return self;
+  }
+  auto& content_scale(this auto& self, arithmetic auto v) noexcept { return self.content_scale(float2::fill(float(v))); }
 };
 } // namespace yw::ui

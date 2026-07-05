@@ -84,7 +84,14 @@ public:
 
     virtual float2 bounds() const { return size + margin.xy() + margin.zw(); }
 
-    virtual slotid find_next_tabstop(slotid Focused, bool Forward, bool& Found) const { return {}; }
+    virtual slotid find_next_tabstop(slotid Focused, bool Backward, bool& Found) const {
+      if (!focusable()) return {};
+      if (Focused == id) Found = true;
+      else if (Found) return id;
+      return {};
+    }
+
+    virtual bool focusable() const { return false; }
 
     virtual std::expected<float2, error> get_necessary_size() const {
       return vapply_r<float2>(_necessary_size, policy, minimum_size, required_size, float2{});
@@ -135,6 +142,7 @@ public:
     virtual bool click_event(yw::button_event e) { return false; }
     virtual bool double_click_event(yw::button_event e) { return false; }
     virtual bool drag_event(yw::drag_event e) { return false; }
+    virtual void focus_event(bool Focused) {}
     virtual bool hover_event(yw::hover_event e) { return false; }
     virtual bool key_event(yw::key_event e) { return false; }
     virtual bool move_event(yw::move_event e) { return false; }

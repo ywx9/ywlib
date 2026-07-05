@@ -7,7 +7,7 @@ namespace yw::ui {
 class label : public frame {
 public:
   struct slot : frame::slot {
-    yw::text text{};
+    yw::text text = yw::text(L" ");
     color text_color = colors::black;
     alignment text_align = alignment::center;
 
@@ -63,6 +63,12 @@ public:
   const auto& text_color() const noexcept { ywlib_control_get(text_color); }
   const auto& text_align() const noexcept { ywlib_control_get(text_align); }
 
+  const auto& string() const noexcept {
+    const auto sp = get_slot(&*this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->text.string();
+  }
+
   //-- setter --//
 
   auto& text(this auto& self, yw::text Text) noexcept {
@@ -80,6 +86,14 @@ public:
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->text_align = v;
     if (auto res = sp->make_dirty(); !res) res.error().go_off();
+    return self;
+  }
+
+  auto& string(this auto& self, yw::string<wchar_t> s) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    if (auto res = sp->text.string(std::move(s)); !res) res.error().go_off();
+    if (auto res = sp->make_messy(); !res) res.error().go_off();
     return self;
   }
 };

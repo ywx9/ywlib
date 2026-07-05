@@ -23,8 +23,8 @@ struct rgba {
       b(static_cast<uint8_t>(rrggbb & 0xFF)), a(static_cast<uint8_t>(alpha)) {}
   constexpr rgba(integral auto rrggbb) noexcept : rgba(rrggbb, 255) {}
 
-  template<uint64_t I> requires(I < 4) constexpr float& get() noexcept { return select<I>(r, g, b, a); }
-  template<uint64_t I> requires(I < 4) constexpr const float& get() const noexcept { return select<I>(r, g, b, a); }
+  template<uint64_t I> requires(I < 4) constexpr uint8_t& get() noexcept { return select<I>(r, g, b, a); }
+  template<uint64_t I> requires(I < 4) constexpr const uint8_t& get() const noexcept { return select<I>(r, g, b, a); }
 };
 static_assert(sizeof(rgba) == 4);
 
@@ -44,11 +44,12 @@ struct bgra {
     : b(static_cast<uint8_t>(rrggbb & 0xFF)), g(static_cast<uint8_t>((rrggbb >> 8) & 0xFF)),
       r(static_cast<uint8_t>((rrggbb >> 16) & 0xFF)), a(static_cast<uint8_t>(alpha)) {}
   constexpr bgra(integral auto rrggbb) noexcept : bgra(rrggbb, 255) {}
+
   explicit constexpr bgra(const rgba& color) noexcept : bgra(color.b, color.g, color.r, color.a) {}
   explicit constexpr operator rgba() const noexcept { return rgba{r, g, b, a}; }
 
-  template<uint64_t I> requires(I < 4) constexpr float& get() noexcept { return select<I>(b, g, r, a); }
-  template<uint64_t I> requires(I < 4) constexpr const float& get() const noexcept { return select<I>(b, g, r, a); }
+  template<uint64_t I> requires(I < 4) constexpr uint8_t& get() noexcept { return select<I>(b, g, r, a); }
+  template<uint64_t I> requires(I < 4) constexpr const uint8_t& get() const noexcept { return select<I>(b, g, r, a); }
 };
 static_assert(sizeof(bgra) == 4);
 
@@ -61,6 +62,9 @@ struct color {
   float a{1.0f};
 
   constexpr color() noexcept = default;
+
+  constexpr color(const color& Color, arithmetic auto Alpha) noexcept
+    : r(Color.r), g(Color.g), b(Color.b), a(static_cast<float>(Alpha)) {}
 
   constexpr color(arithmetic auto red, arithmetic auto green, arithmetic auto blue, arithmetic auto alpha) noexcept
     : r(static_cast<float>(red)), g(static_cast<float>(green)), b(static_cast<float>(blue)),
@@ -84,13 +88,11 @@ struct color {
       b(static_cast<float>(col.b) / 255.0f), a(static_cast<float>(col.a) / 255.0f) {}
 
   explicit operator rgba() const noexcept {
-    return rgba{
-      static_cast<uint8_t>(r * 255.0f), static_cast<uint8_t>(g * 255.0f), static_cast<uint8_t>(b * 255.0f),
+    return rgba{static_cast<uint8_t>(r * 255.0f), static_cast<uint8_t>(g * 255.0f), static_cast<uint8_t>(b * 255.0f),
       static_cast<uint8_t>(a * 255.0f)};
   }
   explicit operator bgra() const noexcept {
-    return bgra{
-      static_cast<uint8_t>(b * 255.0f), static_cast<uint8_t>(g * 255.0f), static_cast<uint8_t>(r * 255.0f),
+    return bgra{static_cast<uint8_t>(b * 255.0f), static_cast<uint8_t>(g * 255.0f), static_cast<uint8_t>(r * 255.0f),
       static_cast<uint8_t>(a * 255.0f)};
   }
 

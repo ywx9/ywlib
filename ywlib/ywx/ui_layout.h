@@ -29,17 +29,15 @@ public:
       return {};
     }
 
-    virtual slotid find_next_tabstop(slotid Focused, bool Forward, bool& Found) const override {
-      if (!Forward) {
-        for (auto it = controls.rbegin(); it != controls.rend(); ++it) {
-          if (const auto csp = interface::slot::get<control>(*it))
-            if (const auto next = csp->find_next_tabstop(Focused, Forward, Found)) return next;
-        }
-        return {};
-      }
-      for (const auto& cid : controls) {
-        if (const auto csp = interface::slot::get<control>(cid))
-          if (const auto next = csp->find_next_tabstop(Focused, Forward, Found)) return next;
+    virtual slotid find_next_tabstop(slotid Focused, bool Backward, bool& Found) const override {
+      if (Backward) {
+        for (const auto& cid : controls | std::views::reverse)
+          if (const auto csp = interface::slot::get<control>(cid))
+            if (const auto next = csp->find_next_tabstop(Focused, Backward, Found)) return next;
+      } else {
+        for (const auto& cid : controls)
+          if (const auto csp = interface::slot::get<control>(cid))
+            if (const auto next = csp->find_next_tabstop(Focused, Backward, Found)) return next;
       }
       return {};
     }

@@ -43,15 +43,6 @@ public:
     DWORD get_exstyle() const noexcept { return exstyle; }
   };
 
-  struct tooltip {
-    yw::text text{};
-    color text_color = colors::white;
-    color background_color = colors::black;
-    float2 offset = float2::fill(arbitrary_value);
-    float2 padding = float2::fill(arbitrary_value);
-    double delay = 0.5;
-  };
-
   struct slot : interface::slot {
     inline static std::vector<slotid> windows{};
     inline static int2 cursor_pos{}; // in screen coordinates
@@ -65,23 +56,39 @@ public:
     comptr<IDXGISwapChain1> swapchain{};
     color background_color = colors::white;
 
+    color tooltip_background_color = color(0.99f, 0.98f, 0.96f, 0.8f);
+    color tooltip_border_color = colors::black;
+    color tooltip_text_color = colors::black;
+    float4 tooltip_padding = float4::fill(arbitrary_value);
+    float2 tooltip_radius = float2::fill(arbitrary_value);
+    float2 tooltip_offset = float2::fill(arbitrary_value * 2);
+    float tooltip_border_thickness = 0.5f;
+    font_config tooltip_font = font_config{.size = 12.0f};
+    double tooltip_delay = 0.5;
+    text tooltip_text{};
+
     slotid control_id{};
     slotid focused_control_id{};
     slotid hovered_control_id{};
     slotid mouse_capture_control_id{};
     slotid keyboard_capture_control_id{};
+    slotid tooltip_control_id{};
 
     TRACKMOUSEEVENT track_mouse_event{sizeof(TRACKMOUSEEVENT), TME_LEAVE};
 
-
-
     function<bool, button_event> on_button_down{};
     function<bool, button_event> on_button_up{};
+    function<void, uint2> on_resized{};
 
+    bool fit_to_necessary_size = false;
     bool messy = false;
     bool dirty = false;
     bool drawn = false;
     bool resizing = false;
+    bool tooltip_visible = false;
+    bool tooltip_resolved = false;
+    float2 tooltip_anchor_pos{};
+    double tooltip_enter_time = 0.0;
 
     //-- override functions --//
 
@@ -132,13 +139,87 @@ public:
       else return vapply_r<uint2>(yw::max, vapply_r<uint2>(yw::ceil, *res + margin), uint2::fill(arbitrary_value));
     }
 
-    std::expected<void, error> update_hovered_control(slotid New, float2 Pos, bool Moved) {
+    void hide_tooltip() noexcept {
+      tooltip_control_id = {};
+      tooltip_visible = false;
+      tooltip_resolved = false;
+      tooltip_enter_time = 0.0;
+      tooltip_anchor_pos = {};
+      tooltip_text = {};
+    }
+
+    std::expected<void, error> update_focused_control(slotid New) {
+      if (New == focused_control_id) return {};
+      const auto old_fc_id = focused_control_id;
+      focused_control_id = New;
+      if (const auto old_fcsp = slot::get<control>(old_fc_id)) old_fcsp->focus_event(false);
+      if (const auto new_fcsp = slot::get<control>(focused_control_id)) new_fcsp->focus_event(true);
+      return {};
+    }
+
+    std::expected<void, error> update_focused_control(is_none auto) {
+      const auto old_fc_id = focused_control_id;
+      focused_control_id = {};
+      if (const auto old_fcsp = slot::get<control>(old_fc_id)) old_fcsp->focus_event(false);
+      return {};
+    }
+
+    std::expected<void, error> update_focused_control(is_bool auto Backward) {
+      const auto csp = slot::get<control>(control_id);
+      if (!csp) return {};
+      const auto old_fc_id = focused_control_id;
+      bool found = !slot::slots.contains(old_fc_id);
+      focused_control_id = csp->find_next_tabstop(old_fc_id, Backward, found);
+      if (const auto old_fcsp = slot::get<control>(old_fc_id)) old_fcsp->focus_event(false);
+      if (const auto new_fcsp = slot::get<control>(focused_control_id)) new_fcsp->focus_event(true);
+      return {};
+    }
+
+    std::expected<void, error> update_hovered_control(slotid New, float2 Pos, bool Moved, double Time) {
       if (New != hovered_control_id) {
         if (const auto csp = slot::get<control>(hovered_control_id)) csp->hover_event({Pos, hover_event::type::leave});
         hovered_control_id = New;
+        hide_tooltip();
+        tooltip_control_id = New;
+        tooltip_enter_time = Time;
+        tooltip_anchor_pos = Pos;
         if (const auto csp = slot::get<control>(hovered_control_id)) csp->hover_event({Pos, hover_event::type::enter});
-      } else if (Moved)
+      } else if (Moved) {
+        tooltip_anchor_pos = Pos;
         if (const auto csp = slot::get<control>(hovered_control_id)) csp->hover_event({Pos, hover_event::type::move});
+      }
+      return {};
+    }
+
+    std::expected<void, error> update_tooltip(double Time) {
+      if (!tooltip_control_id || tooltip_visible || tooltip_resolved) return {};
+      if (Time - tooltip_enter_time < tooltip_delay) return {};
+      tooltip_resolved = true;
+      const auto csp = slot::get<control>(tooltip_control_id);
+      if (!csp || csp->tooltip.empty()) return {};
+      if (auto res = text::create(csp->tooltip, tooltip_font)) tooltip_text = std::move(*res);
+      else return res.error().relay();
+      tooltip_visible = true;
+      return {};
+    }
+
+    std::expected<void, error> draw_tooltip() const {
+      if (!tooltip_visible || !tooltip_text) return {};
+      auto pos = tooltip_anchor_pos + tooltip_offset;
+      const auto size = tooltip_text.size() + tooltip_padding.xy() + tooltip_padding.zw();
+      pos.x = yw::min(pos.x, float(this->size.x) - size.x);
+      pos.y = yw::min(pos.y, float(this->size.y) - size.y);
+      if (tooltip_background_color.a > 0.0f) {
+        brush::color(tooltip_background_color);
+        if (auto res = fill_round_rectangle(pos, size, tooltip_radius); !res) return res.error().relay();
+      }
+      brush::color(tooltip_text_color);
+      if (auto res = tooltip_text.draw(pos + tooltip_padding.xy()); !res) return res.error().relay();
+      if (tooltip_border_color.a > 0.0f && tooltip_border_thickness > 0.0f) {
+        brush::color(tooltip_border_color);
+        if (auto res = draw_round_rectangle(pos, size, tooltip_radius, tooltip_border_thickness); !res)
+          return res.error().relay();
+      }
       return {};
     }
 
@@ -154,11 +235,13 @@ public:
       else return res.error().relay();
       if (auto res = bitmap::create(size)) controllayer = std::move(*res);
       else return res.error().relay();
+      if (on_resized) on_resized(size);
       return {};
     }
 
-    std::expected<void, error> update() {
+    std::expected<void, error> update(double Time) {
       if (auto res = get_necessary_size(); !res) return res.error().relay();
+      else if (fit_to_necessary_size) size = *res;
       else size = vapply_r<uint2>(yw::max, size, *res);
       const bool size_changed = size != rendertarget.size();
       if (size_changed) {
@@ -179,7 +262,8 @@ public:
             if (auto rr = csp->redraw(); !rr) return rr.error().relay();
             if (track_mouse_event.hwndTrack != nullptr) {
               const auto hit = csp->hittest(cursor_pos - pos);
-              if (auto res = update_hovered_control(hit, cursor_pos - pos, false); !res) return res.error().relay();
+              if (auto res = update_hovered_control(hit, cursor_pos - pos, false, Time); !res)
+                return res.error().relay();
             }
           }
           if (auto res = d->close(); !res) return res.error().relay();
@@ -189,11 +273,15 @@ public:
         if (auto res = rendertarget.begin_draw()) {
           auto d = std::move(*res);
           if (auto rr = draw_bitmap({}, controllayer); !rr) return rr.error().relay();
+          if (auto tr = update_tooltip(Time); !tr) return tr.error().relay();
+          if (auto tt = draw_tooltip(); !tt) return tt.error().relay();
         } else return res.error().relay();
       } else {
         if (auto res = rendertarget.begin_draw(background_color)) {
           auto d = std::move(*res);
           if (auto rr = draw_bitmap({}, controllayer); !rr) return rr.error().relay();
+          if (auto tr = update_tooltip(Time); !tr) return tr.error().relay();
+          if (auto tt = draw_tooltip(); !tt) return tt.error().relay();
         } else return res.error().relay();
       }
       hresult_test(swapchain->Present, 1, 0);
@@ -202,7 +290,6 @@ public:
       drawn = false;
       return {};
     }
-
 
     //-- create function --//
 
@@ -216,9 +303,9 @@ public:
       sp->title = std::move(op.title);
       sp->style = op.get_style();
       sp->exstyle = op.get_exstyle();
-      sp->hwnd = ::CreateWindowExW(
-        sp->exstyle, wclass::name(), sp->title.c_str(), sp->style & ~WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
-        int(arbitrary_value), int(arbitrary_value), nullptr, nullptr, wclass::hinstance(), nullptr);
+      sp->hwnd =
+        ::CreateWindowExW(sp->exstyle, wclass::name(), sp->title.c_str(), sp->style & ~WS_VISIBLE, CW_USEDEFAULT,
+          CW_USEDEFAULT, int(arbitrary_value), int(arbitrary_value), nullptr, nullptr, wclass::hinstance(), nullptr);
       if (!sp->hwnd) return std::unexpected(error(errors::operation_failed, "CreateWindowExW failed"));
       ::SetWindowLongPtrW(sp->hwnd, GWLP_USERDATA, std::bit_cast<LONG_PTR>(sp->id));
       windows.push_back(sp->id);
@@ -228,6 +315,7 @@ public:
       const auto left = (wr.right - wr.left - cr.right) / 2;
       sp->frame_thickness = int4(left, wr.bottom - wr.top - cr.bottom - left, left, left);
       sp->pos = op.pos.value_or(int2(wr.left, wr.top));
+      sp->fit_to_necessary_size = !(sp->style & WS_THICKFRAME) && !op.size.has_value();
       sp->size = vapply_r<uint2>(yw::max, op.size.value_or(int2(cr.right, cr.bottom)), uint2::fill(arbitrary_value));
       const auto area = sp->size + sp->frame_thickness.xy() + sp->frame_thickness.zw();
       win32_bool_test(::SetWindowPos, sp->hwnd, 0, sp->pos.x, sp->pos.y, area.x, area.y, SWP_NOZORDER | SWP_NOACTIVATE);
@@ -347,6 +435,60 @@ public:
     return sp->background_color;
   }
 
+  const auto& tooltip_background_color() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->tooltip_background_color;
+  }
+
+  const auto& tooltip_border_color() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->tooltip_border_color;
+  }
+
+  const auto& tooltip_text_color() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->tooltip_text_color;
+  }
+
+  const auto& tooltip_padding() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->tooltip_padding;
+  }
+
+  const auto& tooltip_radius() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->tooltip_radius;
+  }
+
+  const auto& tooltip_offset() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->tooltip_offset;
+  }
+
+  const auto& tooltip_border_thickness() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->tooltip_border_thickness;
+  }
+
+  const auto& tooltip_font() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->tooltip_font;
+  }
+
+  double tooltip_delay() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->tooltip_delay;
+  }
+
   const auto& on_button_down() const noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
@@ -357,6 +499,12 @@ public:
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
     return sp->on_button_up;
+  }
+
+  const auto& on_resized() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->on_resized;
   }
 
   //-- setter --//
@@ -374,6 +522,7 @@ public:
   auto& size(int2 v) noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
+    sp->fit_to_necessary_size = false;
     if (auto res = sp->get_necessary_size(); !res) res.error().go_off();
     else sp->size = vapply_r<uint2>(yw::max, v, *res);
     const auto area = sp->size + sp->frame_thickness.xy() + sp->frame_thickness.zw();
@@ -400,6 +549,69 @@ public:
     return *this;
   }
 
+  auto& tooltip_background_color(const color& c) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->tooltip_background_color = c;
+    return *this;
+  }
+
+  auto& tooltip_border_color(const color& c) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->tooltip_border_color = c;
+    return *this;
+  }
+
+  auto& tooltip_text_color(const color& c) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->tooltip_text_color = c;
+    return *this;
+  }
+
+  auto& tooltip_padding(float4 v) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->tooltip_padding = v;
+    return *this;
+  }
+
+  auto& tooltip_radius(float2 v) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->tooltip_radius = v;
+    return *this;
+  }
+
+  auto& tooltip_offset(float2 v) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->tooltip_offset = v;
+    return *this;
+  }
+
+  auto& tooltip_border_thickness(float1 v) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->tooltip_border_thickness = yw::max(0.0f, v.x);
+    return *this;
+  }
+
+  auto& tooltip_font(font_config v) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->tooltip_font = std::move(v);
+    return *this;
+  }
+
+  auto& tooltip_delay(double v) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->tooltip_delay = yw::max(0.0, v);
+    return *this;
+  }
+
   auto& on_button_down(function<bool, button_event> f) noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
@@ -411,6 +623,13 @@ public:
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->on_button_up = std::move(f);
+    return *this;
+  }
+
+  auto& on_resized(function<void, uint2> f) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->on_resized = std::move(f);
     return *this;
   }
 };
