@@ -4,12 +4,14 @@
 namespace yw {
 namespace internal {
 inline modifiers _make_mods_from_wparam(WPARAM wp) noexcept {
-  return modifiers{.ctrl = static_cast<bool>(wp & MK_CONTROL),
+  return modifiers{
+    .ctrl = static_cast<bool>(wp & MK_CONTROL),
     .shift = static_cast<bool>(wp & MK_SHIFT),
     .alt = (::GetKeyState(VK_MENU) & 0x8000) != 0};
 }
 inline modifiers _make_mods() noexcept {
-  modifiers m{.ctrl = (::GetKeyState(VK_CONTROL) & 0x8000) != 0,
+  modifiers m{
+    .ctrl = (::GetKeyState(VK_CONTROL) & 0x8000) != 0,
     .shift = (::GetKeyState(VK_SHIFT) & 0x8000) != 0,
     .alt = (::GetKeyState(VK_MENU) & 0x8000) != 0};
   return m;
@@ -84,17 +86,17 @@ template<UINT Msg> LRESULT _process_wm_size_move(window::slot* wsp, WPARAM wp, L
   return 0;
 }
 
+inline LRESULT _process_wm_char(window::slot* wsp, WPARAM wp, LPARAM lp) {
+  if (auto res = wsp->char_event(static_cast<wchar_t>(wp)); !res) res.error().go_off();
+  return 0;
+}
+
 template<UINT Msg> LRESULT _process_wm_button_event(window::slot* wsp, WPARAM wp, LPARAM lp) {
   button_event e{};
   e.pos = short2(std::bit_cast<int16_t>(LOWORD(lp)), std::bit_cast<int16_t>(HIWORD(lp)));
   e.mods = internal::_make_mods_from_wparam(wp);
-  if constexpr (Msg == WM_LBUTTONDOWN) {
-    const auto hcsp = interface::slot::get<control>(wsp->hovered_control_id);
-    if (hcsp && hcsp->focusable()) {
-      if (auto res = wsp->update_focused_control(wsp->hovered_control_id); !res) res.error().go_off();
-    } else if (auto res = wsp->update_focused_control(none{}); !res) res.error().go_off();
-    e.key = keys::lbutton, e.down = true;
-  } else if constexpr (Msg == WM_LBUTTONUP) e.key = keys::lbutton, e.down = false;
+  if constexpr (Msg == WM_LBUTTONDOWN) e.key = keys::lbutton, e.down = true;
+  else if constexpr (Msg == WM_LBUTTONUP) e.key = keys::lbutton, e.down = false;
   else if constexpr (Msg == WM_RBUTTONDOWN) e.key = keys::rbutton, e.down = true;
   else if constexpr (Msg == WM_RBUTTONUP) e.key = keys::rbutton, e.down = false;
   else if constexpr (Msg == WM_MBUTTONDOWN) e.key = keys::mbutton, e.down = true;
@@ -104,8 +106,17 @@ template<UINT Msg> LRESULT _process_wm_button_event(window::slot* wsp, WPARAM wp
   else if constexpr (Msg == WM_XBUTTONUP)
     (e.key = (HIWORD(wp) == XBUTTON1) ? keys::xbutton1 : keys::xbutton2), e.down = false;
   else return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
-  wsp->button_event(e);
+  if (auto res = wsp->button_event(e); !res) res.error().go_off();
   return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
+}
+
+template<UINT Msg> LRESULT _process_wm_key_event(window::slot* wsp, WPARAM wp, LPARAM lp) {
+  key_event e{};
+  e.key = key{static_cast<uint8_t>(wp)};
+  e.mods = internal::_make_mods();
+  e.down = (Msg == WM_KEYDOWN || Msg == WM_SYSKEYDOWN);
+  if (auto res = wsp->key_event(e); !res) res.error().go_off();
+  return 0;
 }
 } // namespace internal
 
@@ -125,6 +136,14 @@ inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
   case WM_ENTERSIZEMOVE: return internal::_process_wm_size_move<WM_ENTERSIZEMOVE>(wsp, wp, lp);
   case WM_EXITSIZEMOVE: return internal::_process_wm_size_move<WM_EXITSIZEMOVE>(wsp, wp, lp);
 
+  case WM_KEYDOWN: return internal::_process_wm_key_event<WM_KEYDOWN>(wsp, wp, lp);
+  case WM_KEYUP: return internal::_process_wm_key_event<WM_KEYUP>(wsp, wp, lp);
+  case WM_SYSKEYDOWN: return internal::_process_wm_key_event<WM_SYSKEYDOWN>(wsp, wp, lp);
+  case WM_SYSKEYUP: return internal::_process_wm_key_event<WM_SYSKEYUP>(wsp, wp, lp);
+
+  case WM_CHAR:
+  case WM_SYSCHAR: return internal::_process_wm_char(wsp, wp, lp);
+
   case WM_LBUTTONDOWN: return internal::_process_wm_button_event<WM_LBUTTONDOWN>(wsp, wp, lp);
   case WM_LBUTTONUP: return internal::_process_wm_button_event<WM_LBUTTONUP>(wsp, wp, lp);
   case WM_RBUTTONDOWN: return internal::_process_wm_button_event<WM_RBUTTONDOWN>(wsp, wp, lp);
@@ -136,6 +155,12 @@ inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
 
   case WM_KILLFOCUS: return internal::_process_wm_focus<WM_KILLFOCUS>(wsp, wp, lp);
   case WM_ACTIVATEAPP: return internal::_process_wm_focus<WM_ACTIVATEAPP>(wsp, wp, lp);
+
+  case WM_CAPTURECHANGED:
+    if (const auto ccsp = interface::slot::get<control>(wsp->mouse_capture_control_id))
+      if (auto res = ccsp->reset_state(); !res) res.error().go_off();
+    wsp->mouse_capture_control_id = {};
+    return 0;
 
   case WM_NCDESTROY:
     ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);

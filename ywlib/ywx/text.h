@@ -92,5 +92,40 @@ public:
     d2d::context()->DrawTextLayout(D2D1_POINT_2F{Pos.x, Pos.y}, _layout.get(), brush::d2d_brush());
     return {};
   }
+
+  /// returns `{left, top, width, height}` of character at `Index`
+  std::expected<float4, error> hittest(uint1 Index, bool Trailing = false) const {
+    if (!_layout) return std::unexpected(error(errors::not_initialized));
+    DWRITE_HIT_TEST_METRICS metrics{};
+    float2 pt{};
+    hresult_test(_layout->HitTestTextPosition, Index.x, Trailing, &pt.x, &pt.y, &metrics);
+    return float4(metrics.left, metrics.top, metrics.width, metrics.height);
+  }
+
+  /// returns `{textPosition, {width, height}}` of character at `Pt`
+  std::expected<yw::tuple<uint32_t, float2>, error> hittest(float2 Pt) const {
+    if (!_layout) return std::unexpected(error(errors::not_initialized));
+    DWRITE_HIT_TEST_METRICS metrics{};
+    BOOL inside = FALSE;
+    BOOL trailing = FALSE;
+    hresult_test(_layout->HitTestPoint, Pt.x, Pt.y, &inside, &trailing, &metrics);
+    return yw::tuple<uint32_t, float2>{metrics.textPosition + bool(trailing), float2(metrics.width, metrics.height)};
+  }
+
+  std::expected<std::vector<float4>, error> hittest_range(uint2 Range, float2 Origin = {}) const {
+    if (!_layout) return std::unexpected(error(errors::not_initialized));
+    if (Range.x >= Range.y) return std::unexpected(error(errors::invalid_argument));
+    const auto length = Range.y - Range.x;
+    uint32_t count = 0;
+    auto hr = _layout->HitTestTextRange(Range.x, length, Origin.x, Origin.y, nullptr, 0, &count);
+    if (hr != E_NOT_SUFFICIENT_BUFFER) return std::unexpected(error(errors::operation_failed, "HitTestTextRange failed", int32_t(hr)));
+    std::vector<DWRITE_HIT_TEST_METRICS> metrics(count);
+    hresult_test(_layout->HitTestTextRange, Range.x, length, Origin.x, Origin.y, metrics.data(), count, &count);
+    std::vector<float4> rects;
+    rects.reserve(count);
+    for (size_t i = 0; i < count; ++i)
+      rects.emplace_back(metrics[i].left, metrics[i].top, metrics[i].width, metrics[i].height);
+    return rects;
+  }
 };
 } // namespace yw

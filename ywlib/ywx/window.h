@@ -74,10 +74,18 @@ public:
     slotid keyboard_capture_control_id{};
     slotid tooltip_control_id{};
 
+    color focusring_color = color(0.0f, 0.5f, 1.0f, 0.8f);
+    float focusring_thickness = arbitrary_value / 2.0f;
+    float focusring_offset = arbitrary_value;
+
+    std::optional<float3> caret_pos{};
+
     TRACKMOUSEEVENT track_mouse_event{sizeof(TRACKMOUSEEVENT), TME_LEAVE};
 
     function<bool, button_event> on_button_down{};
     function<bool, button_event> on_button_up{};
+    function<bool, key_event> on_key_down{};
+    function<bool, key_event> on_key_up{};
     function<void, uint2> on_resized{};
 
     bool fit_to_necessary_size = false;
@@ -121,14 +129,6 @@ public:
       return {};
     }
 
-    virtual void button_event(yw::button_event e) {
-      const auto csp = slot::get<control>(control_id);
-      if (csp && csp->button_event(e)) return;
-      if (e.down) {
-        if (on_button_down) on_button_down(e);
-      } else if (on_button_up) on_button_up(e);
-    }
-
     //-- functions --//
 
     std::expected<uint2, error> get_necessary_size() const {
@@ -148,20 +148,9 @@ public:
       tooltip_text = {};
     }
 
-    std::expected<void, error> update_focused_control(slotid New) {
-      if (New == focused_control_id) return {};
-      const auto old_fc_id = focused_control_id;
-      focused_control_id = New;
-      if (const auto old_fcsp = slot::get<control>(old_fc_id)) old_fcsp->focus_event(false);
-      if (const auto new_fcsp = slot::get<control>(focused_control_id)) new_fcsp->focus_event(true);
-      return {};
-    }
-
-    std::expected<void, error> update_focused_control(is_none auto) {
-      const auto old_fc_id = focused_control_id;
-      focused_control_id = {};
-      if (const auto old_fcsp = slot::get<control>(old_fc_id)) old_fcsp->focus_event(false);
-      return {};
+    void update_caret_pos() noexcept {
+      caret_pos = std::nullopt;
+      if (const auto csp = slot::get<control>(focused_control_id)) caret_pos = csp->caret_pos();
     }
 
     std::expected<void, error> update_focused_control(is_bool auto Backward) {
@@ -172,6 +161,7 @@ public:
       focused_control_id = csp->find_next_tabstop(old_fc_id, Backward, found);
       if (const auto old_fcsp = slot::get<control>(old_fc_id)) old_fcsp->focus_event(false);
       if (const auto new_fcsp = slot::get<control>(focused_control_id)) new_fcsp->focus_event(true);
+      update_caret_pos();
       return {};
     }
 
@@ -223,6 +213,18 @@ public:
       return {};
     }
 
+    std::expected<void, error> draw_focusring() const {
+      const auto csp = slot::get<control>(focused_control_id);
+      if (!csp || !csp->visible || focusring_color.a <= 0.0f || focusring_thickness <= 0.0f) return {};
+      const auto offset = float2::fill(yw::max(0.0f, focusring_offset));
+      brush::color(focusring_color);
+      const auto p = csp->pos - offset;
+      const auto s = csp->size + offset * 2.0f;
+      const auto r = csp->radius + offset;
+      if (auto res = draw_round_rectangle(p, s, r, focusring_thickness); !res) return res.error().relay();
+      return {};
+    }
+
     std::expected<void, error> update_rendertarget() {
       if (size == rendertarget.size()) return {};
       rendertarget = {};
@@ -252,8 +254,9 @@ public:
       }
       const auto csp = slot::get<control>(control_id);
       if (messy) {
-        if (csp)
+        if (csp) {
           if (auto res = csp->relocate({}, float2(float(size.x), float(size.y))); !res) return res.error().relay();
+        }
         dirty = true;
       }
       if (dirty) {
@@ -273,6 +276,7 @@ public:
         if (auto res = rendertarget.begin_draw()) {
           auto d = std::move(*res);
           if (auto rr = draw_bitmap({}, controllayer); !rr) return rr.error().relay();
+          if (auto fr = draw_focusring(); !fr) return fr.error().relay();
           if (auto tr = update_tooltip(Time); !tr) return tr.error().relay();
           if (auto tt = draw_tooltip(); !tt) return tt.error().relay();
         } else return res.error().relay();
@@ -280,6 +284,7 @@ public:
         if (auto res = rendertarget.begin_draw(background_color)) {
           auto d = std::move(*res);
           if (auto rr = draw_bitmap({}, controllayer); !rr) return rr.error().relay();
+          if (auto fr = draw_focusring(); !fr) return fr.error().relay();
           if (auto tr = update_tooltip(Time); !tr) return tr.error().relay();
           if (auto tt = draw_tooltip(); !tt) return tt.error().relay();
         } else return res.error().relay();
@@ -303,9 +308,9 @@ public:
       sp->title = std::move(op.title);
       sp->style = op.get_style();
       sp->exstyle = op.get_exstyle();
-      sp->hwnd =
-        ::CreateWindowExW(sp->exstyle, wclass::name(), sp->title.c_str(), sp->style & ~WS_VISIBLE, CW_USEDEFAULT,
-          CW_USEDEFAULT, int(arbitrary_value), int(arbitrary_value), nullptr, nullptr, wclass::hinstance(), nullptr);
+      sp->hwnd = ::CreateWindowExW(
+        sp->exstyle, wclass::name(), sp->title.c_str(), sp->style & ~WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
+        int(arbitrary_value), int(arbitrary_value), nullptr, nullptr, wclass::hinstance(), nullptr);
       if (!sp->hwnd) return std::unexpected(error(errors::operation_failed, "CreateWindowExW failed"));
       ::SetWindowLongPtrW(sp->hwnd, GWLP_USERDATA, std::bit_cast<LONG_PTR>(sp->id));
       windows.push_back(sp->id);
@@ -322,6 +327,66 @@ public:
       if (auto res = sp->update_rendertarget(); !res) return res.error().relay();
       if (sp->style & WS_VISIBLE) ::ShowWindow(sp->hwnd, SW_SHOW);
       return sp;
+    }
+
+    //-- event functions --//
+
+    std::expected<void, error> char_event(wchar_t c) {
+      if (const auto csp = slot::get<control>(focused_control_id)) {
+        if (csp->char_event(c)) return {};
+      }
+      return {};
+    }
+
+    std::expected<void, error> button_event(yw::button_event e) {
+      bool control_handled = false;
+      if (const auto csp = slot::get<control>(control_id)) {
+        hovered_control_id = csp->hittest(e.pos);
+        const auto old_fc_id = focused_control_id;
+        const auto hcsp = slot::get<control>(hovered_control_id);
+        const auto hit_id = (hcsp && hcsp->focusable()) ? hovered_control_id : slotid();
+        if (e.key == keys::lbutton)
+          if (e.down && focused_control_id != hit_id) {
+            focused_control_id = hit_id;
+            if (const auto old_fcsp = slot::get<control>(old_fc_id)) old_fcsp->focus_event(false);
+            if (const auto new_fcsp = slot::get<control>(focused_control_id)) new_fcsp->focus_event(true);
+            update_caret_pos();
+          }
+        if (e.down) {
+          if (hcsp) control_handled = hcsp->button_event(e);
+          mouse_capture_control_id = hit_id;
+          if (hit_id) ::SetCapture(hwnd);
+        } else if (const auto ccsp = slot::get<control>(mouse_capture_control_id)) {
+          control_handled = ccsp->button_event(e);
+          if (hovered_control_id == mouse_capture_control_id) control_handled |= ccsp->click_event(e);
+          mouse_capture_control_id = {};
+          ::ReleaseCapture();
+        }
+        if (control_handled) return {};
+      }
+      if (e.down && on_button_down) on_button_down(e);
+      else if (!e.down && on_button_up) on_button_up(e);
+      return {};
+    }
+
+    std::expected<void, error> key_event(yw::key_event e) {
+      if (const auto csp = slot::get<control>(control_id)) {
+        if (e.down && e.key == keys::tab && !e.mods.ctrl) {
+          const auto old_fc_id = focused_control_id;
+          bool found = !slot::slots.contains(old_fc_id);
+          focused_control_id = csp->find_next_tabstop(old_fc_id, e.mods.shift, found);
+          if (const auto old_fcsp = slot::get<control>(old_fc_id)) old_fcsp->focus_event(false);
+          if (const auto new_fcsp = slot::get<control>(focused_control_id)) new_fcsp->focus_event(true);
+          update_caret_pos();
+          return {};
+        } else if (const auto fcsp = slot::get<control>(focused_control_id); fcsp && fcsp->key_event(e)) {
+          update_caret_pos();
+          return {};
+        }
+      }
+      if (e.down && on_key_down) on_key_down(e);
+      else if (!e.down && on_key_up) on_key_up(e);
+      return {};
     }
   };
 
@@ -483,6 +548,24 @@ public:
     return sp->tooltip_font;
   }
 
+  const auto& focusring_color() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->focusring_color;
+  }
+
+  float focusring_thickness() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->focusring_thickness;
+  }
+
+  float focusring_offset() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->focusring_offset;
+  }
+
   double tooltip_delay() const noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
@@ -499,6 +582,18 @@ public:
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
     return sp->on_button_up;
+  }
+
+  const auto& on_key_down() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->on_key_down;
+  }
+
+  const auto& on_key_up() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->on_key_up;
   }
 
   const auto& on_resized() const noexcept {
@@ -605,6 +700,27 @@ public:
     return *this;
   }
 
+  auto& focusring_color(const color& c) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->focusring_color = c;
+    return *this;
+  }
+
+  auto& focusring_thickness(float1 v) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->focusring_thickness = yw::max(0.0f, v.x);
+    return *this;
+  }
+
+  auto& focusring_offset(float1 v) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->focusring_offset = yw::max(0.0f, v.x);
+    return *this;
+  }
+
   auto& tooltip_delay(double v) noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
@@ -623,6 +739,20 @@ public:
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->on_button_up = std::move(f);
+    return *this;
+  }
+
+  auto& on_key_down(function<bool, key_event> f) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->on_key_down = std::move(f);
+    return *this;
+  }
+
+  auto& on_key_up(function<bool, key_event> f) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->on_key_up = std::move(f);
     return *this;
   }
 

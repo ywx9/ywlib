@@ -112,6 +112,15 @@ struct color {
 
   template<uint64_t I> requires(I < 4) constexpr float& get() noexcept { return select<I>(r, g, b, a); }
   template<uint64_t I> requires(I < 4) constexpr const float& get() const noexcept { return select<I>(r, g, b, a); }
+
+  template<char_type C> string<C> to_string() const {
+    string<C> result;
+    result += C('('), result += vtos<C>(r);
+    result += C(','), result += vtos<C>(g);
+    result += C(','), result += vtos<C>(b);
+    result += C(','), result += vtos<C>(a), result += C(')');
+    return result;
+  }
 };
 static_assert(sizeof(color) == 16);
 
@@ -149,15 +158,17 @@ struct hsl {
   }
 
   constexpr color to_srgb() const noexcept {
+    auto hue = yw::fmod(h, 2.0f * yw::pi);
+    if (hue < 0.0f) hue += 2.0f * yw::pi;
     const auto c = (1.0f - std::fabs(2.0f * l - 1.0f)) * s;
-    const auto x = c * (1.0f - std::fabs(std::fmod(h / (yw::pi / 3.0f), 2.0f) - 1.0f));
+    const auto x = c * (1.0f - std::fabs(std::fmod(hue / (yw::pi / 3.0f), 2.0f) - 1.0f));
     const auto m = l - c / 2.0f;
     float r{}, g{}, b{};
-    if (h < yw::pi / 3.0f) r = c, g = x, b = 0;
-    else if (h < 2.0f * yw::pi / 3.0f) r = x, g = c, b = 0;
-    else if (h < yw::pi) r = 0, g = c, b = x;
-    else if (h < 4.0f * yw::pi / 3.0f) r = 0, g = x, b = c;
-    else if (h < 5.0f * yw::pi / 3.0f) r = x, g = 0, b = c;
+    if (hue < yw::pi / 3.0f) r = c, g = x, b = 0;
+    else if (hue < 2.0f * yw::pi / 3.0f) r = x, g = c, b = 0;
+    else if (hue < yw::pi) r = 0, g = c, b = x;
+    else if (hue < 4.0f * yw::pi / 3.0f) r = 0, g = x, b = c;
+    else if (hue < 5.0f * yw::pi / 3.0f) r = x, g = 0, b = c;
     else r = c, g = 0, b = x;
     return color(r + m, g + m, b + m, a);
   }

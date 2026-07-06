@@ -84,6 +84,9 @@ public:
 
     virtual float2 bounds() const { return size + margin.xy() + margin.zw(); }
 
+    /// {x, y, height} of caret position in window coordinates
+    virtual std::optional<float3> caret_pos() const { return {}; }
+
     virtual slotid find_next_tabstop(slotid Focused, bool Backward, bool& Found) const {
       if (!focusable()) return {};
       if (Focused == id) Found = true;
@@ -130,6 +133,8 @@ public:
       return {};
     }
 
+    virtual std::expected<void, error> reset_state() { return {}; }
+
     virtual std::expected<void, error> set_size_to_necessary() {
       if (auto res = get_necessary_size()) size = *res;
       else return res.error().relay();
@@ -139,6 +144,7 @@ public:
     //-- events --//
 
     virtual bool button_event(yw::button_event e) { return false; }
+    virtual bool char_event(wchar_t c) { return false; }
     virtual bool click_event(yw::button_event e) { return false; }
     virtual bool double_click_event(yw::button_event e) { return false; }
     virtual bool drag_event(yw::drag_event e) { return false; }
