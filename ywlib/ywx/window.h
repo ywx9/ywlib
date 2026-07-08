@@ -1,5 +1,6 @@
 #pragma once
 #include <ywx/bitmap.h>
+#include <ywx/command_manager.h>
 #include <ywx/keys.h>
 #include <ywx/ui_label.h>
 
@@ -73,6 +74,7 @@ public:
     slotid mouse_capture_control_id{};
     slotid keyboard_capture_control_id{};
     slotid tooltip_control_id{};
+    command_manager commands{};
 
     color focusring_color = color(0.0f, 0.5f, 1.0f, 0.8f);
     float focusring_thickness = arbitrary_value / 2.0f;
@@ -81,6 +83,7 @@ public:
     std::optional<float3> caret_pos{};
 
     TRACKMOUSEEVENT track_mouse_event{sizeof(TRACKMOUSEEVENT), TME_LEAVE};
+    short2 last_cursor_client_pos{};
 
     function<bool, button_event> on_button_down{};
     function<bool, button_event> on_button_up{};
@@ -338,8 +341,20 @@ public:
       return {};
     }
 
+    std::expected<void, error> double_click_event(yw::button_event e) {
+      if (const auto csp = slot::get<control>(control_id)) {
+        hovered_control_id = csp->hittest(e.pos);
+        if (const auto hcsp = slot::get<control>(hovered_control_id); hcsp && hcsp->double_click_event(e)) {
+          update_caret_pos();
+          return {};
+        }
+      }
+      return {};
+    }
+
     std::expected<void, error> button_event(yw::button_event e) {
       bool control_handled = false;
+      last_cursor_client_pos = e.pos;
       if (const auto csp = slot::get<control>(control_id)) {
         hovered_control_id = csp->hittest(e.pos);
         const auto old_fc_id = focused_control_id;
@@ -369,6 +384,14 @@ public:
       return {};
     }
 
+    std::expected<void, error> drag_event(yw::drag_event e) {
+      if (const auto ccsp = slot::get<control>(mouse_capture_control_id); ccsp && ccsp->drag_event(e)) {
+        update_caret_pos();
+        return {};
+      }
+      return {};
+    }
+
     std::expected<void, error> key_event(yw::key_event e) {
       if (const auto csp = slot::get<control>(control_id)) {
         if (e.down && e.key == keys::tab && !e.mods.ctrl) {
@@ -386,6 +409,16 @@ public:
       }
       if (e.down && on_key_down) on_key_down(e);
       else if (!e.down && on_key_up) on_key_up(e);
+      return {};
+    }
+
+    std::expected<void, error> wheel_event(yw::wheel_event e) {
+      if (const auto csp = slot::get<control>(control_id)) {
+        const auto hit = csp->hittest(e.pos);
+        if (const auto hcsp = slot::get<control>(hit); hcsp && hcsp->wheel_event(e)) {
+          return {};
+        }
+      }
       return {};
     }
   };
@@ -763,4 +796,16 @@ public:
     return *this;
   }
 };
+
+/// MARK: Other functions
+
+inline bool control::focused() const noexcept {
+  if (const auto sp = get_slot(this); !sp) {
+    error(errors::invalid_slotid).fizzle_out();
+    return false;
+  } else if (const auto wsp = slot::get<window>(sp->window_id); !wsp) {
+    error(errors::invalid_slotid).fizzle_out();
+    return false;
+  } else return wsp->focused_control_id == sp->id;
+}
 } // namespace yw

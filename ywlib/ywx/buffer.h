@@ -54,11 +54,11 @@ public:
 
   staging_buffer() noexcept = default;
   staging_buffer(uint1 Size, const source_line& sl = here()) {
-    if (auto res = initialize(Size); !res) res.error().go_off(sl); // fatal
+    if (auto res = initialize(Size); !res) res.error().go_off(sl);
   }
 
   staging_buffer(const buffer<T>& b, const source_line& sl = here()) : staging_buffer(b.size(), sl) {
-    if (auto res = this->copy_from(b); !res) res.error().go_off(sl); // fatal
+    if (auto res = this->copy_from(b); !res) res.error().go_off(sl);
   }
 
   template<typename... As> requires constructible<staging_buffer, As...>
@@ -81,7 +81,7 @@ public:
 
   std::vector<T> copy_to_cpu(const source_line& sl = here()) const {
     std::vector<T> Data(buffer<T>::size());
-    if (auto res = copy_to_cpu(Data.data()); !res) res.error().add_footprint().go_off(sl, true); // warning
+    if (auto res = copy_to_cpu(Data.data()); !res) res.error().add_footprint().fizzle_out(sl);
     return Data;
   }
 };
@@ -96,7 +96,7 @@ template<typename T> inline std::expected<void, error> buffer<T>::copy_to_cpu(vo
 
 template<typename T> std::vector<T> buffer<T>::copy_to_cpu(const source_line& sl) const {
   std::vector<T> Data(buffer<T>::size());
-  if (auto res = copy_to_cpu(Data.data()); !res) res.error().add_footprint().go_off(sl, true); // warning
+  if (auto res = copy_to_cpu(Data.data()); !res) res.error().add_footprint().fizzle_out(sl);
   return Data;
 }
 
@@ -120,7 +120,7 @@ public:
 
   constant_buffer() noexcept = default;
   constant_buffer(const T& Val, const source_line& sl = here()) {
-    if (auto res = initialize(Val); !res) res.error().go_off(sl); // fatal
+    if (auto res = initialize(Val); !res) res.error().go_off(sl);
   }
 
   template<typename... As> requires constructible<constant_buffer, As...>
@@ -173,15 +173,15 @@ public:
   structured_buffer() noexcept = default;
 
   structured_buffer(uint1 Size, const source_line& sl = here()) {
-    if (auto res = initialize(nullptr, Size); !res) res.error().go_off(sl); // fatal
+    if (auto res = initialize(nullptr, Size); !res) res.error().go_off(sl);
   }
 
   structured_buffer(const T* Data, uint1 Size, const source_line& sl = here()) {
-    if (auto res = initialize(Data, Size); !res) res.error().go_off(sl); // fatal
+    if (auto res = initialize(Data, Size); !res) res.error().go_off(sl);
   }
 
   template<contiguous_range<T> Rg> structured_buffer(Rg&& rg, const source_line& sl = here()) {
-    if (auto res = initialize(yw::data(rg), yw::size(rg)); !res) res.error().go_off(sl); // fatal
+    if (auto res = initialize(yw::data(rg), yw::size(rg)); !res) res.error().go_off(sl);
   }
 
   template<typename... Ts> requires constructible<structured_buffer, Ts...>
@@ -234,11 +234,11 @@ public:
 
   rw_structured_buffer() noexcept = default;
   rw_structured_buffer(uint1 Size, const source_line& sl = here()) {
-    if (auto res = initialize(nullptr, Size); !res) res.error().go_off(sl); // fatal
+    if (auto res = initialize(nullptr, Size); !res) res.error().go_off(sl);
   }
 
   rw_structured_buffer(const T* Data, uint1 Size, const source_line& sl = here()) {
-    if (auto res = initialize(Data, Size); !res) res.error().go_off(sl); // fatal
+    if (auto res = initialize(Data, Size); !res) res.error().go_off(sl);
   }
 
   template<typename... Ts> requires constructible<rw_structured_buffer, Ts...>

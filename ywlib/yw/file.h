@@ -24,21 +24,21 @@ struct info {
 inline bool exists(const path& path) {
   std::error_code ec;
   const bool result = std::filesystem::exists(path, ec);
-  if (ec) error(errors::operation_failed, "failed to check file existence", int32_t(ec.value())).go_off(true);
+  if (ec) error(errors::operation_failed, "failed to check file existence", int32_t(ec.value())).fizzle_out();
   return result;
 }
 
 inline bool is_file(const path& path) {
   std::error_code ec;
   const bool result = std::filesystem::is_regular_file(path, ec);
-  if (ec) error(errors::operation_failed, "failed to check regular file", int32_t(ec.value())).go_off(true);
+  if (ec) error(errors::operation_failed, "failed to check regular file", int32_t(ec.value())).fizzle_out();
   return result;
 }
 
 inline bool is_directory(const path& path) {
   std::error_code ec;
   const bool result = std::filesystem::is_directory(path, ec);
-  if (ec) error(errors::operation_failed, "failed to check directory", int32_t(ec.value())).go_off(true);
+  if (ec) error(errors::operation_failed, "failed to check directory", int32_t(ec.value())).fizzle_out();
   return result;
 }
 
@@ -46,7 +46,7 @@ inline uint64_t size(const path& path) {
   std::error_code ec;
   const auto result = std::filesystem::file_size(path, ec);
   if (ec) {
-    error(errors::operation_failed, "failed to get file size", int32_t(ec.value())).go_off(true);
+    error(errors::operation_failed, "failed to get file size", int32_t(ec.value())).fizzle_out();
     return 0;
   } else return static_cast<uint64_t>(result);
 }
@@ -63,7 +63,7 @@ inline datetime last_write_time(const path& path) {
   std::error_code ec;
   const auto result = std::filesystem::last_write_time(path, ec);
   if (ec) {
-    error(errors::operation_failed, "failed to get last write time", int32_t(ec.value())).go_off(true);
+    error(errors::operation_failed, "failed to get last write time", int32_t(ec.value())).fizzle_out();
     return datetime{{0, 0, 0}, {0, 0, 0}};
   } else return internal::to_datetime(result);
 }
@@ -73,7 +73,7 @@ inline info stat(const path& path) {
   std::error_code ec;
   const auto st = std::filesystem::status(path, ec);
   if (ec) {
-    error(errors::operation_failed, "failed to get file status", int32_t(ec.value())).go_off(true);
+    error(errors::operation_failed, "failed to get file status", int32_t(ec.value())).fizzle_out();
     return result;
   }
   result.exists = std::filesystem::exists(st);
@@ -89,7 +89,7 @@ inline info stat(const path& path) {
   if (result.kind == kind::regular) result.size = file::size(path);
 
   const auto modified = std::filesystem::last_write_time(path, ec);
-  if (ec) error(errors::operation_failed, "failed to get last write time", int32_t(ec.value())).go_off(true);
+  if (ec) error(errors::operation_failed, "failed to get last write time", int32_t(ec.value())).fizzle_out();
   else result.last_write_time = internal::to_datetime(modified);
   return result;
 }
@@ -145,12 +145,12 @@ std::vector<path> list_files(const path& directory, bool recursive = false) {
   std::error_code ec;
   if (recursive) {
     for (const auto& entry : std::filesystem::recursive_directory_iterator(directory, ec)) {
-      if (ec) error(errors::operation_failed, "failed to list files", int32_t(ec.value())).go_off(true);
+      if (ec) error(errors::operation_failed, "failed to list files", int32_t(ec.value())).fizzle_out();
       if (entry.is_regular_file()) result.push_back(entry.path());
     }
   } else {
     for (const auto& entry : std::filesystem::directory_iterator(directory, ec)) {
-      if (ec) error(errors::operation_failed, "failed to list files", int32_t(ec.value())).go_off(true);
+      if (ec) error(errors::operation_failed, "failed to list files", int32_t(ec.value())).fizzle_out();
       if (entry.is_regular_file()) result.push_back(entry.path());
     }
   }
@@ -351,7 +351,7 @@ public:
   file_handle(std::filesystem::path path, open_mode mode, const source_line& sl = here()) {
     if (auto res = initialize(std::move(path), mode, sl); !res) {
       slot::erase(std::exchange(_id, {}));
-      res.error().add_footprint().go_off(sl, true); // warning
+      res.error().add_footprint().fizzle_out(sl); // warning
     }
   }
 
@@ -372,14 +372,14 @@ public:
 
   open_mode mode() const {
     if (const auto sp = get_slot(this); !sp) {
-      error(errors::invalid_slotid).go_off(true); // warning
+      error(errors::invalid_slotid).fizzle_out(); // warning
       return open_mode::unknown;
     } else return sp->mode;
   }
 
   bool is_open() const noexcept {
     if (const auto sp = get_slot(this); !sp) {
-      error(errors::invalid_slotid).go_off(true); // warning
+      error(errors::invalid_slotid).fizzle_out(); // warning
       return false;
     } else return sp->file != nullptr;
   }
@@ -395,8 +395,8 @@ public:
   int64_t tell() const {
     if (const auto sp = get_slot(this)) {
       if (auto res = sp->tell()) return *res;
-      else res.error().add_footprint().go_off(sp->source_line, true); // warning
-    } else error(errors::invalid_slotid).go_off(true);                // warning
+      else res.error().add_footprint().fizzle_out(sp->source_line); // warning
+    } else error(errors::invalid_slotid).fizzle_out();              // warning
     return 0;
   }
 
@@ -409,8 +409,8 @@ public:
   int64_t file_size() const {
     if (const auto sp = get_slot(this)) {
       if (auto res = sp->size()) return *res;
-      else res.error().add_footprint().go_off(sp->source_line, true); // warning
-    } else error(errors::invalid_slotid).go_off(true);                // warning
+      else res.error().add_footprint().fizzle_out(sp->source_line); // warning
+    } else error(errors::invalid_slotid).fizzle_out();              // warning
     return 0;
   }
 
@@ -447,8 +447,8 @@ public:
       if (auto res = sp->size()) {
         string<char> result(yw::min(static_cast<size_t>(*res), Max));
         if (auto res = read_exact(result.data(), result.size())) return result;
-        else res.error().add_footprint().go_off(sp->source_line, true); // warning
-      } else res.error().add_footprint().go_off(sp->source_line, true); // warning
+        else res.error().add_footprint().fizzle_out(sp->source_line); // warning
+      } else res.error().add_footprint().fizzle_out(sp->source_line); // warning
     }
     return {};
   }

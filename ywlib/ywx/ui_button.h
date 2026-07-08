@@ -8,7 +8,7 @@ public:
   struct slot : label::slot {
     color pressed_overlay_color = color(0.0f, 0.0f, 0.0f, 0.2f);
     bool pressed = false;
-    bool focused = false;
+
     function<void, yw::button_event> on_click{};
 
     virtual bool focusable() const override { return enabled && visible; }
@@ -53,10 +53,7 @@ public:
     }
 
     virtual void focus_event(bool Focused) override {
-      if (focused == Focused && (!pressed || Focused)) return;
-      focused = Focused;
-      if (!focused) pressed = false;
-      if (auto res = make_dirty(); !res) res.error().go_off();
+      if (!Focused) pressed = false;
     }
 
     virtual bool key_event(yw::key_event e) override {
@@ -100,12 +97,17 @@ public:
     } else return res.error().relay();
   }
 
+  //-- getter --//
+
   const auto& pressed_overlay_color() const noexcept { ywlib_control_get(pressed_overlay_color); }
   bool pressed() const noexcept { ywlib_control_get(pressed); }
-  bool focused() const noexcept { ywlib_control_get(focused); }
   const auto& on_click() const noexcept { ywlib_control_get(on_click); }
 
-  auto& pressed_overlay_color(this auto& self, const color& c) noexcept { ywlib_control_set(pressed_overlay_color, c, dirty); }
+  //-- setter --//
+
+  auto& pressed_overlay_color(this auto& self, const color& c) noexcept {
+    ywlib_control_set(pressed_overlay_color, c, dirty);
+  }
 
   auto& on_click(this auto& self, function<void, yw::button_event> f) noexcept {
     const auto sp = get_slot(&self);

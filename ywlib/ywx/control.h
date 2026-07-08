@@ -49,6 +49,10 @@ public:
     float2 radius = float2::fill(arbitrary_value);
     string<wchar_t> tooltip{};
     comptr<ID2D1Geometry> geometry{};
+    function<bool, button_event> on_button{};
+    function<bool, key_event> on_key{};
+    function<void, hover_event> on_hover{};
+    function<void, bool> on_focus{};
     alignment align = alignment::center;
     vector2<size_policy> policy = {}; // free
     bool geometry_dirty = false;
@@ -143,17 +147,31 @@ public:
 
     //-- events --//
 
-    virtual bool button_event(yw::button_event e) { return false; }
+    virtual bool button_event(yw::button_event e) {
+      if (on_button) return on_button(e);
+      return false;
+    }
     virtual bool char_event(wchar_t c) { return false; }
     virtual bool click_event(yw::button_event e) { return false; }
     virtual bool double_click_event(yw::button_event e) { return false; }
     virtual bool drag_event(yw::drag_event e) { return false; }
-    virtual void focus_event(bool Focused) {}
-    virtual bool hover_event(yw::hover_event e) { return false; }
-    virtual bool key_event(yw::key_event e) { return false; }
+    virtual void focus_event(bool Focused) {
+      if (on_focus) on_focus(Focused);
+    }
+    virtual bool hover_event(yw::hover_event e) {
+      if (on_hover) on_hover(e);
+      return false;
+    }
+    virtual bool key_event(yw::key_event e) {
+      if (on_key) return on_key(e);
+      return false;
+    }
     virtual bool move_event(yw::move_event e) { return false; }
     virtual bool wheel_event(yw::wheel_event e) { return false; }
   };
+
+  bool focused() const noexcept;
+  /// \note This function is implemented in "window.h" because it requires window::slot::focused_control_id
 
   //-- getter --//
 
@@ -165,6 +183,10 @@ public:
   const auto& width() const noexcept { ywlib_control_get(size).x; }
   const auto& height() const noexcept { ywlib_control_get(size).y; }
   const auto& radius() const noexcept { ywlib_control_get(radius); }
+  const auto& on_button() const noexcept { ywlib_control_get(on_button); }
+  const auto& on_key() const noexcept { ywlib_control_get(on_key); }
+  const auto& on_hover() const noexcept { ywlib_control_get(on_hover); }
+  const auto& on_focus() const noexcept { ywlib_control_get(on_focus); }
   const auto& align() const noexcept { ywlib_control_get(align); }
   const auto& policy() const noexcept { ywlib_control_get(policy); }
 
@@ -199,6 +221,30 @@ public:
   }
 
   auto& radius(this auto& self, float2 v) noexcept { ywlib_control_set(radius, v, geometry_dirty); }
+  auto& on_button(this auto& self, function<bool, button_event> f) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->on_button = std::move(f);
+    return self;
+  }
+  auto& on_key(this auto& self, function<bool, key_event> f) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->on_key = std::move(f);
+    return self;
+  }
+  auto& on_hover(this auto& self, function<void, hover_event> f) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->on_hover = std::move(f);
+    return self;
+  }
+  auto& on_focus(this auto& self, function<void, bool> f) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->on_focus = std::move(f);
+    return self;
+  }
   auto& align(this auto& self, alignment v) noexcept { ywlib_control_set(align, v, geometry_dirty); }
   auto& policy(this auto& self, vector2<size_policy> v) noexcept { ywlib_control_set(policy, v, messy); }
   auto& tooltip(this auto& self, string<wchar_t> v) noexcept { ywlib_control_set(tooltip, std::move(v), none); }

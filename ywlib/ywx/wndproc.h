@@ -20,10 +20,23 @@ inline modifiers _make_mods() noexcept {
 inline LRESULT _process_wm_cursor(window::slot* wsp, UINT msg, WPARAM wp, LPARAM lp) {
   switch (msg) {
   case WM_MOUSEMOVE: {
-    window::slot::cursor_pos.x = std::bit_cast<int16_t>(LOWORD(lp));
-    window::slot::cursor_pos.y = std::bit_cast<int16_t>(HIWORD(lp));
+    const short2 client_pos(std::bit_cast<int16_t>(LOWORD(lp)), std::bit_cast<int16_t>(HIWORD(lp)));
+    window::slot::cursor_pos.x = client_pos.x;
+    window::slot::cursor_pos.y = client_pos.y;
     const auto local_pos = window::slot::cursor_pos;
     ::ClientToScreen(wsp->hwnd, reinterpret_cast<POINT*>(&window::slot::cursor_pos));
+    if (wsp->mouse_capture_control_id && (wp & (MK_LBUTTON | MK_RBUTTON | MK_MBUTTON | MK_XBUTTON1 | MK_XBUTTON2))) {
+      drag_event e{};
+      e.delta = client_pos - wsp->last_cursor_client_pos;
+      e.mods = internal::_make_mods_from_wparam(wp);
+      if (wp & MK_LBUTTON) e.key = keys::lbutton;
+      else if (wp & MK_RBUTTON) e.key = keys::rbutton;
+      else if (wp & MK_MBUTTON) e.key = keys::mbutton;
+      else if (wp & MK_XBUTTON1) e.key = keys::xbutton1;
+      else if (wp & MK_XBUTTON2) e.key = keys::xbutton2;
+      if (auto res = wsp->drag_event(e); !res) res.error().go_off();
+    }
+    wsp->last_cursor_client_pos = client_pos;
     if (!wsp->track_mouse_event.hwndTrack) {
       wsp->track_mouse_event.hwndTrack = wsp->hwnd;
       ::TrackMouseEvent(&wsp->track_mouse_event);
@@ -91,6 +104,19 @@ inline LRESULT _process_wm_char(window::slot* wsp, WPARAM wp, LPARAM lp) {
   return 0;
 }
 
+template<UINT Msg> LRESULT _process_wm_double_click(window::slot* wsp, WPARAM wp, LPARAM lp) {
+  button_event e{};
+  e.pos = short2(std::bit_cast<int16_t>(LOWORD(lp)), std::bit_cast<int16_t>(HIWORD(lp)));
+  e.mods = internal::_make_mods_from_wparam(wp);
+  e.down = true;
+  if constexpr (Msg == WM_LBUTTONDBLCLK) e.key = keys::lbutton;
+  else if constexpr (Msg == WM_RBUTTONDBLCLK) e.key = keys::rbutton;
+  else if constexpr (Msg == WM_MBUTTONDBLCLK) e.key = keys::mbutton;
+  else return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
+  if (auto res = wsp->double_click_event(e); !res) res.error().go_off();
+  return 0;
+}
+
 template<UINT Msg> LRESULT _process_wm_button_event(window::slot* wsp, WPARAM wp, LPARAM lp) {
   button_event e{};
   e.pos = short2(std::bit_cast<int16_t>(LOWORD(lp)), std::bit_cast<int16_t>(HIWORD(lp)));
@@ -108,6 +134,17 @@ template<UINT Msg> LRESULT _process_wm_button_event(window::slot* wsp, WPARAM wp
   else return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
   if (auto res = wsp->button_event(e); !res) res.error().go_off();
   return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
+}
+
+template<UINT Msg> LRESULT _process_wm_wheel_event(window::slot* wsp, WPARAM wp, LPARAM lp) {
+  wheel_event e{};
+  e.pos = short2(std::bit_cast<int16_t>(LOWORD(lp)), std::bit_cast<int16_t>(HIWORD(lp)));
+  ::ScreenToClient(wsp->hwnd, reinterpret_cast<POINT*>(&e.pos));
+  e.delta = short(HIWORD(wp));
+  e.mods = internal::_make_mods();
+  e.horizontal = (Msg == WM_MOUSEHWHEEL);
+  if (auto res = wsp->wheel_event(e); !res) res.error().go_off();
+  return 0;
 }
 
 template<UINT Msg> LRESULT _process_wm_key_event(window::slot* wsp, WPARAM wp, LPARAM lp) {
@@ -144,6 +181,10 @@ inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
   case WM_CHAR:
   case WM_SYSCHAR: return internal::_process_wm_char(wsp, wp, lp);
 
+  case WM_LBUTTONDBLCLK: return internal::_process_wm_double_click<WM_LBUTTONDBLCLK>(wsp, wp, lp);
+  case WM_RBUTTONDBLCLK: return internal::_process_wm_double_click<WM_RBUTTONDBLCLK>(wsp, wp, lp);
+  case WM_MBUTTONDBLCLK: return internal::_process_wm_double_click<WM_MBUTTONDBLCLK>(wsp, wp, lp);
+
   case WM_LBUTTONDOWN: return internal::_process_wm_button_event<WM_LBUTTONDOWN>(wsp, wp, lp);
   case WM_LBUTTONUP: return internal::_process_wm_button_event<WM_LBUTTONUP>(wsp, wp, lp);
   case WM_RBUTTONDOWN: return internal::_process_wm_button_event<WM_RBUTTONDOWN>(wsp, wp, lp);
@@ -152,6 +193,9 @@ inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
   case WM_MBUTTONUP: return internal::_process_wm_button_event<WM_MBUTTONUP>(wsp, wp, lp);
   case WM_XBUTTONDOWN: return internal::_process_wm_button_event<WM_XBUTTONDOWN>(wsp, wp, lp);
   case WM_XBUTTONUP: return internal::_process_wm_button_event<WM_XBUTTONUP>(wsp, wp, lp);
+
+  case WM_MOUSEWHEEL: return internal::_process_wm_wheel_event<WM_MOUSEWHEEL>(wsp, wp, lp);
+  case WM_MOUSEHWHEEL: return internal::_process_wm_wheel_event<WM_MOUSEHWHEEL>(wsp, wp, lp);
 
   case WM_KILLFOCUS: return internal::_process_wm_focus<WM_KILLFOCUS>(wsp, wp, lp);
   case WM_ACTIVATEAPP: return internal::_process_wm_focus<WM_ACTIVATEAPP>(wsp, wp, lp);

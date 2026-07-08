@@ -8,19 +8,19 @@ Windows / MinGW / CMake support is important.
 Run:
 `python tools/build.py`
 
-If the number of headers changed, run first:
+If the list of headers changed:
 `python tools/init.py`
+`python tools/build.py`
 
-For DLL:
-python tools/build.py --dll
+For building DLL insted of EXE:
+`python tools/build.py --dll`
 
 ## Style
 - Public APIs should avoid exceptions where possible.
-- Prefer std::expected<T, error_trace>.
-- Keep headers self-contained.
-- Do not introduce external Python dependencies.
-- Preserve existing namespace and file layout.
-- Do not change public APIs unless explicitly requested.
+- Prefer std::expected<T, error>.
 
 ## Notes
-- Read source files and comments as UTF-8 by default. Do not rely on PowerShell's default text encoding when inspecting files.
+- Do not introduce external Python dependencies.
+- Do not change public APIs unless explicitly requested.
+- Read source files and comments as UTF-8 by default.
+  Do not rely on PowerShell's default text encoding when inspecting files.

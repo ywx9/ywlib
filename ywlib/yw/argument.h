@@ -145,7 +145,7 @@ public:
   template<typename Self> auto&& description(this Self&& self, string<char> Desc) noexcept
     requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off(true); // warning
+    if (!sp) error(errors::invalid_slotid).fizzle_out(); // warning
     else sp->description = std::move(Desc);
     return static_cast<Self&&>(self);
   }
@@ -153,7 +153,7 @@ public:
   template<typename Self> auto&& required(this Self&& self, bool Required = true) noexcept
     requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off(true); // warning
+    if (!sp) error(errors::invalid_slotid).fizzle_out(); // warning
     else sp->required = Required;
     return static_cast<Self&&>(self);
   }
@@ -165,7 +165,7 @@ public:
     if (auto res = converter<T>{}(Value)) {
       sp->default_value_string = std::move(*res);
       sp->default_value = std::move(Value);
-    } else res.error().add_footprint().go_off(sp->source_line, true); // warning
+    } else res.error().add_footprint().fizzle_out(sp->source_line); // warning
     return static_cast<Self&&>(self);
   }
 
@@ -240,7 +240,7 @@ public:
   template<typename Self> auto&& description(this Self&& self, string<char> Desc)
     requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off(true); // warning
+    if (!sp) error(errors::invalid_slotid).fizzle_out(); // warning
     else sp->description = std::move(Desc);
     return static_cast<Self&&>(self);
   }
@@ -248,7 +248,7 @@ public:
   template<typename Self> auto&& required(this Self&& self, bool Required = true)
     requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off(true); // warning
+    if (!sp) error(errors::invalid_slotid).fizzle_out(); // warning
     else sp->required = Required;
     return static_cast<Self&&>(self);
   }
@@ -256,7 +256,7 @@ public:
   template<typename Self> auto&& multiple(this Self&& self, bool Multiple = true)
     requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off(true); // warning
+    if (!sp) error(errors::invalid_slotid).fizzle_out(); // warning
     else sp->multiple = Multiple;
     return static_cast<Self&&>(self);
   }
@@ -268,7 +268,7 @@ public:
     if (auto res = converter<T>{}(Value)) {
       sp->default_value_string = std::move(*res);
       sp->default_value = std::move(Value);
-    } else res.error().add_footprint().go_off(sp->source_line, true); // warning
+    } else res.error().add_footprint().fizzle_out(sp->source_line); // warning
     return static_cast<Self&&>(self);
   }
 
@@ -277,7 +277,7 @@ public:
     const auto sp = self.get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off(); // fatal
     const auto [it, b] = name_map.emplace(Alias, self.id());
-    if (!b) error(errors::operation_failed, format("Duplicate key: ", Alias)).go_off(true); // warning
+    if (!b) error(errors::operation_failed, format("Duplicate key: ", Alias)).fizzle_out(); // warning
     else if (const auto sp = self.get_slot(&self); sp) sp->aliases.push_back(std::move(Alias));
     return static_cast<Self&&>(self);
   }
@@ -340,7 +340,7 @@ public:
   template<typename Self> auto&& description(this Self&& self, string<char> Desc)
     requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off(true); // warning
+    if (!sp) error(errors::invalid_slotid).fizzle_out(); // warning
     else sp->description = std::move(Desc);
     return static_cast<Self&&>(self);
   }
@@ -350,7 +350,7 @@ public:
     const auto sp = self.get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off(); // fatal
     const auto [it, b] = name_map.emplace(Alias, self.id());
-    if (!b) error(errors::operation_failed, format("Duplicate key: ", Alias)).go_off(true); // warning
+    if (!b) error(errors::operation_failed, format("Duplicate key: ", Alias)).fizzle_out(); // warning
     else sp->aliases.push_back(std::move(Alias));
     return static_cast<Self&&>(self);
   }

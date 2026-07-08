@@ -172,7 +172,7 @@ public:
   handle(std::filesystem::path Path, open_mode Mode, const source_line& sl = here()) {
     if (auto res = initialize(std::move(Path), Mode); !res) {
       slot::erase(std::exchange(_id, {}));
-      res.error().go_off(sl, true); // warning
+      res.error().fizzle_out(sl); // warning
     }
   }
 
@@ -189,19 +189,21 @@ public:
 
   const std::filesystem::path& path() const {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off(); // fatal
+    if (!sp) error(errors::invalid_slotid).go_off();
     return sp->file_handle.path();
   }
 
   open_mode mode() const {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off(true); // warning
-    return sp->mode;
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return open_mode::unknown;
+    } else return sp->mode;
   }
 
   const std::vector<entry>& entries() const {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off(); // fatal
+    if (!sp) error(errors::invalid_slotid).go_off();
     return sp->entries;
   }
 
@@ -230,21 +232,21 @@ public:
   std::vector<std::byte> read(size_t index) {
     const auto sp = get_slot(this);
     if (!sp) {
-      error(errors::invalid_slotid).go_off(true); // warning
+      error(errors::invalid_slotid).fizzle_out(); // warning
       return {};
     }
     if (index >= sp->entries.size()) {
-      error(errors::invalid_argument, "index out of range").go_off(true); // warning
+      error(errors::invalid_argument, "index out of range").fizzle_out(); // warning
       return {};
     }
     const auto& e = sp->entries[index];
     if (auto res = sp->file_handle.seek(static_cast<int64_t>(e.data_offset)); !res) {
-      res.error().add_footprint().add_footprint(sp->source_line).go_off(true); // warning
+      res.error().add_footprint().add_footprint(sp->source_line).fizzle_out(); // warning
       return {};
     }
     std::vector<std::byte> data(static_cast<size_t>(e.data_length));
     if (auto res = sp->file_handle.read_exact(data.data(), data.size()); !res) {
-      res.error().add_footprint().add_footprint(sp->source_line).go_off(true); // warning
+      res.error().add_footprint().add_footprint(sp->source_line).fizzle_out(); // warning
       return {};
     }
     return data;
@@ -254,28 +256,28 @@ public:
     const auto sv = string_view<char>(name);
     const auto sp = get_slot(this);
     if (!sp) {
-      error(errors::invalid_slotid).go_off(true); // warning
+      error(errors::invalid_slotid).fizzle_out(); // warning
       return {};
     }
     for (size_t i = 0; i < sp->entries.size(); ++i)
       if (sp->entries[i].name.view() == sv) return read(i);
-    error(errors::invalid_argument, "entry not found").go_off(true); // warning
+    error(errors::invalid_argument, "entry not found").fizzle_out(); // warning
     return {};
   }
 
   bool verify(size_t index) {
     const auto sp = get_slot(this);
     if (!sp) {
-      error(errors::invalid_slotid).go_off(true); // warning
+      error(errors::invalid_slotid).fizzle_out(); // warning
       return false;
     }
     if (index >= sp->entries.size()) {
-      error(errors::invalid_argument, "index out of range").go_off(true); // warning
+      error(errors::invalid_argument, "index out of range").fizzle_out(); // warning
       return false;
     }
     const auto& e = sp->entries[index];
     if (auto res = sp->file_handle.seek(static_cast<int64_t>(e.data_offset)); !res) {
-      res.error().add_footprint().add_footprint(sp->source_line).go_off(true); // warning
+      res.error().add_footprint().add_footprint(sp->source_line).fizzle_out(); // warning
       return false;
     }
     uint32_t crc = 0xFFFFFFFF;
@@ -284,7 +286,7 @@ public:
     for (uint64_t remaining = e.data_length; remaining > 0;) {
       const auto to_read = yw::min(static_cast<uint64_t>(buffer_size), remaining);
       if (auto res = sp->file_handle.read_exact(buffer.data(), static_cast<size_t>(to_read)); !res) {
-        res.error().add_footprint().add_footprint(sp->source_line).go_off(true); // warning
+        res.error().add_footprint().add_footprint(sp->source_line).fizzle_out(); // warning
         return false;
       }
       crc = _crc32_update(crc, buffer.data(), static_cast<size_t>(to_read));
@@ -297,12 +299,12 @@ public:
     const auto sv = string_view<char>(name);
     const auto sp = get_slot(this);
     if (!sp) {
-      error(errors::invalid_slotid).go_off(true); // warning
+      error(errors::invalid_slotid).fizzle_out(); // warning
       return false;
     }
     for (size_t i = 0; i < sp->entries.size(); ++i)
       if (sp->entries[i].name.view() == sv) return verify(i);
-    error(errors::invalid_argument, "entry not found").go_off(true); // warning
+    error(errors::invalid_argument, "entry not found").fizzle_out(); // warning
     return false;
   }
 

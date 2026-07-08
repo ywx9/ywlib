@@ -13,7 +13,7 @@ else if (is_constructor) {
   prepare("static std::expected<T, error> create(As&&...)");
   return T(As...);
 } else if (is_setter_like) {
-  if (failed) error::go_off(true); // warning
+  if (failed) error::fizzle_out(); // warning
   else T::set(As...);
 } else if (return_value_is_essential) { // (e.g. file_handle::file_size())
   if (failed) {
@@ -111,32 +111,53 @@ public:
   explicit constexpr operator bool() const noexcept { return _ticking; }
   static constexpr bool ticking() noexcept { return !_footprints.empty(); }
 
-  void go_off(bool AsWarning = false) {
+  /// prints error message and exits program
+  void go_off() {
     if (_footprints.empty()) return;
-    if (AsWarning) print_inline.err("Warning: ");
-    else print_inline.err("Fatal Error: ");
+    print_inline.err("Error: ");
     _print_error();
     _print_footprints();
-    if (!AsWarning) std::exit(_system_code ? _system_code : EXIT_FAILURE);
+    std::exit(_system_code ? _system_code : EXIT_FAILURE);
     _ticking = false;
   }
 
-  void go_off(const source_line& Add, bool AsWarning = false) {
+  /// prints error message and exits program
+  void go_off(const source_line& Add) {
     if (_footprints.empty()) return;
-    if (AsWarning) print_inline.err("Warning: ");
-    else print_inline.err("Fatal Error: ");
+    print_inline.err("Error: ");
     _print_error();
     _footprints.push_back(Add);
     _print_footprints();
-    if (!AsWarning) std::exit(_system_code ? _system_code : EXIT_FAILURE);
+    std::exit(_system_code ? _system_code : EXIT_FAILURE);
     _ticking = false;
   }
 
+  /// prints warning message and clears error state
+  void fizzle_out() {
+    if (_footprints.empty()) return;
+    print_inline.err("Warning: ");
+    _print_error();
+    _print_footprints();
+    _ticking = false;
+  }
+
+  /// prints warning message and clears error state
+  void fizzle_out(const source_line& Add) {
+    if (_footprints.empty()) return;
+    print_inline.err("Warning: ");
+    _print_error();
+    _footprints.push_back(Add);
+    _print_footprints();
+    _ticking = false;
+  }
+
+  /// returns std::unexpected<error> while adding footprint to error stack
   constexpr std::unexpected<error> relay(const source_line& Source = here()) & {
     add_footprint(Source);
     return std::unexpected(std::move(*this));
   }
 
+  /// adds footprint to error stack
   constexpr error& add_footprint(const source_line& Source = here()) & {
     if (_ticking) _footprints.push_back(Source);
     return *this;

@@ -112,7 +112,7 @@ public:
     const auto s = get_slot(&self);
     if (!s) error(errors::invalid_slotid).go_off();
     if (v.x <= 0.0f || v.y <= 0.0f) {
-      error(errors::invalid_argument, format("content_size must be positive: ", v)).go_off(false);
+      error(errors::invalid_argument, format("content_size must be positive: ", v)).go_off();
       return self;
     }
     s->content_transform = sized_content{v};
@@ -123,7 +123,7 @@ public:
     const auto s = get_slot(&self);
     if (!s) error(errors::invalid_slotid).go_off();
     if (v.x <= 0.0f || v.y <= 0.0f) {
-      error(errors::invalid_argument, format("content_scale must be positive: ", v)).go_off(false);
+      error(errors::invalid_argument, format("content_scale must be positive: ", v)).go_off();
       return self;
     }
     s->content_transform = scaled_content{v};
