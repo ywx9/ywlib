@@ -29,16 +29,35 @@ struct key {
   bool pressed() const noexcept { return (::GetKeyState(int(code)) & 0x8000) != 0; }
   constexpr string_view<char> to_string() const noexcept {
     static constexpr const char* names[] = {
-      "_00", "lbutton", "rbutton", "_03", "mbutton", "xbutton1", "xbutton2", "_07", "backspace", "tab", "_0A", "_0B",
-      "_0C", "enter", "_0E", "_0F", "shift", "ctrl", "alt", "_13", "caps_lock", "_15", "_16", "_17", "_18", "_19",
-      "_1A", "escape", "_1C", "_1D", "_1E", "_1F", "space", "page_up", "page_down", "end", "home", "left", "up",
-      "right", "down", "_29", "_2A", "_2B", "print_screen", "insert", "delete_", "_2F", "0", "1", "2", "3", "4", "5",
-      "6", "7", "8", "9", "_3A", "_3B", "_3C", "_3D", "_3E", "_3F", "_40", "A", "B", "C", "D", "E", "F", "G", "H", "I",
-      "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "win", "win", "menu", "_5E",
-      "_5F", "_60", "_61", "_62", "_63", "_64", "_65", "_66", "_67", "_68", "_69", "_6A", "_6B", "_6C", "_6D", "_6E",
-      "_6F", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "_7C", "_7D", "_7E", "_7F",
-      "_80", "_81", "_82", "_83", "_84", "_85", "_86", "_87", "_88", "_89", "_8A", "_8B", "_8C", "_8D", "_8E", "_8F",
-      "num_lock", "scroll_lock"};
+      // clang-format off
+      "__0", "lbutton", "rbutton", "cancel", "mbutton", "xbutton1", "xbutton2", "__7", "back", "tab", "__10", "__11",
+      "clear", "return", "__14", "__15", "shift", "control", "menu", "pause", "capital", "kana", "ime_on", "junja",
+      "final", "hanja", "ime_off", "escape", "convert", "nonconvert", "accept", "modechange", "space", "prior", "next",
+      "end", "home", "left", "up", "right", "down", "select", "print", "execute", "snapshot", "insert", "delete",
+      "help", "__48", "__49", "__50", "__51", "__52", "__53", "__54", "__55", "__56", "__57", "__58", "__59", "__60",
+      "__61", "__62", "__63", "__64", "__65", "__66", "__67", "__68", "__69", "__70", "__71", "__72", "__73", "__74",
+      "__75", "__76", "__77", "__78", "__79", "__80", "__81", "__82", "__83", "__84", "__85", "__86", "__87", "__88",
+      "__89", "__90", "lwin", "rwin", "apps", "__94", "sleep", "numpad0", "numpad1", "numpad2", "numpad3", "numpad4",
+      "numpad5", "numpad6", "numpad7", "numpad8", "numpad9", "multiply", "add", "separator", "subtract", "decimal",
+      "divide", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12", "f13",  "f14", "f15", "f16",
+      "f17", "f18", "f19", "f20", "f21", "f22", "f23", "f24", "navigation_view", "navigation_menu", "navigation_up",
+      "navigation_down", "navigation_left", "navigation_right", "navigation_accept", "navigation_cancel", "numlock",
+      "scroll", "oem_nec_equal", "oem_fj_masshou", "oem_fj_touroku", "oem_fj_loya", "oem_fj_roya", "__151", "__152",
+      "__153", "__154", "__155", "__156", "__157", "__158", "__159", "lshift", "rshift", "lcontrol", "rcontrol",
+      "lmenu", "rmenu", "browser_back", "browser_forward", "browser_refresh", "browser_stop", "browser_search",
+      "browser_favorites", "browser_home", "volume_mute", "volume_down", "volume_up", "media_next_track",
+      "media_prev_track", "media_stop", "media_play_pause", "launch_mail", "launch_media_select", "launch_app1",
+      "launch_app2", "__184", "__185", "oem_1", "oem_plus", "oem_comma", "oem_minus", "oem_period", "oem_2", "oem_3",
+      "__193", "__194", "gamepad_a", "gamepad_b", "gamepad_x", "gamepad_y", "gamepad_right_shoulder",
+      "gamepad_left_shoulder", "gamepad_left_trigger", "gamepad_right_trigger", "gamepad_dpad_up", "gamepad_dpad_down",
+      "gamepad_dpad_left", "gamepad_dpad_right", "gamepad_menu", "gamepad_view", "gamepad_left_thumbstick_button",
+      "gamepad_right_thumbstick_button", "gamepad_left_thumbstick_up", "gamepad_left_thumbstick_down",
+      "gamepad_left_thumbstick_right", "gamepad_left_thumbstick_left", "gamepad_right_thumbstick_up",
+      "gamepad_right_thumbstick_down", "gamepad_right_thumbstick_right", "gamepad_right_thumbstick_left",
+      "oem_4", "oem_5", "oem_6", "oem_7", "oem_8", "__224", "oem_ax", "oem_102", "ico_help", "ico_00", "processkey",
+      "ico_clear", "packet", "__232", "oem_reset", "oem_jump", "oem_pa1", "oem_pa2", "oem_pa3", "oem_wsctrl",
+      "oem_cusel", "oem_attn", "oem_finish", "oem_copy", "oem_auto", "oem_enlw", "oem_backtab", "attn", "crsel",
+      "exsel", "ereof", "play", "zoom", "noname", "pa1", "oem_clear", "__255"}; // clang-format on
     return names[static_cast<uint8_t>(code)];
   }
 };

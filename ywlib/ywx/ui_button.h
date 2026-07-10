@@ -33,7 +33,7 @@ public:
     virtual std::expected<void, error> reset_state() override {
       if (!pressed) return {};
       pressed = false;
-      if (auto res = make_dirty(); !res) return res.error().relay();
+      make_dirty();
       return {};
     }
 
@@ -42,7 +42,7 @@ public:
       const bool next_pressed = e.down;
       if (pressed == next_pressed) return true;
       pressed = next_pressed;
-      if (auto res = make_dirty(); !res) res.error().go_off();
+      make_dirty();
       return true;
     }
 
@@ -62,14 +62,14 @@ public:
       if (e.down) {
         if (!pressed) {
           pressed = true;
-          if (auto res = make_dirty(); !res) res.error().go_off();
+          make_dirty();
         }
         return true;
       }
       const bool was_pressed = pressed;
       pressed = false;
       if (was_pressed) {
-        if (auto res = make_dirty(); !res) res.error().go_off();
+        make_dirty();
         if (on_click) on_click({{}, e.key, e.mods, false});
       }
       return true;

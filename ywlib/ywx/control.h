@@ -9,11 +9,11 @@ namespace yw {
   if (!s) error(errors::invalid_slotid).go_off(); \
   return s->mop
 
-#define ywlib_control_set(mop, val, dirty)                      \
-  const auto s = get_slot(&self);                               \
-  if (!s) error(errors::invalid_slotid).go_off();               \
-  s->mop = val;                                                 \
-  if (auto res = s->make_##dirty(); !res) res.error().go_off(); \
+#define ywlib_control_set(mop, val, dirty)        \
+  const auto s = get_slot(&self);                 \
+  if (!s) error(errors::invalid_slotid).go_off(); \
+  s->mop = val;                                   \
+  s->make_##dirty();                              \
   return self;
 
 class control : public interface {
@@ -72,16 +72,12 @@ public:
 
     //-- override interface::slot --//
 
-    virtual std::expected<void, error> make_dirty() override {
+    virtual void make_dirty() override {
       if (const auto wsp = slot::get<interface>(window_id)) wsp->make_dirty();
-      else return std::unexpected(error(errors::invalid_slotid));
-      return {};
     }
 
-    virtual std::expected<void, error> make_messy() override {
+    virtual void make_messy() override {
       if (const auto wsp = slot::get<interface>(window_id)) wsp->make_messy();
-      else return std::unexpected(error(errors::invalid_slotid));
-      return {};
     }
 
     //-- virtual methods for control --//
@@ -98,6 +94,15 @@ public:
       return {};
     }
 
+    virtual std::expected<void, error> draw_focusring(const color& Color, float Thickness, float2 Offset) {
+      const auto p = pos - Offset;
+      const auto r = radius + Offset;
+      const auto s = size + Offset * 2.0f;
+      brush::color(Color);
+      if (auto res = draw_round_rectangle(p, s, r, Thickness); !res) return res.error().relay();
+      return {};
+    }
+
     virtual bool focusable() const { return false; }
 
     virtual std::expected<float2, error> get_necessary_size() const {
@@ -109,10 +114,9 @@ public:
       return visible && Pt.x >= r.x && Pt.y >= r.y && Pt.x <= r.z && Pt.y <= r.w ? id : slotid{};
     }
 
-    virtual std::expected<void, error> make_geometry_dirty() {
+    virtual void make_geometry_dirty() {
       geometry_dirty = true;
-      if (auto res = make_dirty(); !res) return res.error().relay();
-      return {};
+      make_dirty();
     }
 
     virtual std::expected<void, error> redraw() { return {}; }
@@ -200,7 +204,7 @@ public:
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->required_size = Size;
     sp->policy = vector2<size_policy>::fill(size_policy::fixed);
-    if (auto res = sp->make_messy(); !res) res.error().go_off();
+    sp->make_messy();
     return self;
   }
   auto& width(this auto& self, float1 Width) noexcept {
@@ -208,7 +212,7 @@ public:
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->required_size.x = Width.x;
     sp->policy.x = size_policy::fixed;
-    if (auto res = sp->make_messy(); !res) res.error().go_off();
+    sp->make_messy();
     return self;
   }
   auto& height(this auto& self, float1 Height) noexcept {
@@ -216,7 +220,7 @@ public:
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->required_size.y = Height.x;
     sp->policy.y = size_policy::fixed;
-    if (auto res = sp->make_messy(); !res) res.error().go_off();
+    sp->make_messy();
     return self;
   }
 

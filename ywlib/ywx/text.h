@@ -93,38 +93,65 @@ public:
     return {};
   }
 
+  struct hittest_result {
+    /// position of character/text that is hit
+    float2 pos{};
+    /// size of character/text that is hit
+    float2 size{};
+    /// index of character that is hit
+    uint32_t index{};
+    /// whether hit is on trailing side of character
+    bool trailing{};
+    /// whether hit is inside text
+    bool inside{};
+  };
+
   /// returns `{left, top, width, height}` of character at `Index`
-  std::expected<float4, error> hittest(uint1 Index, bool Trailing = false) const {
+  std::expected<hittest_result, error> hittest(uint1 Index) const {
     if (!_layout) return std::unexpected(error(errors::not_initialized));
     DWRITE_HIT_TEST_METRICS metrics{};
     float2 pt{};
-    hresult_test(_layout->HitTestTextPosition, Index.x, Trailing, &pt.x, &pt.y, &metrics);
-    return float4(metrics.left, metrics.top, metrics.width, metrics.height);
+    hresult_test(_layout->HitTestTextPosition, Index.x, false, &pt.x, &pt.y, &metrics);
+    return hittest_result{
+      .pos = float2(metrics.left, metrics.top),
+      .size = float2(metrics.width, metrics.height),
+      .index = Index.x,
+      .trailing = {},
+      .inside = Index.x < _string.size()};
   }
 
-  /// returns `{textPosition, {width, height}}` of character at `Pt`
-  std::expected<yw::tuple<uint32_t, float2>, error> hittest(float2 Pt) const {
+  /// returns `{textPosition, {x, y, width, height}}` of character at `Pt`
+  std::expected<hittest_result, error> hittest(float2 Pt) const {
     if (!_layout) return std::unexpected(error(errors::not_initialized));
     DWRITE_HIT_TEST_METRICS metrics{};
-    BOOL inside = FALSE;
-    BOOL trailing = FALSE;
-    hresult_test(_layout->HitTestPoint, Pt.x, Pt.y, &inside, &trailing, &metrics);
-    return yw::tuple<uint32_t, float2>{metrics.textPosition + bool(trailing), float2(metrics.width, metrics.height)};
+    BOOL trailing, inside;
+    hresult_test(_layout->HitTestPoint, Pt.x, Pt.y, &trailing, &inside, &metrics);
+    return hittest_result{
+      .pos = float2(metrics.left, metrics.top),
+      .size = float2(metrics.width, metrics.height),
+      .index = metrics.textPosition,
+      .trailing = bool(trailing),
+      .inside = bool(inside)};
   }
 
-  std::expected<std::vector<float4>, error> hittest_range(uint2 Range, float2 Origin = {}) const {
+  std::expected<std::vector<hittest_result>, error> hittest_range(uint2 Range, float2 Origin = {}) const {
     if (!_layout) return std::unexpected(error(errors::not_initialized));
     if (Range.x >= Range.y) return std::unexpected(error(errors::invalid_argument));
     const auto length = Range.y - Range.x;
     uint32_t count = 0;
     auto hr = _layout->HitTestTextRange(Range.x, length, Origin.x, Origin.y, nullptr, 0, &count);
-    if (hr != E_NOT_SUFFICIENT_BUFFER) return std::unexpected(error(errors::operation_failed, "HitTestTextRange failed", int32_t(hr)));
+    if (hr != E_NOT_SUFFICIENT_BUFFER)
+      return std::unexpected(error(errors::operation_failed, "HitTestTextRange failed", int32_t(hr)));
     std::vector<DWRITE_HIT_TEST_METRICS> metrics(count);
     hresult_test(_layout->HitTestTextRange, Range.x, length, Origin.x, Origin.y, metrics.data(), count, &count);
-    std::vector<float4> rects;
+    std::vector<hittest_result> rects;
     rects.reserve(count);
     for (size_t i = 0; i < count; ++i)
-      rects.emplace_back(metrics[i].left, metrics[i].top, metrics[i].width, metrics[i].height);
+      rects.emplace_back(
+        hittest_result{
+          .pos = float2(metrics[i].left, metrics[i].top),
+          .size = float2(metrics[i].width, metrics[i].height),
+          .index = metrics[i].textPosition});
     return rects;
   }
 };

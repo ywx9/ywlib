@@ -18,14 +18,14 @@ public:
       csp->layout_id = id;
       csp->window_id = window_id;
       controls.push_back(Child);
-      if (auto res = make_messy(); !res) return res.error().relay();
+      make_messy();
       return {};
     }
 
     virtual std::expected<void, error> detach(slotid Child) override {
       controls.erase(std::remove(controls.begin(), controls.end(), Child), controls.end());
       interface::slot::slots.erase(Child);
-      if (auto res = make_messy(); !res) return res.error().relay();
+      make_messy();
       return {};
     }
 

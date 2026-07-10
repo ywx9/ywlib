@@ -16,14 +16,14 @@ public:
       csp->layout_id = id;
       csp->window_id = window_id;
       controls.push_back(Child);
-      if (auto res = make_messy(); !res) return res.error().relay();
+      make_messy();
       return {};
     }
 
     virtual std::expected<void, error> detach(slotid Child) override {
       controls.erase(std::remove(controls.begin(), controls.end(), Child), controls.end());
       interface::slot::slots.erase(Child);
-      if (auto res = make_messy(); !res) return res.error().relay();
+      make_messy();
       return {};
     }
 
@@ -147,7 +147,7 @@ public:
     if (auto it = std::find(csp->controls.begin(), csp->controls.end(), cid); it != csp->controls.end()) {
       csp->controls.erase(it);
       interface::slot::slots.erase(cid);
-      if (auto res = csp->make_messy(); !res) return res.error().relay();
+      csp->make_messy();
       return {};
     }
     return std::unexpected(error(errors::invalid_argument, "Control not found in layer"));
@@ -158,7 +158,7 @@ public:
     if (!csp) return std::unexpected(error(errors::invalid_slotid));
     for (const auto& cid : csp->controls) interface::slot::slots.erase(cid);
     csp->controls.clear();
-    if (auto res = csp->make_messy(); !res) return res.error().relay();
+    csp->make_messy();
     return {};
   }
 };

@@ -49,7 +49,13 @@ public:
   void grouping_gap(double value) noexcept { _grouping_gap = value; }
 
   void end_grouping() noexcept { _grouping_timer.reset(); _last_command_is_groupable = false; }
-  void clear() {_undo_stack.clear(), _redo_stack.clear(); }
+
+  void clear() {
+    _undo_stack.clear();
+    _redo_stack.clear();
+    _grouping_timer.reset();
+    _last_command_is_groupable = false;
+  }
 
   void push(command cmd, bool Groupable = false) {
     if (_replaying) return;

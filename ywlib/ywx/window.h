@@ -78,7 +78,7 @@ public:
 
     color focusring_color = color(0.0f, 0.5f, 1.0f, 0.8f);
     float focusring_thickness = arbitrary_value / 2.0f;
-    float focusring_offset = arbitrary_value;
+    float2 focusring_offset = float2::fill(arbitrary_value);
 
     std::optional<float3> caret_pos{};
 
@@ -122,15 +122,8 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> make_dirty() override {
-      dirty = true;
-      return {};
-    }
-
-    virtual std::expected<void, error> make_messy() override {
-      messy = true;
-      return {};
-    }
+    virtual void make_dirty() override { dirty = true; }
+    virtual void make_messy() override { messy = true; }
 
     //-- functions --//
 
@@ -219,12 +212,8 @@ public:
     std::expected<void, error> draw_focusring() const {
       const auto csp = slot::get<control>(focused_control_id);
       if (!csp || !csp->visible || focusring_color.a <= 0.0f || focusring_thickness <= 0.0f) return {};
-      const auto offset = float2::fill(yw::max(0.0f, focusring_offset));
-      brush::color(focusring_color);
-      const auto p = csp->pos - offset;
-      const auto s = csp->size + offset * 2.0f;
-      const auto r = csp->radius + offset;
-      if (auto res = draw_round_rectangle(p, s, r, focusring_thickness); !res) return res.error().relay();
+      if (auto res = csp->draw_focusring(focusring_color, focusring_thickness, focusring_offset); !res)
+        return res.error().relay();
       return {};
     }
 
@@ -275,27 +264,19 @@ public:
           if (auto res = d->close(); !res) return res.error().relay();
         } else return d.error().relay();
       }
+      drawing d{};
       if (drawn) {
-        if (auto res = rendertarget.begin_draw()) {
-          auto d = std::move(*res);
-          if (auto rr = draw_bitmap({}, controllayer); !rr) return rr.error().relay();
-          if (auto fr = draw_focusring(); !fr) return fr.error().relay();
-          if (auto tr = update_tooltip(Time); !tr) return tr.error().relay();
-          if (auto tt = draw_tooltip(); !tt) return tt.error().relay();
-        } else return res.error().relay();
-      } else {
-        if (auto res = rendertarget.begin_draw(background_color)) {
-          auto d = std::move(*res);
-          if (auto rr = draw_bitmap({}, controllayer); !rr) return rr.error().relay();
-          if (auto fr = draw_focusring(); !fr) return fr.error().relay();
-          if (auto tr = update_tooltip(Time); !tr) return tr.error().relay();
-          if (auto tt = draw_tooltip(); !tt) return tt.error().relay();
-        } else return res.error().relay();
-      }
+        if (auto res = rendertarget.begin_draw()) d = std::move(*res);
+        else return res.error().relay();
+      } else if (auto res = rendertarget.begin_draw(background_color)) d = std::move(*res);
+      else return res.error().relay();
+      if (auto rr = draw_bitmap({}, controllayer); !rr) return rr.error().relay();
+      if (auto fr = draw_focusring(); !fr) return fr.error().relay();
+      if (auto tr = update_tooltip(Time); !tr) return tr.error().relay();
+      if (auto tt = draw_tooltip(); !tt) return tt.error().relay();
+      if (auto res = d.close(); !res) return res.error().relay();
       hresult_test(swapchain->Present, 1, 0);
-      messy = false;
-      dirty = false;
-      drawn = false;
+      messy = false, dirty = false, drawn = false;
       return {};
     }
 
@@ -415,9 +396,7 @@ public:
     std::expected<void, error> wheel_event(yw::wheel_event e) {
       if (const auto csp = slot::get<control>(control_id)) {
         const auto hit = csp->hittest(e.pos);
-        if (const auto hcsp = slot::get<control>(hit); hcsp && hcsp->wheel_event(e)) {
-          return {};
-        }
+        if (const auto hcsp = slot::get<control>(hit); hcsp && hcsp->wheel_event(e)) { return {}; }
       }
       return {};
     }
@@ -593,7 +572,7 @@ public:
     return sp->focusring_thickness;
   }
 
-  float focusring_offset() const noexcept {
+  float2 focusring_offset() const noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
     return sp->focusring_offset;
@@ -656,7 +635,7 @@ public:
     const auto area = sp->size + sp->frame_thickness.xy() + sp->frame_thickness.zw();
     if (!::SetWindowPos(sp->hwnd, 0, sp->pos.x, sp->pos.y, area.x, area.y, SWP_NOZORDER | SWP_NOACTIVATE))
       error(errors::operation_failed, "SetWindowPos failed", int32_t(::GetLastError())).go_off();
-    if (auto res = sp->make_messy(); !res) res.error().go_off();
+    sp->make_messy();
     return *this;
   }
 
@@ -673,7 +652,7 @@ public:
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->background_color = c;
-    if (auto res = sp->make_dirty(); !res) res.error().go_off();
+    sp->make_dirty();
     return *this;
   }
 
@@ -747,10 +726,10 @@ public:
     return *this;
   }
 
-  auto& focusring_offset(float1 v) noexcept {
+  auto& focusring_offset(float2 v) noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
-    sp->focusring_offset = yw::max(0.0f, v.x);
+    sp->focusring_offset = vapply_r<float2>(yw::max, v, float2());
     return *this;
   }
 

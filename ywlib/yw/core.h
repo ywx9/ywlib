@@ -144,6 +144,14 @@ inline constexpr auto uint_cast = []<typename T>(T value) noexcept requires arit
   else static_assert(always_false<T>, "unsupported type for uint_cast");
 };
 
+inline constexpr auto int_cast = []<typename T>(T value) noexcept requires arithmetic<T> || is_enum<T> {
+  if constexpr (sizeof(T) == 1) return std::bit_cast<int8_t>(value);
+  else if constexpr (sizeof(T) == 2) return std::bit_cast<int16_t>(value);
+  else if constexpr (sizeof(T) == 4) return std::bit_cast<int32_t>(value);
+  else if constexpr (sizeof(T) == 8) return std::bit_cast<int64_t>(value);
+  else static_assert(always_false<T>, "unsupported type for int_cast");
+};
+
 //////////////////////////////////////// MARK: construct
 
 template<typename T, typename... As> concept constructible = std::is_constructible_v<T, As...>;
@@ -263,6 +271,12 @@ template<typename... Ts> using common_type = select_type<requires {
 
 template<typename... Ts> concept common_with = !is_none<common_type<Ts...>>;
 
+template<integral... Ts> using common_integral = select_type<(signed_integral<Ts> || ...),
+decltype(int_cast(common_type<Ts...>{})), common_type<Ts...>>;
+
+template<arithmetic... Ts> using common_arithmetic = select_type<inspects<(floating<Ts> || ...), (signed_integral<Ts> || ...)>,
+  common_type<Ts...>, decltype(int_cast(common_type<Ts...>{})), common_type<Ts...>>;
+
 //////////////////////////////////////// MARK: invoke
 
 template<typename F, typename... As> concept invocable = std::invocable<F, As...>;
@@ -293,27 +307,39 @@ inline constexpr auto invoke_r = []<typename F, typename... As>(F&& f, As&&... a
 
 inline constexpr struct {
   static constexpr none operator()() noexcept { return {}; }
-  template<typename T> static constexpr decltype(auto) operator()(T&& a) noexcept { return static_cast<T&&>(a); }
-  template<typename T, std::common_with<T> U> static constexpr auto operator()(T&& a, U&& b) noexcept(noexcept(a < b)) {
-    return a < b ? std::common_type_t<T, U>(static_cast<U&&>(b)) : std::common_type_t<T, U>(static_cast<T&&>(a));
+  template<arithmetic T> static constexpr T operator()(T a) noexcept { return a; }
+  template<arithmetic T, arithmetic U> static constexpr common_arithmetic<T, U> operator()(T a, U b) noexcept {
+    if constexpr (floating<common_type<T, U>> || signed_integral<common_type<T, U>>) return a < b ? b : a;
+    else if constexpr (unsigned_integral<T> && unsigned_integral<U>) return a < b ? b : a;
+    else if constexpr (signed_integral<T>) return a < 0 || uint_cast(a) < b ? b : a;
+    else return b < 0 || uint_cast(b) < a ? a : b;
   }
-  template<typename T, typename U, typename... Ts> //
-  static constexpr std::common_type_t<T, U, Ts...> operator()(T&& a, U&& b, Ts&&... cs) {
-    return operator()(operator()(static_cast<T&&>(a), static_cast<U&&>(b)), static_cast<Ts&&>(cs)...);
+  template<arithmetic T, arithmetic U, arithmetic... Ts>
+  static constexpr common_arithmetic<T, U, Ts...> operator()(T a, U b, Ts... cs) {
+    return operator()(operator()(a, b), cs...);
   }
 } max;
 
 inline constexpr struct {
   static constexpr none operator()() noexcept { return {}; }
-  template<typename T> static constexpr decltype(auto) operator()(T&& a) noexcept { return static_cast<T&&>(a); }
-  template<typename T, std::common_with<T> U> static constexpr auto operator()(T&& a, U&& b) noexcept(noexcept(b < a)) {
-    return b < a ? std::common_type_t<T, U>(static_cast<U&&>(b)) : std::common_type_t<T, U>(static_cast<T&&>(a));
+  template<arithmetic T> static constexpr T operator()(T a) noexcept { return a; }
+  template<arithmetic T, arithmetic U> static constexpr common_arithmetic<T, U> operator()(T a, U b) noexcept {
+    if constexpr (floating<common_type<T, U>> || signed_integral<common_type<T, U>>) return a < b ? a : b;
+    else if constexpr (unsigned_integral<T> && unsigned_integral<U>) return a < b ? a : b;
+    else if constexpr (signed_integral<T>) return a < 0 || uint_cast(a) < b ? a : int_cast(b);
+    else return b < 0 || uint_cast(b) < a ? b : int_cast(a);
   }
-  template<typename T, typename U, typename... Ts> //
-  static constexpr std::common_type_t<T, U, Ts...> operator()(T&& a, U&& b, Ts&&... cs) {
-    return operator()(operator()(static_cast<T&&>(a), static_cast<U&&>(b)), static_cast<Ts&&>(cs)...);
+  template<arithmetic T, arithmetic U, arithmetic... Ts> //
+  static constexpr common_arithmetic<T, U, Ts...> operator()(T a, U b, Ts... cs) {
+    return operator()(operator()(a, b), cs...);
   }
 } min;
+
+inline constexpr struct {
+  template<arithmetic T, arithmetic U, arithmetic V> static constexpr T operator()(T v, U lo, V hi) noexcept {
+    if constexpr (floating<common_type<T, U, V>> || signed_integral<common_type<T, U, V>>) v = yw::max(v, lo);
+  }
+} clamp;
 
 //////////////////////////////////////// MARK: iterator / range
 

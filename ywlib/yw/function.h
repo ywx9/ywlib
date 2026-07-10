@@ -3,8 +3,11 @@
 
 namespace yw {
 
+constexpr size_t function_sbo_size = 24;
+
 template<typename R, typename... As> class function {
-  alignas(std::max_align_t) std::byte _storage[24]{};
+  static constexpr size_t _sbo_size = function_sbo_size;
+  alignas(std::max_align_t) std::byte _storage[_sbo_size]{};
 
   // function pointer route
   R (*fp)(As...) = nullptr;
@@ -38,10 +41,9 @@ public:
   template<class F> //
   requires invocable_r<const remove_cvref<F>&, R, As...> &&
            (!(is_pointer<remove_ref<F>> && is_function<remove_pointer<remove_ref<F>>>)) &&
-           (sizeof(remove_cvref<F>) <= 32) && (alignof(remove_cvref<F>) <= alignof(std::max_align_t)) &&
+           (sizeof(remove_cvref<F>) <= _sbo_size) && (alignof(remove_cvref<F>) <= alignof(std::max_align_t)) &&
            std::is_nothrow_move_constructible_v<remove_cvref<F>> && std::is_copy_constructible_v<remove_cvref<F>> &&
-           different_from<remove_cvref<F>, function>
-  function(F&& f) noexcept {
+           different_from<remove_cvref<F>, function> function(F&& f) noexcept {
     using G = remove_cvref<F>;
     new (_storage) G(static_cast<F&&>(f));
     _invoke = [](const void* src, As&&... args) -> R {
@@ -71,7 +73,11 @@ public:
     _move = other._move;
     _copy = other._copy;
     if (other._has_obj()) other._move(_storage, other._storage);
-    other._reset();
+    other.fp = nullptr;
+    other._invoke = nullptr;
+    other._destroy = nullptr;
+    other._move = nullptr;
+    other._copy = nullptr;
   }
 
   function& operator=(const function& other) {
@@ -95,7 +101,11 @@ public:
     _move = other._move;
     _copy = other._copy;
     if (other._has_obj()) other._move(_storage, other._storage);
-    other._reset();
+    other.fp = nullptr;
+    other._invoke = nullptr;
+    other._destroy = nullptr;
+    other._move = nullptr;
+    other._copy = nullptr;
     return *this;
   }
 
@@ -114,6 +124,7 @@ public:
   class slot {
     function* _dest = nullptr;
     slot& operator=(const slot&) & = delete;
+
   public:
     explicit slot() noexcept = default;
     slot(function& Dest) noexcept : _dest(&Dest) {}
