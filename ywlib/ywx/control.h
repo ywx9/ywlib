@@ -1,4 +1,5 @@
 #pragma once
+#include <ywx/command_manager.h>
 #include <ywx/core.h>
 #include <ywx/keys.h>
 
@@ -69,6 +70,12 @@ public:
       const float2 cc{c[unsigned(align) % 3], c[unsigned(align) / 3 % 3]};
       return margin.xy() + (MaxSize - size) * cc;
     }
+
+    bool focused() const noexcept;
+    command_manager* commands() const noexcept;
+    void clear_window_state() noexcept;
+    /// \note These functions are implemented in "window.h" because they require window::slot::focused_control_id
+
 
     //-- override interface::slot --//
 
@@ -174,8 +181,10 @@ public:
     virtual bool wheel_event(yw::wheel_event e) { return false; }
   };
 
-  bool focused() const noexcept;
-  /// \note This function is implemented in "window.h" because it requires window::slot::focused_control_id
+  bool focused() const noexcept {
+    if (const auto sp = get_slot(this)) return sp->focused();
+    return false;
+  }
 
   //-- getter --//
 
@@ -193,6 +202,8 @@ public:
   const auto& on_focus() const noexcept { ywlib_control_get(on_focus); }
   const auto& align() const noexcept { ywlib_control_get(align); }
   const auto& policy() const noexcept { ywlib_control_get(policy); }
+  bool visible() const noexcept { ywlib_control_get(visible); }
+  bool enabled() const noexcept { ywlib_control_get(enabled); }
 
   //-- setter --//
 
@@ -252,5 +263,23 @@ public:
   auto& align(this auto& self, alignment v) noexcept { ywlib_control_set(align, v, geometry_dirty); }
   auto& policy(this auto& self, vector2<size_policy> v) noexcept { ywlib_control_set(policy, v, messy); }
   auto& tooltip(this auto& self, string<wchar_t> v) noexcept { ywlib_control_set(tooltip, std::move(v), none); }
+  auto& visible(this auto& self, bool b) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    if (sp->visible == b) return self;
+    sp->visible = b;
+    if (!b) sp->clear_window_state();
+    sp->make_messy();
+    return self;
+  }
+  auto& enabled(this auto& self, bool b) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    if (sp->enabled == b) return self;
+    sp->enabled = b;
+    if (!b) sp->clear_window_state();
+    sp->make_dirty();
+    return self;
+  }
 };
 } // namespace yw

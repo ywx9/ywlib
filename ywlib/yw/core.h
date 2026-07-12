@@ -271,12 +271,6 @@ template<typename... Ts> using common_type = select_type<requires {
 
 template<typename... Ts> concept common_with = !is_none<common_type<Ts...>>;
 
-template<integral... Ts> using common_integral = select_type<(signed_integral<Ts> || ...),
-decltype(int_cast(common_type<Ts...>{})), common_type<Ts...>>;
-
-template<arithmetic... Ts> using common_arithmetic = select_type<inspects<(floating<Ts> || ...), (signed_integral<Ts> || ...)>,
-  common_type<Ts...>, decltype(int_cast(common_type<Ts...>{})), common_type<Ts...>>;
-
 //////////////////////////////////////// MARK: invoke
 
 template<typename F, typename... As> concept invocable = std::invocable<F, As...>;
@@ -305,41 +299,40 @@ inline constexpr auto invoke_r = []<typename F, typename... As>(F&& f, As&&... a
 
 //////////////////////////////////////// MARK: max
 
+namespace internal {
+template<bool Max, arithmetic T, arithmetic U> constexpr auto _max(T a, U b) noexcept {
+  if constexpr (same_as<T, U>) {
+    if constexpr (Max) return a < b ? b : a;
+    else return a < b ? a : b;
+  } else if constexpr (using V = decltype(a + b); floating<V> || signed_integral<V>) return _max<Max>(V(a), V(b));
+  else if constexpr (unsigned_integral<T> && unsigned_integral<U>) return _max<Max>(V(a), V(b));
+  else return _max<Max>(int_cast(a), int_cast(b));
+}
+} // namespace internal
+
 inline constexpr struct {
   static constexpr none operator()() noexcept { return {}; }
-  template<arithmetic T> static constexpr T operator()(T a) noexcept { return a; }
-  template<arithmetic T, arithmetic U> static constexpr common_arithmetic<T, U> operator()(T a, U b) noexcept {
-    if constexpr (floating<common_type<T, U>> || signed_integral<common_type<T, U>>) return a < b ? b : a;
-    else if constexpr (unsigned_integral<T> && unsigned_integral<U>) return a < b ? b : a;
-    else if constexpr (signed_integral<T>) return a < 0 || uint_cast(a) < b ? b : a;
-    else return b < 0 || uint_cast(b) < a ? a : b;
-  }
-  template<arithmetic T, arithmetic U, arithmetic... Ts>
-  static constexpr common_arithmetic<T, U, Ts...> operator()(T a, U b, Ts... cs) {
+  static constexpr auto operator()(arithmetic auto a) noexcept { return a; }
+  static constexpr auto operator()(arithmetic auto a, arithmetic auto b) noexcept { return internal::_max<1>(a, b); }
+  static constexpr auto operator()(arithmetic auto a, arithmetic auto b, arithmetic auto... cs)
+    requires(sizeof...(cs) > 0) {
     return operator()(operator()(a, b), cs...);
   }
 } max;
 
 inline constexpr struct {
   static constexpr none operator()() noexcept { return {}; }
-  template<arithmetic T> static constexpr T operator()(T a) noexcept { return a; }
-  template<arithmetic T, arithmetic U> static constexpr common_arithmetic<T, U> operator()(T a, U b) noexcept {
-    if constexpr (floating<common_type<T, U>> || signed_integral<common_type<T, U>>) return a < b ? a : b;
-    else if constexpr (unsigned_integral<T> && unsigned_integral<U>) return a < b ? a : b;
-    else if constexpr (signed_integral<T>) return a < 0 || uint_cast(a) < b ? a : int_cast(b);
-    else return b < 0 || uint_cast(b) < a ? b : int_cast(a);
-  }
-  template<arithmetic T, arithmetic U, arithmetic... Ts> //
-  static constexpr common_arithmetic<T, U, Ts...> operator()(T a, U b, Ts... cs) {
+  static constexpr auto operator()(arithmetic auto a) noexcept { return a; }
+  static constexpr auto operator()(arithmetic auto a, arithmetic auto b) noexcept { return internal::_max<0>(a, b); }
+  static constexpr auto operator()(arithmetic auto a, arithmetic auto b, arithmetic auto... cs)
+    requires(sizeof...(cs) > 0) {
     return operator()(operator()(a, b), cs...);
   }
 } min;
 
-inline constexpr struct {
-  template<arithmetic T, arithmetic U, arithmetic V> static constexpr T operator()(T v, U lo, V hi) noexcept {
-    if constexpr (floating<common_type<T, U, V>> || signed_integral<common_type<T, U, V>>) v = yw::max(v, lo);
-  }
-} clamp;
+inline constexpr auto clamp = []<arithmetic T>(T v, arithmetic auto lo, arithmetic auto hi) noexcept {
+  return static_cast<T>(max(lo, min(v, hi)));
+};
 
 //////////////////////////////////////// MARK: iterator / range
 

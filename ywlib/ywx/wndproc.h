@@ -152,8 +152,11 @@ template<UINT Msg> LRESULT _process_wm_key_event(window::slot* wsp, WPARAM wp, L
   e.key = key{static_cast<uint8_t>(wp)};
   e.mods = internal::_make_mods();
   e.down = (Msg == WM_KEYDOWN || Msg == WM_SYSKEYDOWN);
-  if (auto res = wsp->key_event(e); !res) res.error().go_off();
-  return 0;
+  if (auto res = wsp->key_event(e); !res) {
+    res.error().go_off();
+    return 0;
+  } else if (*res) return 0;
+  return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
 }
 } // namespace internal
 

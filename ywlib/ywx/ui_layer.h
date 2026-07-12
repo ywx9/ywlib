@@ -45,7 +45,9 @@ public:
       for (const auto& cid : controls) {
         const auto csp = interface::slot::get<control>(cid);
         if (!csp) return std::unexpected(error(errors::invalid_slotid));
-        if (auto res = csp->get_necessary_size()) inner = yw::max(inner, *res + csp->margin.xy() + csp->margin.zw());
+        if (!csp->visible) continue;
+        if (auto res = csp->get_necessary_size())
+          inner = vapply_r<float2>(yw::max, inner, *res + csp->margin.xy() + csp->margin.zw());
         else return res.error().relay();
       }
       inner += padding.xy() + padding.zw();
@@ -91,6 +93,7 @@ public:
       for (const auto& cid : controls) {
         const auto csp = interface::slot::get<control>(cid);
         if (!csp) return std::unexpected(error(errors::invalid_slotid));
+        if (!csp->visible) continue;
         if (auto res = csp->relocate(pos + padding.xy(), area); !res) return res.error().relay();
       }
       return {};
@@ -101,8 +104,9 @@ public:
       for (const auto& cid : controls) {
         const auto csp = interface::slot::get<control>(cid);
         if (!csp) return std::unexpected(error(errors::invalid_slotid));
+        if (!csp->visible) continue;
         if (auto res = csp->set_size_to_necessary(); !res) return res.error().relay();
-        inner = yw::max(inner, csp->bounds());
+        inner = vapply_r<float2>(yw::max, inner, csp->bounds());
       }
       inner += padding.xy() + padding.zw();
       size = vapply_r<float2>(_necessary_size, policy, minimum_size, required_size, inner);

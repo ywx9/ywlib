@@ -47,6 +47,7 @@ public:
       for (const auto& cid : controls) {
         const auto csp = interface::slot::get<control>(cid);
         if (!csp) return std::unexpected(error(errors::invalid_slotid));
+        if (!csp->visible) continue;
         if (auto res = csp->get_necessary_size()) {
           const auto bounds = *res + csp->margin.xy() + csp->margin.zw();
           yw::get<!Vertical>(inner) = yw::max(yw::get<!Vertical>(inner), yw::get<!Vertical>(bounds));
@@ -94,12 +95,16 @@ public:
       hresult_test(d2d::factory()->CreateRoundedRectangleGeometry, &rr, &geom);
       geometry.reset(geom);
       if (extra[Vertical] > 0) {
+        unsigned visible_count = 0;
         unsigned free_count = 0;
         for (const auto& cid : controls) {
           const auto csp = interface::slot::get<control>(cid);
           if (!csp) return std::unexpected(error(errors::invalid_slotid));
+          if (!csp->visible) continue;
+          ++visible_count;
           free_count += (csp->policy[Vertical] == size_policy::free);
         }
+        if (visible_count == 0) return {};
         const auto cross = size[!Vertical] - padding[!Vertical] - padding[2 + !Vertical];
         float2 offset = padding.xy();
         if (free_count > 0) {
@@ -107,6 +112,7 @@ public:
           for (const auto& cid : controls) {
             const auto csp = interface::slot::get<control>(cid);
             if (!csp) return std::unexpected(error(errors::invalid_slotid));
+            if (!csp->visible) continue;
             float2 area = csp->bounds();
             area[Vertical] += extra_per_free * (csp->policy[Vertical] == size_policy::free);
             area[!Vertical] = cross;
@@ -114,10 +120,11 @@ public:
             offset[Vertical] += area[Vertical];
           }
         } else {
-          const auto extra_per_control = extra[Vertical] / float(controls.size());
+          const auto extra_per_control = extra[Vertical] / float(visible_count);
           for (const auto& cid : controls) {
             const auto csp = interface::slot::get<control>(cid);
             if (!csp) return std::unexpected(error(errors::invalid_slotid));
+            if (!csp->visible) continue;
             float2 area = csp->bounds();
             area[Vertical] += extra_per_control;
             area[!Vertical] = cross;
@@ -130,6 +137,7 @@ public:
         for (const auto& cid : controls) {
           const auto csp = interface::slot::get<control>(cid);
           if (!csp) return std::unexpected(error(errors::invalid_slotid));
+          if (!csp->visible) continue;
           float2 area = csp->bounds();
           if (auto res = csp->relocate(pos + offset, area); !res) return res.error().relay();
           offset[Vertical] += area[Vertical];
@@ -143,6 +151,7 @@ public:
       for (const auto& cid : controls) {
         const auto csp = interface::slot::get<control>(cid);
         if (!csp) return std::unexpected(error(errors::invalid_slotid));
+        if (!csp->visible) continue;
         if (auto res = csp->set_size_to_necessary(); !res) return res.error().relay();
         const auto bounds = csp->bounds();
         inner[!Vertical] = yw::max(inner[!Vertical], bounds[!Vertical]);

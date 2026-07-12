@@ -98,15 +98,15 @@ public:
     } else return g.error().relay();
   }
 
-  std::expected<std::wstring, error> text() const {
+  std::expected<yw::string<wchar_t>, error> text() const {
     if (auto g = open()) {
       if (!::IsClipboardFormatAvailable(CF_UNICODETEXT))
         return std::unexpected(error(errors::invalid_operation, "clipboard does not contain text"));
       if (auto h = get_clipboard_data(CF_UNICODETEXT)) {
         if (auto p = static_cast<const wchar_t*>(::GlobalLock(*h))) {
-          std::wstring s = p;
+          yw::string<wchar_t> s = string_view<wchar_t>(p);
           ::GlobalUnlock(*h);
-          return s;
+          return std::move(s);
         } else return std::unexpected(error(errors::operation_failed, "GlobalLock failed"));
       } else return h.error().relay();
     } else return g.error().relay();
@@ -116,7 +116,7 @@ public:
   std::expected<void, error> text(S&& value) const {
     if (auto g = open()) {
       if (auto res = empty_clipboard(); !res) return res.error().relay();
-      auto sv = std::wstring_view(value);
+      auto sv = string_view<wchar_t>(value);
       const size_t bytes = (sv.size() + 1) * sizeof(wchar_t);
       HGLOBAL h = ::GlobalAlloc(GMEM_MOVEABLE, bytes);
       if (!h) return std::unexpected(error(errors::operation_failed, "GlobalAlloc failed"));

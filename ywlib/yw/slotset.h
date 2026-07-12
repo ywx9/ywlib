@@ -82,6 +82,11 @@ public:
       generation = other.generation;
       return *this;
     }
+
+    template<char_type C> constexpr string<C> to_string() const {
+      return format<C>("slotid(index=", index, ", generation=", generation, ")");
+    }
+    constexpr string<char> to_string() const { return to_string<char>(); }
   };
   static_assert(std::is_trivially_copyable_v<slotid>);
   static_assert(sizeof(slotid) == 2 * sizeof(uint32_t));

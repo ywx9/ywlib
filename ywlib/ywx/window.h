@@ -85,10 +85,8 @@ public:
     TRACKMOUSEEVENT track_mouse_event{sizeof(TRACKMOUSEEVENT), TME_LEAVE};
     short2 last_cursor_client_pos{};
 
-    function<bool, button_event> on_button_down{};
-    function<bool, button_event> on_button_up{};
-    function<bool, key_event> on_key_down{};
-    function<bool, key_event> on_key_up{};
+    function<bool, button_event> on_button{};
+    function<bool, key_event> on_key{};
     function<void, uint2> on_resized{};
 
     bool fit_to_necessary_size = false;
@@ -360,8 +358,7 @@ public:
         }
         if (control_handled) return {};
       }
-      if (e.down && on_button_down) on_button_down(e);
-      else if (!e.down && on_button_up) on_button_up(e);
+      if (on_button) on_button(e);
       return {};
     }
 
@@ -373,7 +370,7 @@ public:
       return {};
     }
 
-    std::expected<void, error> key_event(yw::key_event e) {
+    std::expected<bool, error> key_event(yw::key_event e) {
       if (const auto csp = slot::get<control>(control_id)) {
         if (e.down && e.key == keys::tab && !e.mods.ctrl) {
           const auto old_fc_id = focused_control_id;
@@ -382,15 +379,20 @@ public:
           if (const auto old_fcsp = slot::get<control>(old_fc_id)) old_fcsp->focus_event(false);
           if (const auto new_fcsp = slot::get<control>(focused_control_id)) new_fcsp->focus_event(true);
           update_caret_pos();
-          return {};
+          return true;
+        } else if (e.down && e.key == keys::escape && focused_control_id && !e.mods.ctrl && !e.mods.shift && !e.mods.alt) {
+          const auto old_fc_id = focused_control_id;
+          focused_control_id = {};
+          if (const auto old_fcsp = slot::get<control>(old_fc_id)) old_fcsp->focus_event(false);
+          update_caret_pos();
+          return true;
         } else if (const auto fcsp = slot::get<control>(focused_control_id); fcsp && fcsp->key_event(e)) {
           update_caret_pos();
-          return {};
+          return true;
         }
       }
-      if (e.down && on_key_down) on_key_down(e);
-      else if (!e.down && on_key_up) on_key_up(e);
-      return {};
+      if (on_key) return on_key(e);
+      return false;
     }
 
     std::expected<void, error> wheel_event(yw::wheel_event e) {
@@ -584,28 +586,16 @@ public:
     return sp->tooltip_delay;
   }
 
-  const auto& on_button_down() const noexcept {
+  const auto& on_button() const noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->on_button_down;
+    return sp->on_button;
   }
 
-  const auto& on_button_up() const noexcept {
+  const auto& on_key() const noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->on_button_up;
-  }
-
-  const auto& on_key_down() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->on_key_down;
-  }
-
-  const auto& on_key_up() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->on_key_up;
+    return sp->on_key;
   }
 
   const auto& on_resized() const noexcept {
@@ -740,31 +730,17 @@ public:
     return *this;
   }
 
-  auto& on_button_down(function<bool, button_event> f) noexcept {
+  auto& on_button(function<bool, button_event> f) noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
-    sp->on_button_down = std::move(f);
+    sp->on_button = std::move(f);
     return *this;
   }
 
-  auto& on_button_up(function<bool, button_event> f) noexcept {
+  auto& on_key(function<bool, key_event> f) noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
-    sp->on_button_up = std::move(f);
-    return *this;
-  }
-
-  auto& on_key_down(function<bool, key_event> f) noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    sp->on_key_down = std::move(f);
-    return *this;
-  }
-
-  auto& on_key_up(function<bool, key_event> f) noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    sp->on_key_up = std::move(f);
+    sp->on_key = std::move(f);
     return *this;
   }
 
@@ -778,13 +754,34 @@ public:
 
 /// MARK: Other functions
 
-inline bool control::focused() const noexcept {
-  if (const auto sp = get_slot(this); !sp) {
+inline bool control::slot::focused() const noexcept {
+  if (const auto wsp = slot::get<window>(window_id); !wsp) {
     error(errors::invalid_slotid).fizzle_out();
     return false;
-  } else if (const auto wsp = slot::get<window>(sp->window_id); !wsp) {
+  } else return wsp->focused_control_id == id;
+}
+
+inline command_manager* control::slot::commands() const noexcept {
+  if (const auto wsp = slot::get<window>(window_id); !wsp) {
     error(errors::invalid_slotid).fizzle_out();
-    return false;
-  } else return wsp->focused_control_id == sp->id;
+    return nullptr;
+  } else return &wsp->commands;
+}
+
+inline void control::slot::clear_window_state() noexcept {
+  const auto wsp = slot::get<window>(window_id);
+  if (!wsp) return;
+  if (wsp->focused_control_id == id) {
+    focus_event(false);
+    wsp->focused_control_id = {};
+    wsp->caret_pos = std::nullopt;
+  }
+  if (wsp->hovered_control_id == id) wsp->hovered_control_id = {};
+  if (wsp->mouse_capture_control_id == id) {
+    wsp->mouse_capture_control_id = {};
+    ::ReleaseCapture();
+  }
+  if (wsp->keyboard_capture_control_id == id) wsp->keyboard_capture_control_id = {};
+  if (wsp->tooltip_control_id == id) wsp->hide_tooltip();
 }
 } // namespace yw
