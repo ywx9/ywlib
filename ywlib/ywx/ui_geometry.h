@@ -90,7 +90,9 @@ public:
   static std::expected<geometry, error> create(derived_from<interface> auto& Parent, const source_line& sl = here()) {
     geometry g;
     if (auto res = slot::create(Parent, sl)) {
-      g._id = (*res)->id;
+      const auto sp = *res;
+      g._id = sp->id;
+      sp->radius = {};
       return g;
     } else return res.error().relay();
   }

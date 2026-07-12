@@ -4,8 +4,8 @@
 namespace yw::ui {
 
 struct color_pair {
-  color background;
-  color border;
+  color background = colors::transparent;
+  color border = colors::transparent;
   constexpr color_pair() noexcept = default;
   constexpr color_pair(color bg, color bd) noexcept : background(bg), border(bd) {}
   constexpr color_pair(is_none auto Auto) noexcept {
