@@ -25,7 +25,7 @@ public:
       ::DispatchMessageW(&_msg);
     }
     for (auto it = window::slot::windows.begin(); it != window::slot::windows.end();) {
-      const auto wsp = interface::slot::get<window>(*it);
+      const auto wsp = static_cast<window::slot*>(window::slot::slots.get(*it));
       if (!wsp || !wsp->hwnd) it = window::slot::windows.erase(it);
       else if (auto res = wsp->update(elapsed()); !res) res.error().go_off();
       else ++it;

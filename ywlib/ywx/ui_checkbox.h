@@ -1,11 +1,8 @@
 #pragma once
 #include <ywx/bitmap.h>
-#include <ywx/drawing.h>
-#include <ywx/ui_frame.h>
-#include <ywx/ui_geometry.h>
-#include <ywx/ui_image.h>
+#include <ywx/svgpath.h>
+#include <ywx/ui_blank.h>
 #include <ywx/ui_label.h>
-#include <ywx/ui_layer.h>
 #include <ywx/ui_layout.h>
 
 namespace yw::ui {
@@ -16,87 +13,85 @@ public:
 
   struct slot : frame::slot {
     horizontal_layout content{};
-    layer box_layer{};
-    image box_image{};
-    yw::ui::geometry box_geometry{};
-    image check_image{};
-    yw::ui::geometry check_geometry{};
+    blank icon_spacer{};
     label caption{};
-
-    function<void, bool> on_change{};
-    slotid content_id{};
+    bitmap box_bitmap{};
+    bitmap check_bitmap{};
+    svgpath box_svg{};
+    svgpath check_svg{};
+    color box_fill_color = colors::transparent;
+    color box_stroke_color = colors::black;
+    float box_stroke_width = 1.0f;
+    color check_fill_color = colors::black;
+    color check_stroke_color = colors::black;
+    float check_stroke_width = 1.0f;
     content_kind box_kind = content_kind::geometry;
     content_kind check_kind = content_kind::geometry;
+    float icon_gap = arbitrary_value;
     bool attach_lock = true;
     bool checked = false;
     bool pressed = false;
 
-    virtual bool attachable() const override { return !attach_lock && !content_id; }
+    function<void, bool> on_change{};
+
+    void update_icon_margin() {
+      if (icon_spacer) icon_spacer.margin(float4(arbitrary_value, arbitrary_value, arbitrary_value + icon_gap, arbitrary_value));
+    }
+
+    std::expected<void, error> draw_icon() const {
+      const auto isp = get_slot<control>(icon_spacer.id());
+      if (!isp || !isp->visible) return {};
+      const auto pos = isp->pos();
+      const auto size = isp->size();
+      if (box_kind == content_kind::image) {
+        if (auto res = draw_bitmap(pos, size, box_bitmap); !res) return res.error().relay();
+      } else if (box_kind == content_kind::geometry) {
+        if (box_fill_color.a > 0.0f) {
+          brush::color(box_fill_color);
+          if (auto res = fill_svgpath(pos, size, box_svg); !res) return res.error().relay();
+        }
+        if (box_stroke_color.a > 0.0f && box_stroke_width > 0.0f) {
+          brush::color(box_stroke_color);
+          if (auto res = stroke_svgpath(pos, size, box_svg, box_stroke_width); !res) return res.error().relay();
+        }
+      }
+      if (!checked) return {};
+      if (check_kind == content_kind::image) {
+        if (auto res = draw_bitmap(pos, size, check_bitmap); !res) return res.error().relay();
+      } else if (check_kind == content_kind::geometry) {
+        if (check_fill_color.a > 0.0f) {
+          brush::color(check_fill_color);
+          if (auto res = fill_svgpath(pos, size, check_svg); !res) return res.error().relay();
+        }
+        if (check_stroke_color.a > 0.0f && check_stroke_width > 0.0f) {
+          brush::color(check_stroke_color);
+          if (auto res = stroke_svgpath(pos, size, check_svg, check_stroke_width); !res) return res.error().relay();
+        }
+      }
+      return {};
+    }
+
+    virtual bool attachable() const override { return !attach_lock; }
 
     virtual std::expected<void, error> attach(slotid Child) override {
-      if (attach_lock || content_id) return std::unexpected(error(errors::invalid_operation, "not attachable"));
-      const auto csp = interface::slot::get<control>(Child);
+      if (attach_lock) return std::unexpected(error(errors::invalid_operation, "not attachable"));
+      const auto csp = get_slot<control>(Child);
       if (!csp) return std::unexpected(error(errors::invalid_slotid));
-      csp->layout_id = id;
       csp->window_id = window_id;
-      content_id = Child;
       make_messy();
       return {};
     }
 
     virtual std::expected<void, error> detach(slotid Child) override {
-      if (content_id != Child) return std::unexpected(error(errors::invalid_operation, "not attached to this control"));
-      if (auto res = interface::slot::slots.erase(Child); !res) return res.error().relay();
-      content_id = {};
-      make_messy();
-      return {};
+      return std::unexpected(error(errors::unreachable));
     }
 
-    void update_part_visibility() {
-      box_image.visible(box_kind == content_kind::image);
-      box_geometry.visible(box_kind == content_kind::geometry);
-      check_image.visible(checked && check_kind == content_kind::image);
-      check_geometry.visible(checked && check_kind == content_kind::geometry);
-    }
-
-    std::expected<void, error> initialize(checkbox& Self) {
-      attach_lock = false;
-      content = horizontal_layout(Self);
-      attach_lock = true;
-
-      box_layer = layer(content);
-      box_image = image(box_layer);
-      box_geometry = yw::ui::geometry(box_layer);
-      check_image = image(box_layer);
-      check_geometry = yw::ui::geometry(box_layer);
-      caption = label(content, false);
-
-      const auto border = colors.border;
-      box_layer.size(float2::fill(16.0f));
-      box_geometry.content_mode(yw::ui::geometry::geometry_size_mode::stretch)
-        .content(svgpath(float2::fill(16.0f), "M1 1 L15 1 L15 15 L1 15 Z"))
-        .fill_color(colors::transparent)
-        .stroke_color(border)
-        .stroke_width(1.5f);
-      check_geometry.content_mode(yw::ui::geometry::geometry_size_mode::stretch)
-        .content(svgpath(float2::fill(16.0f), "M3 8 L7 12 L13 4"))
-        .fill_color(border)
-        .stroke_color(border)
-        .stroke_width(2.0f);
-      caption.text_color(border).background_color(colors::transparent);
-      caption.text_align(alignment::left);
-      colors.border = colors::transparent;
-      update_part_visibility();
-      return {};
-    }
-
-    virtual bool focusable() const override { return enabled && visible; }
+    virtual bool focusable() const noexcept override { return enabled && visible; }
 
     virtual std::expected<float2, error> get_necessary_size() const override {
-      const auto csp = interface::slot::get<control>(content_id);
-      if (!csp) return vapply_r<float2>(_necessary_size, policy, minimum_size, required_size, float2{});
-      if (auto res = csp->get_necessary_size())
-        return vapply_r<float2>(_necessary_size, policy, minimum_size, required_size, *res);
+      const auto csp = get_slot<control>(content.id());
+      if (!csp) return calc_necessary_size_by_policy(float2{});
+      if (auto res = csp->get_necessary_size()) return calc_necessary_size_by_policy(*res);
       else return res.error().relay();
     }
 
@@ -108,11 +103,12 @@ public:
         if (auto res = relocate(); !res) return res.error().relay();
       }
       if (!visible) return {};
-      if (auto res = _draw_background(); !res) return res.error().relay();
-      const auto csp = interface::slot::get<control>(content_id);
+      if (auto res = draw_frame_background(); !res) return res.error().relay();
+      if (auto res = draw_icon(); !res) return res.error().relay();
+      const auto csp = get_slot<control>(content.id());
       if (csp)
         if (auto res = csp->redraw(); !res) return res.error().relay();
-      if (auto res = _draw_foreground(); !res) return res.error().relay();
+      if (auto res = draw_frame_foreground(); !res) return res.error().relay();
       return {};
     }
 
@@ -121,13 +117,13 @@ public:
       if (auto res = set_size_to_necessary(); !res) return res.error().relay();
       if (policy.x == size_policy::free) size.x = max_size.x;
       if (policy.y == size_policy::free) size.y = max_size.y;
-      pos = provided_pos + _offset(max_size);
+      pos = provided_pos + calc_offset_by_align(max_size);
       ID2D1RoundedRectangleGeometry* geom = nullptr;
       D2D1_ROUNDED_RECT rr{D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
       hresult_test(d2d::factory()->CreateRoundedRectangleGeometry, &rr, &geom);
       geometry.reset(geom);
 
-      const auto csp = interface::slot::get<control>(content_id);
+      const auto csp = get_slot<control>(content.id());
       if (!csp) return {};
       if (auto res = csp->relocate(pos, size); !res) return res.error().relay();
       return {};
@@ -158,8 +154,7 @@ public:
     virtual bool click_event(yw::button_event e) override {
       if (!enabled || !visible || e.down || e.key != keys::lbutton) return false;
       checked = !checked;
-      update_part_visibility();
-      make_messy();
+      make_dirty();
       if (on_change) on_change(checked);
       return true;
     }
@@ -185,54 +180,94 @@ public:
       pressed = false;
       if (was_pressed) {
         checked = !checked;
-        update_part_visibility();
-        make_messy();
+        make_dirty();
         if (on_change) on_change(checked);
       }
       return true;
-    }
-
-    template<derived_from<checkbox> H, derived_from<interface> L>
-    static std::expected<typename H::slot*, error> create(L& Parent, bool AutoColor, const source_line& sl) {
-      return frame::slot::create<H>(Parent, AutoColor, sl);
     }
   };
 
   using frame::operator bool;
   checkbox() noexcept = default;
 
-  checkbox(derived_from<interface> auto& Parent, bool AutoColor = true, const source_line& sl = here()) {
-    if (auto res = create(Parent, AutoColor, sl)) *this = std::move(*res);
+  checkbox(derived_from<interface> auto& Parent, strict<bool> AutoColor = true, const source_line& sl = here()) {
+    if (auto res = create(Parent, AutoColor)) *this = std::move(*res);
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<checkbox, error> create(
-    derived_from<interface> auto& Parent, bool AutoColor = true, const source_line& sl = here()) {
+  static std::expected<checkbox, error> create(derived_from<interface> auto& Parent, strict<bool> AutoColor = true) {
     checkbox c;
-    if (auto res = slot::create<checkbox>(Parent, AutoColor, sl)) {
-      const auto sp = *res;
-      c._id = sp->id;
-      if (auto ires = sp->initialize(c); !ires) return ires.error().relay();
-      return c;
-    } else return res.error().relay();
+    const auto temp_id = make_slot<checkbox>();
+    const auto sp = get_slot<checkbox>(temp_id);
+    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
+    const auto psp = get_slot<control>(Parent.id());
+    if (!psp) return std::unexpected(error(errors::invalid_slotid));
+    if (auto res = psp->attach(temp_id); !res) {
+      slot::slots.erase(temp_id);
+      return res.error().relay();
+    }
+    c._id = temp_id;
+    sp->id = temp_id;
+    sp->window_id = psp->get_window_id();
+    if (AutoColor) {
+      sp->colors = color_pair(none{});
+      sp->box_stroke_color = sp->colors.border;
+      sp->check_fill_color = sp->colors.border;
+      sp->check_stroke_color = sp->colors.border;
+    }
+    sp->attach_lock = false;
+    if (auto res = ui::horizontal_layout::create(c)) sp->content = std::move(*res);
+    else return res.error().relay();
+    sp->attach_lock = true;
+    if (auto res = ui::blank::create(sp->content)) sp->icon_spacer = std::move(*res);
+    else return res.error().relay();
+    if (auto res = ui::label::create(sp->content, false)) sp->caption = std::move(*res);
+    else return res.error().relay();
+    sp->caption.text_align(alignment::left).text_color(sp->colors.border).margin({});
+    constexpr float2 init_icon_size{16.0f, 16.0f};
+    sp->icon_spacer.size(init_icon_size);
+    sp->update_icon_margin();
+    if (auto res = svgpath::create(init_icon_size, "M1 1 L15 1 L15 15 L1 15 Z")) sp->box_svg = std::move(*res);
+    else return res.error().relay();
+    if (auto res = svgpath::create(init_icon_size, "M3 8 L7 12 L13 4 L7 12 Z")) sp->check_svg = std::move(*res);
+    else return res.error().relay();
+    sp->colors.border = colors::transparent;
+    return c;
   }
+
+  // -- getter --//
 
   bool checked() const noexcept { ywlib_control_get(checked); }
   bool pressed() const noexcept { ywlib_control_get(pressed); }
   const auto& on_change() const noexcept { ywlib_control_get(on_change); }
+  const auto& box_fill_color() const noexcept { ywlib_control_get(box_fill_color); }
+  const auto& box_stroke_color() const noexcept { ywlib_control_get(box_stroke_color); }
+  const auto& box_stroke_width() const noexcept { ywlib_control_get(box_stroke_width); }
+  const auto& check_fill_color() const noexcept { ywlib_control_get(check_fill_color); }
+  const auto& check_stroke_color() const noexcept { ywlib_control_get(check_stroke_color); }
+  const auto& check_stroke_width() const noexcept { ywlib_control_get(check_stroke_width); }
+  const auto& icon_gap() const noexcept { ywlib_control_get(icon_gap); }
   const auto& string() const noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
     return sp->caption.string();
   }
 
+  float2 icon_size() const noexcept {
+    if (const auto sp = get_slot(this); !sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return float2{};
+    } else return sp->icon_spacer.size();
+  }
+
+  //-- setter --//
+
   auto& checked(this auto& self, bool b) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
     if (sp->checked == b) return self;
     sp->checked = b;
-    sp->update_part_visibility();
-    sp->make_messy();
+    sp->make_dirty();
     if (sp->on_change) sp->on_change(sp->checked);
     return self;
   }
@@ -265,78 +300,114 @@ public:
     return self;
   }
 
-  auto& box_size(this auto& self, float2 v) noexcept {
+  auto& icon_size(this auto& self, float2 v) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
-    sp->box_layer.size(v);
-    sp->box_image.content_size(v);
-    sp->box_geometry.size(v);
-    sp->check_image.content_size(v);
-    sp->check_geometry.size(v);
+    if (v.x <= 0.0f || v.y <= 0.0f) {
+      error(errors::invalid_argument, format("icon_size must be positive: ", v)).go_off();
+      return self;
+    }
+    sp->icon_spacer.size(v);
+    sp->box_svg.size(v);
+    sp->check_svg.size(v);
+    sp->make_messy();
     return self;
   }
 
   auto& box(this auto& self, bitmap b) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
-    sp->box_image.content(std::move(b));
+    sp->box_bitmap = std::move(b);
     sp->box_kind = content_kind::image;
-    sp->update_part_visibility();
+    sp->make_dirty();
     return self;
   }
 
   auto& box(this auto& self, svgpath p) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
-    sp->box_geometry.content(std::move(p));
+    const auto icon_size = sp->icon_spacer.size();
+    p.size(icon_size);
+    sp->box_svg = std::move(p);
     sp->box_kind = content_kind::geometry;
-    sp->update_part_visibility();
+    sp->make_dirty();
     return self;
   }
 
   auto& check(this auto& self, bitmap b) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
-    sp->check_image.content(std::move(b));
+    sp->check_bitmap = std::move(b);
     sp->check_kind = content_kind::image;
-    sp->update_part_visibility();
+    sp->make_dirty();
     return self;
   }
 
   auto& check(this auto& self, svgpath p) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
-    sp->check_geometry.content(std::move(p));
+    const auto icon_size = sp->icon_spacer.size();
+    p.size(icon_size);
+    sp->check_svg = std::move(p);
     sp->check_kind = content_kind::geometry;
-    sp->update_part_visibility();
+    sp->make_dirty();
     return self;
   }
 
   auto& box_fill_color(this auto& self, const color& c) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
-    sp->box_geometry.fill_color(c);
+    sp->box_fill_color = c;
+    sp->make_dirty();
     return self;
   }
 
   auto& box_stroke_color(this auto& self, const color& c) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
-    sp->box_geometry.stroke_color(c);
+    sp->box_stroke_color = c;
+    sp->make_dirty();
+    return self;
+  }
+
+  auto& box_stroke_width(this auto& self, float1 f) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->box_stroke_width = f.x;
+    sp->make_dirty();
     return self;
   }
 
   auto& check_fill_color(this auto& self, const color& c) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
-    sp->check_geometry.fill_color(c);
+    sp->check_fill_color = c;
+    sp->make_dirty();
     return self;
   }
 
   auto& check_stroke_color(this auto& self, const color& c) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
-    sp->check_geometry.stroke_color(c);
+    sp->check_stroke_color = c;
+    sp->make_dirty();
+    return self;
+  }
+
+  auto& check_stroke_width(this auto& self, float1 f) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->check_stroke_width = f.x;
+    sp->make_dirty();
+    return self;
+  }
+
+  auto& icon_gap(this auto& self, float1 f) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->icon_gap = f.x;
+    sp->update_icon_margin();
+    sp->make_messy();
     return self;
   }
 };

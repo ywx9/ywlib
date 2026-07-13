@@ -73,27 +73,34 @@ class interface {
 public:
   struct slot {
     inline static slotset<slot> slots{};
-    template<typename H> static slotset<slot>::slotid add() { return slots.add(std::make_unique<typename H::slot>()); }
-    template<typename H> static typename H::slot* get(slotset<slot>::slotid Id) noexcept {
-      return static_cast<typename H::slot*>(slots.get(Id));
-    }
     slotset<slot>::slotid id;
-    yw::source_line source = source_line::null();
     virtual bool attachable() const { return false; }
-    virtual std::expected<void, error> attach(slotset<slot>::slotid Child) { return {}; }
-    virtual std::expected<void, error> detach(slotset<slot>::slotid Child) { return {}; }
-    virtual void make_none() { return; }
-    virtual void make_dirty() { return; }
-    virtual void make_messy() { return; }
+    virtual std::expected<void, error> attach(slotset<slot>::slotid) {
+      return std::unexpected(error(errors::invalid_operation, "Not attachable"));
+    }
+    virtual std::expected<void, error> detach(slotset<slot>::slotid) {
+      return std::unexpected(error(errors::invalid_operation, "Not attached"));
+    }
+    virtual slotset<slot>::slotid get_window_id() const noexcept = 0;
+    virtual void make_dirty() noexcept = 0;
+    virtual void make_messy() noexcept = 0;
+    void make_none() { return; }
   };
 
+  using slotid = slotset<slot>::slotid;
+
 protected:
-  slotset<slot>::slotid _id{};
-  explicit interface(slotset<slot>::slotid Id) : _id(Id) {}
-  template<typename H> static typename H::slot* get_slot(const H* h) { return slot::get<H>(h->_id); }
+  slotid _id{};
+  explicit interface(slotid Id) : _id(Id) {}
+  template<typename H> static slotid make_slot() { return slot::slots.add(std::make_unique<typename H::slot>()); }
+  template<typename H> static typename H::slot* get_slot(const H* h) {
+    return static_cast<typename H::slot*>(slot::slots.get(h->_id));
+  }
+  template<typename H> static typename H::slot* get_slot(slotid Id) {
+    return static_cast<typename H::slot*>(slot::slots.get(Id));
+  }
 
 public:
-  using slotid = slotset<slot>::slotid;
 
   virtual ~interface() noexcept { slot::slots.erase(_id); }
   interface() noexcept = default;
@@ -107,8 +114,8 @@ public:
     }
     return *this;
   }
-  slotset<slot>::slotid id() const noexcept { return _id; }
-  explicit operator bool() const noexcept;
+  slotid id() const noexcept { return _id; }
+  explicit operator bool() const noexcept { return slot::slots.contains(_id); }
 };
 
 /// MARK: wclass

@@ -11,7 +11,7 @@ public:
 
     function<void, yw::button_event> on_click{};
 
-    virtual bool focusable() const override { return enabled && visible; }
+    virtual bool focusable() const noexcept override { return enabled && visible; }
 
     virtual std::expected<void, error> redraw() override {
       if (geometry_dirty) {
@@ -19,14 +19,14 @@ public:
         if (auto res = relocate(); !res) return res.error().relay();
       }
       if (!visible) return {};
-      if (auto res = _draw_background(); !res) return res.error().relay();
+      if (auto res = draw_frame_background(); !res) return res.error().relay();
       brush::color(text_color);
-      if (auto res = text.draw(pos + _text_offset()); !res) return res.error().relay();
+      if (auto res = text.draw(pos + calc_text_offset()); !res) return res.error().relay();
       if (pressed && pressed_overlay_color.a > 0.0f) {
         brush::color(pressed_overlay_color);
         if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
       }
-      if (auto res = _draw_foreground(); !res) return res.error().relay();
+      if (auto res = draw_frame_foreground(); !res) return res.error().relay();
       return {};
     }
 
@@ -78,23 +78,30 @@ public:
 
   button() noexcept = default;
 
-  button(derived_from<interface> auto& Parent, bool AutoColor = true, const source_line& sl = here()) {
-    if (auto res = slot::create<button>(Parent, AutoColor, sl)) {
-      const auto sp = *res;
-      _id = sp->id;
-      sp->text_color = sp->colors.border;
-    } else res.error().add_footprint().go_off(sl);
+  button(derived_from<interface> auto& Parent, strict<bool> AutoColor = true, const source_line& sl = here()) {
+    if (auto res = create(Parent, AutoColor)) *this = std::move(*res);
+    else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<button, error> create(
-    derived_from<interface> auto& Parent, bool AutoColor = true, const source_line& sl = here()) {
+  static std::expected<button, error> create(derived_from<interface> auto& Parent, strict<bool> AutoColor = true) {
     button b;
-    if (auto res = slot::create<button>(Parent, AutoColor, sl)) {
-      const auto sp = *res;
-      b._id = sp->id;
+    const auto temp_id = make_slot<button>();
+    const auto sp = get_slot<button>(temp_id);
+    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
+    const auto psp = get_slot<control>(Parent.id());
+    if (!psp) return std::unexpected(error(errors::invalid_slotid));
+    if (auto res = psp->attach(temp_id); !res) {
+      slot::slots.erase(temp_id);
+      return res.error().relay();
+    }
+    b._id = temp_id;
+    sp->id = temp_id;
+    sp->window_id = psp->get_window_id();
+    if (AutoColor) {
+      sp->colors = color_pair(none());
       sp->text_color = sp->colors.border;
-      return b;
-    } else return res.error().relay();
+    }
+    return b;
   }
 
   //-- getter --//

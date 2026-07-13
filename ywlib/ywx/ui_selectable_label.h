@@ -35,7 +35,7 @@ public:
     bool selecting = false;
     // bool caret_visible = false;
 
-    virtual bool focusable() const override { return enabled && visible; }
+    virtual bool focusable() const noexcept override { return enabled && visible; }
 
     static bool _passes_key_to_window(yw::key_event e) noexcept {
       return e.mods.alt || e.key == keys::alt || (VK_F1 <= e.key.code && e.key.code <= VK_F24);
@@ -49,7 +49,7 @@ public:
     }
 
     uint32_t _char_index_from_point(float2 pt) const noexcept {
-      const auto local = pt - (pos + _text_offset() - scroll_offset);
+      const auto local = pt - (pos + calc_text_offset() - scroll_offset);
       const auto len = text.string().size();
       if (len <= 0) return 0;
       if (auto hit = text.hittest(local)) return hit->index;
@@ -71,7 +71,7 @@ public:
     }
 
     uint32_t _caret_from_point(float2 pt) const noexcept {
-      const auto local = pt - (pos + _text_offset() - scroll_offset);
+      const auto local = pt - (pos + calc_text_offset() - scroll_offset);
       if (text.string().empty()) return 0;
       if (auto hit = text.hittest(local)) return hit->index + uint32_t(hit->trailing);
       return static_cast<uint32_t>(text.string().size());
@@ -115,7 +115,7 @@ public:
     }
 
     std::expected<void, error> _update_scroll_offset() {
-      const auto base = pos + _text_offset();
+      const auto base = pos + calc_text_offset();
       const auto visible_min = pos + padding.xy();
       const auto visible_max = pos + size - padding.zw();
       float2 caret_pos{};
@@ -135,6 +135,23 @@ public:
       return {};
     }
 
+    std::expected<float3, error> _caret_pos() {
+      if (auto res = _update_scroll_offset(); !res) return res.error().relay();
+      const auto origin = pos + calc_text_offset() - scroll_offset;
+      if (caret <= 0 || text.string().empty()) return float3(origin.x, origin.y, text.size().y);
+      const auto index = static_cast<uint32_t>(yw::min(caret - 1, text.string().size() - 1));
+      auto ht = text.hittest(uint1{index});
+      if (!ht) return ht.error().relay();
+      const auto p = origin + ht->pos + float2(ht->size.x, 0.0f);
+      return float3(p.x, p.y, ht->size.y);
+    }
+
+    virtual std::expected<std::optional<float3>, error> get_caret_pos() override {
+      if (!enabled || !visible) return std::nullopt;
+      if (auto res = _caret_pos()) return std::optional<float3>(*res);
+      else return res.error().relay();
+    }
+
     virtual std::expected<void, error> redraw() override {
       if (geometry_dirty) {
         geometry_dirty = false;
@@ -142,19 +159,19 @@ public:
       }
       if (!visible) return {};
       const bool focused = control::slot::focused();
-      if (auto res = _draw_background(); !res) return res.error().relay();
+      if (auto res = draw_frame_background(); !res) return res.error().relay();
       if (auto res = _update_scroll_offset(); !res) return res.error().relay();
       if (auto res = _draw_selection(); !res) return res.error().relay();
       brush::color(text_color);
-      if (auto res = text.draw(pos + _text_offset() - scroll_offset); !res) return res.error().relay();
+      if (auto res = text.draw(pos + calc_text_offset() - scroll_offset); !res) return res.error().relay();
       if (focused) if (auto res = _draw_caret(); !res) return res.error().relay();
-      if (auto res = _draw_foreground(); !res) return res.error().relay();
+      if (auto res = draw_frame_foreground(); !res) return res.error().relay();
       return {};
     }
 
     std::expected<void, error> _draw_selection() {
       if (caret == anchor) return {};
-      if (auto res = text.hittest_range(_selected_range(), pos + _text_offset() - scroll_offset); res) {
+      if (auto res = text.hittest_range(_selected_range(), pos + calc_text_offset() - scroll_offset); res) {
         brush::color(selection_overlay_color);
         for (const auto& r : *res)
           if (auto res = fill_rectangle(r.pos, r.size); !res) return res.error().relay();
@@ -164,19 +181,11 @@ public:
 
     std::expected<void, error> _draw_caret() {
       if (caret_color.a <= 0.0f || caret_thickness <= 0.0f) return {};
-      const auto origin = pos + _text_offset() - scroll_offset;
-      if (caret <= 0 || text.string().empty()) {
-        brush::color(caret_color);
-        if (auto res = draw_line(origin, origin + float2(0.0f, text.size().y), caret_thickness); !res)
-          return res.error().relay();
-        return {};
-      }
-      const auto index = static_cast<uint32_t>(yw::min(caret - 1, text.string().size() - 1));
-      auto ht = text.hittest(uint1{index});
-      if (!ht) return ht.error().relay();
+      auto cp = _caret_pos();
+      if (!cp) return cp.error().relay();
       brush::color(caret_color);
-      const auto p = origin + ht->pos + float2(ht->size.x, 0.0f);
-      if (auto res = draw_line(p, p + float2(0.0f, ht->size.y), caret_thickness); !res) return res.error().relay();
+      const auto p = cp->xy();
+      if (auto res = draw_line(p, p + float2(0.0f, cp->z), caret_thickness); !res) return res.error().relay();
       return {};
     }
 
@@ -263,23 +272,30 @@ public:
 
   selectable_label() noexcept = default;
 
-  selectable_label(derived_from<interface> auto& Parent, bool AutoColor = true, const source_line& sl = here()) {
-    if (auto res = slot::create<selectable_label>(Parent, AutoColor, sl)) {
-      const auto sp = *res;
-      _id = sp->id;
-      sp->text_color = std::exchange(sp->colors.border, colors::transparent);
-    } else res.error().add_footprint().go_off(sl);
+  selectable_label(derived_from<interface> auto& Parent, strict<bool> AutoColor = true, const source_line& sl = here()) {
+    if (auto res = create(Parent, AutoColor)) *this = std::move(*res);
+    else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<selectable_label, error> create(
-    derived_from<interface> auto& Parent, bool AutoColor = true, const source_line& sl = here()) {
+  static std::expected<selectable_label, error> create(derived_from<interface> auto& Parent, strict<bool> AutoColor = true) {
     selectable_label l;
-    if (auto res = slot::create<selectable_label>(Parent, AutoColor, sl)) {
-      const auto sp = *res;
-      l._id = sp->id;
+    const auto temp_id = make_slot<selectable_label>();
+    const auto sp = get_slot<selectable_label>(temp_id);
+    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
+    const auto psp = get_slot<control>(Parent.id());
+    if (!psp) return std::unexpected(error(errors::invalid_slotid));
+    if (auto res = psp->attach(temp_id); !res) {
+      slot::slots.erase(temp_id);
+      return res.error().relay();
+    }
+    l._id = temp_id;
+    sp->id = temp_id;
+    sp->window_id = psp->get_window_id();
+    if (AutoColor) {
+      sp->colors = color_pair(none());
       sp->text_color = std::exchange(sp->colors.border, colors::transparent);
-      return l;
-    } else return res.error().relay();
+    }
+    return l;
   }
 
   //-- getter --//

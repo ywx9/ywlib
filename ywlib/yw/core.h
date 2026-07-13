@@ -455,4 +455,32 @@ inline constexpr uint64_t unique_id(std::source_location loc = std::source_locat
   mix(hash(loc.file_name())), mix(hash(loc.function_name())), mix(loc.line()), mix(loc.column());
   return h;
 }
+
+/// MARK: strict
+
+template<typename T> struct strict {
+  T value;
+
+  constexpr strict() = default;
+
+  constexpr strict(const strict&) = default;
+  constexpr strict(strict&&) = default;
+  constexpr strict& operator=(const strict&) = default;
+  constexpr strict& operator=(strict&&) = default;
+
+  template<typename U> requires same_as<remove_cvref<U>, T>
+  constexpr strict(U&& v) noexcept(nt_constructible<T, U>) requires constructible<T, U> : value(static_cast<U&&>(v)) {}
+
+  template<typename U> requires same_as<remove_cvref<U>, T>
+  constexpr strict& operator=(U&& v) noexcept(nt_assignable<T&, U>) requires assignable<T&, U> {
+    value = static_cast<U&&>(v);
+    return *this;
+  }
+
+  template<typename U> requires different_from<remove_cvref<U>, strict<T>, T> strict(U&&) = delete;
+  template<typename U> requires different_from<remove_cvref<U>, strict<T>, T> strict& operator=(U&&) = delete;
+
+  constexpr operator T&() & noexcept { return value; }
+  constexpr operator const T&() const& noexcept { return value; }
+};
 } // namespace yw

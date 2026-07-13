@@ -13,7 +13,7 @@ public:
     color text_color = colors::black;
     alignment text_align = alignment::center;
 
-    float2 _text_offset() const noexcept {
+    float2 calc_text_offset() const noexcept {
       constexpr float c[]{0.5f, 0.0f, 1.0f};
       const float2 cc{c[unsigned(text_align) % 3], c[unsigned(text_align) / 3 % 3]};
       return (size - text.size() - padding.xy() - padding.zw()) * cc + padding.xy();
@@ -21,7 +21,7 @@ public:
 
     virtual std::expected<float2, error> get_necessary_size() const override {
       const auto inner = text.size() + padding.xy() + padding.zw();
-      return vapply_r<float2>(_necessary_size, policy, minimum_size, required_size, inner);
+      return calc_necessary_size_by_policy(inner);
     }
 
     virtual std::expected<void, error> redraw() override {
@@ -30,33 +30,40 @@ public:
         if (auto res = relocate(); !res) return res.error().relay();
       }
       if (!visible) return {};
-      if (auto res = _draw_background(); !res) return res.error().relay();
+      if (auto res = draw_frame_background(); !res) return res.error().relay();
       brush::color(text_color);
-      if (auto res = text.draw(pos + _text_offset()); !res) return res.error().relay();
-      if (auto res = _draw_foreground(); !res) return res.error().relay();
+      if (auto res = text.draw(pos + calc_text_offset()); !res) return res.error().relay();
+      if (auto res = draw_frame_foreground(); !res) return res.error().relay();
       return {};
     }
   };
 
   label() noexcept = default;
 
-  label(derived_from<interface> auto& Parent, bool AutoColor = true, const source_line& sl = here()) {
-    if (auto res = slot::create<label>(Parent, AutoColor, sl)) {
-      const auto sp = *res;
-      _id = sp->id;
-      sp->text_color = std::exchange(sp->colors.border, colors::transparent);
-    } else res.error().add_footprint().go_off(sl);
+  label(derived_from<interface> auto& Parent, strict<bool> AutoColor = true, const source_line& sl = here()) {
+    if (auto res = create(Parent, AutoColor)) *this = std::move(*res);
+    else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<label, error> create(
-    derived_from<interface> auto& Parent, bool AutoColor = true, const source_line& sl = here()) {
+  static std::expected<label, error> create(derived_from<interface> auto& Parent, strict<bool> AutoColor = true) {
     label l;
-    if (auto res = slot::create<label>(Parent, AutoColor, sl)) {
-      const auto sp = *res;
-      l._id = sp->id;
+    const auto temp_id = make_slot<label>();
+    const auto sp = get_slot<label>(temp_id);
+    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
+    const auto psp = get_slot<control>(Parent.id());
+    if (!psp) return std::unexpected(error(errors::invalid_slotid));
+    if (auto res = psp->attach(temp_id); !res) {
+      slot::slots.erase(temp_id);
+      return res.error().relay();
+    }
+    l._id = temp_id;
+    sp->id = temp_id;
+    sp->window_id = psp->get_window_id();
+    if (AutoColor) {
+      sp->colors = color_pair(none());
       sp->text_color = std::exchange(sp->colors.border, colors::transparent);
-      return l;
-    } else return res.error().relay();
+    }
+    return l;
   }
 
   //-- getter --//
@@ -69,6 +76,12 @@ public:
     const auto sp = get_slot(&*this);
     if (!sp) error(errors::invalid_slotid).go_off();
     return sp->text.string();
+  }
+
+  const auto& font() const noexcept {
+    const auto sp = get_slot(&*this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->text.font();
   }
 
   //-- setter --//

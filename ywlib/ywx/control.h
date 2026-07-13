@@ -5,6 +5,26 @@
 
 namespace yw {
 
+namespace ui {
+enum class alignment : unsigned char {
+  center = 0b0000,
+  left = 0b0001,
+  right = 0b0010,
+  top = 0b0100,
+  bottom = 0b1000,
+  left_top = 0b0101,
+  left_bottom = 0b1001,
+  right_top = 0b0110,
+  right_bottom = 0b1010,
+};
+
+enum class size_policy : unsigned char {
+  free,  // size so that at least whole content is visible
+  fixed, // specified size as is
+  fit    // minimum size to show whole content
+};
+}
+
 #define ywlib_control_get(mop)                    \
   const auto s = get_slot(this);                  \
   if (!s) error(errors::invalid_slotid).go_off(); \
@@ -19,26 +39,7 @@ namespace yw {
 
 class control : public interface {
 public:
-  enum class alignment : unsigned char {
-    center = 0b0000,
-    left = 0b0001,
-    right = 0b0010,
-    top = 0b0100,
-    bottom = 0b1000,
-    left_top = 0b0101,
-    left_bottom = 0b1001,
-    right_top = 0b0110,
-    right_bottom = 0b1010,
-  };
-
-  enum class size_policy : unsigned char {
-    free,  // size so that at least whole content is visible
-    fixed, // specified size as is
-    fit    // minimum size to show whole content
-  };
-
   struct slot : interface::slot {
-    slotid layout_id{};
     slotid window_id{};
     float4 margin = float4::fill(arbitrary_value);
     float2 minimum_size = float2::fill(arbitrary_value);
@@ -54,52 +55,44 @@ public:
     function<bool, key_event> on_key{};
     function<void, hover_event> on_hover{};
     function<void, bool> on_focus{};
-    alignment align = alignment::center;
-    vector2<size_policy> policy = {}; // free
+    ui::alignment align{}; // center
+    vector2<ui::size_policy> policy{}; // free
     bool geometry_dirty = false;
     bool visible = true;
     bool enabled = true;
 
-    static float _necessary_size(size_policy p, float min, float req, float inner) noexcept {
-      const bool fixed = p == size_policy::fixed;
-      return yw::max(min, req * fixed, inner * !fixed);
+    float2 get_bounds() const { return size + margin.xy() + margin.zw(); }
+
+    float2 calc_necessary_size_by_policy(float2 Inner) const noexcept {
+      const vector2<bool> fixed{policy.x == ui::size_policy::fixed, policy.y == ui::size_policy::fixed};
+      return vapply_r<float2>(yw::max, minimum_size, required_size * fixed, Inner - Inner * fixed);
     }
 
-    float2 _offset(float2 MaxSize) const noexcept {
+    float2 calc_offset_by_align(float2 MaxSize) const noexcept {
       constexpr float c[]{0.5f, 0.0f, 1.0f};
       const float2 cc{c[unsigned(align) % 3], c[unsigned(align) / 3 % 3]};
       return margin.xy() + (MaxSize - size) * cc;
     }
 
-    bool focused() const noexcept;
-    command_manager* commands() const noexcept;
     void clear_window_state() noexcept;
+    command_manager* commands() const noexcept;
+    bool focused() const noexcept;
+    bool hovered() const noexcept;
     /// \note These functions are implemented in "window.h" because they require window::slot::focused_control_id
-
 
     //-- override interface::slot --//
 
-    virtual void make_dirty() override {
-      if (const auto wsp = slot::get<interface>(window_id)) wsp->make_dirty();
+    virtual slotid get_window_id() const noexcept override { return window_id; }
+
+    virtual void make_dirty() noexcept override {
+      if (const auto wsp = get_slot<interface>(window_id)) wsp->make_dirty();
     }
 
-    virtual void make_messy() override {
-      if (const auto wsp = slot::get<interface>(window_id)) wsp->make_messy();
+    virtual void make_messy() noexcept override {
+      if (const auto wsp = get_slot<interface>(window_id)) wsp->make_messy();
     }
 
     //-- virtual methods for control --//
-
-    virtual float2 bounds() const { return size + margin.xy() + margin.zw(); }
-
-    /// {x, y, height} of caret position in window coordinates
-    virtual std::optional<float3> caret_pos() const { return {}; }
-
-    virtual slotid find_next_tabstop(slotid Focused, bool Backward, bool& Found) const {
-      if (!focusable()) return {};
-      if (Focused == id) Found = true;
-      else if (Found) return id;
-      return {};
-    }
 
     virtual std::expected<void, error> draw_focusring(const color& Color, float Thickness, float2 Offset) {
       const auto p = pos - Offset;
@@ -110,11 +103,20 @@ public:
       return {};
     }
 
-    virtual bool focusable() const { return false; }
+    virtual slotid find_next_tabstop(slotid Focused, bool Backward, bool& Found) const {
+      if (!focusable()) return {};
+      if (Focused == id) Found = true;
+      else if (Found) return id;
+      return {};
+    }
+
+    virtual bool focusable() const noexcept { return false; }
 
     virtual std::expected<float2, error> get_necessary_size() const {
-      return vapply_r<float2>(_necessary_size, policy, minimum_size, required_size, float2{});
+      return calc_necessary_size_by_policy(float2{});
     }
+
+    virtual std::expected<std::optional<float3>, error> get_caret_pos() { return std::nullopt; }
 
     virtual slotid hittest(float2 Pt) const {
       const auto r = float4(pos, pos + size);
@@ -131,9 +133,9 @@ public:
     virtual std::expected<void, error> relocate() {
       const auto max_size = provided_area - margin.xy() - margin.zw();
       if (auto res = set_size_to_necessary(); !res) return res.error().relay();
-      if (policy.x == size_policy::free) size.x = max_size.x;
-      if (policy.y == size_policy::free) size.y = max_size.y;
-      pos = provided_pos + _offset(max_size);
+      if (policy.x == ui::size_policy::free) size.x = max_size.x;
+      if (policy.y == ui::size_policy::free) size.y = max_size.y;
+      pos = provided_pos + calc_offset_by_align(max_size);
       ID2D1RoundedRectangleGeometry* geom = nullptr;
       D2D1_ROUNDED_RECT rr{D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
       hresult_test(d2d::factory()->CreateRoundedRectangleGeometry, &rr, &geom);
@@ -162,31 +164,41 @@ public:
       if (on_button) return on_button(e);
       return false;
     }
+
     virtual bool char_event(wchar_t c) { return false; }
     virtual bool click_event(yw::button_event e) { return false; }
     virtual bool double_click_event(yw::button_event e) { return false; }
     virtual bool drag_event(yw::drag_event e) { return false; }
+
     virtual void focus_event(bool Focused) {
       if (on_focus) on_focus(Focused);
     }
+
     virtual bool hover_event(yw::hover_event e) {
       if (on_hover) on_hover(e);
       return false;
     }
+
     virtual bool key_event(yw::key_event e) {
       if (on_key) return on_key(e);
       return false;
     }
+
     virtual bool move_event(yw::move_event e) { return false; }
     virtual bool wheel_event(yw::wheel_event e) { return false; }
   };
+
+  //-- getter --//
 
   bool focused() const noexcept {
     if (const auto sp = get_slot(this)) return sp->focused();
     return false;
   }
 
-  //-- getter --//
+  bool hovered() const noexcept {
+    if (const auto sp = get_slot(this)) return sp->hovered();
+    return false;
+  }
 
   const auto& margin() const noexcept { ywlib_control_get(margin); }
   const auto& minimum_size() const noexcept { ywlib_control_get(minimum_size); }
@@ -214,55 +226,63 @@ public:
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->required_size = Size;
-    sp->policy = vector2<size_policy>::fill(size_policy::fixed);
+    sp->policy = vector2<ui::size_policy>::fill(ui::size_policy::fixed);
     sp->make_messy();
     return self;
   }
+
   auto& width(this auto& self, float1 Width) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->required_size.x = Width.x;
-    sp->policy.x = size_policy::fixed;
+    sp->policy.x = ui::size_policy::fixed;
     sp->make_messy();
     return self;
   }
+
   auto& height(this auto& self, float1 Height) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->required_size.y = Height.x;
-    sp->policy.y = size_policy::fixed;
+    sp->policy.y = ui::size_policy::fixed;
     sp->make_messy();
     return self;
   }
 
   auto& radius(this auto& self, float2 v) noexcept { ywlib_control_set(radius, v, geometry_dirty); }
+
   auto& on_button(this auto& self, function<bool, button_event> f) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->on_button = std::move(f);
     return self;
   }
+
   auto& on_key(this auto& self, function<bool, key_event> f) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->on_key = std::move(f);
     return self;
   }
+
   auto& on_hover(this auto& self, function<void, hover_event> f) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->on_hover = std::move(f);
     return self;
   }
+
   auto& on_focus(this auto& self, function<void, bool> f) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->on_focus = std::move(f);
     return self;
   }
-  auto& align(this auto& self, alignment v) noexcept { ywlib_control_set(align, v, geometry_dirty); }
-  auto& policy(this auto& self, vector2<size_policy> v) noexcept { ywlib_control_set(policy, v, messy); }
+
+  auto& align(this auto& self, ui::alignment v) noexcept { ywlib_control_set(align, v, geometry_dirty); }
+  auto& policy(this auto& self, vector2<ui::size_policy> v) noexcept { ywlib_control_set(policy, v, messy); }
   auto& tooltip(this auto& self, string<wchar_t> v) noexcept { ywlib_control_set(tooltip, std::move(v), none); }
+
   auto& visible(this auto& self, bool b) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
@@ -272,6 +292,7 @@ public:
     sp->make_messy();
     return self;
   }
+
   auto& enabled(this auto& self, bool b) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();

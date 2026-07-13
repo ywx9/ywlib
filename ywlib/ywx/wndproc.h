@@ -41,7 +41,7 @@ inline LRESULT _process_wm_cursor(window::slot* wsp, UINT msg, WPARAM wp, LPARAM
       wsp->track_mouse_event.hwndTrack = wsp->hwnd;
       ::TrackMouseEvent(&wsp->track_mouse_event);
     }
-    const auto csp = interface::slot::get<control>(wsp->control_id);
+    const auto csp = static_cast<control::slot*>(interface::slot::slots.get(wsp->control_id));
     if (!csp) return 0;
     const auto hit = csp->hittest(local_pos);
     if (auto res = wsp->update_hovered_control(hit, local_pos, true, mainloop.elapsed()); !res) res.error().go_off();
@@ -49,7 +49,7 @@ inline LRESULT _process_wm_cursor(window::slot* wsp, UINT msg, WPARAM wp, LPARAM
   }
   case WM_MOUSELEAVE:
     wsp->track_mouse_event.hwndTrack = nullptr;
-    if (const auto hcsp = interface::slot::get<control>(wsp->hovered_control_id)) {
+    if (const auto hcsp = static_cast<control::slot*>(interface::slot::slots.get(wsp->hovered_control_id))) {
       const auto pos = window::slot::cursor_pos - wsp->pos;
       hcsp->hover_event({.pos = pos, .type = hover_event::type::leave});
       wsp->hovered_control_id = {};
@@ -64,7 +64,7 @@ template<UINT Msg> LRESULT _process_wm_focus(window::slot* wsp, WPARAM wp, LPARA
   if constexpr (Msg == WM_ACTIVATEAPP)
     if (!wp) return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
   if constexpr (Msg == WM_KILLFOCUS || Msg == WM_ACTIVATEAPP) {
-    if (const auto hcsp = interface::slot::get<control>(wsp->hovered_control_id)) {
+    if (const auto hcsp = static_cast<control::slot*>(interface::slot::slots.get(wsp->hovered_control_id))) {
       const auto pos = window::slot::cursor_pos - wsp->pos;
       hcsp->hover_event({.pos = pos, .type = hover_event::type::leave});
       wsp->hovered_control_id = {};
@@ -101,7 +101,13 @@ template<UINT Msg> LRESULT _process_wm_size_move(window::slot* wsp, WPARAM wp, L
 
 inline LRESULT _process_wm_char(window::slot* wsp, WPARAM wp, LPARAM lp) {
   if (auto res = wsp->char_event(static_cast<wchar_t>(wp)); !res) res.error().go_off();
+  if (auto res = wsp->update_caret_pos(); !res) res.error().go_off();
   return 0;
+}
+
+inline LRESULT _process_wm_ime(window::slot* wsp, UINT msg, WPARAM wp, LPARAM lp) {
+  if (auto res = wsp->update_caret_pos(); !res) res.error().go_off();
+  return ::DefWindowProcW(wsp->hwnd, msg, wp, lp);
 }
 
 template<UINT Msg> LRESULT _process_wm_double_click(window::slot* wsp, WPARAM wp, LPARAM lp) {
@@ -163,7 +169,7 @@ template<UINT Msg> LRESULT _process_wm_key_event(window::slot* wsp, WPARAM wp, L
 inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   auto& windows = window::slot::windows;
   const auto wid = std::bit_cast<interface::slotid>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-  const auto wsp = interface::slot::get<window>(wid);
+  const auto wsp = static_cast<window::slot*>(interface::slot::slots.get(wid));
   if (!wsp) return ::DefWindowProcW(hwnd, msg, wp, lp);
   switch (msg) {
 
@@ -183,6 +189,10 @@ inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
 
   case WM_CHAR:
   case WM_SYSCHAR: return internal::_process_wm_char(wsp, wp, lp);
+
+  case WM_IME_STARTCOMPOSITION:
+  case WM_IME_COMPOSITION:
+  case WM_INPUTLANGCHANGE: return internal::_process_wm_ime(wsp, msg, wp, lp);
 
   case WM_LBUTTONDBLCLK: return internal::_process_wm_double_click<WM_LBUTTONDBLCLK>(wsp, wp, lp);
   case WM_RBUTTONDBLCLK: return internal::_process_wm_double_click<WM_RBUTTONDBLCLK>(wsp, wp, lp);
@@ -204,7 +214,7 @@ inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
   case WM_ACTIVATEAPP: return internal::_process_wm_focus<WM_ACTIVATEAPP>(wsp, wp, lp);
 
   case WM_CAPTURECHANGED:
-    if (const auto ccsp = interface::slot::get<control>(wsp->mouse_capture_control_id))
+    if (const auto ccsp = static_cast<control::slot*>(interface::slot::slots.get(wsp->mouse_capture_control_id)))
       if (auto res = ccsp->reset_state(); !res) res.error().go_off();
     wsp->mouse_capture_control_id = {};
     return 0;

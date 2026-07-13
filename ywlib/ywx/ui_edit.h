@@ -23,8 +23,8 @@ public:
 
     virtual std::expected<float2, error> get_necessary_size() const override {
       const auto inner =
-        vapply_r<float2>(yw::max, text.size(), placeholder_string.size()) + padding.xy() + padding.zw();
-      return vapply_r<float2>(_necessary_size, policy, minimum_size, required_size, inner);
+        vapply_r<float2>(yw::max, placeholder_string.size()) + padding.xy() + padding.zw();
+      return calc_necessary_size_by_policy(inner);
     }
 
     virtual std::expected<void, error> draw_focusring(const color& Color, float Thickness, float2 Offset) override {
@@ -39,7 +39,7 @@ public:
       }
       if (!visible) return {};
       const bool focused = control::slot::focused();
-      if (auto res = _draw_background(); !res) return res.error().relay();
+      if (auto res = draw_frame_background(); !res) return res.error().relay();
       if (auto res = _update_scroll_offset(); !res) return res.error().relay();
       if (auto res = _draw_selection(); !res) return res.error().relay();
       if (!focused && text.string().empty()) {
@@ -47,11 +47,11 @@ public:
         if (auto res = placeholder_string.draw(pos + _placeholder_offset()); !res) return res.error().relay();
       } else {
         brush::color(text_color);
-        if (auto res = text.draw(pos + _text_offset() - scroll_offset); !res) return res.error().relay();
+        if (auto res = text.draw(pos + calc_text_offset() - scroll_offset); !res) return res.error().relay();
       }
       if (focused)
         if (auto res = _draw_caret(); !res) return res.error().relay();
-      if (auto res = _draw_foreground(); !res) return res.error().relay();
+      if (auto res = draw_frame_foreground(); !res) return res.error().relay();
       return {};
     }
 
@@ -77,7 +77,7 @@ public:
       uint2 range{};
       ministr<wchar_t> value{};
       void operator()() const {
-        if (const auto sp = interface::slot::get<edit>(target); !sp) return;
+        if (const auto sp = get_slot<edit>(target); !sp) return;
         else if (auto res = sp->_replace(range, value, true); !res) res.error().go_off();
       }
     };
@@ -223,25 +223,31 @@ public:
 
   edit() noexcept = default;
 
-  edit(derived_from<interface> auto& Parent, bool AutoColor = true, const source_line& sl = here()) {
-    if (auto res = slot::create<edit>(Parent, AutoColor, sl)) {
-      const auto sp = *res;
-      _id = sp->id;
-      sp->text_color = std::exchange(sp->colors.border, colors::transparent);
-      sp->text_align = alignment::left;
-    } else res.error().add_footprint().go_off(sl);
+  edit(derived_from<interface> auto& Parent, strict<bool> AutoColor = true, const source_line& sl = here()) {
+    if (auto res = create(Parent, AutoColor)) *this = std::move(*res);
+    else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<edit, error> create(
-    derived_from<interface> auto& Parent, bool AutoColor = true, const source_line& sl = here()) {
+  static std::expected<edit, error> create(derived_from<interface> auto& Parent, strict<bool> AutoColor = true) {
     edit e;
-    if (auto res = slot::create<edit>(Parent, AutoColor, sl)) {
-      const auto sp = *res;
-      e._id = sp->id;
-      sp->text_color = std::exchange(sp->colors.border, colors::transparent);
-      sp->text_align = alignment::left;
-      return e;
-    } else return res.error().relay();
+    const auto temp_id = make_slot<edit>();
+    const auto sp = get_slot<edit>(temp_id);
+    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
+    const auto psp = get_slot<control>(Parent.id());
+    if (!psp) return std::unexpected(error(errors::invalid_slotid));
+    if (auto res = psp->attach(temp_id); !res) {
+      slot::slots.erase(temp_id);
+      return res.error().relay();
+    }
+    e._id = temp_id;
+    sp->id = temp_id;
+    sp->window_id = psp->get_window_id();
+    sp->text_align = alignment::left;
+    if (AutoColor) {
+      sp->colors = color_pair(none());
+      sp->text_color = sp->colors.border;
+    }
+    return e;
   }
 
   //-- getter --//
