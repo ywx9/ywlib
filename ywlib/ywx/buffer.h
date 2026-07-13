@@ -89,7 +89,8 @@ public:
 template<typename T> staging_buffer(const buffer<T>&) -> staging_buffer<T>;
 
 template<typename T> inline std::expected<void, error> buffer<T>::copy_to_cpu(void* o) const {
-  if (auto stb = staging_buffer<T>::create(*this); !stb) return stb.error().relay();
+  if (auto stb = staging_buffer<T>::create(size()); !stb) return stb.error().relay();
+  else if (auto res = stb->copy_from(*this); !res) return res.error().relay();
   else if (auto res = stb->copy_to_cpu(o); !res) return res.error().relay();
   else return {};
 }

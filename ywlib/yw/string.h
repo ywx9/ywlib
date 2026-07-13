@@ -192,8 +192,15 @@ public:
     std::swap(_capacity, Other._capacity);
   }
 
-  friend constexpr bool operator==(const string& Lhs, const string& Rhs) noexcept { return Lhs.view() == Rhs.view(); }
-  friend constexpr auto operator<=>(const string& Lhs, const string& Rhs) noexcept { return Lhs.view() <=> Rhs.view(); }
+  friend constexpr bool operator==(const string& a, const string& b) noexcept { return string_view<C>(a) == string_view<C>(b); }
+
+  template<stringable<C> S> requires different_from<remove_cvref<S>, string>
+  friend constexpr bool operator==(const string& a, S&& b) noexcept { return string_view<C>(a) == string_view<C>(b); }
+
+  friend constexpr auto operator<=>(const string& a, const string& b) noexcept { return string_view<C>(a) <=> string_view<C>(b); }
+
+  template<stringable<C> S> requires different_from<remove_cvref<S>, string>
+  friend constexpr auto operator<=>(const string& a, S&& b) noexcept { return string_view<C>(a) <=> string_view<C>(b); }
 };
 
 template<stringable S> string(S&&) -> string<iter_value_t<S>>;
@@ -415,7 +422,7 @@ template<char_type C, typename T> constexpr string<C> _format(T&& Arg) {
       for (auto p = s.data() + s.size(); u != 0; u /= 16) *--p = C(internal::hex_table[u % 16]);
       return s;
     } else return s; // always return 0x0...0
-  } else if constexpr (same_as<T, path>) return unicode<C>(Arg.native());
+  } else if constexpr (same_as<t, path>) return unicode<C>(Arg.native());
   else if constexpr (internal::has_to_string_c<T, C>) return Arg.template to_string<C>();
   else if constexpr (internal::has_to_string<T>) return unicode<C>(Arg.to_string());
   else static_assert(always_false<T>, "Type does not have to_string<C> or to_string method");
