@@ -119,6 +119,7 @@ template<UINT Msg> LRESULT _process_wm_double_click(window::slot* wsp, WPARAM wp
   else if constexpr (Msg == WM_RBUTTONDBLCLK) e.key = keys::rbutton;
   else if constexpr (Msg == WM_MBUTTONDBLCLK) e.key = keys::mbutton;
   else return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
+  if (auto res = wsp->button_event(e); !res) res.error().go_off();
   if (auto res = wsp->double_click_event(e); !res) res.error().go_off();
   return 0;
 }
@@ -144,8 +145,9 @@ template<UINT Msg> LRESULT _process_wm_button_event(window::slot* wsp, WPARAM wp
 
 template<UINT Msg> LRESULT _process_wm_wheel_event(window::slot* wsp, WPARAM wp, LPARAM lp) {
   wheel_event e{};
-  e.pos = short2(std::bit_cast<int16_t>(LOWORD(lp)), std::bit_cast<int16_t>(HIWORD(lp)));
-  ::ScreenToClient(wsp->hwnd, reinterpret_cast<POINT*>(&e.pos));
+  POINT pos{std::bit_cast<int16_t>(LOWORD(lp)), std::bit_cast<int16_t>(HIWORD(lp))};
+  ::ScreenToClient(wsp->hwnd, &pos);
+  e.pos = short2(pos.x, pos.y);
   e.delta = short(HIWORD(wp));
   e.mods = internal::_make_mods();
   e.horizontal = (Msg == WM_MOUSEHWHEEL);
@@ -220,6 +222,9 @@ inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
     return 0;
 
   case WM_NCDESTROY:
+    if (auto res = wsp->close_subwindows(); !res) res.error().go_off();
+    if (const auto psp = static_cast<window::slot*>(interface::slot::slots.get(wsp->parent_id)))
+      psp->subwindows.erase(std::remove(psp->subwindows.begin(), psp->subwindows.end(), wid), psp->subwindows.end());
     ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
     wsp->hwnd = 0;
     windows.erase(std::remove(windows.begin(), windows.end(), wid), windows.end());

@@ -7,9 +7,9 @@
 namespace yw {
 
 template<typename T> concept window_options_like = requires(T t) {
-  { t.title } -> convertible_to<string<wchar_t>>;
   { t.pos } -> convertible_to<std::optional<int2>>;
   { t.size } -> convertible_to<std::optional<int2>>;
+  { t.get_title() } -> convertible_to<string<wchar_t>>;
   { t.get_style() } -> convertible_to<DWORD>;
   { t.get_exstyle() } -> convertible_to<DWORD>;
 };
@@ -24,6 +24,7 @@ public:
     bool has_caption = true;
     bool resizable = true;
     bool visible = true;
+    const string<wchar_t>& get_title() const noexcept { return title; }
     DWORD get_style() const noexcept {
       DWORD s = has_caption ? WS_CAPTION | WS_SYSMENU : WS_POPUP;
       if (has_border) s |= WS_BORDER;
@@ -34,19 +35,10 @@ public:
     DWORD get_exstyle() const noexcept { return WS_EX_ACCEPTFILES; }
   };
 
-  struct custom_options {
-    string<wchar_t> title{};
-    std::optional<int2> pos{};
-    std::optional<int2> size{};
-    DWORD style = WS_OVERLAPPEDWINDOW;
-    DWORD exstyle = WS_EX_ACCEPTFILES;
-    DWORD get_style() const noexcept { return style; }
-    DWORD get_exstyle() const noexcept { return exstyle; }
-  };
-
   struct slot : interface::slot {
     inline static std::vector<slotid> windows{};
     inline static int2 cursor_pos{}; // in screen coordinates
+    slotid parent_id{};
     HWND hwnd{};
     int4 frame_thickness{};
     int2 pos{}, size{};
@@ -74,7 +66,9 @@ public:
     slotid mouse_capture_control_id{};
     slotid keyboard_capture_control_id{};
     slotid tooltip_control_id{};
+
     command_manager commands{};
+    std::vector<slotid> subwindows{};
 
     color focusring_color = color(0.0f, 0.5f, 1.0f, 0.8f);
     float focusring_thickness = arbitrary_value / 2.0f;
@@ -304,18 +298,30 @@ public:
       if (auto res = d.close(); !res) return res.error().relay();
       hresult_test(swapchain->Present, 1, 0);
       messy = false, dirty = false, drawn = false;
+      for (const auto& subwin_id : subwindows)
+        if (const auto swsp = get_slot<window>(subwin_id))
+          if (auto res = swsp->update(Time); !res) return res.error().relay();
+      return {};
+    }
+
+    std::expected<void, error> close_subwindows() {
+      const auto ids = std::exchange(subwindows, {});
+      for (const auto& id : ids)
+        if (const auto swsp = get_slot<window>(id); swsp && swsp->hwnd)
+          win32_bool_test(::DestroyWindow, swsp->hwnd);
       return {};
     }
 
     //-- create function --//
 
-    template<typename T> static std::expected<slot*, error> create(T&& op, const source_line& sl) {
+    template<typename T> static std::expected<slot*, error> create(T&& op, slotid Parent = {}) {
       static_assert(is_rvref<T&&>, "Unreachable");
       const auto temp_id = make_slot<window>();
       const auto sp = get_slot<window>(temp_id);
       if (!sp) return std::unexpected(error(errors::slot_creation_failed));
       sp->id = temp_id;
-      sp->title = std::move(op.title);
+      sp->parent_id = Parent;
+      sp->title = op.get_title();
       sp->style = op.get_style();
       sp->exstyle = op.get_exstyle();
       sp->hwnd = ::CreateWindowExW(
@@ -323,7 +329,9 @@ public:
         int(arbitrary_value), int(arbitrary_value), nullptr, nullptr, wclass::hinstance(), nullptr);
       if (!sp->hwnd) return std::unexpected(error(errors::operation_failed, "CreateWindowExW failed"));
       ::SetWindowLongPtrW(sp->hwnd, GWLP_USERDATA, std::bit_cast<LONG_PTR>(sp->id));
-      windows.push_back(sp->id);
+      if (!Parent) windows.push_back(sp->id);
+      else if (const auto psp = get_slot<window>(Parent)) psp->subwindows.push_back(sp->id);
+      else return std::unexpected(error(errors::invalid_slotid));
       RECT wr{}, cr{};
       win32_bool_test(::GetWindowRect, sp->hwnd, &wr);
       win32_bool_test(::GetClientRect, sp->hwnd, &cr);
@@ -411,7 +419,8 @@ public:
           if (const auto new_fcsp = get_slot<control>(focused_control_id)) new_fcsp->focus_event(true);
           if (auto res = update_caret_pos(); !res) return res.error().relay();
           return true;
-        } else if (e.down && e.key == keys::escape && focused_control_id && !e.mods.ctrl && !e.mods.shift && !e.mods.alt) {
+        } else if (e.down && e.key == keys::escape && focused_control_id && !e.mods.ctrl && !e.mods.shift &&
+                   !e.mods.alt) {
           const auto old_fc_id = focused_control_id;
           focused_control_id = {};
           if (const auto old_fcsp = get_slot<control>(old_fc_id)) old_fcsp->focus_event(false);
@@ -447,25 +456,53 @@ public:
   }
 
   window(options Options, const source_line& sl = here()) {
-    if (auto res = slot::create(std::move(Options), sl)) _id = (*res)->id;
+    if (auto res = slot::create(std::move(Options))) _id = (*res)->id;
     else res.error().add_footprint().go_off(sl);
   }
 
   window(window_options_like auto Options, const source_line& sl = here()) {
-    if (auto res = slot::create(std::move(Options), sl)) _id = (*res)->id;
+    if (auto res = slot::create(std::move(Options))) _id = (*res)->id;
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<window, error> create(options Options, const source_line& sl = here()) {
+  /// creates subwindow
+  window(same_as<window> auto& Parent, options Options, const source_line& sl = here()) {
+    if (auto res = slot::create(std::move(Options), Parent.id())) _id = (*res)->id;
+    else res.error().add_footprint().go_off(sl);
+  }
+
+  /// creates subwindow
+  window(same_as<window> auto& Parent, window_options_like auto Options, const source_line& sl = here()) {
+    if (auto res = slot::create(std::move(Options), Parent.id())) _id = (*res)->id;
+    else res.error().add_footprint().go_off(sl);
+  }
+
+  static std::expected<window, error> create(options Options) {
     window w;
-    if (auto res = slot::create(std::move(Options), sl)) w._id = (*res)->id;
+    if (auto res = slot::create(std::move(Options))) w._id = (*res)->id;
     else return res.error().relay();
     return w;
   }
 
-  static std::expected<window, error> create(window_options_like auto Options, const source_line& sl = here()) {
+  static std::expected<window, error> create(window_options_like auto Options) {
     window w;
-    if (auto res = slot::create(std::move(Options), sl)) w._id = (*res)->id;
+    if (auto res = slot::create(std::move(Options))) w._id = (*res)->id;
+    else return res.error().relay();
+    return w;
+  }
+
+  /// creates subwindow
+  static std::expected<window, error> create(same_as<window> auto& Parent, options Options) {
+    window w;
+    if (auto res = slot::create(std::move(Options), Parent.id())) w._id = (*res)->id;
+    else return res.error().relay();
+    return w;
+  }
+
+  /// creates subwindow
+  static std::expected<window, error> create(same_as<window> auto& Parent, window_options_like auto Options) {
+    window w;
+    if (auto res = slot::create(std::move(Options), Parent.id())) w._id = (*res)->id;
     else return res.error().relay();
     return w;
   }
@@ -509,10 +546,18 @@ public:
     return sp->frame_thickness;
   }
 
-  const auto& pos() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->pos;
+  int2 window_pos() const noexcept {
+    if (const auto sp = get_slot(this); !sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    } else return sp->pos;
+  }
+
+  int2 client_pos() const noexcept {
+    if (const auto sp = get_slot(this); !sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    } else return sp->pos + sp->frame_thickness.xy();
   }
 
   const auto& size() const noexcept {
@@ -637,12 +682,20 @@ public:
 
   //-- setter --//
 
-  auto& pos(int2 v) noexcept {
+  auto& window_pos(int2 v) noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->pos = v;
-    const auto area = sp->size + sp->frame_thickness.xy() + sp->frame_thickness.zw();
-    if (!::SetWindowPos(sp->hwnd, 0, v.x, v.y, area.x, area.y, SWP_NOZORDER | SWP_NOACTIVATE))
+    if (!::SetWindowPos(sp->hwnd, 0, v.x, v.y, 0, 0, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSIZE))
+      error(errors::operation_failed, "SetWindowPos failed", int32_t(::GetLastError())).go_off();
+    return *this;
+  }
+
+  auto& client_pos(int2 v) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->pos = v - sp->frame_thickness.xy();
+    if (!::SetWindowPos(sp->hwnd, 0, sp->pos.x, sp->pos.y, 0, 0, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSIZE))
       error(errors::operation_failed, "SetWindowPos failed", int32_t(::GetLastError())).go_off();
     return *this;
   }
@@ -815,4 +868,15 @@ inline void control::slot::clear_window_state() noexcept {
   if (wsp->keyboard_capture_control_id == id) wsp->keyboard_capture_control_id = {};
   if (wsp->tooltip_control_id == id) wsp->hide_tooltip();
 }
+
+struct custom_window_options {
+  string<wchar_t> title{};
+  std::optional<int2> pos{};
+  std::optional<int2> size{};
+  DWORD style = WS_OVERLAPPEDWINDOW;
+  DWORD exstyle = WS_EX_ACCEPTFILES;
+  const string<wchar_t>& get_title() const noexcept { return title; }
+  DWORD get_style() const noexcept { return style; }
+  DWORD get_exstyle() const noexcept { return exstyle; }
+};
 } // namespace yw

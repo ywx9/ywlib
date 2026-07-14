@@ -3,7 +3,12 @@ from __future__ import annotations
 import subprocess
 import sys
 
-from _common import cmake_configure, ensure_file_from_template, project_root, templates_dir
+from _common import (
+    cmake_configure,
+    ensure_file_from_template,
+    project_root,
+    templates_dir,
+)
 from _gen_umbrella import generate_all
 from _project import load_project_config
 
@@ -14,7 +19,14 @@ def main() -> int:
 
     project_json_path = root / "project.json"
     if not project_json_path.is_file():
-        raise FileNotFoundError(f"project.json not found: {project_json_path}")
+        ensure_file_from_template(
+            project_json_path,
+            template_dir / "project.json.in",
+            {
+                "PROJECT_NAME": root.name,
+            },
+            overwrite=False,
+        )
 
     config = load_project_config(project_json_path)
 
