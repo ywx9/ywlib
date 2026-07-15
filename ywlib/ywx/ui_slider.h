@@ -19,6 +19,7 @@ public:
     color thumb_color = color(colors::white, 0.95f);
     color thumb_border_color = color(0.0f, 0.0f, 0.0f, 0.30f);
     color pressed_color = color(0.0f, 0.0f, 0.0f, 0.12f);
+    float drag_value = 0.0f;
     bool pressed = false;
 
     function<void, float> on_value_change{};
@@ -162,12 +163,14 @@ public:
       if (!enabled || !visible || e.key != keys::lbutton) return frame::slot::button_event(e);
       if (e.down) {
         pressed = true;
-        set_value(value_from_point(float2(float(e.pos.x), float(e.pos.y))));
+        drag_value = value_from_point(float2(float(e.pos.x), float(e.pos.y)));
+        set_value(drag_value);
         make_dirty();
         return true;
       }
       if (!pressed) return frame::slot::button_event(e);
       pressed = false;
+      drag_value = value;
       make_dirty();
       return true;
     }
@@ -183,13 +186,15 @@ public:
       const float length = orientation == ui::orientation::vertical ? track.w - track.y : track.z - track.x;
       if (length <= 0.0f || maximum <= minimum) return true;
       const float delta = orientation == ui::orientation::vertical ? -float(e.delta.y) : float(e.delta.x);
-      set_value(value + (maximum - minimum) * delta / length);
+      drag_value = clamp_value(drag_value + (maximum - minimum) * delta / length);
+      set_value(drag_value);
       return true;
     }
 
     virtual std::expected<void, error> reset_state() override {
       if (!pressed) return {};
       pressed = false;
+      drag_value = value;
       make_dirty();
       return {};
     }
@@ -197,6 +202,7 @@ public:
     virtual void focus_event(bool Focused) override {
       if (!Focused && pressed) {
         pressed = false;
+        drag_value = value;
         make_dirty();
       }
       frame::slot::focus_event(Focused);
