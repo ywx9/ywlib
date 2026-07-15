@@ -61,9 +61,11 @@ inline LRESULT _process_wm_cursor(window::slot* wsp, UINT msg, WPARAM wp, LPARAM
 }
 
 template<UINT Msg> LRESULT _process_wm_focus(window::slot* wsp, WPARAM wp, LPARAM lp) {
-  if constexpr (Msg == WM_ACTIVATEAPP)
-    if (!wp) return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
-  if constexpr (Msg == WM_KILLFOCUS || Msg == WM_ACTIVATEAPP) {
+  if constexpr (Msg == WM_SETFOCUS) {
+    wsp->focus_event(true);
+  } else if constexpr (Msg == WM_KILLFOCUS || Msg == WM_ACTIVATEAPP) {
+    if constexpr (Msg == WM_ACTIVATEAPP)
+      if (wp) return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
     if (const auto hcsp = static_cast<control::slot*>(interface::slot::slots.get(wsp->hovered_control_id))) {
       const auto pos = window::slot::cursor_pos - wsp->pos;
       hcsp->hover_event({.pos = pos, .type = hover_event::type::leave});
@@ -71,6 +73,7 @@ template<UINT Msg> LRESULT _process_wm_focus(window::slot* wsp, WPARAM wp, LPARA
     }
     wsp->track_mouse_event.hwndTrack = nullptr;
     wsp->hide_tooltip();
+    wsp->focus_event(false);
   } else return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
   return 0;
 }
@@ -212,6 +215,7 @@ inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
   case WM_MOUSEWHEEL: return internal::_process_wm_wheel_event<WM_MOUSEWHEEL>(wsp, wp, lp);
   case WM_MOUSEHWHEEL: return internal::_process_wm_wheel_event<WM_MOUSEHWHEEL>(wsp, wp, lp);
 
+  case WM_SETFOCUS: return internal::_process_wm_focus<WM_SETFOCUS>(wsp, wp, lp);
   case WM_KILLFOCUS: return internal::_process_wm_focus<WM_KILLFOCUS>(wsp, wp, lp);
   case WM_ACTIVATEAPP: return internal::_process_wm_focus<WM_ACTIVATEAPP>(wsp, wp, lp);
 

@@ -7,18 +7,8 @@ Windows / MinGW / CMake support is important.
 
 ## Build
 
-Run:
-`python tools/build.py`
-
-If the list of headers changed:
-`python tools/init.py`
-`python tools/build.py`
-
-For building DLL insted of EXE:
-`python tools/build.py --dll`
-
-Build commands require approval and must be run outside the Windows sandbox.
-Do not create or redirect to a workspace-local temporary directory.
+1. Edit umbrella header instead of running `python tools/init.py`, if the list of headers changed.
+2. Run `python tools/build.py` with approval.
 
 ## Style
 
@@ -31,5 +21,6 @@ Do not create or redirect to a workspace-local temporary directory.
 - Do not change public APIs unless explicitly requested.
 - Read source files and comments as UTF-8 by default.
   Do not rely on PowerShell's default text encoding when inspecting files.
+- Before editing `source.cpp` for a smoke test, ask the user and explain that it will be used only for verification.
 - Do not routinely run `git status` or broad `git diff`.
 - Never assume the working tree is clean, and never revert or overwrite unrelated user changes.

@@ -242,6 +242,7 @@ public:
     e._id = temp_id;
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
+    sp->policy = {ui::size_policy::free, ui::size_policy::fit};
     sp->text_align = alignment::left;
     if (AutoColor) {
       sp->colors = color_pair(none());

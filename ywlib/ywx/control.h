@@ -23,6 +23,11 @@ enum class size_policy : unsigned char {
   fixed, // specified size as is
   fit    // minimum size to show whole content
 };
+
+enum class orientation : unsigned char {
+  horizontal,
+  vertical,
+};
 }
 
 #define ywlib_control_get(mop)                    \

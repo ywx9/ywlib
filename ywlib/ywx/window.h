@@ -81,6 +81,7 @@ public:
 
     function<bool, button_event> on_button{};
     function<bool, key_event> on_key{};
+    function<void, bool> on_focus{};
     function<void, uint2> on_resized{};
 
     bool fit_to_necessary_size = false;
@@ -308,7 +309,12 @@ public:
       const auto ids = std::exchange(subwindows, {});
       for (const auto& id : ids)
         if (const auto swsp = get_slot<window>(id); swsp && swsp->hwnd)
-          win32_bool_test(::DestroyWindow, swsp->hwnd);
+          if (auto res = swsp->close(); !res) return res.error().relay();
+      return {};
+    }
+
+    std::expected<void, error> close() {
+      if (hwnd) win32_bool_test(::DestroyWindow, hwnd);
       return {};
     }
 
@@ -407,6 +413,10 @@ public:
         return {};
       }
       return {};
+    }
+
+    void focus_event(bool Focused) {
+      if (on_focus) on_focus(Focused);
     }
 
     std::expected<bool, error> key_event(yw::key_event e) {
@@ -508,7 +518,7 @@ public:
   }
 
   std::expected<void, error> close() {
-    if (const auto sp = get_slot<window>(_id); sp) win32_bool_test(::DestroyWindow, sp->hwnd);
+    if (const auto sp = get_slot<window>(_id); sp) return sp->close();
     return {};
   }
 
@@ -668,6 +678,12 @@ public:
     return sp->on_button;
   }
 
+  const auto& on_focus() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->on_focus;
+  }
+
   const auto& on_key() const noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
@@ -818,6 +834,13 @@ public:
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->on_button = std::move(f);
+    return *this;
+  }
+
+  auto& on_focus(function<void, bool> f) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->on_focus = std::move(f);
     return *this;
   }
 

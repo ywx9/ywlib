@@ -19,7 +19,7 @@ class text {
     return {};
   }
 
-  std::expected<void, error> initialize(yw::string<wchar_t> String, font_config Font) {
+  std::expected<void, error> initialize(yw::string<wchar_t> String, font_config Font = font_config::default_) {
     _string = std::move(String);
     _font = std::move(Font);
     IDWriteTextFormat* tf;

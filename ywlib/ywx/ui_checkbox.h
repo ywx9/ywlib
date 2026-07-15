@@ -209,6 +209,7 @@ public:
     c._id = temp_id;
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
+    sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
     if (AutoColor) {
       sp->colors = color_pair(none{});
       sp->box_stroke_color = sp->colors.border;

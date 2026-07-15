@@ -303,6 +303,7 @@ public:
     s._id = temp_id;
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
+    sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
     sp->text_align = alignment::right;
     sp->filter = [](wchar_t c) { return slot::ascii_number_char(c); };
     if (AutoColor) {
