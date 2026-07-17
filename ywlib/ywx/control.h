@@ -28,6 +28,19 @@ enum class orientation : unsigned char {
   horizontal,
   vertical,
 };
+
+struct color_theme {
+  color canvas = colors::white;
+  color surface = colors::white;
+  color surface_popup = colors::white;
+  color outline = colors::black;
+  color text = colors::black;
+  color text_muted = colors::gray;
+  color accent = colors::blue;
+  color warning = colors::orange;
+  color error = colors::red;
+  color success = colors::green;
+};
 }
 
 #define ywlib_control_get(mop)                    \
