@@ -36,16 +36,25 @@ public:
       if (auto res = draw_frame_foreground(); !res) return res.error().relay();
       return {};
     }
+
+    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
+      background_color = Theme.surface;
+      border_color = colors::transparent;
+      hovered_overlay_color = colors::transparent;
+      text_color = Theme.text;
+      make_dirty();
+      return {};
+    }
   };
 
   label() noexcept = default;
 
-  label(derived_from<interface> auto& Parent, strict<bool> AutoColor = true, const source_line& sl = here()) {
-    if (auto res = create(Parent, AutoColor)) *this = std::move(*res);
+  label(derived_from<interface> auto& Parent, const source_line& sl = here()) {
+    if (auto res = create(Parent)) *this = std::move(*res);
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<label, error> create(derived_from<interface> auto& Parent, strict<bool> AutoColor = true) {
+  static std::expected<label, error> create(derived_from<interface> auto& Parent) {
     label l;
     const auto temp_id = make_slot<label>();
     const auto sp = get_slot<label>(temp_id);
@@ -60,10 +69,7 @@ public:
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
-    if (AutoColor) {
-      sp->colors = color_pair(none());
-      sp->text_color = std::exchange(sp->colors.border, colors::transparent);
-    }
+    if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
     return l;
   }
 

@@ -434,8 +434,11 @@ template<char_type C, typename... Ts> constexpr string<C> format(Ts&&... Args) {
   ((s += internal::_format<C>(static_cast<Ts&&>(Args))), ...);
   return s;
 }
-template<typename... Ts> constexpr string<char> format(Ts&&... Args) {
-  return format<char>(static_cast<Ts&&>(Args)...);
+template<typename... Ts> constexpr auto format(Ts&&... Args) {
+  using T = remove_cvref<select_type<0, Ts...>>;
+  if constexpr (char_type<T>) return format<T>(static_cast<Ts&&>(Args)...);
+  else if constexpr (stringable<T>) return format<iter_value_t<T>>(static_cast<Ts&&>(Args)...);
+  else return format<char>(static_cast<Ts&&>(Args)...);
 }
 
 /// MARK: print

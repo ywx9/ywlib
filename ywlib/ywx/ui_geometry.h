@@ -94,6 +94,13 @@ public:
       if (crop_content) d2d::pop_layer();
       return {};
     }
+
+    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
+      fill_color = Theme.text;
+      stroke_color = colors::transparent;
+      make_dirty();
+      return {};
+    }
   };
 
   using control::operator bool;
@@ -119,6 +126,7 @@ public:
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
     sp->radius = {};
+    if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
     return g;
   }
 

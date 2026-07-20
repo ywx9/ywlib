@@ -113,6 +113,21 @@ public:
       size = calc_necessary_size_by_policy(inner);
       return {};
     }
+
+    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
+      background_color = colors::transparent;
+      border_color = colors::transparent;
+      hovered_overlay_color = colors::transparent;
+      if (Recursive) {
+        for (const auto& cid : controls) {
+          const auto csp = get_slot<control>(cid);
+          if (!csp) return std::unexpected(error(errors::invalid_slotid));
+          if (auto res = csp->apply_color_theme(Theme, true); !res) return res.error().relay();
+        }
+      }
+      make_dirty();
+      return {};
+    }
   };
 
   layer() noexcept = default;
@@ -139,6 +154,7 @@ public:
     sp->margin = {};
     sp->padding = {};
     sp->radius = {};
+    if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
     return l;
   }
 };

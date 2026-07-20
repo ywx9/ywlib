@@ -41,7 +41,40 @@ struct color_theme {
   color error = colors::red;
   color success = colors::green;
 };
-}
+
+struct overlay_opacity {
+  float hover = 0.08f;
+  float pressed = 0.16f;
+  float selection = 0.30f;
+  float muted_text = 0.75f;
+};
+
+inline constexpr overlay_opacity default_overlay_opacity{};
+
+inline constexpr color_theme light_color_theme{
+  .canvas = color(0.96f, 0.97f, 0.98f),
+  .surface = colors::white,
+  .surface_popup = color(0.99f, 0.99f, 1.00f),
+  .outline = color(0.45f, 0.47f, 0.50f),
+  .text = color(0.10f, 0.11f, 0.13f),
+  .text_muted = color(0.38f, 0.40f, 0.44f),
+  .accent = color(0.05f, 0.38f, 0.78f),
+  .warning = color(0.78f, 0.43f, 0.02f),
+  .error = color(0.78f, 0.12f, 0.15f),
+  .success = color(0.08f, 0.52f, 0.25f)};
+
+inline constexpr color_theme dark_color_theme{
+  .canvas = color(0.08f, 0.09f, 0.11f),
+  .surface = color(0.13f, 0.14f, 0.17f),
+  .surface_popup = color(0.18f, 0.19f, 0.23f),
+  .outline = color(0.47f, 0.49f, 0.54f),
+  .text = color(0.92f, 0.93f, 0.95f),
+  .text_muted = color(0.65f, 0.67f, 0.72f),
+  .accent = color(0.30f, 0.63f, 1.00f),
+  .warning = color(1.00f, 0.67f, 0.20f),
+  .error = color(1.00f, 0.38f, 0.40f),
+  .success = color(0.30f, 0.78f, 0.46f)};
+} // namespace ui
 
 #define ywlib_control_get(mop)                    \
   const auto s = get_slot(this);                  \
@@ -73,7 +106,7 @@ public:
     function<bool, key_event> on_key{};
     function<void, hover_event> on_hover{};
     function<void, bool> on_focus{};
-    ui::alignment align{}; // center
+    ui::alignment align{};             // center
     vector2<ui::size_policy> policy{}; // free
     bool geometry_dirty = false;
     bool visible = true;
@@ -130,9 +163,7 @@ public:
 
     virtual bool focusable() const noexcept { return false; }
 
-    virtual std::expected<float2, error> get_necessary_size() const {
-      return calc_necessary_size_by_policy(float2{});
-    }
+    virtual std::expected<float2, error> get_necessary_size() const { return calc_necessary_size_by_policy(float2{}); }
 
     virtual std::expected<std::optional<float3>, error> get_caret_pos() { return std::nullopt; }
 
@@ -144,6 +175,17 @@ public:
     virtual void make_geometry_dirty() {
       geometry_dirty = true;
       make_dirty();
+    }
+
+    std::expected<const ui::color_theme*, error> get_color_theme() const noexcept;
+
+    virtual std::expected<void, error> apply_color_theme(const ui::color_theme&, bool) {
+      return {};
+    }
+
+    std::expected<void, error> apply_current_color_theme(bool Recursive) {
+      if (auto Theme = get_color_theme()) return apply_color_theme(**Theme, Recursive);
+      else return Theme.error().relay();
     }
 
     virtual std::expected<void, error> redraw() { return {}; }
@@ -300,6 +342,14 @@ public:
   auto& align(this auto& self, ui::alignment v) noexcept { ywlib_control_set(align, v, geometry_dirty); }
   auto& policy(this auto& self, vector2<ui::size_policy> v) noexcept { ywlib_control_set(policy, v, messy); }
   auto& tooltip(this auto& self, string<wchar_t> v) noexcept { ywlib_control_set(tooltip, std::move(v), none); }
+
+  auto& color_theme(this auto& self, const ui::color_theme& Theme, bool Recursive) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    if (auto res = sp->apply_color_theme(Theme, Recursive); !res) res.error().go_off();
+    sp->make_dirty();
+    return self;
+  }
 
   auto& visible(this auto& self, bool b) noexcept {
     const auto sp = get_slot(&self);

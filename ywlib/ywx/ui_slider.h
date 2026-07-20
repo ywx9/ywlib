@@ -239,17 +239,30 @@ public:
       set_value(value + amount * (e.delta > 0 ? +1.0f : -1.0f) * (e.mods.shift ? 10.0f : 1.0f));
       return true;
     }
+
+    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
+      background_color = colors::transparent;
+      border_color = colors::transparent;
+      hovered_overlay_color = colors::transparent;
+      track_color = color(Theme.outline, 0.18f);
+      fill_color = color(Theme.accent, 0.55f);
+      thumb_color = Theme.surface;
+      thumb_border_color = Theme.outline;
+      pressed_color = color(Theme.accent, default_overlay_opacity.pressed);
+      make_dirty();
+      return {};
+    }
   };
 
   using frame::operator bool;
   slider() noexcept = default;
 
-  slider(derived_from<interface> auto& Parent, strict<bool> AutoColor = true, const source_line& sl = here()) {
-    if (auto res = create(Parent, AutoColor)) *this = std::move(*res);
+  slider(derived_from<interface> auto& Parent, const source_line& sl = here()) {
+    if (auto res = create(Parent)) *this = std::move(*res);
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<slider, error> create(derived_from<interface> auto& Parent, strict<bool> AutoColor = true) {
+  static std::expected<slider, error> create(derived_from<interface> auto& Parent) {
     slider s;
     const auto temp_id = make_slot<slider>();
     const auto sp = get_slot<slider>(temp_id);
@@ -264,12 +277,7 @@ public:
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
-    if (AutoColor) {
-      sp->colors = color_pair(none{});
-      sp->fill_color = color(sp->colors.border, 0.45f);
-      sp->thumb_border_color = sp->colors.border;
-      sp->colors.border = colors::transparent;
-    }
+    if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
     return s;
   }
 

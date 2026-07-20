@@ -13,6 +13,10 @@ public:
 
     virtual bool focusable() const noexcept override { return enabled && visible; }
 
+    virtual void invoke(yw::button_event e) {
+      if (on_click) on_click(e);
+    }
+
     virtual std::expected<void, error> redraw() override {
       if (geometry_dirty) {
         geometry_dirty = false;
@@ -48,7 +52,7 @@ public:
 
     virtual bool click_event(yw::button_event e) override {
       if (!enabled || e.down || e.key != keys::lbutton) return false;
-      if (on_click) on_click(e);
+      invoke(e);
       return true;
     }
 
@@ -70,20 +74,30 @@ public:
       pressed = false;
       if (was_pressed) {
         make_dirty();
-        if (on_click) on_click({{}, e.key, e.mods, false});
+        invoke({{}, e.key, e.mods, false});
       }
       return true;
+    }
+
+    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
+      background_color = Theme.surface;
+      border_color = Theme.outline;
+      hovered_overlay_color = color(Theme.accent, default_overlay_opacity.hover);
+      text_color = Theme.text;
+      pressed_overlay_color = color(Theme.accent, default_overlay_opacity.pressed);
+      make_dirty();
+      return {};
     }
   };
 
   button() noexcept = default;
 
-  button(derived_from<interface> auto& Parent, strict<bool> AutoColor = true, const source_line& sl = here()) {
-    if (auto res = create(Parent, AutoColor)) *this = std::move(*res);
+  button(derived_from<interface> auto& Parent, const source_line& sl = here()) {
+    if (auto res = create(Parent)) *this = std::move(*res);
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<button, error> create(derived_from<interface> auto& Parent, strict<bool> AutoColor = true) {
+  static std::expected<button, error> create(derived_from<interface> auto& Parent) {
     button b;
     const auto temp_id = make_slot<button>();
     const auto sp = get_slot<button>(temp_id);
@@ -98,10 +112,7 @@ public:
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
-    if (AutoColor) {
-      sp->colors = color_pair(none());
-      sp->text_color = sp->colors.border;
-    }
+    if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
     return b;
   }
 

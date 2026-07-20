@@ -21,6 +21,5 @@ Windows / MinGW / CMake support is important.
 - Do not change public APIs unless explicitly requested.
 - Read source files and comments as UTF-8 by default.
   Do not rely on PowerShell's default text encoding when inspecting files.
-- Before editing `source.cpp` for a smoke test, ask the user and explain that it will be used only for verification.
 - Do not routinely run `git status` or broad `git diff`.
 - Never assume the working tree is clean, and never revert or overwrite unrelated user changes.

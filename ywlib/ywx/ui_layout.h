@@ -119,13 +119,13 @@ public:
             offset[Vertical] += area[Vertical];
           }
         } else {
-          const auto extra_per_control = extra[Vertical] / float(visible_count);
+          // const auto extra_per_control = extra[Vertical] / float(visible_count);
           for (const auto& cid : controls) {
             const auto csp = get_slot<control>(cid);
             if (!csp) return std::unexpected(error(errors::invalid_slotid));
             if (!csp->visible) continue;
             float2 area = csp->get_bounds();
-            area[Vertical] += extra_per_control;
+            // area[Vertical] += extra_per_control;
             area[!Vertical] = cross;
             if (auto res = csp->relocate(pos + offset, area); !res) return res.error().relay();
             offset[Vertical] += area[Vertical];
@@ -160,6 +160,21 @@ public:
       size = calc_necessary_size_by_policy(inner);
       return {};
     }
+
+    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
+      background_color = colors::transparent;
+      border_color = colors::transparent;
+      hovered_overlay_color = colors::transparent;
+      if (Recursive) {
+        for (const auto& cid : controls) {
+          const auto csp = get_slot<control>(cid);
+          if (!csp) return std::unexpected(error(errors::invalid_slotid));
+          if (auto res = csp->apply_color_theme(Theme, true); !res) return res.error().relay();
+        }
+      }
+      make_dirty();
+      return {};
+    }
   };
 
   layout() noexcept = default;
@@ -186,6 +201,7 @@ public:
     sp->margin = {};
     sp->padding = {};
     sp->radius = {};
+    if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
     return l;
   }
 };

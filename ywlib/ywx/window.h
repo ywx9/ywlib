@@ -47,6 +47,7 @@ public:
     bitmap controllayer{};
     bitmap rendertarget{};
     comptr<IDXGISwapChain1> swapchain{};
+    ui::color_theme color_theme = ui::light_color_theme;
     color background_color = colors::white;
 
     color tooltip_background_color = color(0.99f, 0.98f, 0.96f, 0.8f);
@@ -121,6 +122,22 @@ public:
 
     //-- functions --//
 
+    std::expected<void, error> apply_color_theme(const ui::color_theme& Theme, bool Recursive) {
+      color_theme = Theme;
+      background_color = Theme.canvas;
+      tooltip_background_color = color(Theme.surface_popup, 0.95f);
+      tooltip_border_color = Theme.outline;
+      tooltip_text_color = Theme.text;
+      focusring_color = color(Theme.accent, 0.80f);
+      if (Recursive) {
+        if (const auto csp = get_slot<control>(control_id)) {
+          if (auto res = csp->apply_color_theme(Theme, true); !res) return res.error().relay();
+        } else if (control_id) return std::unexpected(error(errors::invalid_slotid));
+      }
+      make_dirty();
+      return {};
+    }
+
     std::expected<uint2, error> get_necessary_size() const {
       const auto csp = get_slot<control>(control_id);
       if (!csp) return uint2::fill(arbitrary_value);
@@ -184,13 +201,19 @@ public:
 
     std::expected<void, error> update_hovered_control(slotid New, float2 Pos, bool Moved, double Time) {
       if (New != hovered_control_id) {
-        if (const auto csp = get_slot<control>(hovered_control_id)) csp->hover_event({Pos, hover_event::type::leave});
+        if (const auto csp = get_slot<control>(hovered_control_id)) {
+          csp->hover_event({Pos, hover_event::type::leave});
+          csp->make_dirty();
+        }
         hovered_control_id = New;
         hide_tooltip();
         tooltip_control_id = New;
         tooltip_enter_time = Time;
         tooltip_anchor_pos = Pos;
-        if (const auto csp = get_slot<control>(hovered_control_id)) csp->hover_event({Pos, hover_event::type::enter});
+        if (const auto csp = get_slot<control>(hovered_control_id)) {
+          csp->hover_event({Pos, hover_event::type::enter});
+          csp->make_dirty();
+        }
       } else if (Moved) {
         tooltip_anchor_pos = Pos;
         if (const auto csp = get_slot<control>(hovered_control_id)) csp->hover_event({Pos, hover_event::type::move});
@@ -330,6 +353,7 @@ public:
       sp->title = op.get_title();
       sp->style = op.get_style();
       sp->exstyle = op.get_exstyle();
+      if (auto res = sp->apply_color_theme(sp->color_theme, false); !res) return res.error().relay();
       sp->hwnd = ::CreateWindowExW(
         sp->exstyle, wclass::name(), sp->title.c_str(), sp->style & ~WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
         int(arbitrary_value), int(arbitrary_value), nullptr, nullptr, wclass::hinstance(), nullptr);
@@ -600,6 +624,12 @@ public:
     return sp->background_color;
   }
 
+  const auto& color_theme() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->color_theme;
+  }
+
   const auto& tooltip_background_color() const noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
@@ -746,6 +776,13 @@ public:
     return *this;
   }
 
+  auto& color_theme(const ui::color_theme& Theme) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    if (auto res = sp->apply_color_theme(Theme, true); !res) res.error().go_off();
+    return *this;
+  }
+
   auto& tooltip_background_color(const color& c) noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
@@ -866,6 +903,18 @@ inline bool control::slot::focused() const noexcept {
     error(errors::invalid_slotid).fizzle_out();
     return false;
   } else return wsp->focused_control_id == id;
+}
+
+inline bool control::slot::hovered() const noexcept {
+  if (const auto wsp = get_slot<window>(window_id); !wsp) {
+    error(errors::invalid_slotid).fizzle_out();
+    return false;
+  } else return wsp->hovered_control_id == id;
+}
+
+inline std::expected<const ui::color_theme*, error> control::slot::get_color_theme() const noexcept {
+  if (const auto wsp = get_slot<window>(window_id)) return &wsp->color_theme;
+  return std::unexpected(error(errors::invalid_slotid));
 }
 
 inline command_manager* control::slot::commands() const noexcept {

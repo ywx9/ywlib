@@ -66,17 +66,27 @@ public:
       if (auto res = draw_frame_foreground(); !res) return res.error().relay();
       return {};
     }
+
+    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
+      background_color = colors::transparent;
+      border_color = colors::transparent;
+      hovered_overlay_color = colors::transparent;
+      track_color = color(Theme.outline, 0.14f);
+      progress_color = color(Theme.accent, 0.65f);
+      make_dirty();
+      return {};
+    }
   };
 
   using frame::operator bool;
   progressbar() noexcept = default;
 
-  progressbar(derived_from<interface> auto& Parent, strict<bool> AutoColor = true, const source_line& sl = here()) {
-    if (auto res = create(Parent, AutoColor)) *this = std::move(*res);
+  progressbar(derived_from<interface> auto& Parent, const source_line& sl = here()) {
+    if (auto res = create(Parent)) *this = std::move(*res);
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<progressbar, error> create(derived_from<interface> auto& Parent, strict<bool> AutoColor = true) {
+  static std::expected<progressbar, error> create(derived_from<interface> auto& Parent) {
     progressbar p;
     const auto temp_id = make_slot<progressbar>();
     const auto sp = get_slot<progressbar>(temp_id);
@@ -91,11 +101,7 @@ public:
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
-    if (AutoColor) {
-      sp->colors = color_pair(none{});
-      sp->progress_color = sp->colors.border;
-      sp->colors.border = colors::transparent;
-    }
+    if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
     return p;
   }
 

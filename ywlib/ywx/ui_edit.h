@@ -173,6 +173,16 @@ public:
       return true;
     }
 
+    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
+      if (auto res = selectable_label::slot::apply_color_theme(Theme, Recursive); !res) return res.error().relay();
+      background_color = Theme.surface;
+      border_color = Theme.outline;
+      hovered_overlay_color = color(Theme.accent, default_overlay_opacity.hover);
+      placeholder_color = color(Theme.text_muted, default_overlay_opacity.muted_text);
+      make_dirty();
+      return {};
+    }
+
   private:
     string_view<wchar_t> _limited_value(uint2 Range, string_view<wchar_t> Value) const noexcept {
       if (!max_length) return Value;
@@ -223,12 +233,12 @@ public:
 
   edit() noexcept = default;
 
-  edit(derived_from<interface> auto& Parent, strict<bool> AutoColor = true, const source_line& sl = here()) {
-    if (auto res = create(Parent, AutoColor)) *this = std::move(*res);
+  edit(derived_from<interface> auto& Parent, const source_line& sl = here()) {
+    if (auto res = create(Parent)) *this = std::move(*res);
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<edit, error> create(derived_from<interface> auto& Parent, strict<bool> AutoColor = true) {
+  static std::expected<edit, error> create(derived_from<interface> auto& Parent) {
     edit e;
     const auto temp_id = make_slot<edit>();
     const auto sp = get_slot<edit>(temp_id);
@@ -244,10 +254,7 @@ public:
     sp->window_id = psp->get_window_id();
     sp->policy = {ui::size_policy::free, ui::size_policy::fit};
     sp->text_align = alignment::left;
-    if (AutoColor) {
-      sp->colors = color_pair(none());
-      sp->text_color = sp->colors.border;
-    }
+    if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
     return e;
   }
 

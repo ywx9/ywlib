@@ -1,9 +1,8 @@
 #pragma once
 #include <ywx/bitmap.h>
 #include <ywx/svgpath.h>
-#include <ywx/ui_blank.h>
-#include <ywx/ui_label.h>
-#include <ywx/ui_layout.h>
+#include <ywx/text.h>
+#include <ywx/ui_frame.h>
 
 namespace yw::ui {
 
@@ -12,13 +11,14 @@ public:
   enum class content_kind : unsigned char { none, image, geometry };
 
   struct item {
-    horizontal_layout row{};
-    blank icon_spacer{};
-    label caption{};
+    yw::text caption{};
+    float2 pos{};
+    float2 size{};
+    float2 icon_pos{};
+    float2 text_pos{};
   };
 
   struct slot : frame::slot {
-    vertical_layout content{};
     std::vector<item> items{};
     bitmap circle_bitmap{};
     bitmap dot_bitmap{};
@@ -30,22 +30,18 @@ public:
     color dot_fill_color = colors::black;
     color dot_stroke_color = colors::black;
     color text_color = colors::black;
+    color pressed_overlay_color = color(0.0f, 0.0f, 0.0f, 0.16f);
     float dot_stroke_width = 1.0f;
     content_kind circle_kind = content_kind::geometry;
     content_kind dot_kind = content_kind::geometry;
     float2 icon_size_value{16.0f, 16.0f};
     float icon_gap = arbitrary_value;
-    bool attach_lock = true;
+    float item_gap = arbitrary_value;
     size_t selected = npos;
     size_t pressed = npos;
+    size_t hovered_item = npos;
 
     function<void, size_t> on_change{};
-
-    void update_icon_margins() {
-      for (auto& it : items)
-        if (it.icon_spacer)
-          it.icon_spacer.margin(float4(arbitrary_value, arbitrary_value, arbitrary_value + icon_gap, arbitrary_value));
-    }
 
     std::expected<void, error> draw_icon_part(
       float2 Pos, float2 Size, content_kind Kind, const bitmap& Image, const svgpath& Geometry,
@@ -67,10 +63,8 @@ public:
 
     std::expected<void, error> draw_icons() const {
       for (size_t i = 0; i < items.size(); ++i) {
-        const auto isp = get_slot<control>(items[i].icon_spacer.id());
-        if (!isp || !isp->visible) continue;
-        const auto pos = isp->pos();
-        const auto size = isp->size();
+        const auto pos = items[i].icon_pos;
+        const auto size = icon_size_value;
         if (auto res = draw_icon_part(
               pos, size, circle_kind, circle_bitmap, circle_svg, circle_fill_color, circle_stroke_color,
               circle_stroke_width);
@@ -85,11 +79,26 @@ public:
       return {};
     }
 
+    std::expected<void, error> draw_pressed_overlay() const {
+      if (pressed == npos || pressed_overlay_color.a <= 0.0f) return {};
+      if (pressed >= items.size()) return {};
+      brush::color(pressed_overlay_color);
+      if (auto res = fill_rectangle(items[pressed].pos, items[pressed].size); !res) return res.error().relay();
+      return {};
+    }
+
+    virtual std::expected<void, error> draw_hovered_overlay() override {
+      if (hovered_item == npos || hovered_overlay_color.a <= 0.0f) return {};
+      if (hovered_item >= items.size()) return {};
+      brush::color(hovered_overlay_color);
+      if (auto res = fill_rectangle(items[hovered_item].pos, items[hovered_item].size); !res)
+        return res.error().relay();
+      return {};
+    }
+
     size_t item_at(float2 Pt) const noexcept {
       for (size_t i = 0; i < items.size(); ++i) {
-        const auto rsp = get_slot<control>(items[i].row.id());
-        if (!rsp || !rsp->visible) continue;
-        const auto r = float4(rsp->pos, rsp->pos + rsp->size);
+        const auto r = float4(items[i].pos, items[i].pos + items[i].size);
         if (Pt.x >= r.x && Pt.y >= r.y && Pt.x <= r.z && Pt.y <= r.w) return i;
       }
       return npos;
@@ -102,28 +111,20 @@ public:
       if (on_change) on_change(selected);
     }
 
-    virtual bool attachable() const override { return !attach_lock; }
-
-    virtual std::expected<void, error> attach(slotid Child) override {
-      if (attach_lock) return std::unexpected(error(errors::invalid_operation, "not attachable"));
-      const auto csp = get_slot<control>(Child);
-      if (!csp) return std::unexpected(error(errors::invalid_slotid));
-      csp->window_id = window_id;
-      make_messy();
-      return {};
-    }
-
-    virtual std::expected<void, error> detach(slotid Child) override {
-      return std::unexpected(error(errors::unreachable));
-    }
-
     virtual bool focusable() const noexcept override { return enabled && visible; }
 
     virtual std::expected<float2, error> get_necessary_size() const override {
-      const auto csp = get_slot<control>(content.id());
-      if (!csp) return calc_necessary_size_by_policy(float2{});
-      if (auto res = csp->get_necessary_size()) return calc_necessary_size_by_policy(*res);
-      else return res.error().relay();
+      float2 inner{};
+      for (size_t i = 0; i < items.size(); ++i) {
+        const auto text_size = items[i].caption.size();
+        const auto gap = text_size.x > 0.0f ? icon_gap : 0.0f;
+        const float2 row_size{icon_size_value.x + gap + text_size.x, yw::max(icon_size_value.y, text_size.y)};
+        inner.x = yw::max(inner.x, row_size.x);
+        inner.y += row_size.y;
+        if (i + 1 < items.size()) inner.y += item_gap;
+      }
+      inner += padding.xy() + padding.zw();
+      return calc_necessary_size_by_policy(inner);
     }
 
     virtual slotid hittest(float2 Pt) const override { return control::slot::hittest(Pt) ? id : slotid{}; }
@@ -135,10 +136,11 @@ public:
       }
       if (!visible) return {};
       if (auto res = draw_frame_background(); !res) return res.error().relay();
+      if (auto res = draw_pressed_overlay(); !res) return res.error().relay();
       if (auto res = draw_icons(); !res) return res.error().relay();
-      const auto csp = get_slot<control>(content.id());
-      if (csp)
-        if (auto res = csp->redraw(); !res) return res.error().relay();
+      brush::color(text_color);
+      for (const auto& it : items)
+        if (auto res = it.caption.draw(it.text_pos); !res) return res.error().relay();
       if (auto res = draw_frame_foreground(); !res) return res.error().relay();
       return {};
     }
@@ -154,9 +156,20 @@ public:
       hresult_test(d2d::factory()->CreateRoundedRectangleGeometry, &rr, &geom);
       geometry.reset(geom);
 
-      const auto csp = get_slot<control>(content.id());
-      if (!csp) return {};
-      if (auto res = csp->relocate(pos, size); !res) return res.error().relay();
+      const auto content_pos = pos + padding.xy();
+      const auto content_size = size - padding.xy() - padding.zw();
+      float y = content_pos.y;
+      for (size_t i = 0; i < items.size(); ++i) {
+        const auto text_size = items[i].caption.size();
+        const auto gap = text_size.x > 0.0f ? icon_gap : 0.0f;
+        const float row_height = yw::max(icon_size_value.y, text_size.y);
+        auto& it = items[i];
+        it.pos = {content_pos.x, y};
+        it.size = {content_size.x, row_height};
+        it.icon_pos = {content_pos.x, y + (row_height - icon_size_value.y) * 0.5f};
+        it.text_pos = {content_pos.x + icon_size_value.x + gap, y + (row_height - text_size.y) * 0.5f};
+        y += row_height + (i + 1 < items.size() ? item_gap : 0.0f);
+      }
       return {};
     }
 
@@ -198,6 +211,15 @@ public:
       }
     }
 
+    virtual bool hover_event(yw::hover_event e) override {
+      const auto next_hovered = e.leave() ? npos : item_at(float2(float(e.pos.x), float(e.pos.y)));
+      if (hovered_item != next_hovered) {
+        hovered_item = next_hovered;
+        make_dirty();
+      }
+      return frame::slot::hover_event(e);
+    }
+
     virtual bool key_event(yw::key_event e) override {
       if (!enabled || !visible || items.empty()) return false;
       if (e.key == keys::up || e.key == keys::left || e.key == keys::down || e.key == keys::right) {
@@ -213,17 +235,31 @@ public:
       select(selected == npos ? 0 : selected);
       return true;
     }
+
+    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
+      background_color = Theme.surface;
+      border_color = colors::transparent;
+      hovered_overlay_color = color(Theme.accent, default_overlay_opacity.hover);
+      circle_fill_color = colors::transparent;
+      circle_stroke_color = Theme.outline;
+      dot_fill_color = Theme.accent;
+      dot_stroke_color = Theme.accent;
+      text_color = Theme.text;
+      pressed_overlay_color = color(Theme.accent, default_overlay_opacity.pressed);
+      make_dirty();
+      return {};
+    }
   };
 
   using frame::operator bool;
   radiobutton() noexcept = default;
 
-  radiobutton(derived_from<interface> auto& Parent, strict<bool> AutoColor = true, const source_line& sl = here()) {
-    if (auto res = create(Parent, AutoColor)) *this = std::move(*res);
+  radiobutton(derived_from<interface> auto& Parent, const source_line& sl = here()) {
+    if (auto res = create(Parent)) *this = std::move(*res);
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<radiobutton, error> create(derived_from<interface> auto& Parent, strict<bool> AutoColor = true) {
+  static std::expected<radiobutton, error> create(derived_from<interface> auto& Parent) {
     radiobutton r;
     const auto temp_id = make_slot<radiobutton>();
     const auto sp = get_slot<radiobutton>(temp_id);
@@ -237,18 +273,7 @@ public:
     r._id = temp_id;
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
-    sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
-    if (AutoColor) {
-      sp->colors = color_pair(none{});
-      sp->circle_stroke_color = sp->colors.border;
-      sp->dot_fill_color = sp->colors.border;
-      sp->dot_stroke_color = sp->colors.border;
-      sp->text_color = sp->colors.border;
-    }
-    sp->attach_lock = false;
-    if (auto res = ui::vertical_layout::create(r)) sp->content = std::move(*res);
-    else return res.error().relay();
-    sp->attach_lock = true;
+    sp->policy = {ui::size_policy::free, ui::size_policy::fit};
     constexpr float2 init_icon_size{16.0f, 16.0f};
     if (auto res = svgpath::create(init_icon_size,
           "M8 1 C4.134 1 1 4.134 1 8 C1 11.866 4.134 15 8 15 C11.866 15 15 11.866 15 8 C15 4.134 11.866 1 8 1 Z"))
@@ -258,7 +283,7 @@ public:
           "M8 5 C6.343 5 5 6.343 5 8 C5 9.657 6.343 11 8 11 C9.657 11 11 9.657 11 8 C11 6.343 9.657 5 8 5 Z"))
       sp->dot_svg = std::move(*res);
     else return res.error().relay();
-    sp->colors.border = colors::transparent;
+    if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
     return r;
   }
 
@@ -278,7 +303,9 @@ public:
   const auto& dot_stroke_color() const noexcept { ywlib_control_get(dot_stroke_color); }
   const auto& dot_stroke_width() const noexcept { ywlib_control_get(dot_stroke_width); }
   const auto& text_color() const noexcept { ywlib_control_get(text_color); }
+  const auto& pressed_overlay_color() const noexcept { ywlib_control_get(pressed_overlay_color); }
   const auto& icon_gap() const noexcept { ywlib_control_get(icon_gap); }
+  const auto& item_gap() const noexcept { ywlib_control_get(item_gap); }
 
   const auto& string(size_t Index) const noexcept {
     const auto sp = get_slot(this);
@@ -302,24 +329,11 @@ public:
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
     item it;
-    if (auto res = ui::horizontal_layout::create(sp->content)) it.row = std::move(*res);
+    if (auto res = yw::text::create(std::move(s))) it.caption = std::move(*res);
     else {
       res.error().go_off();
       return self;
     }
-    if (auto res = ui::blank::create(it.row)) it.icon_spacer = std::move(*res);
-    else {
-      res.error().go_off();
-      return self;
-    }
-    if (auto res = ui::label::create(it.row, false)) it.caption = std::move(*res);
-    else {
-      res.error().go_off();
-      return self;
-    }
-    it.icon_spacer.size(sp->icon_size_value);
-    it.icon_spacer.margin(float4(arbitrary_value, arbitrary_value, arbitrary_value + sp->icon_gap, arbitrary_value));
-    it.caption.text_align(alignment::left).text_color(sp->text_color).margin({}).string(std::move(s));
     sp->items.push_back(std::move(it));
     if (sp->selected == npos) sp->selected = 0;
     sp->make_messy();
@@ -358,7 +372,9 @@ public:
   auto& font(this auto& self, font_config f) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
-    for (auto& it : sp->items) it.caption.font(f);
+    for (auto& it : sp->items)
+      if (auto res = it.caption.font(f); !res) res.error().go_off();
+    sp->make_messy();
     return self;
   }
 
@@ -366,7 +382,7 @@ public:
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->text_color = c;
-    for (auto& it : sp->items) it.caption.text_color(c);
+    sp->make_dirty();
     return self;
   }
 
@@ -378,7 +394,8 @@ public:
       return self;
     }
     sp->icon_size_value = v;
-    for (auto& it : sp->items) it.icon_spacer.size(sp->icon_size_value);
+    sp->circle_svg.size(v);
+    sp->dot_svg.size(v);
     sp->make_messy();
     return self;
   }
@@ -395,6 +412,7 @@ public:
   auto& circle(this auto& self, svgpath p) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
+    p.size(sp->icon_size_value);
     sp->circle_svg = std::move(p);
     sp->circle_kind = content_kind::geometry;
     sp->make_dirty();
@@ -413,6 +431,7 @@ public:
   auto& dot(this auto& self, svgpath p) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
+    p.size(sp->icon_size_value);
     sp->dot_svg = std::move(p);
     sp->dot_kind = content_kind::geometry;
     sp->make_dirty();
@@ -459,6 +478,14 @@ public:
     return self;
   }
 
+  auto& pressed_overlay_color(this auto& self, const color& c) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->pressed_overlay_color = c;
+    sp->make_dirty();
+    return self;
+  }
+
   auto& dot_stroke_width(this auto& self, float1 f) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
@@ -471,7 +498,14 @@ public:
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->icon_gap = f.x;
-    sp->update_icon_margins();
+    sp->make_messy();
+    return self;
+  }
+
+  auto& item_gap(this auto& self, float1 f) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->item_gap = f.x;
     sp->make_messy();
     return self;
   }

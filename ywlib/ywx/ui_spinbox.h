@@ -17,6 +17,7 @@ public:
     float button_width = 18.0f;
     float button_gap = 2.0f;
     float4 user_padding = float4::fill(arbitrary_value);
+    color button_pressed_overlay_color = color(0.0f, 0.0f, 0.0f, 0.15f);
     int pressed_button = 0;
     bool syncing_text = false;
 
@@ -131,11 +132,11 @@ public:
       const float2 p{r.x, r.y};
       const float2 s{r.z - r.x, r.w - r.y};
       if (pressed_button == Direction) {
-        brush::color(color(0.0f, 0.0f, 0.0f, 0.15f));
+        brush::color(button_pressed_overlay_color);
         if (auto res = fill_rectangle(p, s); !res) return res.error().relay();
       }
 
-      brush::color(colors.border);
+      brush::color(border_color);
       const float cx = (r.x + r.z) * 0.5f;
       const float cy = (r.y + r.w) * 0.5f;
       const float aw = yw::clamp(button_width * 0.22f, 3.0f, 5.0f);
@@ -154,7 +155,7 @@ public:
 
     std::expected<void, error> draw_buttons() {
       if (button_width <= 0.0f) return {};
-      brush::color(colors.border);
+      brush::color(border_color);
       const float left = pos.x + size.x - button_width;
       if (auto res = draw_line({left, pos.y}, {left, pos.y + size.y}, border_thickness); !res)
         return res.error().relay();
@@ -279,17 +280,24 @@ public:
       step_by(e.delta > 0 ? +1 : -1, e.mods.shift ? 10 : 1);
       return true;
     }
+
+    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
+      if (auto res = edit::slot::apply_color_theme(Theme, Recursive); !res) return res.error().relay();
+      button_pressed_overlay_color = color(Theme.accent, default_overlay_opacity.pressed);
+      make_dirty();
+      return {};
+    }
   };
 
   using edit::operator bool;
   spinbox() noexcept = default;
 
-  spinbox(derived_from<interface> auto& Parent, strict<bool> AutoColor = true, const source_line& sl = here()) {
-    if (auto res = create(Parent, AutoColor)) *this = std::move(*res);
+  spinbox(derived_from<interface> auto& Parent, const source_line& sl = here()) {
+    if (auto res = create(Parent)) *this = std::move(*res);
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<spinbox, error> create(derived_from<interface> auto& Parent, strict<bool> AutoColor = true) {
+  static std::expected<spinbox, error> create(derived_from<interface> auto& Parent) {
     spinbox s;
     const auto temp_id = make_slot<spinbox>();
     const auto sp = get_slot<spinbox>(temp_id);
@@ -306,10 +314,7 @@ public:
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
     sp->text_align = alignment::right;
     sp->filter = [](wchar_t c) { return slot::ascii_number_char(c); };
-    if (AutoColor) {
-      sp->colors = color_pair(none{});
-      sp->text_color = sp->colors.border;
-    }
+    if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
     sp->apply_padding();
 
     const auto spinbox_id = temp_id;

@@ -376,6 +376,8 @@ template<std::regular T> struct vector<T, 2> {
 
   constexpr vector operator()() const noexcept { return *this; }
 
+  constexpr vector yx() const noexcept { return {y, x}; }
+
   template<char_type C> constexpr string<C> to_string() const {
     string<C> s;
     s.reserve((8 * sizeof(T) + 2) * 2);

@@ -268,16 +268,24 @@ public:
       }
       return true;
     }
+
+    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
+      if (auto res = label::slot::apply_color_theme(Theme, Recursive); !res) return res.error().relay();
+      selection_overlay_color = color(Theme.accent, default_overlay_opacity.selection);
+      caret_color = Theme.text;
+      make_dirty();
+      return {};
+    }
   };
 
   selectable_label() noexcept = default;
 
-  selectable_label(derived_from<interface> auto& Parent, strict<bool> AutoColor = true, const source_line& sl = here()) {
-    if (auto res = create(Parent, AutoColor)) *this = std::move(*res);
+  selectable_label(derived_from<interface> auto& Parent, const source_line& sl = here()) {
+    if (auto res = create(Parent)) *this = std::move(*res);
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<selectable_label, error> create(derived_from<interface> auto& Parent, strict<bool> AutoColor = true) {
+  static std::expected<selectable_label, error> create(derived_from<interface> auto& Parent) {
     selectable_label l;
     const auto temp_id = make_slot<selectable_label>();
     const auto sp = get_slot<selectable_label>(temp_id);
@@ -292,10 +300,7 @@ public:
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
-    if (AutoColor) {
-      sp->colors = color_pair(none());
-      sp->text_color = std::exchange(sp->colors.border, colors::transparent);
-    }
+    if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
     return l;
   }
 
