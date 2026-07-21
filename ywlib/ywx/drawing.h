@@ -119,11 +119,29 @@ inline std::expected<void, error> draw_rectangle(float2 pos, float2 size, float1
   return {};
 }
 
+/// \param Rect `{left, top, right, bottom}`
+inline std::expected<void, error> draw_rectangle(const float4& Rect, float1 Width = 1.0f) {
+  if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "not in d2d drawing"));
+  const auto d2d = yw::d2d();
+  const auto brush = yw::brush();
+  d2d.context()->DrawRectangle((const D2D1_RECT_F*)&Rect, brush.d2d_brush(), Width.x, brush.d2d_stroke());
+  return {};
+}
+
 inline std::expected<void, error> fill_rectangle(float2 pos, float2 size) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "not in d2d drawing"));
   const auto d2d = yw::d2d();
   const auto brush = yw::brush();
   d2d.context()->FillRectangle(D2D1_RECT_F(pos.x, pos.y, pos.x + size.x, pos.y + size.y), brush.d2d_brush());
+  return {};
+}
+
+/// \param Rect `{left, top, right, bottom}`
+inline std::expected<void, error> fill_rectangle(const float4& Rect) {
+  if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "not in d2d drawing"));
+  const auto d2d = yw::d2d();
+  const auto brush = yw::brush();
+  d2d.context()->FillRectangle((const D2D1_RECT_F*)&Rect, brush.d2d_brush());
   return {};
 }
 

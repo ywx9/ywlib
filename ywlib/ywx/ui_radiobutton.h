@@ -212,7 +212,7 @@ public:
     }
 
     virtual bool hover_event(yw::hover_event e) override {
-      const auto next_hovered = e.leave() ? npos : item_at(float2(float(e.pos.x), float(e.pos.y)));
+      const auto next_hovered = e.leave() ? npos : item_at(e.pos);
       if (hovered_item != next_hovered) {
         hovered_item = next_hovered;
         make_dirty();

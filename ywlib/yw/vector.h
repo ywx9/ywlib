@@ -72,6 +72,20 @@ template<std::regular T, size_t N> struct vector {
   }
 
   constexpr string<char> to_string() const { return to_string<char>(); }
+
+  template<size_t I, castable_to<T> U> requires(I < N) constexpr auto insert(U&& V) const
+    noexcept(noexcept(operator[](I) = static_cast<U&&>(V))) requires requires { operator[](I) = static_cast<U&&>(V); } {
+    vector res = *this;
+    res._vals[I] = static_cast<U&&>(V);
+    return res;
+  }
+
+  template<size_t I> requires(I < N) constexpr auto add(const std::regular auto& V) const
+    noexcept(noexcept(operator[](I) + V)) requires requires { operator[](I) + V; } {
+    vector<decltype(operator[](I) + V), N> res = *this;
+    res._vals[I] += V;
+    return res;
+  }
 };
 
 template<typename T, typename... Ts> vector(T&&, Ts&&...) -> vector<T, sizeof...(Ts) + 1>;
@@ -82,6 +96,9 @@ template<std::regular T> using vector2 = vector<T, 2>;
 template<std::regular T> using vector3 = vector<T, 3>;
 template<std::regular T> using vector4 = vector<T, 4>;
 
+using bool2 = vector2<bool>;
+using bool3 = vector3<bool>;
+using bool4 = vector4<bool>;
 using short1 = vector1<short>;
 using short2 = vector2<short>;
 using short3 = vector3<short>;
@@ -320,6 +337,15 @@ template<std::regular T> struct vector<T, 1> {
   }
 
   constexpr string<char> to_string() const { return to_string<char>(); }
+
+  template<size_t I> requires(I < 1) constexpr auto insert(castable_to<T> auto&& V) const {
+    return vector<T, 1>(static_cast<T&&>(V));
+  }
+
+  template<size_t I> requires(I < 1) constexpr auto add(const std::regular auto& V) const
+    noexcept(noexcept(operator[](I) + V)) requires requires { operator[](I) + V; } {
+    return vector<decltype(operator[](I) + V), 1>(x + V);
+  }
 };
 
 //////////////////////////////////////// MARK: VECTOR2
@@ -387,6 +413,17 @@ template<std::regular T> struct vector<T, 2> {
   }
 
   constexpr string<char> to_string() const { return to_string<char>(); }
+
+  template<size_t I, castable_to<T> U> requires(I < 2) constexpr auto insert(U&& V) const {
+    if constexpr (I == 0) return vector<T, 2>(static_cast<U&&>(V), y);
+    else return vector<T, 2>(x, static_cast<U&&>(V));
+  }
+
+  template<size_t I> requires(I < 2) constexpr auto add(const std::regular auto& V) const
+    noexcept(noexcept(operator[](I) + V)) requires requires { operator[](I) + V; } {
+    if constexpr (I == 0) return vector<decltype(operator[](I) + V), 2>(x + V, y);
+    else return vector<decltype(operator[](I) + V), 2>(x, y + V);
+  }
 };
 
 //////////////////////////////////////// MARK: VECTOR3
@@ -464,6 +501,19 @@ template<std::regular T> struct vector<T, 3> {
   }
 
   constexpr string<char> to_string() const { return to_string<char>(); }
+
+  template<size_t I, castable_to<T> U> requires(I < 3) constexpr auto insert(U&& V) const {
+    if constexpr (I == 0) return vector<T, 3>(static_cast<U&&>(V), y, z);
+    else if constexpr (I == 1) return vector<T, 3>(x, static_cast<U&&>(V), z);
+    else return vector<T, 3>(x, y, static_cast<U&&>(V));
+  }
+
+  template<size_t I> requires(I < 3) constexpr auto add(const std::regular auto& V) const
+    noexcept(noexcept(operator[](I) + V)) requires requires { operator[](I) + V; } {
+    if constexpr (I == 0) return vector<decltype(operator[](I) + V), 3>(x + V, y, z);
+    else if constexpr (I == 1) return vector<decltype(operator[](I) + V), 3>(x, y + V, z);
+    else return vector<decltype(operator[](I) + V), 3>(x, y, z + V);
+  }
 };
 
 //////////////////////////////////////// MARK: VECTOR4
@@ -556,6 +606,21 @@ template<std::regular T> struct vector<T, 4> {
     s.push_back(C(' ')).append(yw::format<C>(z)).push_back(C(','));
     s.push_back(C(' ')).append(yw::format<C>(w)).push_back(C(')'));
     return s;
+  }
+
+  template<size_t I, castable_to<T> U> requires(I < 4) constexpr auto insert(U&& V) const {
+    if constexpr (I == 0) return vector<T, 4>(static_cast<U&&>(V), y, z, w);
+    else if constexpr (I == 1) return vector<T, 4>(x, static_cast<U&&>(V), z, w);
+    else if constexpr (I == 2) return vector<T, 4>(x, y, static_cast<U&&>(V), w);
+    else return vector<T, 4>(x, y, z, static_cast<U&&>(V));
+  }
+
+  template<size_t I> requires(I < 4) constexpr auto add(const std::regular auto& V) const
+    noexcept(noexcept(operator[](I) + V)) requires requires { operator[](I) + V; } {
+    if constexpr (I == 0) return vector<decltype(operator[](I) + V), 4>(x + V, y, z, w);
+    else if constexpr (I == 1) return vector<decltype(operator[](I) + V), 4>(x, y + V, z, w);
+    else if constexpr (I == 2) return vector<decltype(operator[](I) + V), 4>(x, y, z + V, w);
+    else return vector<decltype(operator[](I) + V), 4>(x, y, z, w + V);
   }
 };
 

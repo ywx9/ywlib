@@ -21,6 +21,14 @@ public:
       return {};
     }
 
+    virtual void close_child_controls() override {
+      for (const auto& cid : controls)
+        if (const auto csp = get_slot<control>(cid)) {
+          csp->close_child_controls();
+          interface::slot::slots.erase(cid);
+        }
+    }
+
     virtual std::expected<void, error> detach(slotid Child) override {
       controls.erase(std::remove(controls.begin(), controls.end(), Child), controls.end());
       interface::slot::slots.erase(Child);

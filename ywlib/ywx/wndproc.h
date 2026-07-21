@@ -20,14 +20,12 @@ inline modifiers _make_mods() noexcept {
 inline LRESULT _process_wm_cursor(window::slot* wsp, UINT msg, WPARAM wp, LPARAM lp) {
   switch (msg) {
   case WM_MOUSEMOVE: {
-    const short2 client_pos(std::bit_cast<int16_t>(LOWORD(lp)), std::bit_cast<int16_t>(HIWORD(lp)));
-    window::slot::cursor_pos.x = client_pos.x;
-    window::slot::cursor_pos.y = client_pos.y;
-    const auto local_pos = window::slot::cursor_pos;
+    const auto local_pos = short2(std::bit_cast<int16_t>(LOWORD(lp)), std::bit_cast<int16_t>(HIWORD(lp)));
+    window::slot::cursor_pos = local_pos;
     ::ClientToScreen(wsp->hwnd, reinterpret_cast<POINT*>(&window::slot::cursor_pos));
     if (wsp->mouse_capture_control_id && (wp & (MK_LBUTTON | MK_RBUTTON | MK_MBUTTON | MK_XBUTTON1 | MK_XBUTTON2))) {
       drag_event e{};
-      e.delta = client_pos - wsp->last_cursor_client_pos;
+      e.delta = window::slot::cursor_pos - wsp->last_cursor_pos;
       e.mods = internal::_make_mods_from_wparam(wp);
       if (wp & MK_LBUTTON) e.key = keys::lbutton;
       else if (wp & MK_RBUTTON) e.key = keys::rbutton;
@@ -36,7 +34,7 @@ inline LRESULT _process_wm_cursor(window::slot* wsp, UINT msg, WPARAM wp, LPARAM
       else if (wp & MK_XBUTTON2) e.key = keys::xbutton2;
       if (auto res = wsp->drag_event(e); !res) res.error().go_off();
     }
-    wsp->last_cursor_client_pos = client_pos;
+    wsp->last_cursor_pos = window::slot::cursor_pos;
     if (!wsp->track_mouse_event.hwndTrack) {
       wsp->track_mouse_event.hwndTrack = wsp->hwnd;
       ::TrackMouseEvent(&wsp->track_mouse_event);
@@ -99,6 +97,24 @@ template<UINT Msg> LRESULT _process_wm_size_move(window::slot* wsp, WPARAM wp, L
     else error(errors::operation_failed, "GetClientRect failed").go_off();
     wsp->messy = true;
   } else return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
+  return 0;
+}
+
+inline LRESULT _process_wm_showwindow(window::slot* wsp, WPARAM wp, LPARAM) {
+  const bool next_visible = static_cast<bool>(wp);
+  if (wsp->visible == next_visible) return 0;
+  if (!next_visible) wsp->clear_window_state();
+  wsp->visible = next_visible;
+  if (next_visible) wsp->make_messy();
+  return 0;
+}
+
+inline LRESULT _process_wm_enable(window::slot* wsp, WPARAM wp, LPARAM) {
+  const bool next_enabled = static_cast<bool>(wp);
+  if (wsp->enabled == next_enabled) return 0;
+  if (!next_enabled) wsp->clear_window_state();
+  wsp->enabled = next_enabled;
+  wsp->make_dirty();
   return 0;
 }
 
@@ -186,6 +202,8 @@ inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
   case WM_MOVE: return internal::_process_wm_size_move<WM_MOVE>(wsp, wp, lp);
   case WM_ENTERSIZEMOVE: return internal::_process_wm_size_move<WM_ENTERSIZEMOVE>(wsp, wp, lp);
   case WM_EXITSIZEMOVE: return internal::_process_wm_size_move<WM_EXITSIZEMOVE>(wsp, wp, lp);
+  case WM_SHOWWINDOW: return internal::_process_wm_showwindow(wsp, wp, lp);
+  case WM_ENABLE: return internal::_process_wm_enable(wsp, wp, lp);
 
   case WM_KEYDOWN: return internal::_process_wm_key_event<WM_KEYDOWN>(wsp, wp, lp);
   case WM_KEYUP: return internal::_process_wm_key_event<WM_KEYUP>(wsp, wp, lp);
@@ -230,6 +248,10 @@ inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
     if (const auto psp = static_cast<window::slot*>(interface::slot::slots.get(wsp->parent_id)))
       psp->subwindows.erase(std::remove(psp->subwindows.begin(), psp->subwindows.end(), wid), psp->subwindows.end());
     ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+    if (const auto csp = static_cast<control::slot*>(interface::slot::slots.get(wsp->control_id))) {
+      csp->close_child_controls();
+      interface::slot::slots.erase(wsp->control_id);
+    }
     wsp->hwnd = 0;
     windows.erase(std::remove(windows.begin(), windows.end(), wid), windows.end());
     if (auto res = interface::slot::slots.erase(wid); !res) res.error().go_off();

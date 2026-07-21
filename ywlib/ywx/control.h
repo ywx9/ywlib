@@ -43,8 +43,8 @@ struct color_theme {
 };
 
 struct overlay_opacity {
-  float hover = 0.08f;
-  float pressed = 0.16f;
+  float hover = 0.15f;
+  float pressed = 0.30f;
   float selection = 0.30f;
   float muted_text = 0.75f;
 };
@@ -116,7 +116,7 @@ public:
 
     float2 calc_necessary_size_by_policy(float2 Inner) const noexcept {
       const vector2<bool> fixed{policy.x == ui::size_policy::fixed, policy.y == ui::size_policy::fixed};
-      return vapply_r<float2>(yw::max, minimum_size, required_size * fixed, Inner - Inner * fixed);
+      return vapply_r<float2>(yw::max, get_minimum_size(), required_size * fixed, Inner - Inner * fixed);
     }
 
     float2 calc_offset_by_align(float2 MaxSize) const noexcept {
@@ -129,6 +129,7 @@ public:
     command_manager* commands() const noexcept;
     bool focused() const noexcept;
     bool hovered() const noexcept;
+    void sync_layout() noexcept;
     /// \note These functions are implemented in "window.h" because they require window::slot::focused_control_id
 
     //-- override interface::slot --//
@@ -144,6 +145,8 @@ public:
     }
 
     //-- virtual methods for control --//
+
+    virtual void close_child_controls() {}
 
     virtual std::expected<void, error> draw_focusring(const color& Color, float Thickness, float2 Offset) {
       const auto p = pos - Offset;
@@ -162,6 +165,8 @@ public:
     }
 
     virtual bool focusable() const noexcept { return false; }
+
+    virtual float2 get_minimum_size() const { return minimum_size; }
 
     virtual std::expected<float2, error> get_necessary_size() const { return calc_necessary_size_by_policy(float2{}); }
 
@@ -368,6 +373,13 @@ public:
     sp->enabled = b;
     if (!b) sp->clear_window_state();
     sp->make_dirty();
+    return self;
+  }
+
+  auto& sync_layout(this auto& self) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->sync_layout();
     return self;
   }
 };

@@ -74,6 +74,7 @@ public:
   struct slot {
     inline static slotset<slot> slots{};
     slotset<slot>::slotid id;
+    virtual ~slot() noexcept = default;
     virtual bool attachable() const { return false; }
     virtual std::expected<void, error> attach(slotset<slot>::slotid) {
       return std::unexpected(error(errors::invalid_operation, "Not attachable"));

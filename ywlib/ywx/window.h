@@ -24,6 +24,7 @@ public:
     bool has_caption = true;
     bool resizable = true;
     bool visible = true;
+    bool enabled = true;
     const string<wchar_t>& get_title() const noexcept { return title; }
     DWORD get_style() const noexcept {
       DWORD s = has_caption ? WS_CAPTION | WS_SYSMENU : WS_POPUP;
@@ -73,18 +74,20 @@ public:
 
     color focusring_color = color(0.0f, 0.5f, 1.0f, 0.8f);
     float focusring_thickness = arbitrary_value / 2.0f;
-    float2 focusring_offset = float2::fill(arbitrary_value);
+    float2 focusring_offset = {};
 
     std::optional<float3> caret_pos{};
 
     TRACKMOUSEEVENT track_mouse_event{sizeof(TRACKMOUSEEVENT), TME_LEAVE};
-    short2 last_cursor_client_pos{};
+    int2 last_cursor_pos{}; // updated in mouse_move_event
 
     function<bool, button_event> on_button{};
     function<bool, key_event> on_key{};
     function<void, bool> on_focus{};
     function<void, uint2> on_resized{};
 
+    bool visible = true;
+    bool enabled = true;
     bool fit_to_necessary_size = false;
     bool messy = false;
     bool dirty = false;
@@ -153,6 +156,28 @@ public:
       tooltip_enter_time = 0.0;
       tooltip_anchor_pos = {};
       tooltip_text = {};
+    }
+
+    void clear_window_state() noexcept {
+      if (const auto csp = get_slot<control>(focused_control_id)) csp->focus_event(false);
+      focused_control_id = {};
+      caret_pos = std::nullopt;
+
+      if (const auto csp = get_slot<control>(hovered_control_id)) {
+        csp->hover_event({cursor_pos - pos, hover_event::type::leave});
+        csp->make_dirty();
+      }
+      hovered_control_id = {};
+
+      if (const auto csp = get_slot<control>(mouse_capture_control_id))
+        if (auto res = csp->reset_state(); !res) res.error().fizzle_out();
+      mouse_capture_control_id = {};
+      ::ReleaseCapture();
+
+      keyboard_capture_control_id = {};
+      track_mouse_event.hwndTrack = nullptr;
+      hide_tooltip();
+      update_ime_window();
     }
 
     void update_ime_window() noexcept {
@@ -277,7 +302,7 @@ public:
       return {};
     }
 
-    std::expected<void, error> update(double Time) {
+    std::expected<void, error> update_layout() {
       if (auto res = get_necessary_size(); !res) return res.error().relay();
       else if (fit_to_necessary_size) size = *res;
       else size = vapply_r<uint2>(yw::max, size, *res);
@@ -295,6 +320,13 @@ public:
         }
         dirty = true;
       }
+      return {};
+    }
+
+    std::expected<void, error> update(double Time) {
+      if (!visible) return {};
+      if (auto res = update_layout(); !res) return res.error().relay();
+      const auto csp = get_slot<control>(control_id);
       if (dirty) {
         if (auto d = controllayer.begin_draw(colors::transparent)) {
           if (csp) {
@@ -368,10 +400,14 @@ public:
       const auto left = (wr.right - wr.left - cr.right) / 2;
       sp->frame_thickness = int4(left, wr.bottom - wr.top - cr.bottom - left, left, left);
       sp->pos = op.pos.value_or(int2(wr.left, wr.top));
+      sp->visible = static_cast<bool>(sp->style & WS_VISIBLE);
+      if constexpr (requires { op.enabled; }) sp->enabled = static_cast<bool>(op.enabled);
+      else sp->enabled = true;
       sp->fit_to_necessary_size = !(sp->style & WS_THICKFRAME) && !op.size.has_value();
       sp->size = vapply_r<uint2>(yw::max, op.size.value_or(int2(cr.right, cr.bottom)), uint2::fill(arbitrary_value));
       const auto area = sp->size + sp->frame_thickness.xy() + sp->frame_thickness.zw();
       win32_bool_test(::SetWindowPos, sp->hwnd, 0, sp->pos.x, sp->pos.y, area.x, area.y, SWP_NOZORDER | SWP_NOACTIVATE);
+      if (!sp->enabled) win32_bool_test(::EnableWindow, sp->hwnd, false);
       if (auto res = sp->update_rendertarget(); !res) return res.error().relay();
       if (sp->style & WS_VISIBLE) ::ShowWindow(sp->hwnd, SW_SHOW);
       return sp;
@@ -399,7 +435,7 @@ public:
 
     std::expected<void, error> button_event(yw::button_event e) {
       bool control_handled = false;
-      last_cursor_client_pos = e.pos;
+      last_cursor_pos = pos + frame_thickness.xy() + e.pos;
       if (const auto csp = get_slot<control>(control_id)) {
         hovered_control_id = csp->hittest(e.pos);
         const auto old_fc_id = focused_control_id;
@@ -547,12 +583,22 @@ public:
   }
 
   std::expected<void, error> show() {
-    if (const auto sp = get_slot<window>(_id); sp) win32_bool_test(::ShowWindow, sp->hwnd, SW_SHOW);
+    if (const auto sp = get_slot<window>(_id); sp) {
+      if (sp->visible) return {};
+      sp->visible = true;
+      ::ShowWindow(sp->hwnd, SW_SHOW);
+      sp->make_messy();
+    }
     return {};
   }
 
   std::expected<void, error> hide() {
-    if (const auto sp = get_slot<window>(_id); sp) win32_bool_test(::ShowWindow, sp->hwnd, SW_HIDE);
+    if (const auto sp = get_slot<window>(_id); sp) {
+      if (!sp->visible) return {};
+      sp->clear_window_state();
+      sp->visible = false;
+      ::ShowWindow(sp->hwnd, SW_HIDE);
+    }
     return {};
   }
 
@@ -622,6 +668,18 @@ public:
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
     return sp->background_color;
+  }
+
+  bool visible() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->visible;
+  }
+
+  bool enabled() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->enabled;
   }
 
   const auto& color_theme() const noexcept {
@@ -776,6 +834,29 @@ public:
     return *this;
   }
 
+  auto& visible(bool b) noexcept {
+    if (b) {
+      if (auto res = show(); !res) res.error().go_off();
+    } else {
+      if (auto res = hide(); !res) res.error().go_off();
+    }
+    return *this;
+  }
+
+  auto& enabled(bool b) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    if (sp->enabled == b) return *this;
+    if (!b) sp->clear_window_state();
+    sp->enabled = b;
+    if (!::EnableWindow(sp->hwnd, b)) {
+      const auto last_error = ::GetLastError();
+      if (last_error != ERROR_SUCCESS) error(errors::operation_failed, "EnableWindow failed", int32_t(last_error)).go_off();
+    }
+    sp->make_dirty();
+    return *this;
+  }
+
   auto& color_theme(const ui::color_theme& Theme) noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
@@ -894,6 +975,13 @@ public:
     sp->on_resized = std::move(f);
     return *this;
   }
+
+  auto& sync_layout() noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    if (auto res = sp->update_layout(); !res) res.error().go_off();
+    return *this;
+  }
 };
 
 /// MARK: Other functions
@@ -939,6 +1027,12 @@ inline void control::slot::clear_window_state() noexcept {
   }
   if (wsp->keyboard_capture_control_id == id) wsp->keyboard_capture_control_id = {};
   if (wsp->tooltip_control_id == id) wsp->hide_tooltip();
+}
+
+inline void control::slot::sync_layout() noexcept {
+  const auto wsp = get_slot<window>(window_id);
+  if (!wsp) return;
+  if (auto res = wsp->update_layout(); !res) res.error().fizzle_out();
 }
 
 struct custom_window_options {
