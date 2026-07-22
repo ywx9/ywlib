@@ -100,7 +100,7 @@ public:
 
 /// MARK: draw line
 
-inline std::expected<void, error> draw_line(float2 p0, float2 p1, float1 width = 1.0f) {
+inline std::expected<void, error> stroke_line(float2 p0, float2 p1, float1 width = 1.0f) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "not in d2d drawing"));
   const auto d2d = yw::d2d();
   const auto brush = yw::brush();
@@ -108,9 +108,9 @@ inline std::expected<void, error> draw_line(float2 p0, float2 p1, float1 width =
   return {};
 }
 
-/// MARK: draw/fill_rectangle
+/// MARK: draw rectangle
 
-inline std::expected<void, error> draw_rectangle(float2 pos, float2 size, float1 border_width = 1.0f) {
+inline std::expected<void, error> stroke_rectangle(float2 pos, float2 size, float1 border_width = 1.0f) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "not in d2d drawing"));
   const auto d2d = yw::d2d();
   const auto brush = yw::brush();
@@ -120,7 +120,7 @@ inline std::expected<void, error> draw_rectangle(float2 pos, float2 size, float1
 }
 
 /// \param Rect `{left, top, right, bottom}`
-inline std::expected<void, error> draw_rectangle(const float4& Rect, float1 Width = 1.0f) {
+inline std::expected<void, error> stroke_rectangle(const float4& Rect, float1 Width = 1.0f) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "not in d2d drawing"));
   const auto d2d = yw::d2d();
   const auto brush = yw::brush();
@@ -145,9 +145,9 @@ inline std::expected<void, error> fill_rectangle(const float4& Rect) {
   return {};
 }
 
-/// MARK: draw/fill_round_rectangle
+/// MARK: draw round_rectangle
 
-inline std::expected<void, error> draw_round_rectangle(
+inline std::expected<void, error> stroke_round_rectangle(
   float2 pos, float2 size, float2 radius, float1 border_width = 1.0f) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "not in d2d drawing"));
   const auto d2d = yw::d2d();
@@ -166,9 +166,9 @@ inline std::expected<void, error> fill_round_rectangle(float2 pos, float2 size, 
   return {};
 }
 
-//////////////////////////////////////// MARK: draw/fill_ellipse
+/// MARK: draw ellipse
 
-inline std::expected<void, error> draw_ellipse(float2 center, float2 radius, float1 border_width = 1.0f) {
+inline std::expected<void, error> stroke_ellipse(float2 center, float2 radius, float1 border_width = 1.0f) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "not in d2d drawing"));
   const auto d2d = yw::d2d();
   const auto brush = yw::brush();
@@ -186,13 +186,13 @@ inline std::expected<void, error> fill_ellipse(float2 center, float2 radius) {
   return {};
 }
 
-//////////////////////////////////////// MARK: draw/fill_geometry
+/// MARK: draw geometry
 
-inline std::expected<void, error> draw_geometry(ID2D1Geometry* geometry, float1 border_width = 1.0f) {
+inline std::expected<void, error> stroke_geometry(ID2D1Geometry* geometry, float1 Thickness = 1.0f) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "not in d2d drawing"));
   const auto d2d = yw::d2d();
   const auto brush = yw::brush();
-  d2d.context()->DrawGeometry(geometry, brush.d2d_brush(), border_width.x, brush.d2d_stroke());
+  d2d.context()->DrawGeometry(geometry, brush.d2d_brush(), Thickness.x, brush.d2d_stroke());
   return {};
 }
 
@@ -204,7 +204,7 @@ inline std::expected<void, error> fill_geometry(ID2D1Geometry* geometry) {
   return {};
 }
 
-//////////////////////////////////////// MARK: draw_text
+/// MARK: draw text
 
 inline std::expected<void, error> draw_text(float2 Pos, float2 Size, string_view<wchar_t> Text,
   IDWriteTextFormat* Format, D2D1_DRAW_TEXT_OPTIONS Options = D2D1_DRAW_TEXT_OPTIONS_NONE) {

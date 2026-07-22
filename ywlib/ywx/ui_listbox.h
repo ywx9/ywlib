@@ -270,6 +270,7 @@ public:
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
     sp->policy = {ui::size_policy::fit, ui::size_policy::free};
+    sp->radius = {};
     if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
     return l;
   }

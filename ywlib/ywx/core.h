@@ -83,9 +83,9 @@ public:
       return std::unexpected(error(errors::invalid_operation, "Not attached"));
     }
     virtual slotset<slot>::slotid get_window_id() const noexcept = 0;
-    virtual void make_dirty() noexcept = 0;
-    virtual void make_messy() noexcept = 0;
-    void make_none() { return; }
+    template<derived_from<interface> H> static typename H::slot* get_as(slotset<slot>::slotid Id) noexcept {
+      return static_cast<typename H::slot*>(slots.get(Id));
+    }
   };
 
   using slotid = slotset<slot>::slotid;

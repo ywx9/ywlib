@@ -1,11 +1,12 @@
 #pragma once
-#include <ywx/ui_frame.h>
+#include <ywx/control.h>
 
 namespace yw::ui {
 
-template<bool Vertical> class layout : public frame {
+template<orientation Orientation> class layout : public control {
+  static constexpr bool Vert = Orientation == orientation::vertical;
 public:
-  struct slot : public frame::slot {
+  struct slot : public control::slot {
     std::vector<slotid> controls{};
 
     //-- override functions --//
@@ -57,8 +58,8 @@ public:
         if (!csp->visible) continue;
         if (auto res = csp->get_necessary_size()) {
           const auto bounds = *res + csp->margin.xy() + csp->margin.zw();
-          yw::get<!Vertical>(inner) = yw::max(yw::get<!Vertical>(inner), yw::get<!Vertical>(bounds));
-          yw::get<Vertical>(inner) += yw::get<Vertical>(bounds);
+          yw::get<!Vert>(inner) = yw::max(yw::get<!Vert>(inner), yw::get<!Vert>(bounds));
+          yw::get<Vert>(inner) += yw::get<Vert>(bounds);
         } else return res.error().relay();
       }
       inner += padding.xy() + padding.zw();
@@ -67,11 +68,11 @@ public:
 
     virtual slotid hittest(float2 Pt) const override {
       if (!visible) return {};
-      for (const auto& cid : controls | std::views::reverse) {
+      if (const auto hit = control::slot::hittest(Pt); !hit) return {};
+      for (const auto& cid : controls | std::views::reverse)
         if (const auto csp = get_slot<control>(cid))
           if (const auto hit = csp->hittest(Pt)) return hit;
-      }
-      return frame::slot::hittest(Pt);
+      return id;
     }
 
     virtual std::expected<void, error> redraw() override {
@@ -80,28 +81,21 @@ public:
         if (auto res = relocate(); !res) return res.error().relay();
       }
       if (!visible) return {};
-      if (auto res = draw_frame_background(); !res) return res.error().relay();
+      if (auto res = draw_background(); !res) return res.error().relay();
       for (const auto& cid : controls) {
         const auto csp = get_slot<control>(cid);
         if (!csp) return std::unexpected(error(errors::invalid_slotid));
         if (auto res = csp->redraw(); !res) return res.error().relay();
       }
-      if (auto res = draw_frame_foreground(); !res) return res.error().relay();
+      if (auto res = draw_foreground(); !res) return res.error().relay();
       return {};
     }
 
     virtual std::expected<void, error> relocate() override {
-      const auto max_size = provided_area - margin.xy() - margin.zw();
-      if (auto res = set_size_to_necessary(); !res) return res.error().relay();
-      const auto extra = max_size - size;
-      if (policy.x == size_policy::free) size.x = max_size.x;
-      if (policy.y == size_policy::free) size.y = max_size.y;
-      pos = provided_pos + calc_offset_by_align(max_size);
-      ID2D1RoundedRectangleGeometry* geom = nullptr;
-      D2D1_ROUNDED_RECT rr{D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
-      hresult_test(d2d::factory()->CreateRoundedRectangleGeometry, &rr, &geom);
-      geometry.reset(geom);
-      if (extra[Vertical] > 0) {
+      float2 extra;
+      if (auto res = update_geometry()) extra = *res;
+      else return res.error().relay();
+      if (extra[Vert] > 0) {
         unsigned visible_count = 0;
         unsigned free_count = 0;
         for (const auto& cid : controls) {
@@ -109,34 +103,32 @@ public:
           if (!csp) return std::unexpected(error(errors::invalid_slotid));
           if (!csp->visible) continue;
           ++visible_count;
-          free_count += (csp->policy[Vertical] == size_policy::free);
+          free_count += (csp->policy[Vert] == size_policy::free);
         }
         if (visible_count == 0) return {};
-        const auto cross = size[!Vertical] - padding[!Vertical] - padding[2 + !Vertical];
+        const auto cross = size[!Vert] - padding[!Vert] - padding[2 + !Vert];
         float2 offset = padding.xy();
         if (free_count > 0) {
-          const auto extra_per_free = extra[Vertical] / float(free_count);
+          const auto extra_per_free = extra[Vert] / float(free_count);
           for (const auto& cid : controls) {
             const auto csp = get_slot<control>(cid);
             if (!csp) return std::unexpected(error(errors::invalid_slotid));
             if (!csp->visible) continue;
             float2 area = csp->get_bounds();
-            area[Vertical] += extra_per_free * (csp->policy[Vertical] == size_policy::free);
-            area[!Vertical] = cross;
+            area[Vert] += extra_per_free * (csp->policy[Vert] == size_policy::free);
+            area[!Vert] = cross;
             if (auto res = csp->relocate(pos + offset, area); !res) return res.error().relay();
-            offset[Vertical] += area[Vertical];
+            offset[Vert] += area[Vert];
           }
         } else {
-          // const auto extra_per_control = extra[Vertical] / float(visible_count);
           for (const auto& cid : controls) {
             const auto csp = get_slot<control>(cid);
             if (!csp) return std::unexpected(error(errors::invalid_slotid));
             if (!csp->visible) continue;
             float2 area = csp->get_bounds();
-            // area[Vertical] += extra_per_control;
-            area[!Vertical] = cross;
+            area[!Vert] = cross;
             if (auto res = csp->relocate(pos + offset, area); !res) return res.error().relay();
-            offset[Vertical] += area[Vertical];
+            offset[Vert] += area[Vert];
           }
         }
       } else {
@@ -147,7 +139,7 @@ public:
           if (!csp->visible) continue;
           float2 area = csp->get_bounds();
           if (auto res = csp->relocate(pos + offset, area); !res) return res.error().relay();
-          offset[Vertical] += area[Vertical];
+          offset[Vert] += area[Vert];
         }
       }
       return {};
@@ -161,8 +153,8 @@ public:
         if (!csp->visible) continue;
         if (auto res = csp->set_size_to_necessary(); !res) return res.error().relay();
         const auto bounds = csp->get_bounds();
-        inner[!Vertical] = yw::max(inner[!Vertical], bounds[!Vertical]);
-        inner[Vertical] += bounds[Vertical];
+        inner[!Vert] = yw::max(inner[!Vert], bounds[!Vert]);
+        inner[Vert] += bounds[Vert];
       }
       inner += padding.xy() + padding.zw();
       size = calc_necessary_size_by_policy(inner);
@@ -172,7 +164,7 @@ public:
     virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
       background_color = colors::transparent;
       border_color = colors::transparent;
-      hovered_overlay_color = colors::transparent;
+      hover_overlay_color = colors::transparent;
       if (Recursive) {
         for (const auto& cid : controls) {
           const auto csp = get_slot<control>(cid);
@@ -209,14 +201,15 @@ public:
     sp->margin = {};
     sp->padding = {};
     sp->radius = {};
-    if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
+    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
+    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
     return l;
   }
 };
 
-using hlayout = layout<false>;
-using vlayout = layout<true>;
+using hlayout = layout<orientation::horizontal>;
+using vlayout = layout<orientation::vertical>;
 
-using horizontal_layout = layout<false>;
-using vertical_layout = layout<true>;
+using horizontal_layout = layout<orientation::horizontal>;
+using vertical_layout = layout<orientation::vertical>;
 } // namespace yw::ui

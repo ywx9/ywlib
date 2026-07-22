@@ -23,6 +23,7 @@ public:
       return {};
     }
 
+    /// \note en) This is defined to be overloaded when drawing each part, such as a scrollbar.
     virtual std::expected<void, error> draw_hovered_overlay() {
       if (!hovered() || hovered_overlay_color.a <= 0.0f) return {};
       brush::color(hovered_overlay_color);
@@ -112,6 +113,5 @@ public:
   }
   auto& border_thickness(this auto& self, float1 f) noexcept { ywlib_control_set(border_thickness, f.x, dirty); }
   auto& border_dashed(this auto& self, bool b) noexcept { ywlib_control_set(border_dashed, b, dirty); }
-  auto& crop_content(this auto& self, bool b) noexcept { ywlib_control_set(crop_content, b, dirty); }
 };
 } // namespace yw::ui

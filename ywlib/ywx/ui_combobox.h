@@ -266,20 +266,12 @@ public:
     else return res.error().relay();
 
     const auto layout_sp = get_slot(&sp->dropdown_layout);
-    const auto lbsp = get_slot(&sp->dropdown_listbox);
+    const auto list_sp = get_slot(&sp->dropdown_listbox);
     const auto grip_sp = get_slot(&sp->dropdown_grip);
     const auto dropdown_wsp = get_slot(&sp->dropdown_window);
-    if (!layout_sp || !lbsp || !grip_sp || !dropdown_wsp) return std::unexpected(error(errors::invalid_slotid));
+    if (!layout_sp || !list_sp || !grip_sp || !dropdown_wsp) return std::unexpected(error(errors::invalid_slotid));
 
-    layout_sp->margin = {};
-    layout_sp->padding = {};
-    layout_sp->radius = {};
-    layout_sp->policy = vector2<size_policy>::fill(size_policy::fit);
-
-    lbsp->margin = {};
-    lbsp->radius = {};
-    lbsp->item_padding = sp->item_padding;
-    lbsp->policy = {size_policy::fit, size_policy::free};
+    list_sp->margin = {};
 
     grip_sp->margin = {};
     grip_sp->padding = {};
@@ -292,7 +284,7 @@ public:
       if (Focused) return;
       if (const auto sp = get_slot<combobox>(combobox_id)) sp->close_dropdown();
     };
-    lbsp->on_change = [combobox_id](size_t Index) {
+    list_sp->on_change = [combobox_id](size_t Index) {
       if (const auto sp = get_slot<combobox>(combobox_id)) {
         sp->select(Index);
         sp->request_close_dropdown();

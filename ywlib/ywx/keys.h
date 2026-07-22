@@ -176,6 +176,15 @@ struct drag_event {
 };
 static_assert(sizeof(drag_event) <= 8);
 
+struct focus_event {
+  bool focused;
+  string<char> to_string() const {
+    if (focused) return format("focus_event(focused)");
+    else return format("focus_event(unfocused)");
+  }
+};
+static_assert(sizeof(focus_event) <= 8);
+
 struct hover_event {
   short2 pos;
   enum class type : uint8_t { enter = 0x1, leave = 0x2, move = 0x3 } type;
@@ -188,6 +197,11 @@ struct hover_event {
     else if (move()) return format("hover_event(pos:", pos, ", type:move)");
     else return format("hover_event(pos:", pos, ", type:unknown)");
   }
+  struct create {
+    constexpr static auto enter(short2 Pos) noexcept { return hover_event{Pos, type::enter}; }
+    constexpr static auto leave(short2 Pos) noexcept { return hover_event{Pos, type::leave}; }
+    constexpr static auto move(short2 Pos) noexcept { return hover_event{Pos, type::move}; }
+  };
 };
 static_assert(sizeof(hover_event) <= 8);
 
@@ -202,12 +216,12 @@ struct key_event {
 };
 static_assert(sizeof(key_event) <= 8);
 
-struct move_event {
+struct pointer_event {
   short2 pos;
   short2 delta;
-  string<char> to_string() const { return format("move_event(pos:", pos, ", delta:", delta, ")"); }
+  string<char> to_string() const { return format("pointer_event(pos:", pos, ", delta:", delta, ")"); }
 };
-static_assert(sizeof(move_event) <= 8);
+static_assert(sizeof(pointer_event) <= 8);
 
 struct wheel_event {
   short2 pos;
@@ -250,6 +264,12 @@ template<> struct formatter<yw::drag_event> {
   auto format(const yw::drag_event& e, auto& ctx) const { return fmt.format(e.to_string(), ctx); }
 };
 
+template<> struct formatter<yw::focus_event> {
+  formatter<yw::string<char>> fmt;
+  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
+  auto format(const yw::focus_event& e, auto& ctx) const { return fmt.format(e.to_string(), ctx); }
+};
+
 template<> struct formatter<yw::hover_event> {
   formatter<yw::string<char>> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
@@ -262,10 +282,10 @@ template<> struct formatter<yw::key_event> {
   auto format(const yw::key_event& e, auto& ctx) const { return fmt.format(e.to_string(), ctx); }
 };
 
-template<> struct formatter<yw::move_event> {
+template<> struct formatter<yw::pointer_event> {
   formatter<yw::string<char>> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::move_event& e, auto& ctx) const { return fmt.format(e.to_string(), ctx); }
+    auto format(const yw::pointer_event& e, auto& ctx) const { return fmt.format(e.to_string(), ctx); }
 };
 
 template<> struct formatter<yw::wheel_event> {

@@ -1,22 +1,25 @@
 #pragma once
-#include <yw/flags.h>
-#include <ywx/clipboard.h>
+#include <ywx/control.h>
 #include <ywx/text.h>
-#include <ywx/ui_frame.h>
 
 namespace yw::ui {
 
-class label : public frame {
+class label : public control {
 public:
-  struct slot : frame::slot {
+  struct slot : control::slot {
     yw::text text = yw::text(L"");
-    color text_color = colors::black;
-    alignment text_align = alignment::center;
+    color text_color;
+    alignment text_align = center;
 
-    float2 calc_text_offset() const noexcept {
-      constexpr float c[]{0.5f, 0.0f, 1.0f};
-      const float2 cc{c[unsigned(text_align) % 3], c[unsigned(text_align) / 3 % 3]};
-      return (size - text.size() - padding.xy() - padding.zw()) * cc + padding.xy();
+    //-- override functions --//
+
+    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool) override {
+      background_color = Theme.surface;
+      border_color = colors::transparent;
+      hover_overlay_color = color(Theme.accent, default_overlay_opacity.hover);
+      text_color = Theme.text;
+      make_dirty();
+      return {};
     }
 
     virtual std::expected<float2, error> get_necessary_size() const override {
@@ -30,21 +33,27 @@ public:
         if (auto res = relocate(); !res) return res.error().relay();
       }
       if (!visible) return {};
-      if (auto res = draw_frame_background(); !res) return res.error().relay();
+      if (auto res = draw_background(); !res) return res.error().relay();
       brush::color(text_color);
-      if (auto res = text.draw(pos + calc_text_offset()); !res) return res.error().relay();
-      if (auto res = draw_frame_foreground(); !res) return res.error().relay();
+      if (auto res = draw_text(text, pos + padding.xy(), size - padding.xy() - padding.zw(), text_align); !res)
+        return res.error().relay();
+      if (auto res = draw_foreground(); !res) return res.error().relay();
       return {};
     }
 
-    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
-      background_color = Theme.surface;
-      border_color = colors::transparent;
-      hovered_overlay_color = colors::transparent;
-      text_color = Theme.text;
-      make_dirty();
+    //-- virtual functions --//
+
+    //-- shared functions --//
+
+    static std::expected<void, error> draw_text(const auto& Text, float2 Pos, float2 Area, alignment Align) {
+      constexpr float c[]{0.5f, 0.0f, 1.0f};
+      const float2 cc{c[unsigned(Align) % 3], c[unsigned(Align) / 3 % 3]};
+      const float2 pos = Pos + (Area - Text.size()) * cc;
+      if (auto res = yw::draw_text(pos, Text.dwrite_text_layout()); !res) return res.error().relay();
       return {};
     }
+
+    //-- internal functions --//
   };
 
   label() noexcept = default;
@@ -69,15 +78,30 @@ public:
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
-    if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
+    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
+    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
     return l;
   }
 
   //-- getter --//
 
-  const auto& text() const noexcept { ywlib_control_get(text); }
-  const auto& text_color() const noexcept { ywlib_control_get(text_color); }
-  const auto& text_align() const noexcept { ywlib_control_get(text_align); }
+  const auto& text() const noexcept {
+    const auto sp = get_slot(&*this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->text;
+  }
+
+  const auto& text_color() const noexcept {
+    const auto sp = get_slot(&*this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->text_color;
+  }
+
+  auto text_align() const noexcept {
+    const auto sp = get_slot(&*this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->text_align;
+  }
 
   const auto& string() const noexcept {
     const auto sp = get_slot(&*this);
@@ -101,7 +125,13 @@ public:
     return self;
   }
 
-  auto& text_color(this auto& self, const color& c) noexcept { ywlib_control_set(text_color, c, dirty); }
+  auto& text_color(this auto& self, const color& c) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->text_color = c;
+    sp->make_dirty();
+    return self;
+  }
 
   auto& text_align(this auto& self, alignment v) noexcept {
     const auto sp = get_slot(&self);

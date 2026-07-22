@@ -17,9 +17,8 @@ inline modifiers _make_mods() noexcept {
   return m;
 }
 
-inline LRESULT _process_wm_cursor(window::slot* wsp, UINT msg, WPARAM wp, LPARAM lp) {
-  switch (msg) {
-  case WM_MOUSEMOVE: {
+template<UINT Msg> inline LRESULT handle_wm_pointer(window::slot* wsp, WPARAM wp, LPARAM lp) {
+  if constexpr (Msg == WM_MOUSEMOVE) {
     const auto local_pos = short2(std::bit_cast<int16_t>(LOWORD(lp)), std::bit_cast<int16_t>(HIWORD(lp)));
     window::slot::cursor_pos = local_pos;
     ::ClientToScreen(wsp->hwnd, reinterpret_cast<POINT*>(&window::slot::cursor_pos));
@@ -32,51 +31,46 @@ inline LRESULT _process_wm_cursor(window::slot* wsp, UINT msg, WPARAM wp, LPARAM
       else if (wp & MK_MBUTTON) e.key = keys::mbutton;
       else if (wp & MK_XBUTTON1) e.key = keys::xbutton1;
       else if (wp & MK_XBUTTON2) e.key = keys::xbutton2;
-      if (auto res = wsp->drag_event(e); !res) res.error().go_off();
+      if (auto res = wsp->handle_drag_event(e); !res) res.error().go_off();
     }
     wsp->last_cursor_pos = window::slot::cursor_pos;
     if (!wsp->track_mouse_event.hwndTrack) {
       wsp->track_mouse_event.hwndTrack = wsp->hwnd;
       ::TrackMouseEvent(&wsp->track_mouse_event);
     }
-    const auto csp = static_cast<control::slot*>(interface::slot::slots.get(wsp->control_id));
+    const auto csp = interface::slot::get_as<control>(wsp->control_id);
     if (!csp) return 0;
     const auto hit = csp->hittest(local_pos);
     if (auto res = wsp->update_hovered_control(hit, local_pos, true, mainloop.elapsed()); !res) res.error().go_off();
-    return 0;
-  }
-  case WM_MOUSELEAVE:
+  } else if constexpr (Msg == WM_MOUSELEAVE) {
     wsp->track_mouse_event.hwndTrack = nullptr;
-    if (const auto hcsp = static_cast<control::slot*>(interface::slot::slots.get(wsp->hovered_control_id))) {
-      const auto pos = window::slot::cursor_pos - wsp->pos;
-      hcsp->hover_event({.pos = pos, .type = hover_event::type::leave});
+    if (const auto hcsp = interface::slot::get_as<control>(wsp->hovered_control_id)) {
+      hcsp->handle_hover_event(hover_event::create::leave(window::slot::cursor_pos - wsp->pos));
       wsp->hovered_control_id = {};
     }
     wsp->hide_tooltip();
-    return 0;
   }
   return 0;
 }
 
-template<UINT Msg> LRESULT _process_wm_focus(window::slot* wsp, WPARAM wp, LPARAM lp) {
+template<UINT Msg> LRESULT handle_wm_focus(window::slot* wsp, WPARAM wp, LPARAM lp) {
   if constexpr (Msg == WM_SETFOCUS) {
-    wsp->focus_event(true);
+    wsp->handle_focus_event({true});
   } else if constexpr (Msg == WM_KILLFOCUS || Msg == WM_ACTIVATEAPP) {
     if constexpr (Msg == WM_ACTIVATEAPP)
       if (wp) return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
-    if (const auto hcsp = static_cast<control::slot*>(interface::slot::slots.get(wsp->hovered_control_id))) {
-      const auto pos = window::slot::cursor_pos - wsp->pos;
-      hcsp->hover_event({.pos = pos, .type = hover_event::type::leave});
+    if (const auto hcsp = interface::slot::get_as<control>(wsp->hovered_control_id)) {
+      hcsp->handle_hover_event(hover_event::create::leave(window::slot::cursor_pos - wsp->pos));
       wsp->hovered_control_id = {};
     }
     wsp->track_mouse_event.hwndTrack = nullptr;
     wsp->hide_tooltip();
-    wsp->focus_event(false);
+    wsp->handle_focus_event({false});
   } else return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
   return 0;
 }
 
-template<UINT Msg> LRESULT _process_wm_size_move(window::slot* wsp, WPARAM wp, LPARAM lp) {
+template<UINT Msg> LRESULT handle_wm_size_move(window::slot* wsp, WPARAM wp, LPARAM lp) {
   if constexpr (Msg == WM_GETMINMAXINFO) {
     if (auto res = wsp->get_necessary_size()) {
       auto& mmi = *reinterpret_cast<MINMAXINFO*>(lp);
@@ -100,36 +94,36 @@ template<UINT Msg> LRESULT _process_wm_size_move(window::slot* wsp, WPARAM wp, L
   return 0;
 }
 
-inline LRESULT _process_wm_showwindow(window::slot* wsp, WPARAM wp, LPARAM) {
+inline LRESULT handle_wm_showwindow(window::slot* wsp, WPARAM wp, LPARAM) {
   const bool next_visible = static_cast<bool>(wp);
   if (wsp->visible == next_visible) return 0;
   if (!next_visible) wsp->clear_window_state();
   wsp->visible = next_visible;
-  if (next_visible) wsp->make_messy();
+  if (next_visible) wsp->messy = true;
   return 0;
 }
 
-inline LRESULT _process_wm_enable(window::slot* wsp, WPARAM wp, LPARAM) {
+inline LRESULT handle_wm_enable(window::slot* wsp, WPARAM wp, LPARAM) {
   const bool next_enabled = static_cast<bool>(wp);
   if (wsp->enabled == next_enabled) return 0;
   if (!next_enabled) wsp->clear_window_state();
   wsp->enabled = next_enabled;
-  wsp->make_dirty();
+  wsp->dirty = true;
   return 0;
 }
 
-inline LRESULT _process_wm_char(window::slot* wsp, WPARAM wp, LPARAM lp) {
-  if (auto res = wsp->char_event(static_cast<wchar_t>(wp)); !res) res.error().go_off();
+inline LRESULT handle_wm_char(window::slot* wsp, WPARAM wp, LPARAM lp) {
+  if (auto res = wsp->handle_char_event(static_cast<wchar_t>(wp)); !res) res.error().go_off();
   if (auto res = wsp->update_caret_pos(); !res) res.error().go_off();
   return 0;
 }
 
-inline LRESULT _process_wm_ime(window::slot* wsp, UINT msg, WPARAM wp, LPARAM lp) {
+inline LRESULT handle_wm_ime(window::slot* wsp, UINT msg, WPARAM wp, LPARAM lp) {
   if (auto res = wsp->update_caret_pos(); !res) res.error().go_off();
   return ::DefWindowProcW(wsp->hwnd, msg, wp, lp);
 }
 
-template<UINT Msg> LRESULT _process_wm_double_click(window::slot* wsp, WPARAM wp, LPARAM lp) {
+template<UINT Msg> LRESULT handle_wm_double_click(window::slot* wsp, WPARAM wp, LPARAM lp) {
   button_event e{};
   e.pos = short2(std::bit_cast<int16_t>(LOWORD(lp)), std::bit_cast<int16_t>(HIWORD(lp)));
   e.mods = internal::_make_mods_from_wparam(wp);
@@ -138,12 +132,12 @@ template<UINT Msg> LRESULT _process_wm_double_click(window::slot* wsp, WPARAM wp
   else if constexpr (Msg == WM_RBUTTONDBLCLK) e.key = keys::rbutton;
   else if constexpr (Msg == WM_MBUTTONDBLCLK) e.key = keys::mbutton;
   else return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
-  if (auto res = wsp->button_event(e); !res) res.error().go_off();
-  if (auto res = wsp->double_click_event(e); !res) res.error().go_off();
+  if (auto res = wsp->handle_button_event(e); !res) res.error().go_off();
+  if (auto res = wsp->handle_double_click_event(e); !res) res.error().go_off();
   return 0;
 }
 
-template<UINT Msg> LRESULT _process_wm_button_event(window::slot* wsp, WPARAM wp, LPARAM lp) {
+template<UINT Msg> LRESULT handle_wm_button_event(window::slot* wsp, WPARAM wp, LPARAM lp) {
   button_event e{};
   e.pos = short2(std::bit_cast<int16_t>(LOWORD(lp)), std::bit_cast<int16_t>(HIWORD(lp)));
   e.mods = internal::_make_mods_from_wparam(wp);
@@ -158,11 +152,11 @@ template<UINT Msg> LRESULT _process_wm_button_event(window::slot* wsp, WPARAM wp
   else if constexpr (Msg == WM_XBUTTONUP)
     (e.key = (HIWORD(wp) == XBUTTON1) ? keys::xbutton1 : keys::xbutton2), e.down = false;
   else return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
-  if (auto res = wsp->button_event(e); !res) res.error().go_off();
+  if (auto res = wsp->handle_button_event(e); !res) res.error().go_off();
   return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
 }
 
-template<UINT Msg> LRESULT _process_wm_wheel_event(window::slot* wsp, WPARAM wp, LPARAM lp) {
+template<UINT Msg> LRESULT handle_wm_wheel_event(window::slot* wsp, WPARAM wp, LPARAM lp) {
   wheel_event e{};
   POINT pos{std::bit_cast<int16_t>(LOWORD(lp)), std::bit_cast<int16_t>(HIWORD(lp))};
   ::ScreenToClient(wsp->hwnd, &pos);
@@ -170,16 +164,16 @@ template<UINT Msg> LRESULT _process_wm_wheel_event(window::slot* wsp, WPARAM wp,
   e.delta = short(HIWORD(wp));
   e.mods = internal::_make_mods();
   e.horizontal = (Msg == WM_MOUSEHWHEEL);
-  if (auto res = wsp->wheel_event(e); !res) res.error().go_off();
+  if (auto res = wsp->handle_wheel_event(e); !res) res.error().go_off();
   return 0;
 }
 
-template<UINT Msg> LRESULT _process_wm_key_event(window::slot* wsp, WPARAM wp, LPARAM lp) {
+template<UINT Msg> LRESULT handle_wm_key_event(window::slot* wsp, WPARAM wp, LPARAM lp) {
   key_event e{};
   e.key = key{static_cast<uint8_t>(wp)};
   e.mods = internal::_make_mods();
   e.down = (Msg == WM_KEYDOWN || Msg == WM_SYSKEYDOWN);
-  if (auto res = wsp->key_event(e); !res) {
+  if (auto res = wsp->handle_key_event(e); !res) {
     res.error().go_off();
     return 0;
   } else if (*res) return 0;
@@ -194,52 +188,52 @@ inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
   if (!wsp) return ::DefWindowProcW(hwnd, msg, wp, lp);
   switch (msg) {
 
-  case WM_MOUSEMOVE:
-  case WM_MOUSELEAVE: return internal::_process_wm_cursor(wsp, msg, wp, lp);
+  case WM_MOUSEMOVE: return internal::handle_wm_pointer<WM_MOUSEMOVE>(wsp, wp, lp);
+  case WM_MOUSELEAVE: return internal::handle_wm_pointer<WM_MOUSELEAVE>(wsp, wp, lp);
 
-  case WM_GETMINMAXINFO: return internal::_process_wm_size_move<WM_GETMINMAXINFO>(wsp, wp, lp);
-  case WM_SIZE: return internal::_process_wm_size_move<WM_SIZE>(wsp, wp, lp);
-  case WM_MOVE: return internal::_process_wm_size_move<WM_MOVE>(wsp, wp, lp);
-  case WM_ENTERSIZEMOVE: return internal::_process_wm_size_move<WM_ENTERSIZEMOVE>(wsp, wp, lp);
-  case WM_EXITSIZEMOVE: return internal::_process_wm_size_move<WM_EXITSIZEMOVE>(wsp, wp, lp);
-  case WM_SHOWWINDOW: return internal::_process_wm_showwindow(wsp, wp, lp);
-  case WM_ENABLE: return internal::_process_wm_enable(wsp, wp, lp);
+  case WM_GETMINMAXINFO: return internal::handle_wm_size_move<WM_GETMINMAXINFO>(wsp, wp, lp);
+  case WM_SIZE: return internal::handle_wm_size_move<WM_SIZE>(wsp, wp, lp);
+  case WM_MOVE: return internal::handle_wm_size_move<WM_MOVE>(wsp, wp, lp);
+  case WM_ENTERSIZEMOVE: return internal::handle_wm_size_move<WM_ENTERSIZEMOVE>(wsp, wp, lp);
+  case WM_EXITSIZEMOVE: return internal::handle_wm_size_move<WM_EXITSIZEMOVE>(wsp, wp, lp);
+  case WM_SHOWWINDOW: return internal::handle_wm_showwindow(wsp, wp, lp);
+  case WM_ENABLE: return internal::handle_wm_enable(wsp, wp, lp);
 
-  case WM_KEYDOWN: return internal::_process_wm_key_event<WM_KEYDOWN>(wsp, wp, lp);
-  case WM_KEYUP: return internal::_process_wm_key_event<WM_KEYUP>(wsp, wp, lp);
-  case WM_SYSKEYDOWN: return internal::_process_wm_key_event<WM_SYSKEYDOWN>(wsp, wp, lp);
-  case WM_SYSKEYUP: return internal::_process_wm_key_event<WM_SYSKEYUP>(wsp, wp, lp);
+  case WM_KEYDOWN: return internal::handle_wm_key_event<WM_KEYDOWN>(wsp, wp, lp);
+  case WM_KEYUP: return internal::handle_wm_key_event<WM_KEYUP>(wsp, wp, lp);
+  case WM_SYSKEYDOWN: return internal::handle_wm_key_event<WM_SYSKEYDOWN>(wsp, wp, lp);
+  case WM_SYSKEYUP: return internal::handle_wm_key_event<WM_SYSKEYUP>(wsp, wp, lp);
 
   case WM_CHAR:
-  case WM_SYSCHAR: return internal::_process_wm_char(wsp, wp, lp);
+  case WM_SYSCHAR: return internal::handle_wm_char(wsp, wp, lp);
 
   case WM_IME_STARTCOMPOSITION:
   case WM_IME_COMPOSITION:
-  case WM_INPUTLANGCHANGE: return internal::_process_wm_ime(wsp, msg, wp, lp);
+  case WM_INPUTLANGCHANGE: return internal::handle_wm_ime(wsp, msg, wp, lp);
 
-  case WM_LBUTTONDBLCLK: return internal::_process_wm_double_click<WM_LBUTTONDBLCLK>(wsp, wp, lp);
-  case WM_RBUTTONDBLCLK: return internal::_process_wm_double_click<WM_RBUTTONDBLCLK>(wsp, wp, lp);
-  case WM_MBUTTONDBLCLK: return internal::_process_wm_double_click<WM_MBUTTONDBLCLK>(wsp, wp, lp);
+  case WM_LBUTTONDBLCLK: return internal::handle_wm_double_click<WM_LBUTTONDBLCLK>(wsp, wp, lp);
+  case WM_RBUTTONDBLCLK: return internal::handle_wm_double_click<WM_RBUTTONDBLCLK>(wsp, wp, lp);
+  case WM_MBUTTONDBLCLK: return internal::handle_wm_double_click<WM_MBUTTONDBLCLK>(wsp, wp, lp);
 
-  case WM_LBUTTONDOWN: return internal::_process_wm_button_event<WM_LBUTTONDOWN>(wsp, wp, lp);
-  case WM_LBUTTONUP: return internal::_process_wm_button_event<WM_LBUTTONUP>(wsp, wp, lp);
-  case WM_RBUTTONDOWN: return internal::_process_wm_button_event<WM_RBUTTONDOWN>(wsp, wp, lp);
-  case WM_RBUTTONUP: return internal::_process_wm_button_event<WM_RBUTTONUP>(wsp, wp, lp);
-  case WM_MBUTTONDOWN: return internal::_process_wm_button_event<WM_MBUTTONDOWN>(wsp, wp, lp);
-  case WM_MBUTTONUP: return internal::_process_wm_button_event<WM_MBUTTONUP>(wsp, wp, lp);
-  case WM_XBUTTONDOWN: return internal::_process_wm_button_event<WM_XBUTTONDOWN>(wsp, wp, lp);
-  case WM_XBUTTONUP: return internal::_process_wm_button_event<WM_XBUTTONUP>(wsp, wp, lp);
+  case WM_LBUTTONDOWN: return internal::handle_wm_button_event<WM_LBUTTONDOWN>(wsp, wp, lp);
+  case WM_LBUTTONUP: return internal::handle_wm_button_event<WM_LBUTTONUP>(wsp, wp, lp);
+  case WM_RBUTTONDOWN: return internal::handle_wm_button_event<WM_RBUTTONDOWN>(wsp, wp, lp);
+  case WM_RBUTTONUP: return internal::handle_wm_button_event<WM_RBUTTONUP>(wsp, wp, lp);
+  case WM_MBUTTONDOWN: return internal::handle_wm_button_event<WM_MBUTTONDOWN>(wsp, wp, lp);
+  case WM_MBUTTONUP: return internal::handle_wm_button_event<WM_MBUTTONUP>(wsp, wp, lp);
+  case WM_XBUTTONDOWN: return internal::handle_wm_button_event<WM_XBUTTONDOWN>(wsp, wp, lp);
+  case WM_XBUTTONUP: return internal::handle_wm_button_event<WM_XBUTTONUP>(wsp, wp, lp);
 
-  case WM_MOUSEWHEEL: return internal::_process_wm_wheel_event<WM_MOUSEWHEEL>(wsp, wp, lp);
-  case WM_MOUSEHWHEEL: return internal::_process_wm_wheel_event<WM_MOUSEHWHEEL>(wsp, wp, lp);
+  case WM_MOUSEWHEEL: return internal::handle_wm_wheel_event<WM_MOUSEWHEEL>(wsp, wp, lp);
+  case WM_MOUSEHWHEEL: return internal::handle_wm_wheel_event<WM_MOUSEHWHEEL>(wsp, wp, lp);
 
-  case WM_SETFOCUS: return internal::_process_wm_focus<WM_SETFOCUS>(wsp, wp, lp);
-  case WM_KILLFOCUS: return internal::_process_wm_focus<WM_KILLFOCUS>(wsp, wp, lp);
-  case WM_ACTIVATEAPP: return internal::_process_wm_focus<WM_ACTIVATEAPP>(wsp, wp, lp);
+  case WM_SETFOCUS: return internal::handle_wm_focus<WM_SETFOCUS>(wsp, wp, lp);
+  case WM_KILLFOCUS: return internal::handle_wm_focus<WM_KILLFOCUS>(wsp, wp, lp);
+  case WM_ACTIVATEAPP: return internal::handle_wm_focus<WM_ACTIVATEAPP>(wsp, wp, lp);
 
   case WM_CAPTURECHANGED:
     if (const auto ccsp = static_cast<control::slot*>(interface::slot::slots.get(wsp->mouse_capture_control_id)))
-      if (auto res = ccsp->reset_state(); !res) res.error().go_off();
+      ccsp->reset_state();
     wsp->mouse_capture_control_id = {};
     return 0;
 
