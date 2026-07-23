@@ -54,9 +54,9 @@ inline constexpr double ln3 = 1.09861228866810969139;
 inline constexpr double ln5 = 1.60943791243410037460;
 
 template<typename... Ts> inline constexpr bool always_false = false;
-template<bool... Bs> inline constexpr size_t counts = (Bs + ...);
-template<bool... Bs> inline constexpr size_t inspects = false;
-template<bool B, bool... Bs> inline constexpr size_t inspects<B, Bs...> = B ? 0 : 1 + inspects<Bs...>;
+template<bool... Bs> inline constexpr size_t count = (Bs + ...);
+template<bool... Bs> inline constexpr size_t inspect = false;
+template<bool B, bool... Bs> inline constexpr size_t inspect<B, Bs...> = B ? 0 : 1 + inspect<Bs...>;
 template<typename T, size_t N> constexpr size_t arraysize(const T (&)[N]) noexcept { return N; }
 
 using pass = std::identity;
@@ -192,6 +192,8 @@ template<auto V, typename T = decltype(V)> requires convertible_to<decltype(V), 
   consteval type operator()() const noexcept { return value; }
 };
 
+template<size_t I> using index = constant<I, size_t>;
+
 //////////////////////////////////////// MARK: select
 
 namespace sys {
@@ -229,7 +231,7 @@ template<typename T, typename To> using copy_const = select_type<is_const<T>, co
 template<typename T, typename To> using copy_volatile = select_type<is_volatile<T>, volatile To, remove_volatile<To>>;
 template<typename T, typename To> using copy_cv = copy_const<T, copy_volatile<T, To>>;
 template<typename T, typename To> using copy_ref =
-  select_type<inspects<is_lvref<T>, is_rvref<T>>, add_lvref<To>, add_rvref<To>, remove_ref<To>>;
+  select_type<inspect<is_lvref<T>, is_rvref<T>>, add_lvref<To>, add_rvref<To>, remove_ref<To>>;
 template<typename T, typename To> using copy_cvref = copy_ref<T, copy_cv<remove_ref<T>, remove_ref<To>>>;
 
 template<typename T> using add_const = copy_ref<T, const remove_ref<T>>;

@@ -142,35 +142,35 @@ python tools/build.py
 
 ## To Do
 
-確認しました。python tools/build.py は通っています。対象は ywlib/ywxlib で有効なヘッダだけに絞りました。
-問題がありそうな場所:
-[control.h (line 204)](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/control.h:204)
-draw_foreground() の境界線描画条件が逆に見えます。
-border_color.a >= 0.0f で return しているため、通常の alpha 値では常に border が描画されません。たぶん <= 0.0f のつもり。
+確認しました。`python tools/build.py` は成功しています。表示崩れにつながる `PushLayer/PopLayer` 不均衡は直っていました。
 
-[window.h (line 419)](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/window.h:419)
-マウスキャプチャ対象が hit_id、つまり is_focusable() な control に限定されています。
-そのため button_event は持つが focus_event を持たない control は、down は届いても up/click/drag が届かない可能性があります。現在有効な label はまさにこの影響を受けやすいです。
+残っていそうな問題はこのあたりです。
 
-[window.h (line 416)](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/window.h:416)
-button 処理中に hovered_control_id を直接書き換えていますが、hover_event::leave/enter や tooltip reset を通していません。
-update_hovered_control() と状態更新経路が分岐しているので、hover 状態・tooltip・dirty がずれる可能性があります。
+1. [window.h](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/window.h:409)
+   `handle_button_event()` で `focused_control_id` / `mouse_capture_control_id` を変更しているのに `dirty = true` していません。
+   そのため focus overlay / press overlay が、control 側が `make_dirty()` しない限り即時反映されない可能性があります。down/up、focus 変更、capture release 時は window を dirty にした方がよさそうです。
 
-[window.h (line 331)](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/window.h:331) / [wndproc.h (line 48)](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/wndproc.h:48)
-cursor_pos - pos は client 座標ではなく、frame 分ずれそうです。
-button/wheel は client 座標を作っていますが、dirty 時の hover 再判定や mouse leave の座標は frame_thickness.xy() を引いていないように見えます。
+2. [wndproc.h](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/wndproc.h:48) / [wndproc.h](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/wndproc.h:63)
+   `WM_MOUSELEAVE` と focus loss 時の hover leave 座標がまだ `cursor_pos - wsp->pos` です。
+   他の箇所では `cursor_pos - pos - frame_thickness.xy()` に直っているので、ここも client 座標に合わせるべきです。
 
-[window.h (line 503)](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/window.h:503) / [window.h (line 511)](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/window.h:511)
-window::pointer_event() と window::wheel_event() の setter/getter はありますが、control が処理しなかった場合に window 側 callback へ fallback していません。
-button_event と key_event には fallback があるので、ここだけ機能していない可能性が高いです。
+3. [window.h](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/window.h:449)
+   `handle_double_click_event()` が `hovered_control_id = csp->hittest(e.pos);` を直接書き換えています。
+   通常の hover 更新経路 `update_hovered_control()` を迂回するので、tooltip / hover enter/leave / dirty とずれる可能性があります。ここは local `hit_id` で処理するだけにした方がいいです。
 
-[wndproc.h (line 191)](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/wndproc.h:191)
-pointer_event 型と handle_pointer_event() はありますが、WM_POINTER* 系の dispatch がありません。現状 pointer_event API は実質未使用に見えます。
+4. [window.h](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/window.h:1018)
+   `draw_foreground()` の focus overlay が `fill_geometry()` なので、focus された control の文字・内容・枠線を上から塗ります。しかも `focus_overlay_color = Theme.accent` で alpha が強そうです。
+   focus は `stroke_geometry()` にするか、薄い alpha の overlay にするか、content 前の `draw_overlay()` 側へ移す方が安全です。
 
-[control.h (line 152)](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/control.h:152) / [control.h (line 160)](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/control.h:160)
-hittest() と is_focusable() が enabled を見ていません。無効化した control に hover/click/focus が入る可能性があります。find_next_tabstop() も visible/enabled を見ないので、focus_event を付けた非表示 control が Tab 対象になる可能性があります。
+5. [window.h](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/window.h:1031)
+   `draw_overlay()` は window の `hover_overlay_color` / `press_overlay_color` だけを使っていて、`control::slot::hover_overlay_color` が実質使われていません。
+   [control.h](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/control.h:425) の setter や [ui_label.h](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/ui_label.h:19) の設定が効かない状態です。window グローバルに寄せるなら control 側の色は消す、control 個別色を残すなら `draw_overlay()` でそちらを見る、のどちらかに寄せたいです。
 
-[control.h (line 124)](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/control.h:124) / [ui_label.h (line 19)](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/ui_label.h:19)
-hover_overlay_color は設定されていますが、有効範囲の label/layout では draw_overlay() が未実装なので hover 表示は出ません。イベントだけのテストなら問題なしですが、見た目で hover を確認する用途では機能していません。
+6. [ui_layout.h](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/ui_layout.h:33)
+   `detach()` が子 control を `clear_window_state()` せずに erase しています。
+   detach 対象が focused / hovered / captured / tooltip 対象だった場合、window 側に古い slotid が残ります。世代チェックで致命傷は避けられますが、leave/reset が飛ばない・tooltip 状態が残るなどのズレが出ます。
 
-ビルドは成功しているので、まず直すなら 1、2、4、5 が優先度高そうです。
+7. [wndproc.h](C:/Users/AA1W017.KOBELCO/workspace/ywlib/ywlib/ywx/wndproc.h:234)
+   `WM_CAPTURECHANGED` で `mouse_capture_control_id` を消しますが、`dirty = true` していません。base `reset_state()` は何もしないので、press overlay を window 側で描く設計ならここも dirty にした方がよさそうです。
+
+優先度は 1、2、4、5 が高めです。今の最低限構成なら 1 と 4 は後で操作系 control を戻した瞬間に目立ちそうです。

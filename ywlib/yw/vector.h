@@ -695,10 +695,10 @@ template<int X, int Y, int Z, int W> __m128 mm_permute(__m128 a, __m128 b) noexc
   else if constexpr ((bx || 3 < X) && (by || 3 < Y) && (bz || Z < 4) && (bw || W < 4))
     return _mm_shuffle_ps(b, a, (bx ? 0 : x) + (by ? 0 : y) * 4 + (bz ? 0 : Z) * 16 + (bw ? 0 : W) * 64);
   else if constexpr ((bx || X == 0) + (by || Y == 1) + (bz || Z == 2) + (bw || W == 3) == 3) {
-    constexpr size_t i = inspects<!(bx || X == 0), !(by || Y == 1), !(bz || Z == 2), !(bw || Z == 3)>;
+    constexpr size_t i = inspect<!(bx || X == 0), !(by || Y == 1), !(bz || Z == 2), !(bw || Z == 3)>;
     return _mm_insert_ps(a, b, int((select_value<i, X, Y, Z, W> - 4) << 6 | i << 4));
   } else if constexpr ((bx || X == 4) + (by || Y == 5) + (bz || Z == 6) + (bw || W == 7) == 3) {
-    constexpr size_t i = inspects<!(bx || X == 4), !(by || Y == 5), !(bz || Z == 6), !(bw || Z == 7)>;
+    constexpr size_t i = inspect<!(bx || X == 4), !(by || Y == 5), !(bz || Z == 6), !(bw || Z == 7)>;
     return _mm_insert_ps(b, a, int(select_value<i, X, Y, Z, W> << 6 | i << 4));
   } else if constexpr ((bx || X < 4 || X == 4) && (by || Y < 4 || Y == 5) && //
                        (bz || Z < 4 || Z == 6) && (bw || W < 4 || W == 7))
@@ -707,10 +707,10 @@ template<int X, int Y, int Z, int W> __m128 mm_permute(__m128 a, __m128 b) noexc
                      (bz || 3 < Z || Z == 2) && (bw || 3 < W || W == 3))
     return mm_blend<X == 0, Y == 1, Z == 2, W == 3>(mm_permute<x, y, z, w>(b), a);
   else if constexpr ((bx || X < 4) + (by || Y < 4) + (bz || Z < 4) + (bw || W < 4) == 3) {
-    constexpr size_t i = inspects<!(bx || X < 4), !(by || Y < 4), !(bz || Z < 4), !(bw || W < 4)>;
+    constexpr size_t i = inspect<!(bx || X < 4), !(by || Y < 4), !(bz || Z < 4), !(bw || W < 4)>;
     return _mm_insert_ps((mm_permute<X, Y, Z, W>(a)), b, int((select_value<i, X, Y, Z, W> - 4) << 6 | i << 4));
   } else if constexpr ((bx || 3 < X) + (by || 3 < Y) + (bz || 3 < Z) + (bw || 3 < W) == 3) {
-    constexpr size_t i = inspects<!(bx || 3 < X), !(by || 3 < Y), !(bz || 3 < Z), !(bw || 3 < W)>;
+    constexpr size_t i = inspect<!(bx || 3 < X), !(by || 3 < Y), !(bz || 3 < Z), !(bw || 3 < W)>;
     return _mm_insert_ps((mm_permute<x, y, z, w>(b)), a, int(select_value<i, X, Y, Z, W> << 6 | i << 4));
   } else return mm_blend<lt(X, 4), lt(Y, 4), lt(Z, 4), lt(W, 4)>(mm_permute<x, y, z, w>(b), mm_permute<X, Y, Z, W>(a));
 }

@@ -23,3 +23,4 @@ Windows / MinGW / CMake support is important.
   Do not rely on PowerShell's default text encoding when inspecting files.
 - Do not routinely run `git status` or broad `git diff`.
 - Never assume the working tree is clean, and never revert or overwrite unrelated user changes.
+- Keep reports concise: when the cause is identified, state only the conclusion and the minimal concrete fix.

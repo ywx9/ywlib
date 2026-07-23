@@ -1,12 +1,14 @@
 #pragma once
-#include <ywx/ui_frame.h>
+#include <ywx/control.h>
 
 namespace yw::ui {
 
-class layer : public frame {
+class layer : public control {
 public:
-  struct slot : public frame::slot {
+  struct slot : public control::slot {
     std::vector<slotid> controls{};
+
+    //-- override functions --//
 
     virtual bool attachable() const override { return true; }
 
@@ -28,6 +30,7 @@ public:
     }
 
     virtual std::expected<void, error> detach(slotid Child) override {
+      if (const auto csp = get_slot<control>(Child)) csp->clear_window_state();
       controls.erase(std::remove(controls.begin(), controls.end(), Child), controls.end());
       interface::slot::slots.erase(Child);
       make_messy();
@@ -63,7 +66,7 @@ public:
 
     virtual slotid hittest(float2 Pt) const override {
       if (!visible) return {};
-      const auto hit = frame::slot::hittest(Pt);
+      const auto hit = control::slot::hittest(Pt);
       if (!hit) return {};
       for (const auto& cid : controls | std::views::reverse) {
         if (const auto csp = get_slot<control>(cid))
@@ -72,32 +75,17 @@ public:
       return hit;
     }
 
-    virtual std::expected<void, error> redraw() override {
-      if (geometry_dirty) {
-        geometry_dirty = false;
-        if (auto res = relocate(); !res) return res.error().relay();
-      }
-      if (!visible) return {};
-      if (auto res = draw_frame_background(); !res) return res.error().relay();
+    virtual std::expected<void, error> draw_content() override {
       for (const auto& cid : controls) {
         const auto csp = get_slot<control>(cid);
         if (!csp) return std::unexpected(error(errors::invalid_slotid));
         if (auto res = csp->redraw(); !res) return res.error().relay();
       }
-      if (auto res = draw_frame_foreground(); !res) return res.error().relay();
       return {};
     }
 
     virtual std::expected<void, error> relocate() override {
-      const auto max_size = provided_area - margin.xy() - margin.zw();
-      if (auto res = set_size_to_necessary(); !res) return res.error().relay();
-      if (policy.x == size_policy::free) size.x = max_size.x;
-      if (policy.y == size_policy::free) size.y = max_size.y;
-      pos = provided_pos + calc_offset_by_align(max_size);
-      ID2D1RoundedRectangleGeometry* geom = nullptr;
-      D2D1_ROUNDED_RECT rr{D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
-      hresult_test(d2d::factory()->CreateRoundedRectangleGeometry, &rr, &geom);
-      geometry.reset(geom);
+      if (auto res = update_geometry(); !res) return res.error().relay();
       const float2 area = size - padding.xy() - padding.zw();
       for (const auto& cid : controls) {
         const auto csp = get_slot<control>(cid);
@@ -122,17 +110,14 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
+    virtual std::expected<void, error> apply_color_theme(const ui::color_theme& Theme, bool Recursive) override {
       background_color = colors::transparent;
       border_color = colors::transparent;
-      hovered_overlay_color = colors::transparent;
-      if (Recursive) {
-        for (const auto& cid : controls) {
-          const auto csp = get_slot<control>(cid);
-          if (!csp) return std::unexpected(error(errors::invalid_slotid));
-          if (auto res = csp->apply_color_theme(Theme, true); !res) return res.error().relay();
-        }
-      }
+      if (Recursive)
+        for (const auto& cid : controls)
+          if (const auto csp = get_slot<control>(cid)) {
+            if (auto res = csp->apply_color_theme(Theme, true); !res) return res.error().relay();
+          } else return std::unexpected(error(errors::invalid_slotid));
       make_dirty();
       return {};
     }
@@ -162,7 +147,8 @@ public:
     sp->margin = {};
     sp->padding = {};
     sp->radius = {};
-    if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
+    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
+    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
     return l;
   }
 };

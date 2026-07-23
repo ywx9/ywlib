@@ -48,7 +48,7 @@ struct color_theme {
 
 struct overlay_opacity {
   float hover = 0.15f;
-  float pressed = 0.30f;
+  float press = 0.30f;
   float selection = 0.30f;
   float muted_text = 0.75f;
 };
@@ -92,7 +92,6 @@ public:
     function<bool, yw::wheel_event> wheel_event;
     string<wchar_t> tooltip;
     color background_color;
-    color hover_overlay_color;
     color border_color;
     float4 margin = float4::fill(arbitrary_value);
     float4 padding = float4::fill(arbitrary_value);
@@ -107,7 +106,7 @@ public:
     float2 minimum_size = float2::fill(arbitrary_value);
     float border_thickness = 1.0f;
     ui::alignment align = ui::center;
-    vector2<ui::size_policy> policy;
+    vector2<ui::size_policy> policy{ui::free, ui::free};
     bool geometry_dirty = false;
     bool visible = true;
     bool enabled = true;
@@ -120,8 +119,19 @@ public:
 
     virtual std::expected<void, error> apply_color_theme(const ui::color_theme& Theme, bool Recursive) { return {}; }
     virtual void close_child_controls() {}
-    virtual std::expected<void, error> draw_focus_accent(); // defined in `window.h`
-    virtual std::expected<void, error> draw_overlay() { return {}; }
+
+    virtual std::expected<void, error> draw_background() {
+      if (background_color.a > 0.0f) {
+        brush::color(background_color);
+        if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
+      }
+      return {};
+    }
+
+
+    virtual std::expected<void, error> draw_content() { return {}; }
+    virtual std::expected<void, error> draw_foreground();   // defined in `window.h`
+    virtual std::expected<void, error> draw_overlay();      // defined in `window.h`
 
     virtual slotid find_next_tabstop(slotid Focused, bool Backward, bool& Found) const {
       if (!is_focusable()) return {};
@@ -150,15 +160,42 @@ public:
     virtual bool handle_wheel_event(yw::wheel_event e) { return wheel_event ? wheel_event(e) : false; }
 
     virtual slotid hittest(float2 Pt) const {
-      if (!visible || !geometry) return {};
+      if (!visible || !enabled || !geometry) return {};
       BOOL contains = FALSE;
       if (const auto hr = geometry->FillContainsPoint({Pt.x, Pt.y}, nullptr, &contains); FAILED(hr))
         error(errors::operation_failed, "ID2D1Geometry::FillContainsPoint failed", int32_t(hr)).fizzle_out();
       return contains ? id : slotid{};
     }
 
-    virtual bool is_focusable() const { return false || bool(focus_event); }
-    virtual std::expected<void, error> redraw() { return {}; }
+    virtual bool is_focusable() const { return enabled && bool(focus_event); }
+
+    virtual bool is_interactive() const {
+      return enabled && visible && (button_event || drag_event || hover_event || pointer_event || wheel_event);
+    }
+
+    virtual std::expected<void, error> redraw() {
+      if (geometry_dirty) {
+        geometry_dirty = false;
+        if (auto res = relocate(); !res) return res.error().relay();
+      }
+      if (!visible) return {};
+      d2d::push_layer(geometry.get());
+      if (auto res = draw_background(); !res) {
+        d2d::pop_layer();
+        return res.error().relay();
+      }
+      if (auto res = draw_overlay(); !res) {
+        d2d::pop_layer();
+        return res.error().relay();
+      }
+      if (auto res = draw_content(); !res) {
+        d2d::pop_layer();
+        return res.error().relay();
+      }
+      d2d::pop_layer();
+      if (auto res = draw_foreground(); !res) return res.error().relay();
+      return {};
+    }
 
     virtual std::expected<void, error> relocate() {
       if (auto res = update_geometry(); !res) return res.error().relay();
@@ -189,49 +226,40 @@ public:
 
     void clear_window_state() noexcept; // defined in `window.h`
 
-    std::expected<void, error> draw_background() {
-      if (background_color.a > 0.0f) {
-        brush::color(background_color);
-        if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
-      }
-      if (auto res = draw_overlay(); !res) return res.error().relay();
-      d2d::push_layer(geometry.get());
-      return {};
-    }
-
-    std::expected<void, error> draw_foreground() {
-      d2d::pop_layer();
-      if (border_color.a <= 0.0f || border_thickness <= 0.0f) return {};
-      brush::color(border_color);
-      if (auto res = stroke_geometry(geometry.get(), border_thickness); !res) return res.error().relay();
-      return {};
-    }
-
     float2 get_bounds() const { return size + margin.xy() + margin.zw(); }
     std::expected<const ui::color_theme*, error> get_color_theme() const noexcept; // defined in `window.h`
     std::expected<command_manager*, error> get_command_manager() const noexcept;   // defined in `window.h`
+    bool is_captured() const noexcept;                                             // defined in `window.h`
     bool is_focused() const noexcept;                                              // defined in `window.h`
     bool is_hovered() const noexcept;                                              // defined in `window.h`
-    void make_dirty() const noexcept; // defined in `window.h`
+    void make_dirty() const noexcept;                                              // defined in `window.h`
     void make_geometry_dirty() { geometry_dirty = true, make_dirty(); }
     void make_messy() const noexcept; // defined in `window.h`
-    void sync_layout() noexcept; // defined in `window.h`
+    void sync_layout() noexcept;      // defined in `window.h`
+
+    void swap_dimensions() {
+      std::swap(minimum_size.x, minimum_size.y);
+      std::swap(required_size.x, required_size.y);
+      std::swap(radius.x, radius.y);
+      std::swap(policy.x, policy.y);
+      make_messy();
+    }
 
     /// \return `(provided_area - margin) - necessary_size`
     std::expected<float2, error> update_geometry() noexcept {
       const auto max_size = provided_area - margin.xy() - margin.zw();
       if (auto res = set_size_to_necessary(); !res) return res.error().relay();
-      const auto extra = max_size - size;
+      const auto necessary_size = size;
       if (policy.x == ui::size_policy::free) size.x = max_size.x;
       if (policy.y == ui::size_policy::free) size.y = max_size.y;
       constexpr float c[]{0.5f, 0.0f, 1.0f};
-      const float2 cc{c[unsigned(align) % 3], c[unsigned(align) / 3 % 3]};
+      const float2 cc{c[unsigned(align) % 3], c[unsigned(align) / 4 % 3]};
       pos = provided_pos + margin.xy() + (max_size - size) * cc;
       ID2D1RoundedRectangleGeometry* geom = nullptr;
       D2D1_ROUNDED_RECT rr{D2D1::RectF(pos.x, pos.y, pos.x + size.x, pos.y + size.y), radius.x, radius.y};
       hresult_test(d2d::factory()->CreateRoundedRectangleGeometry, &rr, &geom);
       geometry.reset(geom);
-      return extra;
+      return size - necessary_size;
     }
 
     //-- internal functions --//
@@ -267,12 +295,6 @@ public:
     const auto sp = get_slot(this);
     if (!sp) error(errors::not_initialized).go_off();
     else return sp->background_color;
-  }
-
-  const color& hover_overlay_color() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::not_initialized).go_off();
-    else return sp->hover_overlay_color;
   }
 
   const color& border_color() const noexcept {
@@ -397,14 +419,6 @@ public:
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
     sp->background_color = c;
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& hover_overlay_color(this auto& self, const color& c) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    sp->hover_overlay_color = c;
     sp->make_dirty();
     return self;
   }

@@ -5,7 +5,10 @@ namespace yw::ui {
 
 class blank : public control {
 public:
-  struct slot : control::slot {};
+  struct slot : control::slot {
+    virtual std::expected<float2, error> get_necessary_size() const override { return {}; }
+    virtual std::expected<void, error> redraw() override { return {}; }
+  };
 
   blank() noexcept = default;
 
@@ -28,7 +31,36 @@ public:
     b._id = temp_id;
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
+    sp->margin = {};
     return b;
   }
+
+  //-- getter --//
+
+  float2 pos() const noexcept { return control::pos(); }
+  float2 size() const noexcept { return control::size(); }
+
+private:
+  using control::align;
+  using control::background_color;
+  using control::border_color;
+  using control::button_event;
+  using control::drag_event;
+  using control::enabled;
+  using control::focus_event;
+  using control::focused;
+  using control::height;
+  using control::hover_event;
+  using control::hovered;
+  using control::key_event;
+  using control::margin;
+  using control::minimum_size;
+  using control::padding;
+  using control::pointer_event;
+  using control::policy;
+  using control::radius;
+  using control::visible;
+  using control::wheel_event;
+  using control::width;
 };
 } // namespace yw::ui

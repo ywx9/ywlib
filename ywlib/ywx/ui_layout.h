@@ -11,6 +11,18 @@ public:
 
     //-- override functions --//
 
+    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
+      background_color = colors::transparent;
+      border_color = colors::transparent;
+      if (Recursive)
+        for (const auto& cid : controls)
+          if (const auto csp = get_slot<control>(cid)) {
+            if (auto res = csp->apply_color_theme(Theme, true); !res) return res.error().relay();
+          } else return std::unexpected(error(errors::invalid_slotid));
+      make_dirty();
+      return {};
+    }
+
     virtual bool attachable() const override { return true; }
 
     virtual std::expected<void, error> attach(slotid Child) override {
@@ -31,6 +43,7 @@ public:
     }
 
     virtual std::expected<void, error> detach(slotid Child) override {
+      if (const auto csp = get_slot<control>(Child)) csp->clear_window_state();
       controls.erase(std::remove(controls.begin(), controls.end(), Child), controls.end());
       interface::slot::slots.erase(Child);
       make_messy();
@@ -75,19 +88,11 @@ public:
       return id;
     }
 
-    virtual std::expected<void, error> redraw() override {
-      if (geometry_dirty) {
-        geometry_dirty = false;
-        if (auto res = relocate(); !res) return res.error().relay();
-      }
-      if (!visible) return {};
-      if (auto res = draw_background(); !res) return res.error().relay();
-      for (const auto& cid : controls) {
-        const auto csp = get_slot<control>(cid);
-        if (!csp) return std::unexpected(error(errors::invalid_slotid));
-        if (auto res = csp->redraw(); !res) return res.error().relay();
-      }
-      if (auto res = draw_foreground(); !res) return res.error().relay();
+    virtual std::expected<void, error> draw_content() override {
+      for (const auto& cid : controls)
+        if (const auto csp = get_slot<control>(cid)) {
+          if (auto res = csp->redraw(); !res) return res.error().relay();
+        } else return std::unexpected(error(errors::invalid_slotid));
       return {};
     }
 
@@ -133,11 +138,13 @@ public:
         }
       } else {
         float2 offset = padding.xy();
+        const auto cross = size[!Vert] - padding[!Vert] - padding[2 + !Vert];
         for (const auto& cid : controls) {
           const auto csp = get_slot<control>(cid);
           if (!csp) return std::unexpected(error(errors::invalid_slotid));
           if (!csp->visible) continue;
           float2 area = csp->get_bounds();
+          area[!Vert] = cross;
           if (auto res = csp->relocate(pos + offset, area); !res) return res.error().relay();
           offset[Vert] += area[Vert];
         }
@@ -158,21 +165,6 @@ public:
       }
       inner += padding.xy() + padding.zw();
       size = calc_necessary_size_by_policy(inner);
-      return {};
-    }
-
-    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
-      background_color = colors::transparent;
-      border_color = colors::transparent;
-      hover_overlay_color = colors::transparent;
-      if (Recursive) {
-        for (const auto& cid : controls) {
-          const auto csp = get_slot<control>(cid);
-          if (!csp) return std::unexpected(error(errors::invalid_slotid));
-          if (auto res = csp->apply_color_theme(Theme, true); !res) return res.error().relay();
-        }
-      }
-      make_dirty();
       return {};
     }
   };

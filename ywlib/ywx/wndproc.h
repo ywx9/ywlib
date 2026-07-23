@@ -45,7 +45,7 @@ template<UINT Msg> inline LRESULT handle_wm_pointer(window::slot* wsp, WPARAM wp
   } else if constexpr (Msg == WM_MOUSELEAVE) {
     wsp->track_mouse_event.hwndTrack = nullptr;
     if (const auto hcsp = interface::slot::get_as<control>(wsp->hovered_control_id)) {
-      hcsp->handle_hover_event(hover_event::create::leave(window::slot::cursor_pos - wsp->pos));
+      hcsp->handle_hover_event(hover_event::create::leave(wsp->get_local_pointer_pos()));
       wsp->hovered_control_id = {};
     }
     wsp->hide_tooltip();
@@ -60,7 +60,7 @@ template<UINT Msg> LRESULT handle_wm_focus(window::slot* wsp, WPARAM wp, LPARAM 
     if constexpr (Msg == WM_ACTIVATEAPP)
       if (wp) return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
     if (const auto hcsp = interface::slot::get_as<control>(wsp->hovered_control_id)) {
-      hcsp->handle_hover_event(hover_event::create::leave(window::slot::cursor_pos - wsp->pos));
+      hcsp->handle_hover_event(hover_event::create::leave(wsp->get_local_pointer_pos()));
       wsp->hovered_control_id = {};
     }
     wsp->track_mouse_event.hwndTrack = nullptr;
@@ -235,6 +235,7 @@ inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
     if (const auto ccsp = static_cast<control::slot*>(interface::slot::slots.get(wsp->mouse_capture_control_id)))
       ccsp->reset_state();
     wsp->mouse_capture_control_id = {};
+    wsp->dirty = true;
     return 0;
 
   case WM_NCDESTROY:

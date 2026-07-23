@@ -16,7 +16,6 @@ public:
     virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool) override {
       background_color = Theme.surface;
       border_color = colors::transparent;
-      hover_overlay_color = color(Theme.accent, default_overlay_opacity.hover);
       text_color = Theme.text;
       make_dirty();
       return {};
@@ -27,17 +26,11 @@ public:
       return calc_necessary_size_by_policy(inner);
     }
 
-    virtual std::expected<void, error> redraw() override {
-      if (geometry_dirty) {
-        geometry_dirty = false;
-        if (auto res = relocate(); !res) return res.error().relay();
-      }
-      if (!visible) return {};
-      if (auto res = draw_background(); !res) return res.error().relay();
+    virtual std::expected<void, error> draw_content() override {
       brush::color(text_color);
-      if (auto res = draw_text(text, pos + padding.xy(), size - padding.xy() - padding.zw(), text_align); !res)
-        return res.error().relay();
-      if (auto res = draw_foreground(); !res) return res.error().relay();
+      const auto origin = pos + padding.xy();
+      const auto area = size - padding.xy() - padding.zw();
+      if (auto res = label::slot::draw_text(text, origin, area, text_align); !res) return res.error().relay();
       return {};
     }
 

@@ -50,8 +50,8 @@ public:
       else next.y = yw::max(int(std::round(float(next.y) + HeightDelta)), int(res->y));
       wsp->fit_to_necessary_size = false;
       wsp->size = next;
-      const auto area = wsp->size + wsp->frame_thickness.xy() + wsp->frame_thickness.zw();
-      win32_bool_test(::SetWindowPos, wsp->hwnd, 0, wsp->pos.x, wsp->pos.y, area.x, area.y, SWP_NOZORDER | SWP_NOACTIVATE);
+      const auto b = get_bounds();
+      win32_bool_test(::SetWindowPos, wsp->hwnd, 0, wsp->pos.x, wsp->pos.y, b.x, b.y, SWP_NOZORDER | SWP_NOACTIVATE);
       wsp->make_messy();
       return {};
     }
@@ -250,11 +250,7 @@ public:
     sp->text_align = alignment::left;
     if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
 
-    window::options op{
-      .has_border = true,
-      .has_caption = false,
-      .resizable = false,
-      .visible = false};
+    window::options op{.has_border = true, .has_caption = false, .resizable = false, .visible = false};
     if (auto res = window::create(std::move(op))) sp->dropdown_window = std::move(*res);
     else return res.error().relay();
 
@@ -450,7 +446,9 @@ public:
     return self;
   }
 
-  auto& on_change(this auto& self, function<void, size_t> f) noexcept { ywlib_control_set(on_change, std::move(f), none); }
+  auto& on_change(this auto& self, function<void, size_t> f) noexcept {
+    ywlib_control_set(on_change, std::move(f), none);
+  }
   auto& selection_color(this auto& self, const color& c) noexcept { ywlib_control_set(selection_color, c, dirty); }
   auto& item_padding(this auto& self, float4 f) noexcept { ywlib_control_set(item_padding, f, messy); }
 

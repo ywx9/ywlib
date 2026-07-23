@@ -1,84 +1,67 @@
 #pragma once
-#include <ywx/ui_frame.h>
+#include <ywx/control.h>
 
 namespace yw::ui {
 
-class progressbar : public frame {
+/** \note progressbarについて
+- paddingは無効
+- bar_width : 3*bar_widthが最小サイズ
+- cross方向にfree
+*/
+
+class progressbar : public control {
 public:
-  struct slot : frame::slot {
+  struct slot : control::slot {
     float value = 0.0f;
     float minimum = 0.0f;
     float maximum = 1.0f;
     float bar_width = 16.0f;
-    ui::orientation orientation = ui::orientation::horizontal;
-    color track_color = color(0.0f, 0.0f, 0.0f, 0.08f);
-    color progress_color = color(colors::dodgerblue, 0.65f);
+    ui::orientation orientation = ui::horizontal;
+    color progress_color;
 
-    float clamp_value(float v) const noexcept { return yw::clamp(v, minimum, maximum); }
+    //-- override functions --//
 
-    float ratio() const noexcept {
-      const float range = maximum - minimum;
-      if (range <= 0.0f) return 0.0f;
-      return yw::clamp((value - minimum) / range, 0.0f, 1.0f);
-    }
-
-    float4 inner_rect() const noexcept {
-      const auto p = pos + padding.xy();
-      const auto s = size - padding.xy() - padding.zw();
-      return {p.x, p.y, p.x + yw::max(0.0f, s.x), p.y + yw::max(0.0f, s.y)};
-    }
-
-    static float2 rect_pos(float4 Rect) noexcept { return {Rect.x, Rect.y}; }
-    static float2 rect_size(float4 Rect) noexcept { return {Rect.z - Rect.x, Rect.w - Rect.y}; }
-
-    float4 progress_rect(float4 Rect) const noexcept {
-      const auto r = ratio();
-      if (orientation == ui::orientation::vertical) {
-        const float h = (Rect.w - Rect.y) * r;
-        return {Rect.x, Rect.w - h, Rect.z, Rect.w};
-      }
-      return {Rect.x, Rect.y, Rect.x + (Rect.z - Rect.x) * r, Rect.w};
-    }
-
-    std::expected<void, error> fill_rect(float4 Rect, const color& Color) const {
-      if (Color.a <= 0.0f || Rect.z <= Rect.x || Rect.w <= Rect.y) return {};
-      brush::color(Color);
-      if (auto res = fill_round_rectangle(rect_pos(Rect), rect_size(Rect), radius); !res) return res.error().relay();
-      return {};
-    }
-
-    virtual std::expected<float2, error> get_necessary_size() const override {
-      const auto base = orientation == ui::orientation::vertical ? float2{bar_width, bar_width * 3.0f}
-                                                                 : float2{bar_width * 3.0f, bar_width};
-      return calc_necessary_size_by_policy(padding.xy() + padding.zw() + base);
-    }
-
-    virtual std::expected<void, error> redraw() override {
-      if (geometry_dirty) {
-        geometry_dirty = false;
-        if (auto res = relocate(); !res) return res.error().relay();
-      }
-      if (!visible) return {};
-      if (auto res = draw_frame_background(); !res) return res.error().relay();
-      const auto inner = inner_rect();
-      if (auto res = fill_rect(inner, track_color); !res) return res.error().relay();
-      if (auto res = fill_rect(progress_rect(inner), progress_color); !res) return res.error().relay();
-      if (auto res = draw_frame_foreground(); !res) return res.error().relay();
-      return {};
-    }
-
-    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
-      background_color = colors::transparent;
-      border_color = colors::transparent;
-      hovered_overlay_color = colors::transparent;
-      track_color = color(Theme.outline, 0.14f);
-      progress_color = color(Theme.accent, 0.65f);
+    virtual std::expected<void, error> apply_color_theme(const ui::color_theme& Theme, bool Recursive) override {
+      background_color = Theme.surface;
+      border_color = Theme.outline;
+      progress_color = Theme.accent;
       make_dirty();
       return {};
     }
+
+    virtual std::expected<void, error> draw_content() override {
+      const auto ratio = this->ratio();
+      if (ratio == 0.0f) return {};
+      brush::color(progress_color);
+      if (ratio == 1.0f) {
+        if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
+      } else if (orientation == ui::horizontal) {
+        const auto bar_size = float2(size.x * ratio, size.y);
+        if (auto res = fill_rectangle(pos, bar_size); !res) return res.error().relay();
+      } else {
+        const auto bar_size = float2(size.x, size.y * ratio);
+        const auto bar_origin = float2(pos.x, pos.y + size.y - bar_size.y);
+        if (auto res = fill_rectangle(bar_origin, bar_size); !res) return res.error().relay();
+      }
+      return {};
+    }
+
+    virtual float2 get_minimum_size() const override {
+      if (orientation == ui::vertical) return float2{bar_width, bar_width * 3.0f};
+      else return float2{bar_width * 3.0f, bar_width};
+    }
+
+    //-- shared functions --//
+
+    float clamp_value(float v) noexcept { return yw::clamp(v, minimum, maximum); }
+
+    float ratio() const noexcept {
+      if (const float range = maximum - minimum; range <= 0.0f) return 0.0f;
+      else return yw::clamp((value - minimum) / range, 0.0f, 1.0f);
+    }
   };
 
-  using frame::operator bool;
+  using control::operator bool;
   progressbar() noexcept = default;
 
   progressbar(derived_from<interface> auto& Parent, const source_line& sl = here()) {
@@ -100,20 +83,49 @@ public:
     p._id = temp_id;
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
-    sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
-    if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
+    sp->policy[sp->orientation == ui::horizontal] = ui::size_policy::fit;
+    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
+    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
     return p;
   }
 
   //-- getter --//
 
-  float value() const noexcept { ywlib_control_get(value); }
-  float minimum() const noexcept { ywlib_control_get(minimum); }
-  float maximum() const noexcept { ywlib_control_get(maximum); }
-  float bar_width() const noexcept { ywlib_control_get(bar_width); }
-  ui::orientation orientation() const noexcept { ywlib_control_get(orientation); }
-  const auto& track_color() const noexcept { ywlib_control_get(track_color); }
-  const auto& progress_color() const noexcept { ywlib_control_get(progress_color); }
+  float value() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->value;
+  }
+
+  float minimum() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->minimum;
+  }
+
+  float maximum() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->maximum;
+  }
+
+  float bar_width() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->bar_width;
+  }
+
+  ui::orientation orientation() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->orientation;
+  }
+
+  const auto& progress_color() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->progress_color;
+  }
 
   //-- setter --//
 
@@ -177,9 +189,25 @@ public:
     return self;
   }
 
-  auto& orientation(this auto& self, ui::orientation v) noexcept { ywlib_control_set(orientation, v, messy); }
-  auto& track_color(this auto& self, const color& c) noexcept { ywlib_control_set(track_color, c, dirty); }
-  auto& progress_color(this auto& self, const color& c) noexcept { ywlib_control_set(progress_color, c, dirty); }
+  auto& orientation(this auto& self, ui::orientation v) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    if (sp->orientation != v) {
+      sp->orientation = v;
+      sp->swap_dimensions();
+    }
+    return self;
+  }
+
+  auto& progress_color(this auto& self, const color& c) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->progress_color = c;
+    sp->make_dirty();
+    return self;
+  }
+
+private:
+  using control::padding;
 };
 } // namespace yw::ui
-

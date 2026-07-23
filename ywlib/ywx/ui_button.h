@@ -3,46 +3,44 @@
 
 namespace yw::ui {
 
-class button : public label {
+class button : public control {
 public:
-  struct slot : label::slot {
-    color pressed_overlay_color = color(0.0f, 0.0f, 0.0f, 0.2f);
+  struct slot : control::slot {
+    yw::text text = yw::text(L"");
+    color text_color;
+    alignment text_align = center;
     bool pressed = false;
 
-    function<void, yw::button_event> on_click{};
+    function<void, yw::button_event> click_event{};
 
-    virtual bool focusable() const noexcept override { return enabled && visible; }
+    virtual bool is_focusable() const override { return enabled && visible; }
+    virtual bool is_interactive() const override { return true; }
 
     virtual void invoke(yw::button_event e) {
-      if (on_click) on_click(e);
+      if (click_event) click_event(e);
     }
 
-    virtual std::expected<void, error> redraw() override {
-      if (geometry_dirty) {
-        geometry_dirty = false;
-        if (auto res = relocate(); !res) return res.error().relay();
-      }
-      if (!visible) return {};
-      if (auto res = draw_frame_background(); !res) return res.error().relay();
+    virtual std::expected<void, error> draw_content() override {
       brush::color(text_color);
-      if (auto res = text.draw(pos + calc_text_offset()); !res) return res.error().relay();
-      if (pressed && pressed_overlay_color.a > 0.0f) {
-        brush::color(pressed_overlay_color);
-        if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
-      }
-      if (auto res = draw_frame_foreground(); !res) return res.error().relay();
+      const auto origin = pos + padding.xy();
+      const auto area = size - padding.xy() - padding.zw();
+      if (auto res = label::slot::draw_text(text, origin, area, text_align); !res) return res.error().relay();
       return {};
     }
 
-    virtual std::expected<void, error> reset_state() override {
-      if (!pressed) return {};
+    virtual std::expected<float2, error> get_necessary_size() const override {
+      const auto inner = text.size() + padding.xy() + padding.zw();
+      return calc_necessary_size_by_policy(inner);
+    }
+
+    virtual void reset_state() override {
+      if (!pressed) return;
       pressed = false;
       make_dirty();
-      return {};
     }
 
-    virtual bool button_event(yw::button_event e) override {
-      if (!enabled || e.key != keys::lbutton) return false;
+    virtual bool handle_button_event(yw::button_event e) override {
+      if (!enabled || !visible || e.key != keys::lbutton) return false;
       const bool next_pressed = e.down;
       if (pressed == next_pressed) return true;
       pressed = next_pressed;
@@ -50,18 +48,22 @@ public:
       return true;
     }
 
-    virtual bool click_event(yw::button_event e) override {
-      if (!enabled || e.down || e.key != keys::lbutton) return false;
+    virtual bool handle_click_event(yw::button_event e) override {
+      if (!enabled || !visible || e.down || e.key != keys::lbutton) return false;
       invoke(e);
       return true;
     }
 
-    virtual void focus_event(bool Focused) override {
-      if (!Focused) pressed = false;
+    virtual bool handle_focus_event(yw::focus_event e) override {
+      if (!e.focused && pressed) {
+        pressed = false;
+        make_dirty();
+      }
+      return control::slot::handle_focus_event(e);
     }
 
-    virtual bool key_event(yw::key_event e) override {
-      if (!enabled) return false;
+    virtual bool handle_key_event(yw::key_event e) override {
+      if (!enabled || !visible) return false;
       if (e.key != keys::space && e.key != keys::enter) return false;
       if (e.down) {
         if (!pressed) {
@@ -82,9 +84,7 @@ public:
     virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
       background_color = Theme.surface;
       border_color = Theme.outline;
-      hovered_overlay_color = color(Theme.accent, default_overlay_opacity.hover);
       text_color = Theme.text;
-      pressed_overlay_color = color(Theme.accent, default_overlay_opacity.pressed);
       make_dirty();
       return {};
     }
@@ -112,26 +112,101 @@ public:
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
-    if (auto res = sp->apply_current_color_theme(false); !res) return res.error().relay();
+    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
+    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
     return b;
   }
 
   //-- getter --//
 
-  const auto& pressed_overlay_color() const noexcept { ywlib_control_get(pressed_overlay_color); }
-  bool pressed() const noexcept { ywlib_control_get(pressed); }
-  const auto& on_click() const noexcept { ywlib_control_get(on_click); }
+  const auto& text() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->text;
+  }
+
+  const auto& text_color() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->text_color;
+  }
+
+  auto text_align() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->text_align;
+  }
+
+  const auto& string() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->text.string();
+  }
+
+  const auto& font() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->text.font();
+  }
+
+  bool pressed() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->pressed;
+  }
+
+  const auto& click_event() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->click_event;
+  }
 
   //-- setter --//
 
-  auto& pressed_overlay_color(this auto& self, const color& c) noexcept {
-    ywlib_control_set(pressed_overlay_color, c, dirty);
-  }
-
-  auto& on_click(this auto& self, function<void, yw::button_event> f) noexcept {
+  auto& text(this auto& self, yw::text Text) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
-    sp->on_click = std::move(f);
+    sp->text = std::move(Text);
+    sp->make_messy();
+    return self;
+  }
+
+  auto& text_color(this auto& self, const color& c) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->text_color = c;
+    sp->make_dirty();
+    return self;
+  }
+
+  auto& text_align(this auto& self, alignment v) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->text_align = v;
+    sp->make_dirty();
+    return self;
+  }
+
+  auto& string(this auto& self, yw::string<wchar_t> s) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    if (auto res = sp->text.string(std::move(s)); !res) res.error().go_off();
+    sp->make_messy();
+    return self;
+  }
+
+  auto& font(this auto& self, font_config f) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    if (auto res = sp->text.font(std::move(f)); !res) res.error().go_off();
+    sp->make_messy();
+    return self;
+  }
+
+  auto& click_event(this auto& self, function<void, yw::button_event> f) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    sp->click_event = std::move(f);
     return self;
   }
 };
