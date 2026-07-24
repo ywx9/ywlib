@@ -3,7 +3,7 @@
 
 namespace yw {
 
-//////////////////////////////////////// MARK: svgpath
+/// MARK: svgpath
 
 class svgpath {
 private:
@@ -11,7 +11,7 @@ private:
   D2D1_RECT_F _bounds{};
   float2 _size{};
 
-  svgpath(comptr<ID2D1PathGeometry>&& geom) : _geometry(std::move(geom)) {}
+  // svgpath(comptr<ID2D1PathGeometry>&& geom) : _geometry(std::move(geom)) {}
 
   static std::expected<comptr<ID2D1PathGeometry>, error> parse_svg_path(const string_view<char> svg_path_str) {
     comptr<ID2D1PathGeometry> geometry;
@@ -283,15 +283,24 @@ private:
     return geometry;
   }
 
-  std::expected<void, error> initialize(float2 Size, string_view<char> Svg) {
+public:
+  svgpath() = default;
+  svgpath(svgpath&&) noexcept = default;
+  svgpath& operator=(svgpath&&) noexcept = default;
+  explicit operator bool() const noexcept { return static_cast<bool>(_geometry); }
+  explicit operator ID2D1PathGeometry*&() & noexcept { return _geometry.get(); }
+  explicit operator ID2D1PathGeometry*() const& noexcept { return _geometry.get(); }
+
+  std::expected<svgpath, error> create(float2 Size, string_view<char> Svg) {
+    svgpath sp;
     if (auto res = parse_svg_path(Svg)) {
-      _geometry = std::move(*res);
-      _size = Size;
-      return {};
+      sp._geometry = std::move(*res);
+      sp._size = Size;
+      return sp;
     } else return res.error().relay();
   }
 
-  std::expected<void, error> initialize(const svgpath& Other) {
+  std::expected<svgpath, error> create(const svgpath& Other) {
     if (!Other) return std::unexpected(error(errors::invalid_argument, "source svgpath not initialized"));
     comptr<ID2D1PathGeometry> new_geometry;
     hresult_test(d2d::factory()->CreatePathGeometry, &new_geometry.get());
@@ -304,19 +313,12 @@ private:
     const auto hr = sink->Close();
     sink.release();
     if (FAILED(hr)) return std::unexpected(error(errors::operation_failed, "Close sink failed", int32_t(hr)));
-    _geometry = std::move(new_geometry);
-    _size = Other._size;
-    _bounds = Other._bounds;
-    return {};
+    svgpath sp;
+    sp._geometry = std::move(new_geometry);
+    sp._size = Other._size;
+    sp._bounds = Other._bounds;
+    return sp;
   }
-
-public:
-  svgpath() = default;
-  svgpath(svgpath&&) noexcept = default;
-  svgpath& operator=(svgpath&&) noexcept = default;
-  explicit operator bool() const noexcept { return static_cast<bool>(_geometry); }
-  explicit operator ID2D1PathGeometry*&() & noexcept { return _geometry.get(); }
-  explicit operator ID2D1PathGeometry*() const& noexcept { return _geometry.get(); }
 
   svgpath(float2 Size, string_view<char> Svg, const source_line& sl = here()) {
     if (auto res = initialize(Size, Svg); !res) res.error().add_footprint().go_off(sl);

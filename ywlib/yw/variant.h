@@ -36,7 +36,7 @@ template<typename T> union variant_base<T> {
   }
 };
 
-template<is_object... Ts> requires ((same_as<Ts, remove_cvref<Ts>> && ...)) class variant {
+template<is_object... Ts> requires((same_as<Ts, remove_cvref<Ts>> && ...)) class variant {
   variant_base<none, Ts...> _data = variant_base<none, Ts...>(yw::index<0>());
   size_t _index = 0;
 
@@ -49,8 +49,8 @@ template<is_object... Ts> requires ((same_as<Ts, remove_cvref<Ts>> && ...)) clas
 
   template<size_t I> using _type = select_type<I, Ts...>;
 
-  template<size_t I, typename... As>
-  constexpr variant(yw::index<I>, As&&... Args) : _data(yw::index<I>(), static_cast<As&&>(Args)...), _index(I) {}
+  template<size_t I, typename... As> constexpr variant(yw::index<I>, As&&... Args)
+    : _data(yw::index<I>(), static_cast<As&&>(Args)...), _index(I) {}
 
   template<size_t I, typename... As> constexpr bool _try_construct(As&&... Args) noexcept {
     _destroy();
@@ -88,10 +88,19 @@ template<is_object... Ts> requires ((same_as<Ts, remove_cvref<Ts>> && ...)) clas
 
   template<size_t I = 0> constexpr void _move_from(variant&& Other) noexcept {
     if constexpr (I < sizeof...(Ts)) {
-      if (Other._index == I + 1)
-        _try_construct<I + 1>(static_cast<variant&&>(Other)._data.template get<I + 1>());
+      if (Other._index == I + 1) _try_construct<I + 1>(static_cast<variant&&>(Other)._data.template get<I + 1>());
       else _move_from<I + 1>(static_cast<variant&&>(Other));
     }
+  }
+
+  template<size_t I, typename Self> static constexpr decltype(auto) _get(Self&& self) {
+    return static_cast<Self&&>(self)._data.template get<I>();
+  }
+
+  template<size_t I, typename F, typename Self> static constexpr decltype(auto) _visit(Self&& self, F&& f) {
+    if constexpr (I + 1 == sizeof...(Ts)) return invoke(static_cast<F&&>(f), _get<I + 1>(static_cast<Self&&>(self)));
+    else if (self._index == I + 1) return invoke(static_cast<F&&>(f), _get<I + 1>(static_cast<Self&&>(self)));
+    else return _visit<I + 1>(static_cast<Self&&>(self), static_cast<F&&>(f));
   }
 
 public:
@@ -104,10 +113,10 @@ public:
   }
   constexpr variant(const variant&) requires(!((constructible<Ts, const Ts&> && ...))) = delete;
 
-  constexpr variant(variant&& Other) noexcept requires((constructible<Ts, Ts&&> && ...)) {
+  constexpr variant(variant&& Other) noexcept requires((constructible<Ts, Ts &&> && ...)) {
     _move_from(static_cast<variant&&>(Other));
   }
-  constexpr variant(variant&&) requires(!((constructible<Ts, Ts&&> && ...))) = delete;
+  constexpr variant(variant&&) requires(!((constructible<Ts, Ts &&> && ...))) = delete;
 
   template<typename T> requires(_unique_type<T> && constructible<_type<_type_index<T>>, T>)
   constexpr variant(T&& Value) noexcept {
@@ -123,14 +132,14 @@ public:
   }
   constexpr variant& operator=(const variant&) requires(!((constructible<Ts, const Ts&> && ...))) = delete;
 
-  constexpr variant& operator=(variant&& Other) noexcept requires((constructible<Ts, Ts&&> && ...)) {
+  constexpr variant& operator=(variant&& Other) noexcept requires((constructible<Ts, Ts &&> && ...)) {
     if (this != &Other) {
       _destroy();
       _move_from(static_cast<variant&&>(Other));
     }
     return *this;
   }
-  constexpr variant& operator=(variant&&) requires(!((constructible<Ts, Ts&&> && ...))) = delete;
+  constexpr variant& operator=(variant&&) requires(!((constructible<Ts, Ts &&> && ...))) = delete;
 
   template<typename T> requires(_unique_type<T> && constructible<_type<_type_index<T>>, T>)
   constexpr variant& operator=(T&& Value) noexcept {
@@ -175,86 +184,114 @@ public:
   constexpr bool has_value() const noexcept { return _index != 0; }
   constexpr bool empty() const noexcept { return _index == 0; }
 
-  template<size_t I, typename Self> requires(I < sizeof...(Ts))
-  constexpr auto get_if(this Self&& self) noexcept -> copy_cv<remove_ref<Self>, _type<I>>* {
+  template<size_t I> requires(I < sizeof...(Ts))
+  constexpr auto get_if(this auto&& self) noexcept -> copy_cv<remove_ref<decltype(self)>, select_type<I, Ts...>>* {
     if (self._index != I + 1) return nullptr;
-    return std::addressof(static_cast<Self&&>(self)._data.template get<I + 1>());
+    return std::addressof(static_cast<decltype(self)&&>(self)._data.template get<I + 1>());
   }
 
-  template<typename T, typename Self> requires(_unique_type<T>)
-  constexpr auto get_if(this Self&& self) noexcept -> copy_cv<remove_ref<Self>, _type<_type_index<T>>>* {
-    return static_cast<Self&&>(self).template get_if<_type_index<T>>();
+  template<typename T> requires(count<same_as<T, Ts>...> == 1) constexpr auto get_if(this auto&& self) noexcept
+    -> copy_cv<remove_ref<decltype(self)>, select_type<inspect<same_as<T, Ts>...>, Ts...>>* {
+    return static_cast<decltype(self)&&>(self).template get_if<inspect<same_as<T, Ts>...>>();
   }
 
-  template<size_t I, typename Self> requires(I < sizeof...(Ts))
-  constexpr copy_cvref<Self&&, _type<I>> get(this Self&& self) {
-    if (auto p = static_cast<Self&&>(self).template get_if<I>()) return static_cast<copy_cvref<Self&&, _type<I>>>(*p);
+  template<size_t I> requires(I < sizeof...(Ts))
+  constexpr auto get(this auto&& self) -> copy_cvref<decltype(self), select_type<I, Ts...>> {
+    if (auto p = static_cast<decltype(self)&&>(self).template get_if<I>())
+      return static_cast<copy_cvref<decltype(self), select_type<I, Ts...>>>(*p);
     error(errors::invalid_operation, "variant index mismatch").go_off();
-    return static_cast<Self&&>(self)._data.template get<I + 1>();
+    return static_cast<decltype(self)&&>(self)._data.template get<I + 1>();
   }
 
   template<typename T, typename Self> requires(_unique_type<T>)
   constexpr copy_cvref<Self&&, _type<_type_index<T>>> get(this Self&& self) {
     return static_cast<Self&&>(self).template get<_type_index<T>>();
   }
-};
 
-namespace internal {
-template<typename T>
-concept expected_error =
-  variation_of<T, std::expected<void, error>> && same_as<typename remove_cvref<T>::error_type, error>;
-
-template<typename T>
-concept expected_void_error = expected_error<T> && same_as<typename remove_cvref<T>::value_type, void>;
-
-template<size_t I, typename F, typename V>
-using visit_result = std::invoke_result_t<F, decltype(std::declval<V>().template get<I>())>;
-
-template<typename F, typename V, size_t... Is>
-inline constexpr bool visitable = (std::invocable<F, decltype(std::declval<V>().template get<Is>())> && ...);
-
-template<typename R, typename F, typename V, size_t... Is>
-inline constexpr bool same_visit_result =
-  (same_as<R, visit_result<Is, F, V>> && ...);
-
-template<size_t I, size_t N, typename R, typename F, typename V>
-constexpr R visit(F&& f, V&& v) {
-  if constexpr (I < N) {
-    if (v.index() == I) {
-      if constexpr (is_void<R>) return std::invoke(static_cast<F&&>(f), static_cast<V&&>(v).template get<I>());
-      else return std::invoke(static_cast<F&&>(f), static_cast<V&&>(v).template get<I>());
-    } else return visit<I + 1, N, R>(static_cast<F&&>(f), static_cast<V&&>(v));
-  } else {
-    if constexpr (is_void<R>) return;
-    else if constexpr (expected_void_error<R>) return R{};
-    else if constexpr (expected_error<R>)
-      return std::unexpected(error(errors::invalid_operation, "empty variant"));
-    else {
-      error(errors::invalid_operation, "empty variant").go_off();
-      std::exit(EXIT_FAILURE);
+  template<typename F, typename Self> requires requires {
+    requires(std::invocable<F, Ts> && ...);
+    requires same_as<std::invoke_result_t<F, select_type<0, Ts...>>, std::invoke_result_t<F, Ts>...>;
+  } constexpr decltype(auto) visit(this Self&& self, F&& f) {
+    using R = std::invoke_result_t<F, select_type<0, Ts...>>;
+    if constexpr (is_void<R>) {
+      if (self._index == 0) return none();
+      else return _visit<0>(static_cast<Self&&>(self), static_cast<F&&>(f));
+    } else if constexpr (variation_of<R, std::expected<void, error>>) {
+      if constexpr (is_void<typename R::value_type> || same_as<typename R::value_type, none>) {
+        if (self._index == 0) return R{};
+        else return _visit<0>(static_cast<Self&&>(self), static_cast<F&&>(f));
+      } else if constexpr (same_as<typename R::error_type, error>) {
+        if (self._index == 0) return std::unexpected(error(errors::invalid_operation, "empty variant"));
+        else return _visit<0>(static_cast<Self&&>(self), static_cast<F&&>(f));
+      } else {
+        if (self._index == 0) {
+          error(errors::invalid_operation, "empty variant").go_off();
+          std::exit(EXIT_FAILURE);
+        } else return _visit<0>(static_cast<Self&&>(self), static_cast<F&&>(f));
+      }
+    } else {
+      if (self._index == 0) {
+        error(errors::invalid_operation, "empty variant").go_off();
+        std::exit(EXIT_FAILURE);
+      }
+      return _visit<0>(static_cast<Self&&>(self), static_cast<F&&>(f));
     }
   }
-}
-} // namespace internal
+};
 
-template<typename F, typename V>
-concept visitable_variant =
-  specialization_of<V, variant> &&
-  []<typename... Ts>(std::type_identity<variant<Ts...>>) {
-    if constexpr (sizeof...(Ts) == 0) return false;
-    else {
-    using R = internal::visit_result<0, F, V>;
-    return []<size_t... Is>(sequence<Is...>) {
-      return internal::visitable<F, V, Is...> && internal::same_visit_result<R, F, V, Is...>;
-    }(make_sequence<0, sizeof...(Ts)>{});
-    }
-  }(std::type_identity<remove_cvref<V>>{});
+// namespace internal {
+// template<typename T> concept expected_error =
+//   variation_of<T, std::expected<void, error>> && same_as<typename remove_cvref<T>::error_type, error>;
 
-template<typename F, typename V> requires visitable_variant<F, V>
-constexpr decltype(auto) visit(F&& f, V&& v) {
-  using R = internal::visit_result<0, F, V>;
-  constexpr size_t N = []<typename... Ts>(std::type_identity<variant<Ts...>>) { return sizeof...(Ts); }(
-    std::type_identity<remove_cvref<V>>{});
-  return internal::visit<0, N, R>(static_cast<F&&>(f), static_cast<V&&>(v));
+// template<typename T> concept expected_void_error =
+//   expected_error<T> && same_as<typename remove_cvref<T>::value_type, void>;
+
+// template<size_t I, typename F, typename V> using visit_result =
+//   std::invoke_result_t<F, decltype(std::declval<V>().template get<I>())>;
+
+// template<typename F, typename V, size_t... Is> inline constexpr bool visitable =
+//   (std::invocable<F, decltype(std::declval<V>().template get<Is>())> && ...);
+
+// template<typename R, typename F, typename V, size_t... Is> inline constexpr bool same_visit_result =
+//   (same_as<R, visit_result<Is, F, V>> && ...);
+
+// template<size_t I, size_t N, typename R, typename F, typename V> constexpr R visit(F&& f, V&& v) {
+//   if constexpr (I < N) {
+//     if (v.index() == I) {
+//       if constexpr (is_void<R>) return std::invoke(static_cast<F&&>(f), static_cast<V&&>(v).template get<I>());
+//       else return std::invoke(static_cast<F&&>(f), static_cast<V&&>(v).template get<I>());
+//     } else return visit<I + 1, N, R>(static_cast<F&&>(f), static_cast<V&&>(v));
+//   } else {
+//     if constexpr (is_void<R>) return;
+//     else if constexpr (expected_void_error<R>) return R{};
+//     else if constexpr (expected_error<R>) return std::unexpected(error(errors::invalid_operation, "empty variant"));
+//     else {
+//       error(errors::invalid_operation, "empty variant").go_off();
+//       std::exit(EXIT_FAILURE);
+//     }
+//   }
+// }
+// } // namespace internal
+
+// template<typename F, typename V> concept visitable_variant =
+//   specialization_of<V, variant> && []<typename... Ts>(std::type_identity<variant<Ts...>>) {
+//     if constexpr (sizeof...(Ts) == 0) return false;
+//     else {
+//       using R = internal::visit_result<0, F, V>;
+//       return []<size_t... Is>(sequence<Is...>) {
+//         return internal::visitable<F, V, Is...> && internal::same_visit_result<R, F, V, Is...>;
+//       }(make_sequence<0, sizeof...(Ts)>{});
+//     }
+//   }(std::type_identity<remove_cvref<V>>{});
+
+// template<typename F, typename V> requires visitable_variant<F, V> constexpr decltype(auto) visit(F&& f, V&& v) {
+//   using R = internal::visit_result<0, F, V>;
+//   constexpr size_t N = []<typename... Ts>(std::type_identity<variant<Ts...>>) { return sizeof...(Ts); }(
+//                          std::type_identity<remove_cvref<V>>{});
+//   return internal::visit<0, N, R>(static_cast<F&&>(f), static_cast<V&&>(v));
+// }
+
+template<typename F, specialization_of<variant> V> constexpr decltype(auto) visit(F&& f, V&& v) {
+  return static_cast<V&&>(v).template visit(static_cast<F&&>(f));
 }
 } // namespace yw
