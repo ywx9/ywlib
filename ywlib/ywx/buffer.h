@@ -7,31 +7,42 @@ template<typename T> class staging_buffer;
 
 /// MARK: buffer
 
-template<typename T> class buffer {
-protected:
-  comptr<::ID3D11Buffer> _buffer{};
-  uint32_t _size{};
-  buffer(uint1 Size) noexcept : _size(Size.x) {}
-
+template<typename T> class buffer : public handle_base {
 public:
+  struct slot : public handle_base::slot {
+    comptr<ID3D11Buffer> buffer{};
+    uint32_t size{};
+  };
+
   using value_type = T;
-
-  explicit operator bool() const noexcept { return bool(_buffer); }
-  explicit operator ::ID3D11Buffer*&() & { return _buffer.get(); }
-  explicit operator ::ID3D11Buffer*() const& { return _buffer.get(); }
-
   buffer() noexcept = default;
+  buffer(buffer&&) noexcept = default;
+  buffer& operator=(buffer&&) noexcept = default;
 
-  std::expected<void, error> copy_from(const buffer& src) {
-    if (!src) return std::unexpected(error(errors::invalid_argument, "uninitialized source buffer"));
-    if (!*this) return std::unexpected(error(errors::invalid_argument, "uninitialized destination buffer"));
-    if (src.size() != size()) return std::unexpected(error(errors::invalid_operation, "unmatched buffer sizes"));
-    d3d::context()->CopyResource(_buffer.get(), src._buffer.get());
-    return {};
+  explicit operator bool() const noexcept {
+    const auto sp = slot::get_as<buffer>(id());
+    return sp && sp->buffer;
   }
 
-  uint32_t size() const noexcept { return _size; }
-  ID3D11Buffer* d3d_buffer() const { return _buffer.get(); }
+  auto d3d_buffer(this auto&& self) const noexcept -> copy_cv<remove_ref<decltype(self)>, ID3D11Buffer>* {
+    if (const auto sp = slot::get_as<buffer>(id())) return sp->buffer.get();
+    else return nullptr;
+  }
+
+  uint32_t size() const noexcept {
+    if (const auto sp = slot::get_as<buffer>(id())) return sp->size;
+    else return 0;
+  }
+
+  std::expected<void, error> copy_from(const buffer& Other) {
+    if (!Other) return std::unexpected(error(errors::invalid_argument, "uninitialized source buffer"));
+    if (!*this) return std::unexpected(error(errors::invalid_argument, "uninitialized destination buffer"));
+    const auto sp = slot::get_as<buffer>(id());
+    const auto osp = slot::get_as<buffer>(Other.id());
+    if (sp->size != osp->size) return std::unexpected(error(errors::invalid_operation, "unmatched buffer sizes"));
+    d3d::context()->CopyResource(sp->buffer.get(), osp->buffer.get());
+    return {};
+  }
 
   std::expected<void, error> copy_to_cpu(void* o) const;
   std::vector<T> copy_to_cpu(const source_line& sl = here()) const;
@@ -40,48 +51,59 @@ public:
 /// MARK: staging_buffer
 
 template<typename T> class staging_buffer : public buffer<T> {
-  std::expected<void, error> initialize(uint1 Size) {
-    this->_size = Size.x;
-    D3D11_BUFFER_DESC desc{UINT(sizeof(T)) * Size.x, D3D11_USAGE_STAGING, {}, D3D11_CPU_ACCESS_READ, {}, 0};
-    hresult_test(d3d::device()->CreateBuffer, &desc, nullptr, &this->_buffer.get());
-    return {};
-  }
-
 public:
+  struct slot : public buffer<T>::slot {
+    std::expected<void, error> copy_to_cpu(void* o) const {
+      if (size == 0) return std::unexpected(error(errors::invalid_operation, "empty buffer"));
+      D3D11_MAPPED_SUBRESOURCE mapped;
+      hresult_test(d3d::context()->Map, buffer.get(), 0, D3D11_MAP_READ, 0, &mapped);
+      std::memcpy(o, mapped.pData, size * sizeof(T));
+      d3d::context()->Unmap(buffer.get(), 0);
+      return {};
+    }
+  };
+
   using buffer<T>::operator bool;
-  using buffer<T>::operator ::ID3D11Buffer*&;
-  using buffer<T>::operator ::ID3D11Buffer*;
-
   staging_buffer() noexcept = default;
+
+  std::expected<staging_buffer, error> create(uint1 Size) {
+    const auto sp = make_slot<staging_buffer>();
+    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
+    sp->size = Size.x;
+    D3D11_BUFFER_DESC desc{UINT(sizeof(T)) * Size.x, D3D11_USAGE_STAGING, {}, D3D11_CPU_ACCESS_READ, {}, 0};
+    hresult_test(d3d::device()->CreateBuffer, &desc, nullptr, &sp->buffer.get());
+    return make_handle<staging_buffer>(sp->id);
+  }
+
   staging_buffer(uint1 Size, const source_line& sl = here()) {
-    if (auto res = initialize(Size); !res) res.error().go_off(sl);
+    if (auto res = create(Size); !res) res.error().go_off(sl);
+    else *this = std::move(res.value());
   }
 
-  staging_buffer(const buffer<T>& b, const source_line& sl = here()) : staging_buffer(b.size(), sl) {
-    if (auto res = this->copy_from(b); !res) res.error().go_off(sl);
+  std::expected<staging_buffer, error> create(const buffer<T>& Other) {
+    if (auto b = create(uint1{Other.size()}); !b) return b.error().relay();
+    else if (auto res = b->copy_from(Other); !res) return res.error().relay();
+    else return std::move(*b);
   }
 
-  template<typename... As> requires constructible<staging_buffer, As...>
-  static std::expected<staging_buffer, error> create(As&&... Args) {
-    staging_buffer b;
-    if (auto res = b.initialize(static_cast<As&&>(Args)...)) return b;
-    else return res.error().relay();
+  staging_buffer(const buffer<T>& Other, const source_line& sl = here()) {
+    if (auto res = create(Other); !res) res.error().go_off(sl);
+    else *this = std::move(res.value());
   }
 
   std::expected<void, error> copy_to_cpu(void* o) const {
-    const auto n = buffer<T>::size();
-    if (n == 0) return std::unexpected(error(errors::invalid_operation, "empty buffer"));
-    D3D11_MAPPED_SUBRESOURCE mapped;
-    if (const auto hr = d3d::context()->Map(buffer<T>::d3d_buffer(), 0, D3D11_MAP_READ, 0, &mapped); FAILED(hr))
-      return std::unexpected(error(errors::operation_failed, "failed to map staging buffer for reading"));
-    std::memcpy(o, mapped.pData, n * sizeof(T));
-    d3d::context()->Unmap(buffer<T>::d3d_buffer(), 0);
-    return {};
+    if (const auto sp = slot::get_as<staging_buffer>(id()); !sp) return std::unexpected(error(errors::invalid_slotid));
+    else if (auto res = sp->copy_to_cpu(o); !res) return res.error().relay();
+    else return {};
   }
 
   std::vector<T> copy_to_cpu(const source_line& sl = here()) const {
     std::vector<T> Data(buffer<T>::size());
-    if (auto res = copy_to_cpu(Data.data()); !res) res.error().add_footprint().fizzle_out(sl);
+    if (const auto sp = slot::get_as<staging_buffer>(id()); !sp) error(errors::invalid_slotid).go_off(sl);
+    else if (auto res = sp->copy_to_cpu(Data.data()); !res) {
+      res.error().add_footprint().fizzle_out(sl);
+      return {};
+    }
     return Data;
   }
 };
@@ -107,36 +129,33 @@ template<typename T> requires(sizeof(T) % 16 == 0) class constant_buffer : publi
   static constexpr D3D11_BUFFER_DESC desc{
     sizeof(T), D3D11_USAGE_DYNAMIC, D3D11_BIND_CONSTANT_BUFFER, D3D11_CPU_ACCESS_WRITE};
 
-  std::expected<void, error> initialize(const T& Val) {
-    this->_size = 1;
-    D3D11_SUBRESOURCE_DATA srd(&Val, 0, 0);
-    hresult_test(d3d::device()->CreateBuffer, &desc, &srd, &this->_buffer.get());
-    return {};
-  }
-
 public:
+  struct slot : buffer<T>::slot {};
+
   using buffer<T>::operator bool;
-  using buffer<T>::operator ::ID3D11Buffer*&;
-  using buffer<T>::operator ::ID3D11Buffer*;
-
   constant_buffer() noexcept = default;
+
+  std::expected<constant_buffer, error> create(const T& Val) {
+    const auto sp = make_slot<constant_buffer>();
+    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
+    sp->size = 1;
+    D3D11_SUBRESOURCE_DATA srd(&Val, 0, 0);
+    hresult_test(d3d::device()->CreateBuffer, &desc, &srd, &sp->buffer.get());
+    return make_handle<constant_buffer>(sp->id);
+  }
+
   constant_buffer(const T& Val, const source_line& sl = here()) {
-    if (auto res = initialize(Val); !res) res.error().go_off(sl);
+    if (auto res = create(Val); !res) res.error().go_off(sl);
+    else *this = std::move(res.value());
   }
 
-  template<typename... As> requires constructible<constant_buffer, As...>
-  static std::expected<constant_buffer, error> create(As&&... Args) {
-    constant_buffer b;
-    if (auto res = b.initialize(static_cast<As&&>(Args)...)) return b;
-    else return res.error().relay();
-  }
-
-  std::expected<void, error> set(const T& Val) {
-    if (!*this) return std::unexpected(error(errors::invalid_operation, "uninitialized constant buffer"));
+  std::expected<void, error> copy_from(const T& Val) {
+    const auto sp = slot::get_as<constant_buffer>(id());
+    if (!sp) return std::unexpected(error(errors::invalid_slotid));
     D3D11_MAPPED_SUBRESOURCE mapped;
-    hresult_test(d3d::context()->Map, buffer<T>::d3d_buffer(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+    hresult_test(d3d::context()->Map, sp->buffer.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
     std::memcpy(mapped.pData, &Val, sizeof(T));
-    d3d::context()->Unmap(buffer<T>::d3d_buffer(), 0);
+    d3d::context()->Unmap(sp->buffer.get(), 0);
     return {};
   }
 };
@@ -145,57 +164,83 @@ template<typename T> constant_buffer(const T&) -> constant_buffer<T>;
 
 /// MARK: structured_buffer
 
-template<typename T> class structured_buffer : public buffer<T> {
-  comptr<::ID3D11ShaderResourceView> _srv{};
+template<typename T, bool RW = false> class structured_buffer : public buffer<T> {
+  using resource_view_type = select_type<RW, ::ID3D11UnorderedAccessView, ::ID3D11ShaderResourceView>;
+public:
+  struct slot : buffer<T>::slot {
+    comptr<resource_view_type> resource_view{};
 
-  std::expected<void, error> initialize(const T* Data, uint1 Size) {
-    this->_size = Size.x;
-    const auto count = this->size();
-    D3D11_BUFFER_DESC bd{
-      UINT(sizeof(T)) * count, {}, D3D11_BIND_SHADER_RESOURCE, {}, D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, sizeof(T)};
-    if (Data) {
-      D3D11_SUBRESOURCE_DATA srd{Data, int(sizeof(T))};
-      hresult_test(d3d::device()->CreateBuffer, &bd, &srd, &(::ID3D11Buffer*&)*this);
-    } else hresult_test(d3d::device()->CreateBuffer, &bd, nullptr, &(::ID3D11Buffer*&)*this);
-    D3D11_BUFFER_SRV buffer_srv{.FirstElement = 0, .NumElements = count};
-    D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{{}, D3D11_SRV_DIMENSION_BUFFER, buffer_srv};
-    hresult_test(d3d::device()->CreateShaderResourceView, (::ID3D11Buffer*)*this, &srv_desc, &_srv.get());
-    return {};
+    std::expected<void, error> initialize(const T* Data, uint32_t Size) {
+      this->size = Size;
+      D3D11_BUFFER_DESC bd{UINT(sizeof(T)) * Size};
+      bd.BindFlags = RW ? D3D11_BIND_UNORDERED_ACCESS : D3D11_BIND_SHADER_RESOURCE;
+      bd.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+      bd.StructureByteStride = sizeof(T);
+      if (Data) {
+        D3D11_SUBRESOURCE_DATA srd{Data, int(sizeof(T))};
+        hresult_test(d3d::device()->CreateBuffer, &bd, &srd, &this->buffer.get());
+      } else hresult_test(d3d::device()->CreateBuffer, &bd, nullptr, &this->buffer.get());
+      if constexpr (!RW) {
+        D3D11_BUFFER_SRV buffer_srv{.FirstElement = 0, .NumElements = Size};
+        D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{{}, D3D11_SRV_DIMENSION_BUFFER, buffer_srv};
+        hresult_test(d3d::device()->CreateShaderResourceView, this->buffer.get(), &srv_desc, &resource_view.get());
+      } else hresult_test(d3d::device()->CreateUnorderedAccessView, this->buffer.get(), nullptr, &resource_view.get());
+      return {};
+    }
+  };
+
+  explicit operator bool() const noexcept {
+    const auto sp = slot::get_as<structured_buffer>(id());
+    return sp && static_cast<bool>(sp->resource_view);
   }
 
-public:
-  using buffer<T>::operator ::ID3D11Buffer*&;
-  using buffer<T>::operator ::ID3D11Buffer*;
-
-  explicit operator bool() const noexcept { return bool(_srv); }
-  explicit operator ::ID3D11ShaderResourceView*&() noexcept { return _srv.get(); }
-  explicit operator ::ID3D11ShaderResourceView*() const noexcept { return _srv.get(); }
+  auto d3d_resource_view(this auto&& self) const noexcept -> copy_cv<remove_ref<decltype(self)>, resource_view_type>* {
+    if (const auto sp = slot::get_as<structured_buffer>(id())) return sp->resource_view.get();
+    else return nullptr;
+  }
 
   structured_buffer() noexcept = default;
 
+  std::expected<structured_buffer, error> create(uint1 Size) {
+    const auto sp = make_slot<structured_buffer>();
+    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
+    if (auto res = sp->initialize(nullptr, Size.x); !res) return res.error().relay();
+    return make_handle<structured_buffer>(sp->id);
+  }
+
   structured_buffer(uint1 Size, const source_line& sl = here()) {
-    if (auto res = initialize(nullptr, Size); !res) res.error().go_off(sl);
+    if (auto res = create(Size); !res) res.error().go_off(sl);
+    else *this = std::move(res.value());
+  }
+
+  std::expected<structured_buffer, error> create(const T* Data, uint1 Size) {
+    const auto sp = make_slot<structured_buffer>();
+    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
+    if (auto res = sp->initialize(Data, Size.x); !res) return res.error().relay();
+    return make_handle<structured_buffer>(sp->id);
   }
 
   structured_buffer(const T* Data, uint1 Size, const source_line& sl = here()) {
-    if (auto res = initialize(Data, Size); !res) res.error().go_off(sl);
+    if (auto res = create(Data, Size); !res) res.error().go_off(sl);
+    else *this = std::move(res.value());
+  }
+
+  template<contiguous_range<T> Rg> std::expected<structured_buffer, error> create(Rg&& rg) {
+    const auto sp = make_slot<structured_buffer>();
+    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
+    if (auto res = sp->initialize(yw::data(rg), yw::size(rg)); !res) return res.error().relay();
+    return make_handle<structured_buffer>(sp->id);
   }
 
   template<contiguous_range<T> Rg> structured_buffer(Rg&& rg, const source_line& sl = here()) {
-    if (auto res = initialize(yw::data(rg), yw::size(rg)); !res) res.error().go_off(sl);
-  }
-
-  template<typename... Ts> requires constructible<structured_buffer, Ts...>
-  static std::expected<structured_buffer, error> create(Ts&&... Args) {
-    structured_buffer b;
-    if (auto res = b.initialize(static_cast<Ts&&>(Args)...)) return b;
-    else return res.error().relay();
+    if (auto res = create(yw::data(rg), yw::size(rg)); !res) res.error().go_off(sl);
+    else *this = std::move(res.value());
   }
 
   std::expected<void, error> copy_from(const T* Data, uint1 Size) {
-    if (auto res = this->validate_initialized("Uninitialized structured buffer"); !res) return res.error().relay();
-    if (Size.x != 0 && !Data) return std::unexpected(error(errors::invalid_argument, "null source data"));
-    if (auto res = this->validate_same_size(Size.x); !res) return res.error().relay();
+    const auto sp = slot::get_as<structured_buffer>(id());
+    if (!sp) return std::unexpected(error(errors::invalid_slotid));
+    if (Size.x != sp->size) return std::unexpected(error(errors::invalid_operation, "unmatched buffer sizes"));
     d3d::context()->UpdateSubresource((::ID3D11Buffer*)*this, 0, nullptr, Data, 0, 0);
     return {};
   }
@@ -206,63 +251,9 @@ public:
   }
 };
 
+template<typename T> using rw_structured_buffer = structured_buffer<T, true>;
+
 template<typename T> structured_buffer(const buffer<T>&) -> structured_buffer<T>;
 template<typename T> structured_buffer(const T*, uint1) -> structured_buffer<T>;
-
-/// MARK: rw_structured_buffer
-
-template<typename T> class rw_structured_buffer : public buffer<T> {
-  comptr<::ID3D11UnorderedAccessView> _uav;
-
-  std::expected<void, error> initialize(const T* Data, uint1 Size) {
-    this->_size = Size.x;
-    D3D11_BUFFER_DESC desc{UINT(sizeof(T)) * this->size(), {}, 0x80, {}, 0x40, sizeof(T)};
-    if (Data) {
-      D3D11_SUBRESOURCE_DATA srd{Data, int(sizeof(T))};
-      hresult_test(d3d::device()->CreateBuffer, &desc, &srd, &(::ID3D11Buffer*&)*this);
-    } else hresult_test(d3d::device()->CreateBuffer, &desc, nullptr, &(::ID3D11Buffer*&)*this);
-    hresult_test(d3d::device()->CreateUnorderedAccessView, (::ID3D11Buffer*)*this, nullptr, &_uav.get());
-    return {};
-  }
-
-public:
-  using buffer<T>::operator ::ID3D11Buffer*&;
-  using buffer<T>::operator ::ID3D11Buffer*;
-
-  explicit operator bool() const noexcept { return bool(_uav); }
-  explicit operator ::ID3D11UnorderedAccessView*&() noexcept { return _uav.get(); }
-  explicit operator ::ID3D11UnorderedAccessView*() const noexcept { return _uav.get(); }
-
-  rw_structured_buffer() noexcept = default;
-  rw_structured_buffer(uint1 Size, const source_line& sl = here()) {
-    if (auto res = initialize(nullptr, Size); !res) res.error().go_off(sl);
-  }
-
-  rw_structured_buffer(const T* Data, uint1 Size, const source_line& sl = here()) {
-    if (auto res = initialize(Data, Size); !res) res.error().go_off(sl);
-  }
-
-  template<typename... Ts> requires constructible<rw_structured_buffer, Ts...>
-  static std::expected<rw_structured_buffer, error> create(Ts&&... Args) {
-    rw_structured_buffer b;
-    if (auto res = b.initialize(static_cast<Ts&&>(Args)...)) return b;
-    else return res.error().relay();
-  }
-
-  std::expected<void, error> copy_from(const T* Data, uint1 Size) {
-    if (!*this) return std::unexpected(error(errors::invalid_argument, "uninitialized rw_structured_buffer"));
-    if (Size.x != 0 || !Data) return std::unexpected(error(errors::invalid_argument, "null source data"));
-    if (Size.x != this->size()) return std::unexpected(error(errors::invalid_operation, "unmatched buffer sizes"));
-    d3d::context()->UpdateSubresource(buffer<T>::d3d_buffer(), 0, nullptr, Data, 0, 0);
-    return {};
-  }
-
-  template<contiguous_range<T> Rg> std::expected<void, error> copy_from(Rg&& rg) {
-    if (auto res = copy_from(yw::data(rg), yw::size(rg)); !res) return res.error().relay();
-    return {};
-  }
-};
-
-template<typename T> rw_structured_buffer(const buffer<T>&) -> rw_structured_buffer<T>;
-template<typename T> rw_structured_buffer(const T*, uint1) -> rw_structured_buffer<T>;
+template<contiguous_range Rg> structured_buffer(Rg&&) -> structured_buffer<iter_value_t<Rg>>;
 } // namespace yw
