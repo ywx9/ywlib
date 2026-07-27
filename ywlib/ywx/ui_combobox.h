@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <ywx/ui_grip.h>
 #include <ywx/ui_layout.h>
 #include <ywx/ui_listbox.h>
@@ -300,7 +300,10 @@ public:
 
   size_t item_count() const noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    }
     return sp->items.size();
   }
 
@@ -324,11 +327,14 @@ public:
 
   auto& add(this auto& self, yw::string<wchar_t> s) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->close_dropdown();
     if (auto res = yw::text::create(std::move(s))) sp->items.push_back(std::move(*res));
     else {
-      res.error().go_off();
+      res.error().fizzle_out();
       return self;
     }
     if (sp->selected == npos) sp->select(0, false);
@@ -338,7 +344,10 @@ public:
 
   auto& add(this auto& self, yw::text t) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->close_dropdown();
     sp->items.push_back(std::move(t));
     if (sp->selected == npos) sp->select(0, false);
@@ -348,15 +357,18 @@ public:
 
   auto& insert(this auto& self, size_t Index, yw::string<wchar_t> s) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (Index > sp->items.size()) {
-      error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
+      error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
       return self;
     }
     sp->close_dropdown();
     if (auto res = yw::text::create(std::move(s))) sp->items.insert(sp->items.begin() + Index, std::move(*res));
     else {
-      res.error().go_off();
+      res.error().fizzle_out();
       return self;
     }
     if (sp->selected == npos) sp->select(0, false);
@@ -367,9 +379,12 @@ public:
 
   auto& insert(this auto& self, size_t Index, yw::text t) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (Index > sp->items.size()) {
-      error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
+      error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
       return self;
     }
     sp->close_dropdown();
@@ -382,16 +397,22 @@ public:
 
   auto& erase(this auto& self, size_t Index) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (Index >= sp->items.size()) {
-      error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
+      error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
       return self;
     }
     sp->close_dropdown();
     sp->items.erase(sp->items.begin() + Index);
     if (sp->items.empty()) {
       sp->selected = npos;
-      if (auto res = sp->text.string(L""); !res) res.error().go_off();
+      if (auto res = sp->text.string(L""); !res) {
+        res.error().fizzle_out();
+        return self;
+      }
     } else if (sp->selected == Index) sp->select(yw::min(Index, sp->items.size() - 1), false);
     else if (Index < sp->selected) --sp->selected;
     sp->make_messy();
@@ -400,20 +421,29 @@ public:
 
   auto& clear(this auto& self) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->close_dropdown();
     sp->items.clear();
     sp->selected = npos;
-    if (auto res = sp->text.string(L""); !res) res.error().go_off();
+    if (auto res = sp->text.string(L""); !res) {
+      res.error().fizzle_out();
+      return self;
+    }
     sp->make_messy();
     return self;
   }
 
   auto& selected_index(this auto& self, size_t Index) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (Index >= sp->items.size()) {
-      error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
+      error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
       return self;
     }
     sp->select(Index);
@@ -422,23 +452,32 @@ public:
 
   auto& open(this auto& self) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    if (auto res = sp->open_dropdown(); !res) res.error().go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
+    if (auto res = sp->open_dropdown(); !res) res.error().fizzle_out();
     return self;
   }
 
   auto& close(this auto& self) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->close_dropdown();
     return self;
   }
 
   auto& button_width(this auto& self, float1 v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (v.x <= 0.0f) {
-      error(errors::invalid_argument, "combobox button_width must be positive").go_off();
+      error(errors::invalid_argument, "combobox button_width must be positive").fizzle_out();
       return self;
     }
     sp->button_width = v.x;
@@ -454,9 +493,12 @@ public:
 
   auto& text(this auto& self, size_t Index, yw::text t) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (Index >= sp->items.size()) {
-      error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
+      error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
       return self;
     }
     sp->close_dropdown();
@@ -468,13 +510,19 @@ public:
 
   auto& string(this auto& self, size_t Index, yw::string<wchar_t> s) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (Index >= sp->items.size()) {
-      error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
+      error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
       return self;
     }
     sp->close_dropdown();
-    if (auto res = sp->items[Index].string(std::move(s)); !res) res.error().go_off();
+    if (auto res = sp->items[Index].string(std::move(s)); !res) {
+      res.error().fizzle_out();
+      return self;
+    }
     if (sp->selected == Index) sp->select(Index, false);
     sp->make_messy();
     return self;
@@ -482,10 +530,16 @@ public:
 
   auto& font(this auto& self, font_config f) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->close_dropdown();
     for (auto& item : sp->items)
-      if (auto res = item.font(f); !res) res.error().go_off();
+      if (auto res = item.font(f); !res) {
+        res.error().fizzle_out();
+        return self;
+      }
     if (sp->selected < sp->items.size()) sp->select(sp->selected, false);
     sp->make_messy();
     return self;

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <ywx/ui_frame.h>
 
 namespace yw::ui {
@@ -404,7 +404,10 @@ public:
 
   auto& scroll_offset(this auto& self, float2 v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->scroll_offset = v;
     sp->update_scrollbar_metrics();
     sp->make_dirty();
@@ -413,9 +416,12 @@ public:
 
   auto& bar_width(this auto& self, float1 v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (v.x <= 0.0f) {
-      error(errors::invalid_argument, "scrollbar bar_width must be positive").go_off();
+      error(errors::invalid_argument, "scrollbar bar_width must be positive").fizzle_out();
       return self;
     }
     sp->bar_width = v.x;
@@ -426,9 +432,12 @@ public:
 
   auto& line_scroll(this auto& self, float1 v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (v.x <= 0.0f) {
-      error(errors::invalid_argument, "scrollbar line_scroll must be positive").go_off();
+      error(errors::invalid_argument, "scrollbar line_scroll must be positive").fizzle_out();
       return self;
     }
     sp->line_scroll = v.x;
@@ -437,9 +446,12 @@ public:
 
   auto& page_scroll(this auto& self, float1 v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (v.x < 0.0f) {
-      error(errors::invalid_argument, "scrollbar page_scroll must be non-negative").go_off();
+      error(errors::invalid_argument, "scrollbar page_scroll must be non-negative").fizzle_out();
       return self;
     }
     sp->page_scroll = v.x;
@@ -448,9 +460,12 @@ public:
 
   auto& wheel_scroll(this auto& self, float1 v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (v.x <= 0.0f) {
-      error(errors::invalid_argument, "scrollbar wheel_scroll must be positive").go_off();
+      error(errors::invalid_argument, "scrollbar wheel_scroll must be positive").fizzle_out();
       return self;
     }
     sp->wheel_scroll = v.x;

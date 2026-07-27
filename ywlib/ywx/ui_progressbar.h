@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <ywx/control.h>
 
 namespace yw::ui {
@@ -12,9 +12,9 @@ namespace yw::ui {
 class progressbar : public control {
 public:
   struct slot : control::slot {
-    float value = 0.0f;
-    float minimum = 0.0f;
-    float maximum = 1.0f;
+    double value = 0.0;
+    double minimum = 0.0;
+    double maximum = 1.0;
     float bar_width = 16.0f;
     ui::orientation orientation = ui::horizontal;
     color progress_color;
@@ -30,7 +30,7 @@ public:
     }
 
     virtual std::expected<void, error> draw_content() override {
-      const auto ratio = this->ratio();
+      const auto ratio = float(this->ratio());
       if (ratio == 0.0f) return {};
       brush::color(progress_color);
       if (ratio == 1.0f) {
@@ -53,11 +53,11 @@ public:
 
     //-- shared functions --//
 
-    float clamp_value(float v) noexcept { return yw::clamp(v, minimum, maximum); }
+    double clamp_value(double v) noexcept { return yw::clamp(v, minimum, maximum); }
 
-    float ratio() const noexcept {
-      if (const float range = maximum - minimum; range <= 0.0f) return 0.0f;
-      else return yw::clamp((value - minimum) / range, 0.0f, 1.0f);
+    double ratio() const noexcept {
+      if (const double range = maximum - minimum; range <= 0.0) return 0.0;
+      else return yw::clamp((value - minimum) / range, 0.0, 1.0);
     }
   };
 
@@ -91,33 +91,48 @@ public:
 
   //-- getter --//
 
-  float value() const noexcept {
+  double value() const noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    }
     return sp->value;
   }
 
-  float minimum() const noexcept {
+  double minimum() const noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    }
     return sp->minimum;
   }
 
-  float maximum() const noexcept {
+  double maximum() const noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    }
     return sp->maximum;
   }
 
   float bar_width() const noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    }
     return sp->bar_width;
   }
 
   ui::orientation orientation() const noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    }
     return sp->orientation;
   }
 
@@ -129,49 +144,61 @@ public:
 
   //-- setter --//
 
-  auto& value(this auto& self, float v) noexcept {
+  auto& value(this auto& self, double1 v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    sp->value = sp->clamp_value(v);
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
+    sp->value = sp->clamp_value(v.x);
     sp->make_dirty();
     return self;
   }
 
-  auto& range(this auto& self, float Min, float Max) noexcept {
+  auto& range(this auto& self, double1 Min, double1 Max) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    if (Max < Min) {
-      error(errors::invalid_argument, "progressbar range maximum must be greater than or equal to minimum").go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
       return self;
     }
-    sp->minimum = Min;
-    sp->maximum = Max;
+    if (Max.x < Min.x) {
+      error(errors::invalid_argument, "progressbar range maximum must be greater than or equal to minimum").fizzle_out();
+      return self;
+    }
+    sp->minimum = Min.x;
+    sp->maximum = Max.x;
     sp->value = sp->clamp_value(sp->value);
     sp->make_dirty();
     return self;
   }
 
-  auto& minimum(this auto& self, float v) noexcept {
+  auto& minimum(this auto& self, double1 v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    if (sp->maximum < v) {
-      error(errors::invalid_argument, "progressbar minimum must be less than or equal to maximum").go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
       return self;
     }
-    sp->minimum = v;
+    if (sp->maximum < v.x) {
+      error(errors::invalid_argument, "progressbar minimum must be less than or equal to maximum").fizzle_out();
+      return self;
+    }
+    sp->minimum = v.x;
     sp->value = sp->clamp_value(sp->value);
     sp->make_dirty();
     return self;
   }
 
-  auto& maximum(this auto& self, float v) noexcept {
+  auto& maximum(this auto& self, double1 v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    if (v < sp->minimum) {
-      error(errors::invalid_argument, "progressbar maximum must be greater than or equal to minimum").go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
       return self;
     }
-    sp->maximum = v;
+    if (v.x < sp->minimum) {
+      error(errors::invalid_argument, "progressbar maximum must be greater than or equal to minimum").fizzle_out();
+      return self;
+    }
+    sp->maximum = v.x;
     sp->value = sp->clamp_value(sp->value);
     sp->make_dirty();
     return self;
@@ -179,9 +206,12 @@ public:
 
   auto& bar_width(this auto& self, float1 v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (v.x <= 0.0f) {
-      error(errors::invalid_argument, "progressbar bar_width must be positive").go_off();
+      error(errors::invalid_argument, "progressbar bar_width must be positive").fizzle_out();
       return self;
     }
     sp->bar_width = v.x;
@@ -191,7 +221,10 @@ public:
 
   auto& orientation(this auto& self, ui::orientation v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (sp->orientation != v) {
       sp->orientation = v;
       sp->swap_dimensions();
@@ -201,7 +234,10 @@ public:
 
   auto& progress_color(this auto& self, const color& c) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->progress_color = c;
     sp->make_dirty();
     return self;

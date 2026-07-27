@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <ywx/text.h>
 #include <ywx/ui_scrollbar.h>
 
@@ -279,7 +279,10 @@ public:
 
   size_t item_count() const noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    }
     return sp->items.size();
   }
 
@@ -303,10 +306,13 @@ public:
 
   auto& add(this auto& self, yw::string<wchar_t> s) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (auto res = yw::text::create(std::move(s))) sp->items.push_back(std::move(*res));
     else {
-      res.error().go_off();
+      res.error().fizzle_out();
       return self;
     }
     if (sp->selected == npos) sp->selected = 0;
@@ -316,7 +322,10 @@ public:
 
   auto& add(this auto& self, yw::text t) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->items.push_back(std::move(t));
     if (sp->selected == npos) sp->selected = 0;
     sp->make_messy();
@@ -325,14 +334,17 @@ public:
 
   auto& insert(this auto& self, size_t Index, yw::string<wchar_t> s) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (Index > sp->items.size()) {
-      error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
+      error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
       return self;
     }
     if (auto res = yw::text::create(std::move(s))) sp->items.insert(sp->items.begin() + Index, std::move(*res));
     else {
-      res.error().go_off();
+      res.error().fizzle_out();
       return self;
     }
     if (sp->selected == npos) sp->selected = 0;
@@ -345,9 +357,12 @@ public:
 
   auto& erase(this auto& self, size_t Index) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (Index >= sp->items.size()) {
-      error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
+      error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
       return self;
     }
     sp->items.erase(sp->items.begin() + Index);
@@ -367,7 +382,10 @@ public:
 
   auto& clear(this auto& self) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->items.clear();
     sp->selected = sp->pressed = sp->hovered_item = npos;
     sp->scroll_to({});
@@ -377,9 +395,12 @@ public:
 
   auto& selected_index(this auto& self, size_t Index) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (Index >= sp->items.size()) {
-      error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
+      error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
       return self;
     }
     sp->select(Index);
@@ -394,9 +415,12 @@ public:
 
   auto& text(this auto& self, size_t Index, yw::text t) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (Index >= sp->items.size()) {
-      error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
+      error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
       return self;
     }
     sp->items[Index] = std::move(t);
@@ -406,21 +430,33 @@ public:
 
   auto& string(this auto& self, size_t Index, yw::string<wchar_t> s) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    if (Index >= sp->items.size()) {
-      error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
       return self;
     }
-    if (auto res = sp->items[Index].string(std::move(s)); !res) res.error().go_off();
+    if (Index >= sp->items.size()) {
+      error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
+      return self;
+    }
+    if (auto res = sp->items[Index].string(std::move(s)); !res) {
+      res.error().fizzle_out();
+      return self;
+    }
     sp->make_messy();
     return self;
   }
 
   auto& font(this auto& self, font_config f) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     for (auto& item : sp->items)
-      if (auto res = item.font(f); !res) res.error().go_off();
+      if (auto res = item.font(f); !res) {
+        res.error().fizzle_out();
+        return self;
+      }
     sp->make_messy();
     return self;
   }

@@ -1,6 +1,7 @@
-#pragma once
+﻿#pragma once
 #include <ywx/ui_icon.h>
 #include <ywx/ui_label.h>
+#include <ywx/window.h>
 
 namespace yw::ui {
 
@@ -51,11 +52,15 @@ public:
     }
 
     virtual std::expected<void, error> draw_overlay() override {
-      if (!pressed) return control::slot::draw_overlay();
-      auto theme = get_color_theme();
-      if (!theme) return theme.error().relay();
-      brush::color(color((*theme)->accent, default_overlay_opacity.press));
-      if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
+      const auto wsp = get_slot<window>(window_id);
+      if (!wsp) return std::unexpected(error(errors::invalid_slotid));
+      if (pressed && wsp->press_overlay_color.a > 0.0f) {
+        brush::color(wsp->press_overlay_color);
+        if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
+      } else if (id == wsp->hovered_control_id && wsp->hover_overlay_color.a > 0.0f) {
+        brush::color(wsp->hover_overlay_color);
+        if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
+      }
       return {};
     }
 
@@ -172,13 +177,19 @@ public:
 
   bool checked() const noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    }
     return sp->checked;
   }
 
   bool pressed() const noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    }
     return sp->pressed;
   }
 
@@ -223,7 +234,10 @@ public:
 
   float icon_gap() const noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    }
     return sp->icon_gap;
   }
 
@@ -243,7 +257,10 @@ public:
 
   auto& checked(this auto& self, bool b) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (sp->checked == b) return self;
     sp->checked = b;
     sp->make_dirty();
@@ -253,7 +270,10 @@ public:
 
   auto& text(this auto& self, yw::text Text) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->text = std::move(Text);
     sp->make_messy();
     return self;
@@ -261,32 +281,50 @@ public:
 
   auto& box(this auto& self, yw::icon Icon) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->box = std::move(Icon);
-    if (auto res = sp->apply_current_icon_theme(); !res) res.error().go_off();
+    if (auto res = sp->apply_current_icon_theme(); !res) {
+      res.error().fizzle_out();
+      return self;
+    }
     sp->make_messy();
     return self;
   }
 
   auto& check(this auto& self, yw::icon Icon) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->check = std::move(Icon);
-    if (auto res = sp->apply_current_icon_theme(); !res) res.error().go_off();
+    if (auto res = sp->apply_current_icon_theme(); !res) {
+      res.error().fizzle_out();
+      return self;
+    }
     sp->make_messy();
     return self;
   }
 
   auto& change_event(this auto& self, function<void, bool> f) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->change_event = std::move(f);
     return self;
   }
 
   auto& string(this auto& self, yw::string<wchar_t> s) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->text.string(std::move(s));
     sp->make_messy();
     return self;
@@ -294,7 +332,10 @@ public:
 
   auto& font(this auto& self, font_config f) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->text.font(std::move(f));
     sp->make_messy();
     return self;
@@ -302,7 +343,10 @@ public:
 
   auto& text_color(this auto& self, const color& c) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->text.color(c);
     sp->make_dirty();
     return self;
@@ -310,9 +354,12 @@ public:
 
   auto& icon_size(this auto& self, float2 v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (v.x <= 0.0f || v.y <= 0.0f) {
-      error(errors::invalid_argument, format("icon_size must be positive: ", v)).go_off();
+      error(errors::invalid_argument, format("icon_size must be positive: ", v)).fizzle_out();
       return self;
     }
     sp->icon_size = v;
@@ -322,7 +369,10 @@ public:
 
   auto& icon_gap(this auto& self, float1 f) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->icon_gap = f.x;
     sp->make_messy();
     return self;

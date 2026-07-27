@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <ywx/clipboard.h>
 #include <ywx/ui_label.h>
 
@@ -27,7 +27,7 @@ class selectable_label : public label {
 
 public:
   struct slot : label::slot {
-    color selection_overlay_color = color(colors::dodgerblue, 0.35f);
+    color selection_overlay_color;
     color caret_color = colors::black;
     float caret_thickness = 1.0f;
     uint32_t caret = 0;
@@ -242,6 +242,7 @@ public:
 
     std::expected<void, error> update_scroll_offset() const {
       auto& self = const_cast<slot&>(*this);
+      if (text.size().x <= text_area().x) self.scroll_offset.x = 0.0f;
       const auto base = pos + text_offset();
       const auto visible_min = pos + padding.xy();
       const auto visible_max = pos + size - padding.zw();
@@ -408,7 +409,10 @@ public:
 
   auto& text(this auto& self, yw::text Text) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->text = std::move(Text);
     sp->caret = yw::clamp(sp->caret, 0, sp->text.string().size());
     sp->anchor = yw::clamp(sp->anchor, 0, sp->text.string().size());
@@ -418,7 +422,10 @@ public:
 
   auto& string(this auto& self, yw::string<wchar_t> s) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->text.string(std::move(s));
     sp->caret = yw::clamp(sp->caret, 0, sp->text.string().size());
     sp->anchor = yw::clamp(sp->anchor, 0, sp->text.string().size());

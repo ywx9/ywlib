@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <ywx/control.h>
 #include <ywx/text.h>
 
@@ -88,9 +88,12 @@ public:
     return sp->text.color();
   }
 
-  auto text_align() const noexcept {
+  alignment text_align() const noexcept {
     const auto sp = get_slot(&*this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    }
     return sp->text_align;
   }
 
@@ -110,7 +113,10 @@ public:
 
   auto& text(this auto& self, yw::text Text) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->text = std::move(Text);
     sp->make_messy();
     return self;
@@ -118,7 +124,10 @@ public:
 
   auto& text_color(this auto& self, const color& c) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->text.color(c);
     sp->make_dirty();
     return self;
@@ -126,7 +135,10 @@ public:
 
   auto& text_align(this auto& self, alignment v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->text_align = v;
     sp->make_dirty();
     return self;
@@ -134,7 +146,10 @@ public:
 
   auto& string(this auto& self, yw::string<wchar_t> s) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->text.string(std::move(s));
     sp->make_messy();
     return self;
@@ -142,7 +157,10 @@ public:
 
   auto& font(this auto& self, font_config f) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->text.font(std::move(f));
     sp->make_messy();
     return self;

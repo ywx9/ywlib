@@ -38,6 +38,7 @@ struct color_theme {
   color surface;       // ex) background of control
   color surface_popup; // ex) background of popup
   color outline;       // ex) border of control
+  color part;          // ex) button of checkbox, thumb of scrollbar
   color text;          // ex) text, icon
   color text_muted;    // ex) placeholder text
   color accent;        // ex) focus, selection
@@ -47,8 +48,8 @@ struct color_theme {
 };
 
 struct overlay_opacity {
-  float hover = 0.15f;
-  float press = 0.30f;
+  float hover = 0.10f;
+  float press = 0.20f;
   float selection = 0.30f;
   float muted_text = 0.75f;
 };
@@ -60,6 +61,7 @@ inline constexpr color_theme light_color_theme{
   .surface = colors::white,
   .surface_popup = color(0.99f, 0.99f, 1.00f),
   .outline = color(0.45f, 0.47f, 0.50f),
+  .part = color(0.75f, 0.75f, 0.75f),
   .text = color(0.10f, 0.11f, 0.13f),
   .text_muted = color(0.38f, 0.40f, 0.44f),
   .accent = color(0.05f, 0.38f, 0.78f),
@@ -128,10 +130,9 @@ public:
       return {};
     }
 
-
     virtual std::expected<void, error> draw_content() { return {}; }
-    virtual std::expected<void, error> draw_foreground();   // defined in `window.h`
-    virtual std::expected<void, error> draw_overlay();      // defined in `window.h`
+    virtual std::expected<void, error> draw_foreground(); // defined in `window.h`
+    virtual std::expected<void, error> draw_overlay();    // defined in `window.h`
 
     virtual slotid find_next_tabstop(slotid Focused, bool Backward, bool& Found) const {
       if (!is_focusable()) return {};
@@ -228,6 +229,36 @@ public:
     }
 
     void clear_window_state() noexcept; // defined in `window.h`
+
+    template<ui::alignment Al> static std::expected<void, error> draw_arrow(float2 Pos, float2 Size, float Thickness) {
+      const auto c = Pos + Size * 0.5f;
+      if constexpr (Al == ui::left || Al == ui::right) {
+        const auto dx = Size.x * 0.15f;
+        const auto dy = Size.y * 0.26f;
+        if constexpr (Al == ui::left) {
+          const auto tip = c.add<0>(-Size.x * 0.3f);
+          if (auto res = stroke_line(tip, c + float2(dx, dy), Thickness); !res) return res.error().relay();
+          if (auto res = stroke_line(tip, c + float2(dx, -dy), Thickness); !res) return res.error().relay();
+        } else {
+          const auto tip = c.add<0>(Size.x * 0.3f);
+          if (auto res = stroke_line(tip, c - float2(dx, dy), Thickness); !res) return res.error().relay();
+          if (auto res = stroke_line(tip, c - float2(dx, -dy), Thickness); !res) return res.error().relay();
+        }
+      } else if constexpr (Al == ui::top || Al == ui::bottom) {
+        const auto dx = Size.x * 0.26f;
+        const auto dy = Size.y * 0.15f;
+        if constexpr (Al == ui::top) {
+          const auto tip = c.add<1>(-Size.y * 0.3f);
+          if (auto res = stroke_line(tip, c + float2(dx, dy), Thickness); !res) return res.error().relay();
+          if (auto res = stroke_line(tip, c + float2(-dx, dy), Thickness); !res) return res.error().relay();
+        } else {
+          const auto tip = c.add<1>(Size.y * 0.3f);
+          if (auto res = stroke_line(tip, c - float2(dx, dy), Thickness); !res) return res.error().relay();
+          if (auto res = stroke_line(tip, c - float2(-dx, dy), Thickness); !res) return res.error().relay();
+        }
+      }
+      return {};
+    }
 
     float2 get_bounds() const { return size + margin.xy() + margin.zw(); }
     std::expected<const ui::color_theme*, error> get_color_theme() const noexcept; // defined in `window.h`
@@ -400,7 +431,10 @@ public:
 
   auto& enabled(this auto& self, bool b) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (sp->enabled == b) return self;
     sp->enabled = b;
     if (!b) sp->clear_window_state();
@@ -410,7 +444,10 @@ public:
 
   auto& visible(this auto& self, bool b) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     if (sp->visible == b) return self;
     sp->visible = b;
     if (!b) sp->clear_window_state();
@@ -420,7 +457,10 @@ public:
 
   auto& background_color(this auto& self, const color& c) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->background_color = c;
     sp->make_dirty();
     return self;
@@ -428,7 +468,10 @@ public:
 
   auto& border_color(this auto& self, const color& c) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->border_color = c;
     sp->make_dirty();
     return self;
@@ -436,7 +479,10 @@ public:
 
   auto& margin(this auto& self, const float4& v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->margin = v;
     sp->make_messy();
     return self;
@@ -444,7 +490,10 @@ public:
 
   auto& padding(this auto& self, const float4& v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->padding = v;
     sp->make_messy();
     return self;
@@ -452,7 +501,10 @@ public:
 
   auto& size(this auto& self, float2 v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->required_size = v;
     sp->policy = vector2<ui::size_policy>::fill(ui::size_policy::fixed);
     sp->make_messy();
@@ -461,7 +513,10 @@ public:
 
   auto& width(this auto& self, float1 v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->required_size.x = v.x;
     sp->policy.x = ui::size_policy::fixed;
     sp->make_messy();
@@ -470,7 +525,10 @@ public:
 
   auto& height(this auto& self, float1 v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->required_size.y = v.x;
     sp->policy.y = ui::size_policy::fixed;
     sp->make_messy();
@@ -479,7 +537,10 @@ public:
 
   auto& radius(this auto& self, float2 v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->radius = v;
     sp->make_geometry_dirty();
     return self;
@@ -487,7 +548,10 @@ public:
 
   auto& minimum_size(this auto& self, float2 v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->minimum_size = v;
     sp->make_messy();
     return self;
@@ -495,56 +559,80 @@ public:
 
   auto& button_event(this auto& self, function<bool, yw::button_event> f) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->button_event = std::move(f);
     return self;
   }
 
   auto& drag_event(this auto& self, function<bool, yw::drag_event> f) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->drag_event = std::move(f);
     return self;
   }
 
   auto& focus_event(this auto& self, function<bool, yw::focus_event> f) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->focus_event = std::move(f);
     return self;
   }
 
   auto& hover_event(this auto& self, function<bool, yw::hover_event> f) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->hover_event = std::move(f);
     return self;
   }
 
   auto& key_event(this auto& self, function<bool, yw::key_event> f) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->key_event = std::move(f);
     return self;
   }
 
   auto& pointer_event(this auto& self, function<bool, yw::pointer_event> f) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->pointer_event = std::move(f);
     return self;
   }
 
   auto& wheel_event(this auto& self, function<bool, yw::wheel_event> f) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->wheel_event = std::move(f);
     return self;
   }
 
   auto& align(this auto& self, ui::alignment v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->align = v;
     sp->make_geometry_dirty();
     return self;
@@ -552,7 +640,10 @@ public:
 
   auto& policy(this auto& self, vector2<ui::size_policy> v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->policy = v;
     sp->make_messy();
     return self;
@@ -562,7 +653,10 @@ public:
 
   void sync_layout(this auto& self) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return;
+    }
     sp->sync_layout();
   }
 };

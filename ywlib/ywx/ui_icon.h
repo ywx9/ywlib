@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <ywx/icon.h>
 #include <ywx/control.h>
 
@@ -83,9 +83,12 @@ public:
     return sp->content;
   }
 
-  auto icon_align() const noexcept {
+  alignment icon_align() const noexcept {
     const auto sp = get_slot(&*this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    }
     return sp->icon_align;
   }
 
@@ -93,7 +96,10 @@ public:
 
   auto& content(this auto& self, yw::icon Icon) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->content = std::move(Icon);
     sp->make_messy();
     return self;
@@ -101,7 +107,10 @@ public:
 
   auto& icon_align(this auto& self, alignment v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->icon_align = v;
     sp->make_dirty();
     return self;

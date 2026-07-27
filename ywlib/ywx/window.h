@@ -624,9 +624,9 @@ public:
   //-- getter --//
 
   HWND hwnd() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->hwnd;
+    if (const auto sp = get_slot(this)) return sp->hwnd;
+    error(errors::invalid_slotid).fizzle_out();
+    return {};
   }
 
   const auto& frame_thickness() const noexcept {
@@ -649,22 +649,22 @@ public:
     } else return sp->pos + sp->frame_thickness.xy();
   }
 
-  const auto& size() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->size;
+  int2 size() const noexcept {
+    if (const auto sp = get_slot(this)) return sp->size;
+    error(errors::invalid_slotid).fizzle_out();
+    return {};
   }
 
-  const auto& style() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->style;
+  DWORD style() const noexcept {
+    if (const auto sp = get_slot(this)) return sp->style;
+    error(errors::invalid_slotid).fizzle_out();
+    return {};
   }
 
-  const auto& exstyle() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->exstyle;
+  DWORD exstyle() const noexcept {
+    if (const auto sp = get_slot(this)) return sp->exstyle;
+    error(errors::invalid_slotid).fizzle_out();
+    return {};
   }
 
   const auto& title() const noexcept {
@@ -680,15 +680,15 @@ public:
   }
 
   bool visible() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->visible;
+    if (const auto sp = get_slot(this)) return sp->visible;
+    error(errors::invalid_slotid).fizzle_out();
+    return false;
   }
 
   bool enabled() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->enabled;
+    if (const auto sp = get_slot(this)) return sp->enabled;
+    error(errors::invalid_slotid).fizzle_out();
+    return false;
   }
 
   const auto& color_theme() const noexcept {
@@ -733,10 +733,10 @@ public:
     return sp->tooltip_offset;
   }
 
-  const auto& tooltip_border_thickness() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->tooltip_border_thickness;
+  float tooltip_border_thickness() const noexcept {
+    if (const auto sp = get_slot(this)) return sp->tooltip_border_thickness;
+    error(errors::invalid_slotid).fizzle_out();
+    return {};
   }
 
   const auto& tooltip_font() const noexcept {
@@ -764,9 +764,9 @@ public:
   }
 
   double tooltip_delay() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->tooltip_delay;
+    if (const auto sp = get_slot(this)) return sp->tooltip_delay;
+    error(errors::invalid_slotid).fizzle_out();
+    return {};
   }
 
   const auto& button_event() const noexcept {
@@ -849,7 +849,10 @@ public:
 
   auto& background_color(const color& c) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->background_color = c;
     sp->dirty = true;
     return *this;
@@ -881,141 +884,201 @@ public:
 
   auto& color_theme(const ui::color_theme& Theme) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    if (auto res = sp->apply_color_theme(Theme, true); !res) res.error().go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
+    if (auto res = sp->apply_color_theme(Theme, true); !res) res.error().fizzle_out();
     return *this;
   }
 
   auto& tooltip_background_color(const color& c) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->tooltip_background_color = c;
     return *this;
   }
 
   auto& tooltip_border_color(const color& c) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->tooltip_border_color = c;
     return *this;
   }
 
   auto& tooltip_text_color(const color& c) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->tooltip_text_color = c;
     return *this;
   }
 
   auto& tooltip_padding(float4 v) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->tooltip_padding = v;
     return *this;
   }
 
   auto& tooltip_radius(float2 v) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->tooltip_radius = v;
     return *this;
   }
 
   auto& tooltip_offset(float2 v) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->tooltip_offset = v;
     return *this;
   }
 
   auto& tooltip_border_thickness(float1 v) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->tooltip_border_thickness = yw::max(0.0f, v.x);
     return *this;
   }
 
   auto& tooltip_font(font_config v) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->tooltip_font = std::move(v);
     return *this;
   }
 
   auto& focus_overlay_color(const color& c) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->focus_overlay_color = c;
     return *this;
   }
 
   auto& hover_overlay_color(const color& c) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->hover_overlay_color = c;
     return *this;
   }
 
   auto& press_overlay_color(const color& c) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->press_overlay_color = c;
     return *this;
   }
 
   auto& tooltip_delay(double v) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->tooltip_delay = yw::max(0.0, v);
     return *this;
   }
 
   auto& button_event(function<bool, yw::button_event> f) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->button_event = std::move(f);
     return *this;
   }
 
   auto& focus_event(function<bool, yw::focus_event> f) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->focus_event = std::move(f);
     return *this;
   }
 
   auto& key_event(function<bool, yw::key_event> f) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->key_event = std::move(f);
     return *this;
   }
 
   auto& pointer_event(function<bool, yw::pointer_event> f) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->pointer_event = std::move(f);
     return *this;
   }
 
   auto& wheel_event(function<bool, yw::wheel_event> f) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->wheel_event = std::move(f);
     return *this;
   }
 
   auto& resize_event(function<bool, uint2> f) noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
     sp->resize_event = std::move(f);
     return *this;
   }
 
   auto& sync_layout() noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    if (auto res = sp->update_layout(); !res) res.error().go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
+    if (auto res = sp->update_layout(); !res) res.error().fizzle_out();
     return *this;
   }
 };

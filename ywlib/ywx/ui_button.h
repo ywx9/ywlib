@@ -1,5 +1,6 @@
-#pragma once
+﻿#pragma once
 #include <ywx/ui_label.h>
+#include <ywx/window.h>
 
 namespace yw::ui {
 
@@ -27,11 +28,15 @@ public:
     }
 
     virtual std::expected<void, error> draw_overlay() override {
-      if (!pressed) return control::slot::draw_overlay();
-      auto theme = get_color_theme();
-      if (!theme) return theme.error().relay();
-      brush::color(color((*theme)->accent, default_overlay_opacity.press));
-      if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
+      const auto wsp = get_slot<window>(window_id);
+      if (!wsp) return std::unexpected(error(errors::invalid_slotid));
+      if (pressed && wsp->press_overlay_color.a > 0.0f) {
+        brush::color(wsp->press_overlay_color);
+        if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
+      } else if (id == wsp->hovered_control_id && wsp->hover_overlay_color.a > 0.0f) {
+        brush::color(wsp->hover_overlay_color);
+        if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
+      }
       return {};
     }
 
@@ -138,9 +143,12 @@ public:
     return sp->text.color();
   }
 
-  auto text_align() const noexcept {
+  alignment text_align() const noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    }
     return sp->text_align;
   }
 
@@ -158,7 +166,10 @@ public:
 
   bool pressed() const noexcept {
     const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    }
     return sp->pressed;
   }
 
@@ -172,7 +183,10 @@ public:
 
   auto& text(this auto& self, yw::text Text) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->text = std::move(Text);
     sp->make_messy();
     return self;
@@ -180,7 +194,10 @@ public:
 
   auto& text_color(this auto& self, const color& c) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->text.color(c);
     sp->make_dirty();
     return self;
@@ -188,7 +205,10 @@ public:
 
   auto& text_align(this auto& self, alignment v) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->text_align = v;
     sp->make_dirty();
     return self;
@@ -196,7 +216,10 @@ public:
 
   auto& string(this auto& self, yw::string<wchar_t> s) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->text.string(std::move(s));
     sp->make_messy();
     return self;
@@ -204,7 +227,10 @@ public:
 
   auto& font(this auto& self, font_config f) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->text.font(std::move(f));
     sp->make_messy();
     return self;
@@ -212,7 +238,10 @@ public:
 
   auto& click_event(this auto& self, function<void, yw::button_event> f) noexcept {
     const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off();
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return self;
+    }
     sp->click_event = std::move(f);
     return self;
   }
