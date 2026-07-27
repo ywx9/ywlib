@@ -273,7 +273,7 @@ public:
         if (auto res = fill_round_rectangle(pos, size, tooltip_radius); !res) return res.error().relay();
       }
       brush::color(tooltip_text_color);
-      if (auto res = tooltip_text.draw(pos + tooltip_padding.xy()); !res) return res.error().relay();
+      if (auto res = draw_text(pos + tooltip_padding.xy(), tooltip_text); !res) return res.error().relay();
       if (tooltip_border_color.a > 0.0f && tooltip_border_thickness > 0.0f) {
         brush::color(tooltip_border_color);
         if (auto res = stroke_round_rectangle(pos, size, tooltip_radius, tooltip_border_thickness); !res)

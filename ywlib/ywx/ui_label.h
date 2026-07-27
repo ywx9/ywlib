@@ -8,7 +8,6 @@ class label : public control {
 public:
   struct slot : control::slot {
     yw::text text = yw::text(L"");
-    color text_color;
     alignment text_align = center;
 
     //-- override functions --//
@@ -16,7 +15,7 @@ public:
     virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool) override {
       background_color = Theme.surface;
       border_color = colors::transparent;
-      text_color = Theme.text;
+      text.color(Theme.text);
       make_dirty();
       return {};
     }
@@ -27,7 +26,6 @@ public:
     }
 
     virtual std::expected<void, error> draw_content() override {
-      brush::color(text_color);
       const auto origin = pos + padding.xy();
       const auto area = size - padding.xy() - padding.zw();
       if (auto res = label::slot::draw_text(text, origin, area, text_align); !res) return res.error().relay();
@@ -87,7 +85,7 @@ public:
   const auto& text_color() const noexcept {
     const auto sp = get_slot(&*this);
     if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->text_color;
+    return sp->text.color();
   }
 
   auto text_align() const noexcept {
@@ -121,7 +119,7 @@ public:
   auto& text_color(this auto& self, const color& c) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
-    sp->text_color = c;
+    sp->text.color(c);
     sp->make_dirty();
     return self;
   }
@@ -137,7 +135,7 @@ public:
   auto& string(this auto& self, yw::string<wchar_t> s) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
-    if (auto res = sp->text.string(std::move(s)); !res) res.error().go_off();
+    sp->text.string(std::move(s));
     sp->make_messy();
     return self;
   }
@@ -145,7 +143,7 @@ public:
   auto& font(this auto& self, font_config f) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).go_off();
-    if (auto res = sp->text.font(std::move(f)); !res) res.error().go_off();
+    sp->text.font(std::move(f));
     sp->make_messy();
     return self;
   }

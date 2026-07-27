@@ -26,11 +26,14 @@ public:
 
   static std::expected<drawing, error> create(ID2D1Image* Target) {
     if (_target || _type != 0) return std::unexpected(error(errors::invalid_operation, "already in drawing"));
+    if (!Target) return std::unexpected(error(errors::invalid_argument, "invalid target"));
     d2d::context()->SetTarget(Target);
     d2d::context()->BeginDraw();
     _target = Target;
     _type = 2;
-    return drawing(Target);
+    drawing d;
+    d._active = true;
+    return d;
   }
 
   drawing(ID2D1Image* Target, const source_line& sl = here()) {
@@ -40,10 +43,13 @@ public:
 
   static std::expected<drawing, error> create(ID3D11RenderTargetView* Target) {
     if (_target || _type != 0) return std::unexpected(error(errors::invalid_operation, "already in drawing"));
+    if (!Target) return std::unexpected(error(errors::invalid_argument, "invalid target"));
     d3d::context()->OMSetRenderTargets(1, &Target, nullptr);
     _target = Target;
     _type = 3;
-    return drawing(Target);
+    drawing d;
+    d._active = true;
+    return d;
   }
 
   drawing(ID3D11RenderTargetView* Target, const source_line& sl = here()) {
@@ -53,10 +59,13 @@ public:
 
   static std::expected<drawing, error> create(ID3D11RenderTargetView* Target, ID3D11DepthStencilView* Depth) {
     if (_target || _type != 0) return std::unexpected(error(errors::invalid_operation, "already in drawing"));
+    if (!Target) return std::unexpected(error(errors::invalid_argument, "invalid target"));
     d3d::context()->OMSetRenderTargets(1, &Target, Depth);
     _target = Target;
     _type = 3;
-    return drawing(Target, Depth);
+    drawing d;
+    d._active = true;
+    return d;
   }
 
   drawing(ID3D11RenderTargetView* Target, ID3D11DepthStencilView* Depth, const source_line& sl = here()) {

@@ -226,6 +226,7 @@ template<std::convertible_to<size_t> auto I, auto... Vs> constexpr auto select_v
 template<typename T> using add_lvref = std::add_lvalue_reference_t<T>;
 template<typename T> using add_rvref = std::add_rvalue_reference_t<remove_ref<T>>;
 template<typename T> using add_fwref = std::add_rvalue_reference_t<T>;
+template<typename T> requires is_pointer<T*> using add_pointer = T*;
 
 template<typename T, typename To> using copy_const = select_type<is_const<T>, const To, remove_const<To>>;
 template<typename T, typename To> using copy_volatile = select_type<is_volatile<T>, volatile To, remove_volatile<To>>;

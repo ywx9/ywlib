@@ -1,7 +1,32 @@
-// #pragma once
-// #include <ywx/bitmap.h>
-// #include <ywx/svgpath.h>
-// #include <ywx/ui_button.h>
+#pragma once
+#include <ywx/icon.h>
+#include <ywx/text.h>
+#include <ywx/control.h>
+
+namespace yw::ui {
+
+class checkbox : public control {
+public:
+  struct slot : control::slot {
+    yw::text text = yw::text(L"");
+    yw::icon check;
+    yw::icon box;
+    float2 icon_size{common_size_value, common_size_value};
+    float icon_gap = arbitrary_value;
+    bool checked = false;
+
+    function<void, bool> change_event;
+
+    virtual std::expected<void, error> draw_content() override {
+      auto origin = pos + padding.xy();
+      auto area = size - padding.xy() - padding.zw();
+      return {};
+    }
+  };
+
+
+};
+}
 
 // namespace yw::ui {
 

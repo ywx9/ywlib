@@ -12,6 +12,7 @@ public:
   struct slot : handle_base::slot {
     comptr<ID2D1Bitmap1> bitmap;
     uint2 size{};
+    float opacity = 1.0f;
   };
 
   bitmap() noexcept = default;
@@ -23,7 +24,7 @@ public:
     return sp && static_cast<bool>(sp->bitmap);
   }
 
-  auto d2d_bitmap(this auto&& self) noexcept -> copy_cv<remove_ref<decltype(self)>, ID2D1Bitmap1>* {
+  auto d2d_bitmap(this auto&& self) noexcept -> ID2D1Bitmap1* {
     if (const auto sp = slot::get_as<bitmap>(self.id())) return sp->bitmap.get();
     else return nullptr;
   }
@@ -40,7 +41,7 @@ public:
   /// creates empty bitmap.
   bitmap(uint2 Size, const source_line& sl = here()) {
     if (auto res = create(Size); !res) res.error().go_off(sl);
-    else *this = std::move(res.value());
+    else *this = std::move(*res);
   }
 
   /// creates bitmap by copying from another.
@@ -58,7 +59,7 @@ public:
   /// creates bitmap by copying from another.
   bitmap(const bitmap& Other, const source_line& sl = here()) {
     if (auto res = create(Other); !res) res.error().go_off(sl);
-    else *this = std::move(res.value());
+    else *this = std::move(*res);
   }
 
   /// creates bitmap from file.
@@ -84,7 +85,7 @@ public:
   /// creates bitmap from file.
   bitmap(const std::filesystem::path& Path, const source_line& sl = here()) {
     if (auto res = create(Path); !res) res.error().go_off(sl);
-    else *this = std::move(res.value());
+    else *this = std::move(*res);
   }
 
   /// creates bitmap from swapchain.
@@ -168,25 +169,42 @@ public:
     if (auto res = save_as(Path, GUID_ContainerFormatJpeg)) return {};
     else return res.error().relay();
   }
+
+  //-- getter --//
+
+  float opacity() const noexcept {
+    if (const auto sp = slot::get_as<bitmap>(id()); !sp) {
+      error(errors::invalid_slotid, "invalid bitmap").fizzle_out();
+      return 0.0f;
+    } else return sp->opacity;
+  }
+
+  //-- setter --//
+
+  auto& opacity(this auto& self, float1 o) noexcept {
+    if (const auto sp = slot::get_as<bitmap>(self.id())) sp->opacity = o.x;
+    else error(errors::invalid_slotid, "invalid bitmap").fizzle_out();
+    return self;
+  }
 };
 
 /// MARK: draw_bitmap
 
 inline std::expected<void, error> draw_bitmap(
-  float2 Pos, float2 Size, const bitmap& b, float1 Opacity = 1.0f, const source_line& sl = here()) {
+  float2 Pos, float2 Size, const bitmap& b, const source_line& sl = here()) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "drawing not begun"));
   if (const auto sp = bitmap::slot::get_as<bitmap>(b.id())) {
     D2D1_RECT_F rect(Pos.x, Pos.y, Pos.x + Size.x, Pos.y + Size.y);
-    d2d::context()->DrawBitmap(sp->bitmap.get(), &rect, Opacity.x);
+    d2d::context()->DrawBitmap(sp->bitmap.get(), &rect, sp->opacity);
   } else error(errors::invalid_argument, "invalid bitmap").fizzle_out(sl);
   return {};
 }
 
-inline std::expected<void, error> draw_bitmap(float2 Pos, const bitmap& b, float1 Opacity = 1.0f, const source_line& sl = here()) {
+inline std::expected<void, error> draw_bitmap(float2 Pos, const bitmap& b, const source_line& sl = here()) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "drawing not begun"));
   if (const auto sp = bitmap::slot::get_as<bitmap>(b.id())) {
     D2D1_RECT_F rect = D2D1::RectF(Pos.x, Pos.y, Pos.x + b.size().x, Pos.y + b.size().y);
-    d2d::context()->DrawBitmap(sp->bitmap.get(), &rect, Opacity.x);
+    d2d::context()->DrawBitmap(sp->bitmap.get(), &rect, sp->opacity);
   } else error(errors::invalid_argument, "invalid bitmap").fizzle_out(sl);
   return {};
 }

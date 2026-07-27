@@ -26,6 +26,7 @@
 namespace yw {
 
 inline constexpr float arbitrary_value = 4.0f;
+inline constexpr float common_size_value = 16.0f;
 
 /// MARK: ok/yes
 

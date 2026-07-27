@@ -155,8 +155,6 @@ public:
   float4 position{}; // position of camera body
 
   explicit operator bool() const noexcept { return static_cast<bool>(_bitmap); }
-  explicit operator ::ID2D1Bitmap1*&() & noexcept { return static_cast<::ID2D1Bitmap1*&>(_bitmap); }
-  explicit operator ::ID2D1Bitmap1*() const& noexcept { return static_cast<::ID2D1Bitmap1*>(_bitmap); }
 
   viewport() noexcept = default;
 
@@ -278,7 +276,7 @@ public:
     _mm_storeu_ps(vpm.x.data(), _mm_mul_ps(m.x, mm_set1(pm.x.x)));
     _mm_storeu_ps(vpm.y.data(), _mm_mul_ps(m.y, mm_set1(pm.y.y)));
     _cb_value.camera_pos = position;
-    if (auto res = _cb.set(_cb_value); !res) return res.error().relay();
+    if (auto res = _cb.copy_from(_cb_value); !res) return res.error().relay();
     return {};
   }
 

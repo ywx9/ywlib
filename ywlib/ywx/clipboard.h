@@ -16,14 +16,13 @@ inline class {
     if (!pixels) return std::unexpected(error(errors::invalid_argument, "null pixel buffer"));
     auto bmp = bitmap::create(size);
     if (!bmp) return bmp.error().relay();
-    auto* p = static_cast<ID2D1Bitmap1*>(*bmp);
+    auto* p = bmp->d2d_bitmap();
     if (!p) return std::unexpected(error(errors::not_initialized, "bitmap not initialized"));
     hresult_test(p->CopyFromMemory, nullptr, pixels, stride);
     return std::move(*bmp);
   }
 
-  static std::expected<std::vector<uint8_t>, error> pixels_from_bitmap(
-    const bitmap& b, uint2& size, uint32_t& stride) {
+  static std::expected<std::vector<uint8_t>, error> pixels_from_bitmap(const bitmap& b, uint2& size, uint32_t& stride) {
     if (!b) return std::unexpected(error(errors::not_initialized, "bitmap not initialized"));
 
     size = b.size();
@@ -33,14 +32,11 @@ inline class {
 
     comptr<::ID2D1Bitmap1> cpu_bmp;
     D2D1_BITMAP_PROPERTIES1 props{
-      bitmap::pixelformat,
-      96.0f,
-      96.0f,
-      D2D1_BITMAP_OPTIONS(D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW),
-      nullptr};
+      bitmap::pixelformat, 96.0f, 96.0f,
+      D2D1_BITMAP_OPTIONS(D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW), nullptr};
     hresult_test(d2d().context()->CreateBitmap, D2D1_SIZE_U{width, height}, nullptr, 0, &props, &cpu_bmp.get());
 
-    auto* src = static_cast<ID2D1Bitmap1*>(b);
+    const auto src = b.d2d_bitmap();
     if (!src) return std::unexpected(error(errors::not_initialized, "bitmap not initialized"));
     hresult_test(cpu_bmp->CopyFromBitmap, nullptr, src, nullptr);
     D2D1_MAPPED_RECT mapped{};
@@ -112,8 +108,7 @@ public:
     } else return g.error().relay();
   }
 
-  template<stringable<wchar_t> S>
-  std::expected<void, error> text(S&& value) const {
+  template<stringable<wchar_t> S> std::expected<void, error> text(S&& value) const {
     if (auto g = open()) {
       if (auto res = empty_clipboard(); !res) return res.error().relay();
       auto sv = string_view<wchar_t>(value);
