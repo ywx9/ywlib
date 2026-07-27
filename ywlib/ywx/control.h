@@ -153,7 +153,10 @@ public:
     virtual bool handle_click_event(yw::button_event e) { return false; }
     virtual bool handle_double_click_event(yw::button_event e) { return false; }
     virtual bool handle_drag_event(yw::drag_event e) { return drag_event ? drag_event(e) : false; }
-    virtual bool handle_focus_event(yw::focus_event e) { return focus_event ? focus_event(e) : false; }
+    virtual bool handle_focus_event(yw::focus_event e) {
+      make_dirty();
+      return focus_event ? focus_event(e) : false;
+    }
     virtual bool handle_hover_event(yw::hover_event e) { return hover_event ? hover_event(e) : false; }
     virtual bool handle_key_event(yw::key_event e) { return key_event ? key_event(e) : false; }
     virtual bool handle_pointer_event(yw::pointer_event e) { return pointer_event ? pointer_event(e) : false; }

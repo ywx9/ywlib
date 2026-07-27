@@ -26,6 +26,15 @@ public:
       return {};
     }
 
+    virtual std::expected<void, error> draw_overlay() override {
+      if (!pressed) return control::slot::draw_overlay();
+      auto theme = get_color_theme();
+      if (!theme) return theme.error().relay();
+      brush::color(color((*theme)->accent, default_overlay_opacity.press));
+      if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
+      return {};
+    }
+
     virtual std::expected<float2, error> get_necessary_size() const override {
       const auto inner = text.size() + padding.xy() + padding.zw();
       return calc_necessary_size_by_policy(inner);

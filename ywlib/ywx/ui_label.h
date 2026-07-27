@@ -40,7 +40,7 @@ public:
       constexpr float c[]{0.5f, 0.0f, 1.0f};
       const float2 cc{c[unsigned(Align) % 3], c[unsigned(Align) / 3 % 3]};
       const float2 pos = Pos + (Area - Text.size()) * cc;
-      if (auto res = yw::draw_text(pos, Text.dwrite_text_layout()); !res) return res.error().relay();
+      if (auto res = yw::draw_text(pos, Text); !res) return res.error().relay();
       return {};
     }
 

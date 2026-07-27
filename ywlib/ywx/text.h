@@ -58,7 +58,8 @@ public:
 
   text() noexcept = default;
 
-  static std::expected<text, error> create(yw::string<wchar_t> String, const font_config& Font = font_config::default_) {
+  static std::expected<text, error> create(
+    yw::string<wchar_t> String, const font_config& Font = font_config::default_) {
     const auto sp = make_slot<text>();
     if (!sp) return std::unexpected(error(errors::slot_creation_failed));
     sp->string = std::move(String);
@@ -74,18 +75,21 @@ public:
   //-- getter --//
 
   const yw::string<wchar_t>& string() const noexcept {
-    if (const auto sp = slot::get_as<text>(id()); !sp) error(errors::invalid_operation, "invalid handle").go_off();
-    else return sp->string;
+    const auto sp = slot::get_as<text>(id());
+    if (!sp) error(errors::invalid_operation, "invalid handle").go_off();
+    return sp->string;
   }
 
   const font_config& font() const noexcept {
-    if (const auto sp = slot::get_as<text>(id()); !sp) error(errors::invalid_operation, "invalid handle").go_off();
-    else return sp->font;
+    const auto sp = slot::get_as<text>(id());
+    if (!sp) error(errors::invalid_operation, "invalid handle").go_off();
+    return sp->font;
   }
 
   const yw::color& color() const noexcept {
-    if (const auto sp = slot::get_as<text>(id()); !sp) error(errors::invalid_operation, "invalid handle").go_off();
-    else return sp->color;
+    const auto sp = slot::get_as<text>(id());
+    if (!sp) error(errors::invalid_operation, "invalid handle").go_off();
+    return sp->color;
   }
 
   float2 size() const noexcept {
