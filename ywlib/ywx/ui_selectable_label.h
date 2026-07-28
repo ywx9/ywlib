@@ -49,7 +49,7 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> draw_content() override {
+    virtual std::expected<void, error> draw_forecontent() override {
       if (auto res = update_scroll_offset(); !res) return res.error().relay();
       const auto origin = text_origin();
       if (auto res = draw_selection(origin); !res) return res.error().relay();

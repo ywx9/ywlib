@@ -29,6 +29,25 @@ enum class orientation : unsigned char {
   vertical,
 };
 
+enum class part : unsigned char {
+  none,
+  decrease_button,
+  decrease_track,
+  thumb,
+  increase_track,
+  increase_button,
+  horizontal_decrease_button,
+  horizontal_decrease_track,
+  horizontal_thumb,
+  horizontal_increase_track,
+  horizontal_increase_button,
+  vertical_decrease_button,
+  vertical_decrease_track,
+  vertical_thumb,
+  vertical_increase_track,
+  vertical_increase_button,
+};
+
 using enum alignment;
 using enum size_policy;
 using enum orientation;
@@ -130,7 +149,8 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> draw_content() { return {}; }
+    virtual std::expected<void, error> draw_backcontent() { return {}; }
+    virtual std::expected<void, error> draw_forecontent() { return {}; }
     virtual std::expected<void, error> draw_foreground(); // defined in `window.h`
     virtual std::expected<void, error> draw_overlay();    // defined in `window.h`
 
@@ -163,6 +183,8 @@ public:
     virtual bool handle_pointer_event(yw::pointer_event e) { return pointer_event ? pointer_event(e) : false; }
     virtual bool handle_wheel_event(yw::wheel_event e) { return wheel_event ? wheel_event(e) : false; }
 
+    virtual bool2 has_free_size_policy() const { return {policy.x == ui::free, policy.y == ui::free}; }
+
     virtual slotid hittest(float2 Pt) const {
       if (!visible || !enabled || !geometry) return {};
       BOOL contains = FALSE;
@@ -188,11 +210,15 @@ public:
         d2d::pop_layer();
         return res.error().relay();
       }
+      if (auto res = draw_backcontent(); !res) {
+        d2d::pop_layer();
+        return res.error().relay();
+      }
       if (auto res = draw_overlay(); !res) {
         d2d::pop_layer();
         return res.error().relay();
       }
-      if (auto res = draw_content(); !res) {
+      if (auto res = draw_forecontent(); !res) {
         d2d::pop_layer();
         return res.error().relay();
       }
@@ -222,6 +248,12 @@ public:
     }
 
     //-- shared functions --//
+
+    static float2 align_position(float2 Origin, float2 Area, float2 Size, ui::alignment Align) noexcept {
+      constexpr float c[]{0.5f, 0.0f, 1.0f};
+      const float2 cc{c[unsigned(Align) % 3], c[unsigned(Align) / 4 % 3]};
+      return Origin + (Area - Size) * cc;
+    }
 
     float2 calc_necessary_size_by_policy(float2 Inner) const noexcept {
       const auto is_fixed = bool2(policy.x == ui::fixed, policy.y == ui::fixed);

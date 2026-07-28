@@ -64,6 +64,13 @@ public:
       return calc_necessary_size_by_policy(inner);
     }
 
+    virtual bool2 has_free_size_policy() const override {
+      uint2 free{};
+      for (const auto& cid : controls)
+        if (const auto csp = get_slot<control>(cid)) free += csp->has_free_size_policy();
+      return free * control::slot::has_free_size_policy();
+    }
+
     virtual slotid hittest(float2 Pt) const override {
       if (!visible) return {};
       const auto hit = control::slot::hittest(Pt);
@@ -75,7 +82,7 @@ public:
       return hit;
     }
 
-    virtual std::expected<void, error> draw_content() override {
+    virtual std::expected<void, error> draw_backcontent() override {
       for (const auto& cid : controls) {
         const auto csp = get_slot<control>(cid);
         if (!csp) return std::unexpected(error(errors::invalid_slotid));

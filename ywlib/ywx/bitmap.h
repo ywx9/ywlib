@@ -191,21 +191,21 @@ public:
 /// MARK: draw_bitmap
 
 inline std::expected<void, error> draw_bitmap(
-  float2 Pos, float2 Size, const bitmap& b, const source_line& sl = here()) {
+  float2 Pos, float2 Size, const bitmap& b) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "drawing not begun"));
   if (const auto sp = bitmap::slot::get_as<bitmap>(b.id())) {
     D2D1_RECT_F rect(Pos.x, Pos.y, Pos.x + Size.x, Pos.y + Size.y);
     d2d::context()->DrawBitmap(sp->bitmap.get(), &rect, sp->opacity);
-  } else error(errors::invalid_argument, "invalid bitmap").fizzle_out(sl);
+  } else return std::unexpected(error(errors::invalid_argument, "invalid bitmap"));
   return {};
 }
 
-inline std::expected<void, error> draw_bitmap(float2 Pos, const bitmap& b, const source_line& sl = here()) {
+inline std::expected<void, error> draw_bitmap(float2 Pos, const bitmap& b) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "drawing not begun"));
   if (const auto sp = bitmap::slot::get_as<bitmap>(b.id())) {
     D2D1_RECT_F rect = D2D1::RectF(Pos.x, Pos.y, Pos.x + b.size().x, Pos.y + b.size().y);
     d2d::context()->DrawBitmap(sp->bitmap.get(), &rect, sp->opacity);
-  } else error(errors::invalid_argument, "invalid bitmap").fizzle_out(sl);
+  } else return std::unexpected(error(errors::invalid_argument, "invalid bitmap"));
   return {};
 }
 } // namespace yw

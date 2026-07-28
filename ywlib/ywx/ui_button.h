@@ -13,17 +13,21 @@ public:
 
     function<void, yw::button_event> click_event{};
 
-    virtual bool is_focusable() const override { return enabled && visible; }
-    virtual bool is_interactive() const override { return true; }
+    //-- override functions --//
 
-    virtual void invoke(yw::button_event e) {
-      if (click_event) click_event(e);
+    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
+      background_color = Theme.surface;
+      border_color = Theme.outline;
+      text.color(Theme.text);
+      make_dirty();
+      return {};
     }
 
-    virtual std::expected<void, error> draw_content() override {
+    virtual std::expected<void, error> draw_forecontent() override {
       const auto origin = pos + padding.xy();
       const auto area = size - padding.xy() - padding.zw();
-      if (auto res = label::slot::draw_text(text, origin, area, text_align); !res) return res.error().relay();
+      const auto text_pos = align_position(origin, area, text.size(), text_align);
+      if (auto res = draw_text(text_pos, text); !res) return res.error().relay();
       return {};
     }
 
@@ -43,12 +47,6 @@ public:
     virtual std::expected<float2, error> get_necessary_size() const override {
       const auto inner = text.size() + padding.xy() + padding.zw();
       return calc_necessary_size_by_policy(inner);
-    }
-
-    virtual void reset_state() override {
-      if (!pressed) return;
-      pressed = false;
-      make_dirty();
     }
 
     virtual bool handle_button_event(yw::button_event e) override {
@@ -93,12 +91,19 @@ public:
       return true;
     }
 
-    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
-      background_color = Theme.surface;
-      border_color = Theme.outline;
-      text.color(Theme.text);
+    virtual bool is_focusable() const override { return enabled && visible; }
+    virtual bool is_interactive() const override { return true; }
+
+    virtual void reset_state() override {
+      if (!pressed) return;
+      pressed = false;
       make_dirty();
-      return {};
+    }
+
+    //-- vertual functions --//
+
+    virtual void invoke(yw::button_event e) {
+      if (click_event) click_event(e);
     }
   };
 

@@ -355,6 +355,21 @@ public:
       return {};
     }
 
+    std::expected<void, error> sync_redraw() {
+      if (auto res = update_layout(); !res) return res.error().relay();
+      const auto csp = get_slot<control>(control_id);
+      if (auto d = controllayer.begin_draw(colors::transparent)) {
+        if (csp) {
+          if (auto rr = csp->redraw(); !rr) return rr.error().relay();
+          if (auto res = update_caret_pos(); !res) return res.error().relay();
+        }
+        if (auto res = d->close(); !res) return res.error().relay();
+      } else return d.error().relay();
+      dirty = false;
+      messy = false;
+      return {};
+    }
+
     std::expected<void, error> close_subwindows() {
       const auto ids = std::exchange(subwindows, {});
       for (const auto& id : ids)
@@ -1079,6 +1094,16 @@ public:
       return *this;
     }
     if (auto res = sp->update_layout(); !res) res.error().fizzle_out();
+    return *this;
+  }
+
+  auto& sync_redraw() noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
+    if (auto res = sp->sync_redraw(); !res) res.error().fizzle_out();
     return *this;
   }
 };

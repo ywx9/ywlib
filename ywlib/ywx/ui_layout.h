@@ -63,6 +63,13 @@ public:
       return {};
     }
 
+    virtual bool2 has_free_size_policy() const override {
+      uint2 free{};
+      for (const auto& cid : controls)
+        if (const auto csp = get_slot<control>(cid)) free += csp->has_free_size_policy();
+      return free * control::slot::has_free_size_policy();
+    }
+
     virtual std::expected<float2, error> get_necessary_size() const override {
       float2 inner{};
       for (const auto& cid : controls) {
@@ -88,7 +95,7 @@ public:
       return id;
     }
 
-    virtual std::expected<void, error> draw_content() override {
+    virtual std::expected<void, error> draw_backcontent() override {
       for (const auto& cid : controls)
         if (const auto csp = get_slot<control>(cid)) {
           if (auto res = csp->redraw(); !res) return res.error().relay();
@@ -102,25 +109,25 @@ public:
       else return res.error().relay();
       if (extra[Vert] > 0) {
         unsigned visible_count = 0;
-        unsigned free_count = 0;
+        uint2 free_count{};
         for (const auto& cid : controls) {
           const auto csp = get_slot<control>(cid);
           if (!csp) return std::unexpected(error(errors::invalid_slotid));
           if (!csp->visible) continue;
           ++visible_count;
-          free_count += (csp->policy[Vert] == size_policy::free);
+          free_count += csp->has_free_size_policy();
         }
         if (visible_count == 0) return {};
         const auto cross = size[!Vert] - padding[!Vert] - padding[2 + !Vert];
         float2 offset = padding.xy();
-        if (free_count > 0) {
-          const auto extra_per_free = extra[Vert] / float(free_count);
+        if (free_count[Vert] > 0) {
+          const auto extra_per_free = extra[Vert] / float(free_count[Vert]);
           for (const auto& cid : controls) {
             const auto csp = get_slot<control>(cid);
             if (!csp) return std::unexpected(error(errors::invalid_slotid));
             if (!csp->visible) continue;
             float2 area = csp->get_bounds();
-            area[Vert] += extra_per_free * (csp->policy[Vert] == size_policy::free);
+            area[Vert] += extra_per_free * csp->has_free_size_policy()[Vert];
             area[!Vert] = cross;
             if (auto res = csp->relocate(pos + offset, area); !res) return res.error().relay();
             offset[Vert] += area[Vert];

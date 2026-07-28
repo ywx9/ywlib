@@ -29,7 +29,7 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> draw_content() override {
+    virtual std::expected<void, error> draw_backcontent() override {
       const auto ratio = float(this->ratio());
       if (ratio == 0.0f) return {};
       brush::color(progress_color);

@@ -25,25 +25,16 @@ public:
       return calc_necessary_size_by_policy(inner);
     }
 
-    virtual std::expected<void, error> draw_content() override {
+    virtual std::expected<void, error> draw_forecontent() override {
       const auto origin = pos + padding.xy();
       const auto area = size - padding.xy() - padding.zw();
-      if (auto res = label::slot::draw_text(text, origin, area, text_align); !res) return res.error().relay();
+      const auto pos = align_position(origin, area, text.size(), text_align);
+      if (auto res = draw_text(pos, text); !res) return res.error().relay();
       return {};
     }
 
     //-- virtual functions --//
-
     //-- shared functions --//
-
-    static std::expected<void, error> draw_text(const auto& Text, float2 Pos, float2 Area, alignment Align) {
-      constexpr float c[]{0.5f, 0.0f, 1.0f};
-      const float2 cc{c[unsigned(Align) % 3], c[unsigned(Align) / 3 % 3]};
-      const float2 pos = Pos + (Area - Text.size()) * cc;
-      if (auto res = yw::draw_text(pos, Text); !res) return res.error().relay();
-      return {};
-    }
-
     //-- internal functions --//
   };
 

@@ -33,13 +33,15 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> draw_content() override {
+    virtual std::expected<void, error> draw_backcontent() override {
+      if (auto res = edit::slot::draw_backcontent(); !res) return res.error().relay();
       const auto origin = pos + float2(size.x - button_width, 0.0f);
       brush::color(button_color);
       if (auto res = fill_rectangle(origin, float2(button_width, size.y)); !res) return res.error().relay();
-      const auto half_y = size.y * 0.5f;
-      const auto arrow_size = float2(button_width, half_y);
-      const auto origin2 = origin.add<1>(half_y);
+      return {};
+    }
+
+    virtual std::expected<void, error> draw_overlay() override {
       std::optional<int> pressed_button_;
       const auto wsp = get_slot<window>(window_id);
       if (!wsp) return std::unexpected(error(errors::invalid_slotid));
@@ -54,7 +56,15 @@ public:
           if (auto res = fill_part(hovered_button); !res) return res.error().relay();
         }
       }
-      if (auto res = edit::slot::draw_content(); !res) return res.error().relay();
+      return {};
+    }
+
+    virtual std::expected<void, error> draw_forecontent() override {
+      const auto origin = pos + float2(size.x - button_width, 0.0f);
+      const auto half_y = size.y * 0.5f;
+      const auto arrow_size = float2(button_width, half_y);
+      const auto origin2 = origin.add<1>(half_y);
+      if (auto res = edit::slot::draw_forecontent(); !res) return res.error().relay();
       brush::color(border_color);
       if (auto res = stroke_line(origin, origin.add<1>(size.y), border_thickness); !res) return res.error().relay();
       if (auto res = stroke_line(origin2, origin2.add<0>(button_width), border_thickness); !res)
@@ -65,7 +75,9 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> draw_overlay() override { return {}; }
+    virtual std::expected<float2, error> get_necessary_size() const override {
+      return float2(button_width * 4.0f, button_width * 2.0f);
+    }
 
     virtual void reset_state() override {
       if (pressed_button != 0) {
@@ -290,7 +302,7 @@ public:
     s._id = temp_id;
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
-    sp->policy = {ui::size_policy::free, ui::size_policy::fit};
+    sp->policy = {ui::free, ui::fit};
     sp->text_align = alignment::right;
     sp->filter = [](wchar_t c) { return slot::is_number_char(c); };
     if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();

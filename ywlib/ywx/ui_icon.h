@@ -23,29 +23,33 @@ public:
       return {};
     }
 
+    virtual std::expected<void, error> draw_backcontent() override {
+      const auto origin = pos + padding.xy();
+      const auto area = size - padding.xy() - padding.zw();
+      const auto pos = align_position(origin, area, content.size(), icon_align);
+      if (content.is_bitmap()) {
+        if (auto res = draw_bitmap(pos, content.get_bitmap()); !res) return res.error().relay();
+      } else if (content.is_vector())
+        if (auto res = fill_svgpath(pos, content.get_vector()); !res) return res.error().relay();
+      return {};
+    }
+
+    virtual std::expected<void, error> draw_forecontent() override {
+      const auto origin = pos + padding.xy();
+      const auto area = size - padding.xy() - padding.zw();
+      const auto pos = align_position(origin, area, content.size(), icon_align);
+      if (content.is_vector())
+        if (auto res = stroke_svgpath(pos, content.get_vector()); !res) return res.error().relay();
+      return {};
+    }
+
     virtual std::expected<float2, error> get_necessary_size() const override {
       const auto inner = content.size() + padding.xy() + padding.zw();
       return calc_necessary_size_by_policy(inner);
     }
 
-    virtual std::expected<void, error> draw_content() override {
-      const auto origin = pos + padding.xy();
-      const auto area = size - padding.xy() - padding.zw();
-      if (auto res = icon::slot::draw_icon(content, origin, area, icon_align); !res) return res.error().relay();
-      return {};
-    }
-
     //-- shared functions --//
-
-    static std::expected<void, error> draw_icon(const yw::icon& Icon, float2 Pos, float2 Area, alignment Align) {
-      if (Icon.empty()) return {};
-      constexpr float c[]{0.5f, 0.0f, 1.0f};
-      const float2 cc{c[unsigned(Align) % 3], c[unsigned(Align) / 3 % 3]};
-      const auto icon_size = Icon.size();
-      const float2 pos = Pos + (Area - icon_size) * cc;
-      if (auto res = yw::draw_icon(pos, icon_size, Icon); !res) return res.error().relay();
-      return {};
-    }
+    //-- internal functions --//
   };
 
   icon() noexcept = default;

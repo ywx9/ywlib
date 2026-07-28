@@ -25,15 +25,15 @@ public:
 
     virtual std::expected<void, error> apply_color_theme(const ui::color_theme& Theme, bool) override {
       background_color = Theme.surface;
-      border_color = Theme.outline;
-      track_color = Theme.part;
+      border_color = colors::transparent;
+      track_color = Theme.outline;
       fill_color = Theme.accent;
-      thumb_color = Theme.surface;
+      thumb_color = Theme.part;
       make_dirty();
       return {};
     }
 
-    virtual std::expected<void, error> draw_content() override {
+    virtual std::expected<void, error> draw_backcontent() override {
       const auto track = track_rect();
       brush::color(track_color);
       if (auto res = fill_round_rectangle(track.xy(), track.zw() - track.xy(), float2::fill(track_radius())); !res)
@@ -50,6 +50,12 @@ public:
       const auto radius = thumb_radius();
       brush::color(thumb_color);
       if (auto res = fill_ellipse(center, float2::fill(radius)); !res) return res.error().relay();
+      return {};
+    }
+
+    virtual std::expected<void, error> draw_overlay() override {
+      const auto center = thumb_center();
+      const auto radius = thumb_radius();
       if (pressed) {
         if (const auto wsp = get_slot<window>(window_id); !wsp) return std::unexpected(error(errors::invalid_slotid));
         else if (wsp->press_overlay_color.a > 0.0f) {
@@ -63,12 +69,16 @@ public:
           if (auto res = fill_ellipse(center, float2::fill(radius)); !res) return res.error().relay();
         }
       }
+      return {};
+    }
+
+    virtual std::expected<void, error> draw_forecontent() override {
+      const auto center = thumb_center();
+      const auto radius = thumb_radius();
       brush::color(border_color);
       if (auto res = stroke_ellipse(center, float2::fill(radius), border_thickness); !res) return res.error().relay();
       return {};
     }
-
-    virtual std::expected<void, error> draw_overlay() override { return {}; }
 
     virtual float2 get_minimum_size() const override {
       if (orientation == ui::vertical) return float2{bar_width, bar_width * 4.0f};

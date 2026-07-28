@@ -44,18 +44,28 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> draw_content() override {
-      for (size_t i = 0; i < items.size(); ++i) {
-        const auto& it = items[i];
-        if (auto res = icon::slot::draw_icon(circle, it.icon_pos, icon_size, center); !res)
-          return res.error().relay();
-        if (i == checked_index) {
-          if (auto res = icon::slot::draw_icon(dot, it.icon_pos, icon_size, center); !res)
-            return res.error().relay();
+    virtual std::expected<void, error> draw_backcontent() override {
+      if (circle.is_bitmap()) {
+        for (const auto& it : items)
+          if (auto res = draw_bitmap(it.icon_pos, icon_size, circle.get_bitmap()); !res) return res.error().relay();
+      } else if (circle.is_vector())
+        if (const auto& svg = circle.get_vector(); svg.fill_color().a > 0.0f) {
+          brush::color(svg.fill_color());
+          for (const auto& it : items)
+            if (auto res = fill_svgpath(it.icon_pos, circle.get_vector()); !res) return res.error().relay();
         }
-        if (auto res = label::slot::draw_text(it.caption, it.text_pos, it.caption.size(), left_top); !res)
-          return res.error().relay();
-      }
+      return {};
+    }
+
+    virtual std::expected<void, error> draw_forecontent() override {
+      if (circle.is_vector())
+        if (const auto& svg = circle.get_vector(); svg.stroke_color().a > 0.0f)
+          for (const auto& it : items)
+            if (auto res = stroke_svgpath(it.icon_pos, circle.get_vector()); !res) return res.error().relay();
+      if (checked_index < items.size())
+        if (auto res = draw_icon(items[checked_index].icon_pos, icon_size, dot); !res) return res.error().relay();
+      for (const auto& it : items)
+        if (auto res = draw_text(it.text_pos, it.caption); !res) return res.error().relay();
       return {};
     }
 
@@ -230,6 +240,8 @@ public:
         it.size = {content_size.x, row_size.y};
         it.icon_pos = {content_pos.x, y + (row_size.y - icon_size.y) * 0.5f};
         it.text_pos = {content_pos.x + icon_size.x + gap, y + (row_size.y - text_size.y) * 0.5f};
+        // it.text_pos = align_position(
+        //   it.icon_pos.add<0>(icon_size.x + gap), content_size.add<0>(-icon_size.x - gap), text_size, left);
         y += row_size.y + (i + 1 < items.size() ? item_gap : 0.0f);
       }
     }
@@ -256,15 +268,17 @@ public:
     r._id = temp_id;
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
-    sp->policy = {ui::size_policy::free, ui::size_policy::fit};
+    sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
     constexpr float2 init_icon_size{16.0f, 16.0f};
     sp->icon_size = init_icon_size;
-    sp->circle = yw::icon(yw::svgpath(
-      init_icon_size,
-      "M8 1 C4.134 1 1 4.134 1 8 C1 11.866 4.134 15 8 15 C11.866 15 15 11.866 15 8 C15 4.134 11.866 1 8 1 Z"));
-    sp->dot = yw::icon(yw::svgpath(
-      init_icon_size,
-      "M8 5 C6.343 5 5 6.343 5 8 C5 9.657 6.343 11 8 11 C9.657 11 11 9.657 11 8 C11 6.343 9.657 5 8 5 Z"));
+    sp->circle = yw::icon(
+      yw::svgpath(
+        init_icon_size,
+        "M8 1 C4.134 1 1 4.134 1 8 C1 11.866 4.134 15 8 15 C11.866 15 15 11.866 15 8 C15 4.134 11.866 1 8 1 Z"));
+    sp->dot = yw::icon(
+      yw::svgpath(
+        init_icon_size,
+        "M8 5 C6.343 5 5 6.343 5 8 C5 9.657 6.343 11 8 11 C9.657 11 11 9.657 11 8 C11 6.343 9.657 5 8 5 Z"));
     if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
     else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
     return r;

@@ -33,21 +33,33 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> draw_content() override {
-      const auto origin = pos + padding.xy();
-      const auto area = size - padding.xy() - padding.zw();
-      const auto text_size = text.size();
-      const auto gap = text_size.x > 0.0f ? icon_gap : 0.0f;
-      const auto row_size = float2{icon_size.x + gap + text_size.x, yw::max(icon_size.y, text_size.y)};
-      const auto row_pos = origin + float2{0.0f, (area.y - row_size.y) * 0.5f};
-      const auto icon_pos = row_pos + float2{0.0f, (row_size.y - icon_size.y) * 0.5f};
-      const auto text_pos = row_pos + float2{icon_size.x + gap, (row_size.y - text_size.y) * 0.5f};
 
-      if (auto res = icon::slot::draw_icon(box, icon_pos, icon_size, center); !res) return res.error().relay();
-      if (checked) {
-        if (auto res = icon::slot::draw_icon(check, icon_pos, icon_size, center); !res) return res.error().relay();
-      }
-      if (auto res = label::slot::draw_text(text, text_pos, text_size, left_top); !res) return res.error().relay();
+
+    virtual std::expected<void, error> draw_backcontent() override {
+      const auto origin = float2(pos.x + padding.x, pos.y + (size.y - icon_size.y) * 0.5f);
+      if (box.is_bitmap()) {
+        if (auto res = draw_bitmap(origin, icon_size, box.get_bitmap()); !res) return res.error().relay();
+      } else if (box.is_vector())
+        if (auto svg = box.get_vector(); svg.fill_color().a > 0.0f) {
+          brush::color(svg.fill_color());
+          if (auto res = fill_svgpath(origin, box.get_vector()); !res) return res.error().relay();
+        }
+      return {};
+    }
+
+    virtual std::expected<void, error> draw_forecontent() override {
+      const auto origin = float2(pos.x + padding.x, pos.y + (size.y - icon_size.y) * 0.5f);
+      if (box.is_vector())
+        if (auto svg = box.get_vector(); svg.stroke_color().a > 0.0f) {
+          brush::color(svg.stroke_color());
+          if (auto res = stroke_svgpath(origin, box.get_vector()); !res) return res.error().relay();
+        }
+      if (checked)
+        if (auto res = draw_icon(origin, icon_size, check); !res) return res.error().relay();
+      const auto text_origin = float2(pos.x + padding.x + icon_size.x + icon_gap, pos.y + padding.y);
+      const auto text_area = pos + size - padding.zw() - text_origin;
+      const auto text_pos = align_position(text_origin, text_area, text.size(), left);
+      if (auto res = draw_text(text_pos, text); !res) return res.error().relay();
       return {};
     }
 
@@ -62,6 +74,10 @@ public:
         if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
       }
       return {};
+    }
+
+    virtual float2 get_minimum_size() const override {
+      return icon_size + padding.xy() + padding.zw();
     }
 
     virtual std::expected<float2, error> get_necessary_size() const override {
@@ -163,7 +179,7 @@ public:
     c._id = temp_id;
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
-    sp->policy = {ui::size_policy::free, ui::size_policy::fit};
+    sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
     constexpr float2 init_icon_size{16.0f, 16.0f};
     sp->icon_size = init_icon_size;
     sp->box = yw::icon(yw::svgpath(init_icon_size, "M1 1 L15 1 L15 15 L1 15 Z"));

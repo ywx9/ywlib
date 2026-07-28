@@ -26,16 +26,16 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> draw_content() override {
+    virtual std::expected<void, error> draw_forecontent() override {
       if (!is_focused() && text.string().empty()) {
         if (auto res = update_scroll_offset(); !res) return res.error().relay();
-        if (auto res = label::slot::draw_text(
-              placeholder_text, pos + padding.xy(), size - padding.xy() - padding.zw(), text_align);
-          !res)
-          return res.error().relay();
+        const auto origin = text_origin();
+        const auto area = size - padding.xy() - padding.zw();
+        const auto text_pos = align_position(origin, area, placeholder_text.size(), text_align);
+        if (auto res = draw_text(text_pos, placeholder_text); !res) return res.error().relay();
         return {};
       }
-      return selectable_label::slot::draw_content();
+      return selectable_label::slot::draw_forecontent();
     }
 
     virtual std::expected<float2, error> get_necessary_size() const override {
@@ -240,7 +240,7 @@ public:
     e._id = temp_id;
     sp->id = temp_id;
     sp->window_id = psp->get_window_id();
-    sp->policy = {ui::size_policy::free, ui::size_policy::fit};
+    sp->policy = {ui::free, ui::fit};
     sp->text_align = alignment::left;
     if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
     else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
