@@ -66,6 +66,7 @@ public:
     slotid focused_control_id{};
     slotid hovered_control_id{};
     slotid mouse_capture_control_id{};
+    bool window_mouse_capture = false;
     slotid keyboard_capture_control_id{};
     slotid tooltip_control_id{};
 
@@ -82,6 +83,7 @@ public:
     int2 last_cursor_pos{}; // updated in mouse_move_event
 
     function<bool, yw::button_event> button_event{};
+    function<bool, yw::drag_event> drag_event{};
     function<bool, yw::focus_event> focus_event{};
     function<bool, yw::key_event> key_event{};
     function<bool, yw::pointer_event> pointer_event{};
@@ -177,6 +179,7 @@ public:
 
       if (const auto csp = get_slot<control>(mouse_capture_control_id)) csp->reset_state();
       mouse_capture_control_id = {};
+      window_mouse_capture = false;
       ::ReleaseCapture();
 
       keyboard_capture_control_id = {};
@@ -458,6 +461,13 @@ public:
           return {};
         }
       }
+      if (e.down && drag_event && !mouse_capture_control_id) {
+        window_mouse_capture = true;
+        ::SetCapture(hwnd);
+      } else if (!e.down && window_mouse_capture) {
+        window_mouse_capture = false;
+        ::ReleaseCapture();
+      }
       if (button_event) button_event(e);
       return {};
     }
@@ -484,6 +494,7 @@ public:
         if (auto res = update_caret_pos(); !res) return res.error().relay();
         return {};
       }
+      if (drag_event) drag_event(e);
       return {};
     }
 
@@ -790,6 +801,12 @@ public:
     return sp->button_event;
   }
 
+  const auto& drag_event() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return sp->drag_event;
+  }
+
   const auto& focus_event() const noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
@@ -1034,6 +1051,16 @@ public:
       return *this;
     }
     sp->button_event = std::move(f);
+    return *this;
+  }
+
+  auto& drag_event(function<bool, yw::drag_event> f) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
+    sp->drag_event = std::move(f);
     return *this;
   }
 

@@ -41,11 +41,13 @@ public:
   void set_shader() const noexcept { d3d::context()->VSSetShader(_shader.get(), nullptr, 0); }
   static void set_shader(const vertex_shader& shader) noexcept { shader.set_shader(); }
 
+  /// binds all resources contiguously from slot 0; unmentioned slots are left unchanged.
   template<specialization_of<constant_buffer>... Ts> static void set_cbuffer(const Ts&... as) {
     std::array<ID3D11Buffer*, sizeof...(Ts)> a{(ID3D11Buffer*)as...};
     d3d::context()->VSSetConstantBuffers(0, UINT(a.size()), a.data());
   }
 
+  /// binds all resources contiguously from slot 0; unmentioned slots are left unchanged.
   template<castable_to<ID3D11ShaderResourceView*>... Ts> static void set_resource(const Ts&... as) {
     std::array<ID3D11ShaderResourceView*, sizeof...(Ts)> a{(ID3D11ShaderResourceView*)as...};
     d3d::context()->VSSetShaderResources(0, UINT(a.size()), a.data());
@@ -91,11 +93,13 @@ public:
   void set_shader() const noexcept { d3d::context()->PSSetShader(_shader.get(), nullptr, 0); }
   static void set_shader(const pixel_shader& shader) noexcept { shader.set_shader(); }
 
+  /// binds all resources contiguously from slot 0; unmentioned slots are left unchanged.
   template<specialization_of<constant_buffer>... Ts> static void set_cbuffer(const Ts&... as) {
     std::array<ID3D11Buffer*, sizeof...(Ts)> a{(ID3D11Buffer*)as...};
     d3d::context()->PSSetConstantBuffers(0, UINT(a.size()), a.data());
   }
 
+  /// binds all resources contiguously from slot 0; unmentioned slots are left unchanged.
   template<castable_to<ID3D11ShaderResourceView*>... Ts> static void set_resource(const Ts&... as) {
     std::array<ID3D11ShaderResourceView*, sizeof...(Ts)> a{(ID3D11ShaderResourceView*)as...};
     d3d::context()->PSSetShaderResources(0, UINT(a.size()), a.data());
@@ -142,11 +146,13 @@ public:
   void set_shader() const noexcept { d3d::context()->GSSetShader(_shader.get(), nullptr, 0); }
   static void set_shader(const geometry_shader& shader) noexcept { shader.set_shader(); }
 
+  /// binds all resources contiguously from slot 0; unmentioned slots are left unchanged.
   template<specialization_of<constant_buffer>... Ts> static void set_cbuffer(const Ts&... as) {
     std::array<ID3D11Buffer*, sizeof...(Ts)> a{(ID3D11Buffer*)as...};
     d3d::context()->GSSetConstantBuffers(0, UINT(a.size()), a.data());
   }
 
+  /// binds all resources contiguously from slot 0; unmentioned slots are left unchanged.
   template<castable_to<ID3D11ShaderResourceView*>... Ts> static void set_resource(const Ts&... as) {
     std::array<ID3D11ShaderResourceView*, sizeof...(Ts)> a{(ID3D11ShaderResourceView*)as...};
     d3d::context()->GSSetShaderResources(0, UINT(a.size()), a.data());
@@ -193,16 +199,19 @@ public:
   void set_shader() const noexcept { d3d::context()->CSSetShader(_shader.get(), nullptr, 0); }
   static void set_shader(const compute_shader& shader) noexcept { shader.set_shader(); }
 
+  /// binds all resources contiguously from slot 0; unmentioned slots are left unchanged.
   template<specialization_of<constant_buffer>... Ts> static void set_cbuffer(const Ts&... as) {
     std::array<ID3D11Buffer*, sizeof...(Ts)> a{(ID3D11Buffer*)as...};
     d3d::context()->CSSetConstantBuffers(0, UINT(a.size()), a.data());
   }
 
+  /// binds all resources contiguously from slot 0; unmentioned slots are left unchanged.
   template<castable_to<ID3D11ShaderResourceView*>... Ts> static void set_resource(const Ts&... as) {
     std::array<ID3D11ShaderResourceView*, sizeof...(Ts)> a{(ID3D11ShaderResourceView*)as...};
     d3d::context()->CSSetShaderResources(0, UINT(a.size()), a.data());
   }
 
+  /// binds all resources contiguously from slot 0; unmentioned slots are left unchanged.
   template<castable_to<ID3D11UnorderedAccessView*>... Ts> static void set_rwbuffer(const Ts&... as) {
     std::array<ID3D11UnorderedAccessView*, sizeof...(Ts)> a{(ID3D11UnorderedAccessView*)as...};
     d3d::context()->CSSetUnorderedAccessViews(0, UINT(a.size()), a.data(), nullptr);

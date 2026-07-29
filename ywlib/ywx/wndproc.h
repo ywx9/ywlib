@@ -22,7 +22,8 @@ template<UINT Msg> inline LRESULT handle_wm_pointer(window::slot* wsp, WPARAM wp
     const auto local_pos = short2(std::bit_cast<int16_t>(LOWORD(lp)), std::bit_cast<int16_t>(HIWORD(lp)));
     window::slot::cursor_pos = local_pos;
     ::ClientToScreen(wsp->hwnd, reinterpret_cast<POINT*>(&window::slot::cursor_pos));
-    if (wsp->mouse_capture_control_id && (wp & (MK_LBUTTON | MK_RBUTTON | MK_MBUTTON | MK_XBUTTON1 | MK_XBUTTON2))) {
+    if ((wsp->mouse_capture_control_id || wsp->window_mouse_capture) &&
+        (wp & (MK_LBUTTON | MK_RBUTTON | MK_MBUTTON | MK_XBUTTON1 | MK_XBUTTON2))) {
       drag_event e{};
       e.delta = window::slot::cursor_pos - wsp->last_cursor_pos;
       e.mods = internal::_make_mods_from_wparam(wp);
@@ -235,6 +236,7 @@ inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
     if (const auto ccsp = static_cast<control::slot*>(interface::slot::slots.get(wsp->mouse_capture_control_id)))
       ccsp->reset_state();
     wsp->mouse_capture_control_id = {};
+    wsp->window_mouse_capture = false;
     wsp->dirty = true;
     return 0;
 

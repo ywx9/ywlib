@@ -24,6 +24,8 @@ public:
     return sp && sp->buffer;
   }
 
+  explicit operator ID3D11Buffer*() const noexcept { return buffer<T>::d3d_buffer(); }
+
   ID3D11Buffer* d3d_buffer() const noexcept {
     if (const auto sp = slot::template get_as<buffer>(id())) return sp->buffer.get();
     else return nullptr;
@@ -66,6 +68,7 @@ public:
   };
 
   using buffer<T>::operator bool;
+  using buffer<T>::operator ID3D11Buffer*;
   staging_buffer() noexcept = default;
 
   static std::expected<staging_buffer, error> create(uint1 Size) {
@@ -135,6 +138,7 @@ public:
   struct slot : buffer<T>::slot {};
 
   using buffer<T>::operator bool;
+  using buffer<T>::operator ID3D11Buffer*;
   constant_buffer() noexcept = default;
 
   static std::expected<constant_buffer, error> create(const T& Val) {
@@ -196,6 +200,8 @@ public:
     const auto sp = slot::template get_as<structured_buffer>(handle_base::id());
     return sp && static_cast<bool>(sp->resource_view);
   }
+
+  explicit operator resource_view_type*() const noexcept { return structured_buffer<T, RW>::d3d_resource_view(); }
 
   resource_view_type* d3d_resource_view() const noexcept {
     if (const auto sp = slot::template get_as<structured_buffer>(handle_base::id())) return sp->resource_view.get();

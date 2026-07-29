@@ -1,7 +1,7 @@
 #pragma once
 #include "ywx/bitmap.h"
 #include "ywx/buffer.h"
-#include "ywx/drawing.h"
+#include "ywx/rendering.h"
 
 namespace yw {
 
@@ -291,15 +291,15 @@ public:
     return {};
   }
 
-  std::expected<drawing, error> begin_render() {
+  std::expected<rendering, error> begin_render() {
     if (auto res = _prepare_render(nullptr); !res) return res.error().relay();
-    if (auto res = drawing::create(_rtv.get(), _dsv.get())) return std::move(*res);
+    if (auto res = rendering::create(_rtv.get(), _dsv.get())) return std::move(*res);
     else return res.error().relay();
   }
 
-  std::expected<drawing, error> begin_render(const color& Clear) {
+  std::expected<rendering, error> begin_render(const color& Clear) {
     if (auto res = _prepare_render(&Clear); !res) return res.error().relay();
-    if (auto res = drawing::create(_rtv.get(), _dsv.get())) return std::move(*res);
+    if (auto res = rendering::create(_rtv.get(), _dsv.get())) return std::move(*res);
     else return res.error().relay();
   }
 };
