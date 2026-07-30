@@ -37,29 +37,30 @@ public:
   template<typename... Ts> static std::expected<rendering, error> create(const Ts&... rtvs_dsv_uavs) {
     constexpr size_t i_dsv = inspect<castable_to<const Ts&, ID3D11DepthStencilView*>...>;
     constexpr size_t num_dsv = i_dsv < sizeof...(Ts);
+    constexpr size_t num_rtv = num_dsv ? i_dsv : sizeof...(Ts);
     constexpr size_t num_uav = sizeof...(Ts) - (num_dsv ? i_dsv + 1 : 0);
     static_assert([]<size_t... Is>(sequence<Is...>) {
-      return (castable_to<select_type<Is, Ts>, ID3D11RenderTargetView*> && ...);
-    }(make_sequence<0, i_dsv>()));
+      return (castable_to<select_type<Is, Ts...>, ID3D11RenderTargetView*> && ...);
+    }(make_sequence<0, num_rtv>()));
     static_assert([]<size_t... Is>(sequence<Is...>) {
-      return (castable_to<select_type<Is, Ts>, ID3D11UnorderedAccessView*> && ...);
+      return (castable_to<select_type<Is, Ts...>, ID3D11UnorderedAccessView*> && ...);
     }(make_sequence<i_dsv + 1, sizeof...(Ts)>()));
-    std::array<ID3D11RenderTargetView*, i_dsv> rtv{};
+    std::array<ID3D11RenderTargetView*, num_rtv> rtv{};
     [&]<size_t... Is>(sequence<Is...>) {
       ((rtv[Is] = static_cast<ID3D11RenderTargetView*>(select<Is>(rtvs_dsv_uavs...))), ...);
-    }(make_sequence<0, i_dsv>());
+    }(make_sequence<0, num_rtv>());
     ID3D11DepthStencilView* dsv = nullptr;
     if (num_dsv) dsv = static_cast<ID3D11DepthStencilView*>(select<i_dsv>(rtvs_dsv_uavs...));
     if constexpr (num_uav > 0) {
-      std::array<ID3D11UnorderedAccessView*, num_uav> uav{};
+      std::array<ID3D11UnorderedAccessView*, num_uav> buf{};
       [&]<size_t... Is>(sequence<Is...>) {
-        ((uav[Is] = static_cast<ID3D11UnorderedAccessView*>(select<i_dsv + 1 + Is>(rtvs_dsv_uavs...))), ...);
+        ((buf[Is] = static_cast<ID3D11UnorderedAccessView*>(select<i_dsv + 1 + Is>(rtvs_dsv_uavs...))), ...);
       }(make_sequence<0, num_uav>());
       d3d::context()->OMSetRenderTargetsAndUnorderedAccessViews(
-        uint32_t(i_dsv), rtv.data(), dsv, uint32_t(i_dsv), uint32_t(num_uav), uav.data(), nullptr);
-    } else d3d::context()->OMSetRenderTargets(uint32_t(i_dsv), rtv.data(), dsv);
+        uint32_t(num_rtv), rtv.data(), dsv, uint32_t(num_rtv), uint32_t(num_uav), buf.data(), nullptr);
+    } else d3d::context()->OMSetRenderTargets(uint32_t(num_rtv), rtv.data(), dsv);
     rendering r{};
-    r._num_rtv = uint32_t(i_dsv);
+    r._num_rtv = uint32_t(num_rtv);
     r._num_dsv = uint32_t(num_dsv);
     r._num_uav = uint32_t(num_uav);
     return std::move(r);
@@ -71,7 +72,7 @@ public:
     constexpr size_t num_cbuffers = i_resources;
     constexpr size_t num_resources = sizeof...(Us) - i_resources;
     static_assert([]<size_t... Is>(sequence<Is...>) {
-      return (castable_to<select_type<Is, Us>, ID3D11Buffer*> && ...);
+      return (castable_to<select_type<Is, Us...>, ID3D11Buffer*> && ...);
     }(make_sequence<0, i_resources>()));
     static_assert([]<size_t... Is>(sequence<Is...>) {
       return (castable_to<select_type<Is, Us>, ID3D11ShaderResourceView*> && ...);
@@ -81,19 +82,18 @@ public:
     _num_vs_resources = uint32_t(num_resources);
     d3d::context()->VSSetShader(_vs, nullptr, 0);
     if constexpr (num_cbuffers > 0) {
-      std::array<ID3D11Buffer*, num_cbuffers> cbs{};
+      std::array<ID3D11Buffer*, num_cbuffers> buf{};
       [&]<size_t... Is>(sequence<Is...>) {
-        ((cbs[Is] = static_cast<ID3D11Buffer*>(select<Is>(cbuffers_resources...))), ...);
+        ((buf[Is] = static_cast<ID3D11Buffer*>(select<Is>(cbuffers_resources...))), ...);
       }(make_sequence<0, num_cbuffers>());
-      d3d::context()->VSSetConstantBuffers(0, uint32_t(num_cbuffers), cbs.data());
+      d3d::context()->VSSetConstantBuffers(0, uint32_t(num_cbuffers), buf.data());
     }
     if constexpr (num_resources > 0) {
-      std::array<ID3D11ShaderResourceView*, num_resources> resources{};
+      std::array<ID3D11ShaderResourceView*, num_resources> buf{};
       [&]<size_t... Is>(sequence<Is...>) {
-        ((resources[Is] = static_cast<ID3D11ShaderResourceView*>(select<i_resources + Is>(cbuffers_resources...))),
-          ...);
+        ((buf[Is] = static_cast<ID3D11ShaderResourceView*>(select<i_resources + Is>(cbuffers_resources...))), ...);
       }(make_sequence<0, num_resources>());
-      d3d::context()->VSSetShaderResources(0, uint32_t(num_resources), resources.data());
+      d3d::context()->VSSetShaderResources(0, uint32_t(num_resources), buf.data());
     }
     return {};
   }
@@ -104,29 +104,28 @@ public:
     constexpr size_t num_cbuffers = i_resources;
     constexpr size_t num_resources = sizeof...(Us) - i_resources;
     static_assert([]<size_t... Is>(sequence<Is...>) {
-      return (castable_to<select_type<Is, Us>, ID3D11Buffer*> && ...);
+      return (castable_to<select_type<Is, Us...>, ID3D11Buffer*> && ...);
     }(make_sequence<0, i_resources>()));
     static_assert([]<size_t... Is>(sequence<Is...>) {
-      return (castable_to<select_type<Is, Us>, ID3D11ShaderResourceView*> && ...);
+      return (castable_to<select_type<Is, Us...>, ID3D11ShaderResourceView*> && ...);
     }(make_sequence<i_resources, sizeof...(Us)>()));
     _gs = static_cast<ID3D11GeometryShader*>(gs);
     _num_gs_cbuffers = uint32_t(num_cbuffers);
     _num_gs_resources = uint32_t(num_resources);
     d3d::context()->GSSetShader(_gs, nullptr, 0);
     if constexpr (num_cbuffers > 0) {
-      std::array<ID3D11Buffer*, num_cbuffers> cbs{};
+      std::array<ID3D11Buffer*, num_cbuffers> buf{};
       [&]<size_t... Is>(sequence<Is...>) {
-        ((cbs[Is] = static_cast<ID3D11Buffer*>(select<Is>(cbuffers_resources...))), ...);
+        ((buf[Is] = static_cast<ID3D11Buffer*>(select<Is>(cbuffers_resources...))), ...);
       }(make_sequence<0, num_cbuffers>());
-      d3d::context()->GSSetConstantBuffers(0, uint32_t(num_cbuffers), cbs.data());
+      d3d::context()->GSSetConstantBuffers(0, uint32_t(num_cbuffers), buf.data());
     }
     if constexpr (num_resources > 0) {
-      std::array<ID3D11ShaderResourceView*, num_resources> resources{};
+      std::array<ID3D11ShaderResourceView*, num_resources> buf{};
       [&]<size_t... Is>(sequence<Is...>) {
-        ((resources[Is] = static_cast<ID3D11ShaderResourceView*>(select<i_resources + Is>(cbuffers_resources...))),
-          ...);
+        ((buf[Is] = static_cast<ID3D11ShaderResourceView*>(select<i_resources + Is>(cbuffers_resources...))), ...);
       }(make_sequence<0, num_resources>());
-      d3d::context()->GSSetShaderResources(0, uint32_t(num_resources), resources.data());
+      d3d::context()->GSSetShaderResources(0, uint32_t(num_resources), buf.data());
     }
     return {};
   }
@@ -137,29 +136,28 @@ public:
     constexpr size_t num_cbuffers = i_resources;
     constexpr size_t num_resources = sizeof...(Us) - i_resources;
     static_assert([]<size_t... Is>(sequence<Is...>) {
-      return (castable_to<select_type<Is, Us>, ID3D11Buffer*> && ...);
+      return (castable_to<select_type<Is, Us...>, ID3D11Buffer*> && ...);
     }(make_sequence<0, i_resources>()));
     static_assert([]<size_t... Is>(sequence<Is...>) {
-      return (castable_to<select_type<Is, Us>, ID3D11ShaderResourceView*> && ...);
+      return (castable_to<select_type<Is, Us...>, ID3D11ShaderResourceView*> && ...);
     }(make_sequence<i_resources, sizeof...(Us)>()));
     _ps = static_cast<ID3D11PixelShader*>(ps);
     _num_ps_cbuffers = uint32_t(num_cbuffers);
     _num_ps_resources = uint32_t(num_resources);
     d3d::context()->PSSetShader(_ps, nullptr, 0);
     if constexpr (num_cbuffers > 0) {
-      std::array<ID3D11Buffer*, num_cbuffers> cbs{};
+      std::array<ID3D11Buffer*, num_cbuffers> buf{};
       [&]<size_t... Is>(sequence<Is...>) {
-        ((cbs[Is] = static_cast<ID3D11Buffer*>(select<Is>(cbuffers_resources...))), ...);
+        ((buf[Is] = static_cast<ID3D11Buffer*>(select<Is>(cbuffers_resources...))), ...);
       }(make_sequence<0, num_cbuffers>());
-      d3d::context()->PSSetConstantBuffers(0, uint32_t(num_cbuffers), cbs.data());
+      d3d::context()->PSSetConstantBuffers(0, uint32_t(num_cbuffers), buf.data());
     }
     if constexpr (num_resources > 0) {
-      std::array<ID3D11ShaderResourceView*, num_resources> resources{};
+      std::array<ID3D11ShaderResourceView*, num_resources> buf{};
       [&]<size_t... Is>(sequence<Is...>) {
-        ((resources[Is] = static_cast<ID3D11ShaderResourceView*>(select<i_resources + Is>(cbuffers_resources...))),
-          ...);
+        ((buf[Is] = static_cast<ID3D11ShaderResourceView*>(select<i_resources + Is>(cbuffers_resources...))), ...);
       }(make_sequence<0, num_resources>());
-      d3d::context()->PSSetShaderResources(0, uint32_t(num_resources), resources.data());
+      d3d::context()->PSSetShaderResources(0, uint32_t(num_resources), buf.data());
     }
     return {};
   }
@@ -179,6 +177,13 @@ public:
   std::expected<void, error> render_triangles(uint32_t NumTriangles) {
     d3d::context()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     if (auto res = _render(NumTriangles * 3); !res) return res.error().relay();
+    return {};
+  }
+
+  std::expected<void, error> render_any(
+    uint32_t NumIndices, std::optional<D3D11_PRIMITIVE_TOPOLOGY> Topology = std::nullopt) {
+    if (Topology) d3d::context()->IASetPrimitiveTopology(*Topology);
+    if (auto res = _render(NumIndices); !res) return res.error().relay();
     return {};
   }
 };

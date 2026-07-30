@@ -686,19 +686,37 @@ template<size_t Flag> requires(lt(Flag, 256)) __m128 mm_permute(__m128 m) noexce
 template<int X, int Y, int Z, int W> __m128 mm_permute(__m128 a, __m128 b) noexcept {
   constexpr auto x = X - 4, y = Y - 4, z = Z - 4, w = W - 4;
   constexpr bool bx = (X < 0 || 7 < X), by = (Y < 0 || 7 < Y), bz = (Z < 0 || 7 < Z), bw = (W < 0 || 7 < W);
-  if constexpr ((bx || X < 4) && (by || Y < 4) && (bz || Z < 4) && (bw || W < 4)) return mm_permute<X, Y, Z, W>(a);
-  else if constexpr ((bx || 3 < X) && (by || 3 < Y) && (bz || 3 < Z) && (bw || 3 < W)) return mm_permute<x, y, z, w>(b);
-  else if constexpr ((bx || (X & 3) == 0) && (by || (Y & 3) == 1) && (bz || (Z & 3) == 2) && (bw || (W & 3) == 3))
+  constexpr int match_a = (bx || (X < 4)) + (by || (Y < 4)) + (bz || (Z < 4)) + (bw || (W < 4));
+  constexpr int match_b = (bx || (3 < X)) + (by || (3 < Y)) + (bz || (3 < Z)) + (bw || (3 < W));
+  if constexpr (match_a == 4) return mm_permute<X, Y, Z, W>(a);
+  else if constexpr (match_b == 4) return mm_permute<x, y, z, w>(b);
+  else if constexpr ((bx || (X & 3) == 0) + (by || (Y & 3) == 1) + (bz || (Z & 3) == 2) + (bw || (W & 3) == 3) == 4)
     return mm_blend<lt(X, 4), lt(Y, 4), lt(Z, 4), lt(W, 4)>(b, a);
-  else if constexpr ((bx || X < 4) && (by || Y < 4) && (bz || 3 < Z) && (bw || 3 < W))
+  else if constexpr ((bx || X == 0) + (by || Y == 4) + (bz || Z == 1) + (bw || W == 5) == 4)
+    return _mm_unpacklo_ps(a, b);
+  else if constexpr ((bx || X == 4) + (by || Y == 0) + (bz || Z == 5) + (bw || W == 1) == 4)
+    return _mm_unpacklo_ps(b, a);
+  else if constexpr ((bx || X == 2) + (by || Y == 6) + (bz || Z == 3) + (bw || W == 7) == 4)
+    return _mm_unpackhi_ps(a, b);
+  else if constexpr ((bx || X == 6) + (by || Y == 2) + (bz || Z == 7) + (bw || W == 3) == 4)
+    return _mm_unpackhi_ps(b, a);
+  else if constexpr ((bx || X < 4) + (by || Y < 4) + (bz || 3 < Z) + (bw || 3 < W) == 4)
     return _mm_shuffle_ps(a, b, (bx ? 0 : X) + (by ? 0 : Y) * 4 + (bz ? 0 : z) * 16 + (bw ? 0 : w) * 64);
-  else if constexpr ((bx || 3 < X) && (by || 3 < Y) && (bz || Z < 4) && (bw || W < 4))
+  else if constexpr ((bx || 3 < X) + (by || 3 < Y) + (bz || Z < 4) + (bw || W < 4) == 4)
     return _mm_shuffle_ps(b, a, (bx ? 0 : x) + (by ? 0 : y) * 4 + (bz ? 0 : Z) * 16 + (bw ? 0 : W) * 64);
+  else if constexpr ((bx || X == 1) + (by || Y == 2) + (bz || Z == 4) + (bw || W == 5) == 4)
+    return _mm_castsi128_ps(_mm_alignr_epi8(_mm_castps_si128(b), _mm_castps_si128(a), 4));
+  else if constexpr ((bx || X == 3) + (by || Y == 0) + (bz || Z == 6) + (bw || W == 7) == 4)
+    return _mm_castsi128_ps(_mm_alignr_epi8(_mm_castps_si128(b), _mm_castps_si128(a), 12));
+  else if constexpr ((bx || X == 5) + (by || Y == 6) + (bz || Z == 7) + (bw || W == 0) == 4)
+    return _mm_castsi128_ps(_mm_alignr_epi8(_mm_castps_si128(a), _mm_castps_si128(b), 4));
+  else if constexpr ((bx || X == 7) + (by || Y == 0) + (bz || Z == 1) + (bw || W == 2) == 4)
+    return _mm_castsi128_ps(_mm_alignr_epi8(_mm_castps_si128(a), _mm_castps_si128(b), 12));
   else if constexpr ((bx || X == 0) + (by || Y == 1) + (bz || Z == 2) + (bw || W == 3) == 3) {
-    constexpr size_t i = inspect<!(bx || X == 0), !(by || Y == 1), !(bz || Z == 2), !(bw || Z == 3)>;
+    constexpr size_t i = inspect<!(bx || X == 0), !(by || Y == 1), !(bz || Z == 2), !(bw || W == 3)>;
     return _mm_insert_ps(a, b, int((select_value<i, X, Y, Z, W> - 4) << 6 | i << 4));
   } else if constexpr ((bx || X == 4) + (by || Y == 5) + (bz || Z == 6) + (bw || W == 7) == 3) {
-    constexpr size_t i = inspect<!(bx || X == 4), !(by || Y == 5), !(bz || Z == 6), !(bw || Z == 7)>;
+    constexpr size_t i = inspect<!(bx || X == 4), !(by || Y == 5), !(bz || Z == 6), !(bw || W == 7)>;
     return _mm_insert_ps(b, a, int(select_value<i, X, Y, Z, W> << 6 | i << 4));
   } else if constexpr ((bx || X < 4 || X == 4) && (by || Y < 4 || Y == 5) && //
                        (bz || Z < 4 || Z == 6) && (bw || W < 4 || W == 7))
@@ -706,13 +724,25 @@ template<int X, int Y, int Z, int W> __m128 mm_permute(__m128 a, __m128 b) noexc
   else if constexpr ((bx || 3 < X || X == 0) && (by || 3 < Y || Y == 1) && //
                      (bz || 3 < Z || Z == 2) && (bw || 3 < W || W == 3))
     return mm_blend<X == 0, Y == 1, Z == 2, W == 3>(mm_permute<x, y, z, w>(b), a);
-  else if constexpr ((bx || X < 4) + (by || Y < 4) + (bz || Z < 4) + (bw || W < 4) == 3) {
-    constexpr size_t i = inspect<!(bx || X < 4), !(by || Y < 4), !(bz || Z < 4), !(bw || W < 4)>;
+  else if constexpr (match_a == 3) {
+    constexpr size_t i = inspect<!(bx || (X < 4)), !(by || (Y < 4)), !(bz || (Z < 4)), !(bw || (W < 4))>;
     return _mm_insert_ps((mm_permute<X, Y, Z, W>(a)), b, int((select_value<i, X, Y, Z, W> - 4) << 6 | i << 4));
-  } else if constexpr ((bx || 3 < X) + (by || 3 < Y) + (bz || 3 < Z) + (bw || 3 < W) == 3) {
-    constexpr size_t i = inspect<!(bx || 3 < X), !(by || 3 < Y), !(bz || 3 < Z), !(bw || 3 < W)>;
+  } else if constexpr (match_b == 3) {
+    constexpr size_t i = inspect<!(bx || (3 < X)), !(by || (3 < Y)), !(bz || (3 < Z)), !(bw || (3 < W))>;
     return _mm_insert_ps((mm_permute<x, y, z, w>(b)), a, int(select_value<i, X, Y, Z, W> << 6 | i << 4));
-  } else return mm_blend<lt(X, 4), lt(Y, 4), lt(Z, 4), lt(W, 4)>(mm_permute<x, y, z, w>(b), mm_permute<X, Y, Z, W>(a));
+  } else { // match_a == 2 && match_b == 2
+    constexpr auto sxi = inspect<(X < 4), (Y < 4), (Z < 4)>;
+    constexpr auto syi = 3 - inspect<(W < 4), (Z < 4), (Y < 4)>;
+    constexpr auto szi = inspect<(X > 3), (Y > 3), (Z > 3)>;
+    constexpr auto swi = 3 - inspect<(W > 3), (Z > 3), (Y > 3)>;
+    constexpr auto sxj = inspect<sxi == 0, syi == 0, szi == 0, swi == 0>;
+    constexpr auto syj = inspect<sxi == 1, syi == 1, szi == 1, swi == 1>;
+    constexpr auto szj = inspect<sxi == 2, syi == 2, szi == 2, swi == 2>;
+    constexpr auto swj = inspect<sxi == 3, syi == 3, szi == 3, swi == 3>;
+    return mm_permute<sxj, syj, szj, swj>(mm_permute<
+      select_value<sxi, X, Y, Z, W>, select_value<syi, X, Y, Z, W>, select_value<szi, X, Y, Z, W>,
+      select_value<swi, X, Y, Z, W>>(a, b));
+  }
 }
 
 inline __m128 mm_abs(__m128 m) noexcept { return _mm_andnot_ps(_mm_set1_ps(-0.f), m); }

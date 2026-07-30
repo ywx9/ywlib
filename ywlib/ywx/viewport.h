@@ -70,6 +70,21 @@ class viewport {
     comptr<IDXGISurface> surface;
     hresult_test(_bitmap.d2d_bitmap()->GetSurface, &surface.get());
     hresult_test(surface->QueryInterface, &_texture.get());
+    {
+      D3D11_TEXTURE2D_DESC tex_desc{};
+      _texture->GetDesc(&tex_desc);
+      yw::print("Width: ", tex_desc.Width);
+      yw::print("Height: ", tex_desc.Height);
+      yw::print("MipLevels: ", tex_desc.MipLevels);
+      yw::print("ArraySize: ", tex_desc.ArraySize);
+      yw::print("Format: ", static_cast<int>(tex_desc.Format));
+      yw::print("SampleDesc.Count: ", tex_desc.SampleDesc.Count);
+      yw::print("SampleDesc.Quality: ", tex_desc.SampleDesc.Quality);
+      yw::print("Usage: ", static_cast<int>(tex_desc.Usage));
+      yw::print("BindFlags: ", static_cast<int>(tex_desc.BindFlags));
+      yw::print("CPUAccessFlags: ", static_cast<int>(tex_desc.CPUAccessFlags));
+      yw::print("MiscFlags: ", static_cast<int>(tex_desc.MiscFlags));
+    }
     D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{bitmap::dxgiformat, D3D11_SRV_DIMENSION_TEXTURE2D};
     srv_desc.Texture2D.MipLevels = 1;
     hresult_test(d3d::device()->CreateShaderResourceView, _texture.get(), &srv_desc, &_srv.get());

@@ -63,6 +63,26 @@ inline void inverse_rotation_matrix(const __m128 Cos, const __m128 Sin, matrix& 
   Out.w = mm_set<3>(1.0f);
 }
 
+inline void matrix_transform(const matrix& M, const __m128 V, __m128& Out) {
+  auto t0 = mm_permute<0, 1, 4, 5>(M.x, M.y);
+  auto t1 = mm_permute<0, 1, 4, 5>(M.z, M.w);
+  Out = _mm_mul_ps(mm_permute<0, 1, 4, 5>(t0, t1), mm_permute<0, 0, 0, 0>(V));
+  Out = _mm_add_ps(Out, _mm_mul_ps(mm_permute<2, 3, 6, 7>(t0, t1), mm_permute<1, 1, 1, 1>(V)));
+  t0 = mm_permute<2, 3, 6, 7>(M.x, M.y);
+  t1 = mm_permute<2, 3, 6, 7>(M.z, M.w);
+  Out = _mm_add_ps(Out, _mm_mul_ps(mm_permute<0, 1, 4, 5>(t0, t1), mm_permute<2, 2, 2, 2>(V)));
+  Out = _mm_add_ps(Out, _mm_mul_ps(mm_permute<2, 3, 6, 7>(t0, t1), mm_permute<3, 3, 3, 3>(V)));
+}
+
+inline void matrix_transform(const matrix& M, const matrix& N, matrix& Out) {
+  matrix tN;
+  N.t(tN);
+  matrix_transform(M, tN.x, Out.x);
+  matrix_transform(M, tN.y, Out.y);
+  matrix_transform(M, tN.z, Out.z);
+  matrix_transform(M, tN.w, Out.w);
+}
+
 using float4x4 = vector4<vector4<float>>;
 
 inline constexpr void rotation_matrix(float4 rad, float4x4& out) {
@@ -90,11 +110,10 @@ inline constexpr void rotation_matrix(float4 rad, float4x4& out) {
     t2 = _mm_mul_ps(t2, t3);                         // [cxsz, cxcz, sxcz, sxsz]
     t1 = _mm_mul_ps(mm_permute<1, 1, 1, 1>(t1), t3); // [cysz, cxcy, cycz, sxcy]
     t0 = mm_permute<1, 1, 1, 1>(t0);                 // [sy, sy, sy, sy]
-    t3 = _mm_addsub_ps(
-      mm_permute<2, 3, 0, 1>(_mm_mul_ps(t0, t2)), t2); // [sxsycz - cxsz, sxsysz + cxcz, cxsysz - sxcz, cxsycz + sxsz]
-    t2 = mm_insert<0, 0, 0b1000>(mm_neg(t0), mm_permute<-1, 3, 1, -1>(t1)); // [ -sy,          sxcy,          cxcy, 0]
-    t0 = mm_insert<2, 0, 0b1000>(t1, mm_permute<-1, 0, 3, -1>(t3));         // [cycz, sxsycz - cxsz, cxsycz + sxsz, 0]
-    t1 = mm_insert<0, 0, 0b1000>(t1, t3);                                   // [cysz, sxsysz + cxcz, cxsysz - sxcz, 0]
+    t3 = _mm_addsub_ps(mm_permute<2, 3, 0, 1>(_mm_mul_ps(t0, t2)), t2);
+    t2 = mm_insert<0, 0, 0b1000>(mm_neg(t0), mm_permute<-1, 3, 1, -1>(t1));
+    t0 = mm_insert<2, 0, 0b1000>(t1, mm_permute<-1, 0, 3, -1>(t3));
+    t1 = mm_insert<0, 0, 0b1000>(t1, t3);
     _mm_storeu_ps(out.x.data(), t0);
     _mm_storeu_ps(out.y.data(), t1);
     _mm_storeu_ps(out.z.data(), t2);
@@ -102,7 +121,7 @@ inline constexpr void rotation_matrix(float4 rad, float4x4& out) {
   }
 }
 
-inline void inverse_rotation_matrix(float4 rad, float4x4& out) {
+inline constexpr void inverse_rotation_matrix(float4 rad, float4x4& out) {
   const auto c = vapply_r<float4>(yw::cos, rad);
   const auto s = vapply_r<float4>(yw::sin, rad);
   if (std::is_constant_evaluated()) {
@@ -137,4 +156,5 @@ inline void inverse_rotation_matrix(float4 rad, float4x4& out) {
     out.w = float4(0, 0, 0, 1);
   }
 }
+
 } // namespace yw

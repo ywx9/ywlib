@@ -579,23 +579,25 @@ template<typename Com> class comptr {
   Com* _ptr{nullptr};
 
 public:
-  explicit operator bool() const { return _ptr != nullptr; }
-  Com* operator->() const { return _ptr; }
-  bool operator==(Com* Other) const { return _ptr == Other; }
+  explicit operator bool() const noexcept { return _ptr != nullptr; }
+  explicit operator Com*&() & noexcept { return _ptr; }
+  explicit operator Com*() const& noexcept { return _ptr; }
+  Com* operator->() const noexcept { return _ptr; }
+  bool operator==(Com* Other) const noexcept { return _ptr == Other; }
   ~comptr() {
     if (_ptr) _ptr->Release();
     _ptr = nullptr;
   }
-  comptr() = default;
-  comptr(comptr&& Other) : _ptr(std::exchange(Other._ptr, nullptr)) {}
+  comptr() noexcept = default;
+  comptr(comptr&& Other) noexcept : _ptr(std::exchange(Other._ptr, nullptr)) {}
   comptr& operator=(comptr&& Other) {
     if (this == &Other) return *this;
     if (_ptr) _ptr->Release();
     _ptr = std::exchange(Other._ptr, nullptr);
     return *this;
   }
-  Com*& get() & { return _ptr; }
-  Com* get() const& { return _ptr; }
+  Com*& get() & noexcept { return _ptr; }
+  Com* get() const& noexcept { return _ptr; }
   void release() {
     if (_ptr) _ptr->Release();
     _ptr = nullptr;
@@ -607,7 +609,5 @@ public:
     _ptr = New;
   }
 
-  explicit operator Com*&() & { return _ptr; }
-  explicit operator Com*() const& { return _ptr; }
 };
 } // namespace yw
