@@ -77,7 +77,7 @@ public:
     sp->size = Size.x;
     D3D11_BUFFER_DESC desc{UINT(sizeof(T)) * Size.x, D3D11_USAGE_STAGING, {}, D3D11_CPU_ACCESS_READ, {}, 0};
     hresult_test(d3d::device()->CreateBuffer, &desc, nullptr, &sp->buffer.get());
-    return make_handle<staging_buffer>(sp->id);
+    return handle_base::make_handle<staging_buffer>(sp->id);
   }
 
   staging_buffer(uint1 Size, const source_line& sl = here()) {
@@ -214,7 +214,7 @@ public:
     const auto sp = handle_base::make_slot<structured_buffer>();
     if (!sp) return std::unexpected(error(errors::slot_creation_failed));
     if (auto res = sp->initialize(nullptr, Size.x); !res) return res.error().relay();
-    return make_handle<structured_buffer>(sp->id);
+    return handle_base::make_handle<structured_buffer>(sp->id);
   }
 
   structured_buffer(uint1 Size, const source_line& sl = here()) {
@@ -226,7 +226,7 @@ public:
     const auto sp = handle_base::make_slot<structured_buffer>();
     if (!sp) return std::unexpected(error(errors::slot_creation_failed));
     if (auto res = sp->initialize(Data, Size.x); !res) return res.error().relay();
-    return make_handle<structured_buffer>(sp->id);
+    return handle_base::make_handle<structured_buffer>(sp->id);
   }
 
   structured_buffer(const T* Data, uint1 Size, const source_line& sl = here()) {
@@ -238,7 +238,7 @@ public:
     const auto sp = handle_base::make_slot<structured_buffer>();
     if (!sp) return std::unexpected(error(errors::slot_creation_failed));
     if (auto res = sp->initialize(yw::data(rg), yw::size(rg)); !res) return res.error().relay();
-    return make_handle<structured_buffer>(sp->id);
+    return handle_base::make_handle<structured_buffer>(sp->id);
   }
 
   template<contiguous_range<T> Rg> structured_buffer(Rg&& rg, const source_line& sl = here()) {

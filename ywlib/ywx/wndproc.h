@@ -56,7 +56,7 @@ template<UINT Msg> inline LRESULT handle_wm_pointer(window::slot* wsp, WPARAM wp
 
 template<UINT Msg> LRESULT handle_wm_focus(window::slot* wsp, WPARAM wp, LPARAM lp) {
   if constexpr (Msg == WM_SETFOCUS) {
-    wsp->handle_focus_event({true});
+    if (auto res = wsp->handle_focus_event({true}); !res) res.error().go_off();
   } else if constexpr (Msg == WM_KILLFOCUS || Msg == WM_ACTIVATEAPP) {
     if constexpr (Msg == WM_ACTIVATEAPP)
       if (wp) return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
@@ -66,7 +66,7 @@ template<UINT Msg> LRESULT handle_wm_focus(window::slot* wsp, WPARAM wp, LPARAM 
     }
     wsp->track_mouse_event.hwndTrack = nullptr;
     wsp->hide_tooltip();
-    wsp->handle_focus_event({false});
+    if (auto res = wsp->handle_focus_event({false}); !res) res.error().go_off();
   } else return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
   return 0;
 }
@@ -133,9 +133,12 @@ template<UINT Msg> LRESULT handle_wm_double_click(window::slot* wsp, WPARAM wp, 
   else if constexpr (Msg == WM_RBUTTONDBLCLK) e.key = keys::rbutton;
   else if constexpr (Msg == WM_MBUTTONDBLCLK) e.key = keys::mbutton;
   else return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
+  bool handled = false;
   if (auto res = wsp->handle_button_event(e); !res) res.error().go_off();
+  else handled = *res;
   if (auto res = wsp->handle_double_click_event(e); !res) res.error().go_off();
-  return 0;
+  else handled = handled || *res;
+  return handled ? 0 : ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
 }
 
 template<UINT Msg> LRESULT handle_wm_button_event(window::slot* wsp, WPARAM wp, LPARAM lp) {
@@ -153,7 +156,10 @@ template<UINT Msg> LRESULT handle_wm_button_event(window::slot* wsp, WPARAM wp, 
   else if constexpr (Msg == WM_XBUTTONUP)
     (e.key = (HIWORD(wp) == XBUTTON1) ? keys::xbutton1 : keys::xbutton2), e.down = false;
   else return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
-  if (auto res = wsp->handle_button_event(e); !res) res.error().go_off();
+  if (auto res = wsp->handle_button_event(e); !res) {
+    res.error().go_off();
+    return 0;
+  } else if (*res) return 0;
   return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
 }
 
@@ -165,8 +171,11 @@ template<UINT Msg> LRESULT handle_wm_wheel_event(window::slot* wsp, WPARAM wp, L
   e.delta = short(HIWORD(wp));
   e.mods = internal::_make_mods();
   e.horizontal = (Msg == WM_MOUSEHWHEEL);
-  if (auto res = wsp->handle_wheel_event(e); !res) res.error().go_off();
-  return 0;
+  if (auto res = wsp->handle_wheel_event(e); !res) {
+    res.error().go_off();
+    return 0;
+  } else if (*res) return 0;
+  return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
 }
 
 template<UINT Msg> LRESULT handle_wm_key_event(window::slot* wsp, WPARAM wp, LPARAM lp) {

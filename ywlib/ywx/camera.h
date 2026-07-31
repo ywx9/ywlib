@@ -11,17 +11,6 @@ class camera : public handle_base {
   static constexpr float4x4 identity = {float4(1, 0, 0, 0), float4(0, 1, 0, 0), float4(0, 0, 1, 0), float4(0, 0, 0, 1)};
   static constexpr float min_perspective_deg = 1.0f;
   static constexpr float max_perspective_deg = 179.0f;
-  inline static comptr<ID3D11DepthStencilState> _dss; /// for Reverse-Z
-
-  static std::expected<void, error> _init_dss() {
-    if (_dss) return {};
-    D3D11_DEPTH_STENCIL_DESC depth_stencil_desc{};
-    depth_stencil_desc.DepthEnable = TRUE;
-    depth_stencil_desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
-    depth_stencil_desc.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL;
-    hresult_test(d3d::device()->CreateDepthStencilState, &depth_stencil_desc, &_dss.get());
-    return {};
-  }
 
   static bool _finite(float value) noexcept { return value == value && value != inf && value != -inf; }
 
@@ -33,30 +22,28 @@ public:
   static constexpr float far_by_near = 1024.0f * 1024.0f;
 
   struct constants {
-    float4x4 view = identity;
-    float4x4 projection = identity;
-    float4x4 view_projection = identity;
-
-    float4x4 inverse_view = identity;
-    float4x4 inverse_projection = identity;
-    float4x4 inverse_view_projection = identity;
-
-    float4 camera_pos = {};
-    float4 camera_dir = {};
-    float4 viewport_size = {};
+    float4x4 view;
+    float4x4 projection;
+    float4x4 view_projection;
+    float4x4 inverse_view;
+    float4x4 inverse_projection;
+    float4x4 inverse_view_projection;
+    float4 camera_pos;
+    float4 camera_dir;
+    float4 viewport_size;
   };
 
   struct slot : handle_base::slot {
-    uint2 size{};
-    constants cb_value{};
-    yw::constant_buffer<constants> cb{};
+    uint2 size;
+    constants cb_value;
+    yw::constant_buffer<constants> cb;
     float far_plane{1e6f};
     float factor{1.0f};
     bool orthographic{};
     bool dirty{true};
-    float4 offset{};   // offset of lens from camera body
-    float4 rotation{}; // degree
-    float4 position{}; // position of camera body
+    float4 offset;   // offset of lens from camera body
+    float4 rotation; // degree
+    float4 position; // position of camera body
   };
 
 private:
@@ -75,6 +62,21 @@ private:
     m.z = _mm_sub_ps(m.z, mm_insert<2, 3, 0b0111>(off, off));
   }
 
+  static void _inverse_view_matrix(slot* sp, matrix& m) {
+    const auto radians = vapply_r<float4>([](float deg) { return deg * float(pi) / 180.0f; }, sp->rotation);
+    const auto cos = vapply_r<float4>(yw::cos, radians);
+    const auto sin = vapply_r<float4>(yw::sin, radians);
+    yw::rotation_matrix(_mm_loadu_ps(cos.data()), _mm_loadu_ps(sin.data()), m);
+    const auto off = _mm_loadu_ps(sp->offset.data());
+    const auto pos = _mm_loadu_ps(sp->position.data());
+    m.x = mm_insert<0, 3>(mm_dot<3>(off, m.x), m.x);
+    m.y = mm_insert<0, 3>(mm_dot<3>(off, m.y), m.y);
+    m.z = mm_insert<0, 3>(mm_dot<3>(off, m.z), m.z);
+    m.x = mm_insert<0, 3>(_mm_add_ps(mm_permute<3, 3, 3, 3>(m.x), mm_permute<0, 0, 0, 0>(pos)), m.x);
+    m.y = mm_insert<0, 3>(_mm_add_ps(mm_permute<3, 3, 3, 3>(m.y), mm_permute<1, 1, 1, 1>(pos)), m.y);
+    m.z = mm_insert<0, 3>(_mm_add_ps(mm_permute<3, 3, 3, 3>(m.z), mm_permute<2, 2, 2, 2>(pos)), m.z);
+  }
+
 public:
   explicit operator bool() const noexcept {
     const auto sp = get_slot(this);
@@ -89,7 +91,6 @@ public:
   static std::expected<camera, error> create(int2 Size) {
     if (Size.x <= 0 || Size.y <= 0)
       return std::unexpected(error(errors::invalid_argument, "camera size must be positive"));
-    if (auto res = _init_dss(); !res) return res.error().relay();
     const auto sp = make_slot<camera>();
     if (!sp) return std::unexpected(error(errors::slot_creation_failed));
     sp->size = Size;
@@ -99,7 +100,7 @@ public:
   }
 
   /// creates a camera.
-  camera(int2 Size, const source_line& sl = here()) {
+  explicit camera(int2 Size, const source_line& sl = here()) {
     if (auto res = create(Size); !res) res.error().go_off(sl);
     else *this = std::move(*res);
   }
@@ -269,13 +270,31 @@ public:
     else return identity;
   }
 
+  const auto& inverse_view_matrix() const noexcept {
+    if (const auto sp = get_slot(this)) return sp->cb_value.inverse_view;
+    else return identity;
+  }
+
+  const auto& inverse_projection_matrix() const noexcept {
+    if (const auto sp = get_slot(this)) return sp->cb_value.inverse_projection;
+    else return identity;
+  }
+
+  const auto& inverse_view_projection_matrix() const noexcept {
+    if (const auto sp = get_slot(this)) return sp->cb_value.inverse_view_projection;
+    else return identity;
+  }
+
+  float4 camera_direction() const noexcept {
+    if (const auto sp = get_slot(this)) return sp->cb_value.camera_dir;
+    else return float4(0, 0, 1, 0);
+  }
+
   const auto& constant_buffer() const noexcept {
     static yw::constant_buffer<constants> empty;
     if (const auto sp = get_slot(this)) return sp->cb;
     else return empty;
   }
-
-  ID3D11DepthStencilState* d3d_depth_stencil_state() const noexcept { return _dss.get(); }
 
   std::expected<void, error> update() {
     const auto sp = get_slot(this);
@@ -302,34 +321,45 @@ public:
     auto& vm = sp->cb_value.view;
     auto& pm = sp->cb_value.projection;
     auto& vpm = sp->cb_value.view_projection;
+    auto& ivm = sp->cb_value.inverse_view;
+    auto& ipm = sp->cb_value.inverse_projection;
+    auto& ivpm = sp->cb_value.inverse_view_projection;
     matrix m;
     _view_matrix(sp, m);
-    _mm_storeu_ps(vm.x.data(), m.x);
-    _mm_storeu_ps(vm.y.data(), m.y);
-    _mm_storeu_ps(vm.z.data(), m.z);
-    _mm_storeu_ps(vm.w.data(), m.w);
+    m.store(vm);
+    _inverse_view_matrix(sp, m);
+    m.store(ivm);
     if (sp->orthographic) {
-      const auto b = 1.0f / sp->far_plane;
-      pm.x.x = -2.0f * sp->factor / sp->size.x;
-      pm.y.y = 2.0f * sp->factor / sp->size.y;
-      pm.z = float4(0, 0, b, 0);
+      const float sx = -2.0f * sp->factor / sp->size.x;
+      const float sy = 2.0f * sp->factor / sp->size.y;
+      const float sz = 1.0f / sp->far_plane;
+      pm.x = float4(sx, 0, 0, 0);
+      pm.y = float4(0, sy, 0, 0);
+      pm.z = float4(0, 0, sz, 0);
       pm.w = float4(0, 0, 0, 1);
-      _mm_storeu_ps(vpm.z.data(), _mm_mul_ps(m.z, mm_set1(b)));
+      ipm.x = float4(1.0f / sx, 0, 0, 0);
+      ipm.y = float4(0, 1.0f / sy, 0, 0);
+      ipm.z = float4(0, 0, 1.0f / sz, 0);
+      ipm.w = float4(0, 0, 0, 1);
     } else {
-      const auto f = 1.0f / yw::tan(sp->factor * 0.5f);
-      const auto a = f * sp->size.y / sp->size.x;
+      const float f = 1.0f / yw::tan(sp->factor * 0.5f);
+      const float a = f * sp->size.y / sp->size.x;
       constexpr float b = -1.0f / (far_by_near - 1.0f);
       const float c = -sp->far_plane * b;
-      pm.x.x = -a;
-      pm.y.y = f;
+      pm.x = float4(-a, 0, 0, 0);
+      pm.y = float4(0, f, 0, 0);
       pm.z = float4(0, 0, b, c);
       pm.w = float4(0, 0, 1, 0);
-      _mm_storeu_ps(vpm.z.data(), _mm_add_ps(_mm_mul_ps(m.z, mm_set1(b)), mm_set<3>(c)));
-      _mm_storeu_ps(vpm.w.data(), _mm_mul_ps(m.z, mm_set1(pm.w.z)));
+      ipm.x = float4(-1.0f / a, 0, 0, 0);
+      ipm.y = float4(0, 1.0f / f, 0, 0);
+      ipm.z = float4(0, 0, 0, 1);
+      ipm.w = float4(0, 0, 1.0f / c, -b / c);
     }
-    _mm_storeu_ps(vpm.x.data(), _mm_mul_ps(m.x, mm_set1(pm.x.x)));
-    _mm_storeu_ps(vpm.y.data(), _mm_mul_ps(m.y, mm_set1(pm.y.y)));
+    // matrix * vector convention: clip = projection * view * world.
+    matrix_transform(pm, vm, vpm);
+    matrix_transform(ivm, ipm, ivpm);
     sp->cb_value.camera_pos = sp->position;
+    sp->cb_value.camera_dir = float4(ivm.x.z, ivm.y.z, ivm.z.z, 0);
     sp->cb_value.viewport_size = float4(float(sp->size.x), float(sp->size.y), 1.0f / sp->size.x, 1.0f / sp->size.y);
     if (auto res = sp->cb.copy_from(sp->cb_value); !res) return res.error().relay();
     sp->dirty = false;
@@ -342,7 +372,7 @@ public:
     if (auto res = update(); !res) return res.error().relay();
     D3D11_VIEWPORT vp{0.0f, 0.0f, float(sp->size.x), float(sp->size.y), 0.0f, 1.0f};
     d3d::context()->RSSetViewports(1, &vp);
-    d3d::context()->OMSetDepthStencilState(_dss.get(), 0);
+    d3d::context()->OMSetDepthStencilState(d3d::dss_reverse_z(), 0);
     if (auto res = rendering::create(rtvs_dsv_uavs...); !res) return res.error().relay();
     else return std::move(*res);
   }

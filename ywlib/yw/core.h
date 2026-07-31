@@ -25,6 +25,8 @@
 #include <windows.h>
 #endif
 
+static_assert(std::endian::native == std::endian::little, "This library requires a little-endian architecture.");
+
 namespace yw {
 
 using int8_t = std::int8_t;

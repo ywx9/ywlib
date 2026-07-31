@@ -75,7 +75,7 @@ public:
       return (castable_to<select_type<Is, Us...>, ID3D11Buffer*> && ...);
     }(make_sequence<0, i_resources>()));
     static_assert([]<size_t... Is>(sequence<Is...>) {
-      return (castable_to<select_type<Is, Us>, ID3D11ShaderResourceView*> && ...);
+      return (castable_to<select_type<Is, Us...>, ID3D11ShaderResourceView*> && ...);
     }(make_sequence<i_resources, sizeof...(Us)>()));
     _vs = static_cast<ID3D11VertexShader*>(vs);
     _num_vs_cbuffers = uint32_t(num_cbuffers);

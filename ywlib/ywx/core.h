@@ -162,11 +162,23 @@ class d3d {
     ID3D11SamplerState* sampler_state{};
     ID3D11RasterizerState* rasterizer_state{};
 
+    ID3D11DepthStencilState* dss_reverse_z{};
+
     slot() {
       if (auto res = _init_device(); !res) res.error().go_off();
       if (auto res = _init_blend_state(); !res) res.error().go_off();
       if (auto res = _init_sampler_state(); !res) res.error().go_off();
       if (auto res = _init_rasterizer_state(); !res) res.error().go_off();
+      if (auto res = _init_dss_reverse_z(); !res) res.error().go_off();
+    }
+
+    ~slot() {
+      if (dss_reverse_z) dss_reverse_z->Release();
+      if (rasterizer_state) rasterizer_state->Release();
+      if (sampler_state) sampler_state->Release();
+      if (blend_state) blend_state->Release();
+      if (context) context->Release();
+      if (device) device->Release();
     }
 
     static slot* get() noexcept {
@@ -220,6 +232,15 @@ class d3d {
       context->RSSetState(rasterizer_state);
       return {};
     }
+
+    std::expected<void, error> _init_dss_reverse_z() {
+      D3D11_DEPTH_STENCIL_DESC depth_stencil_desc{};
+      depth_stencil_desc.DepthEnable = TRUE;
+      depth_stencil_desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+      depth_stencil_desc.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL;
+      hresult_test(device->CreateDepthStencilState, &depth_stencil_desc, &dss_reverse_z);
+      return {};
+    }
   };
 
 public:
@@ -228,12 +249,7 @@ public:
   static ID3D11BlendState* blend_state() noexcept { return slot::get()->blend_state; }
   static ID3D11RasterizerState* rasterizer_state() noexcept { return slot::get()->rasterizer_state; }
   static ID3D11SamplerState* sampler_state() noexcept { return slot::get()->sampler_state; }
-
-  static void pointlist() noexcept { context()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_POINTLIST); }
-  static void linelist() noexcept { context()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST); }
-  static void linestrip() noexcept { context()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP); }
-  static void trianglelist() noexcept { context()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); }
-  static void trianglestrip() noexcept { context()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP); }
+  static ID3D11DepthStencilState* dss_reverse_z() noexcept { return slot::get()->dss_reverse_z; }
 }; // namespace d3d
 
 /// MARK: dxgi

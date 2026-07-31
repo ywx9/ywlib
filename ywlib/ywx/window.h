@@ -428,7 +428,7 @@ public:
 
     //-- event functions --//
 
-    std::expected<void, error> handle_button_event(yw::button_event e) {
+    std::expected<bool, error> handle_button_event(yw::button_event e) {
       bool control_handled = false;
       last_cursor_pos = pos + frame_thickness.xy() + e.pos;
       if (const auto csp = get_slot<control>(control_id)) {
@@ -458,7 +458,7 @@ public:
         }
         if (control_handled) {
           if (auto res = update_caret_pos(); !res) return res.error().relay();
-          return {};
+          return true;
         }
       }
       if (e.down && drag_event && !mouse_capture_control_id) {
@@ -468,39 +468,39 @@ public:
         window_mouse_capture = false;
         ::ReleaseCapture();
       }
-      if (button_event) button_event(e);
-      return {};
+      if (button_event) return button_event(e);
+      return false;
     }
 
-    std::expected<void, error> handle_char_event(wchar_t c) {
+    std::expected<bool, error> handle_char_event(wchar_t c) {
       if (const auto csp = get_slot<control>(focused_control_id))
-        if (csp->handle_char_event(c)) return {};
-      return {};
+        if (csp->handle_char_event(c)) return true;
+      return false;
     }
 
-    std::expected<void, error> handle_double_click_event(yw::button_event e) {
+    std::expected<bool, error> handle_double_click_event(yw::button_event e) {
       if (const auto csp = get_slot<control>(control_id)) {
         const auto hit_id = csp->hittest(e.pos);
         if (const auto hcsp = get_slot<control>(hit_id); hcsp && hcsp->handle_double_click_event(e)) {
           if (auto res = update_caret_pos(); !res) return res.error().relay();
-          return {};
+          return true;
         }
       }
-      return {};
+      return false;
     }
 
-    std::expected<void, error> handle_drag_event(yw::drag_event e) {
+    std::expected<bool, error> handle_drag_event(yw::drag_event e) {
       if (const auto ccsp = get_slot<control>(mouse_capture_control_id); ccsp && ccsp->handle_drag_event(e)) {
         if (auto res = update_caret_pos(); !res) return res.error().relay();
-        return {};
+        return true;
       }
-      if (drag_event) drag_event(e);
-      return {};
+      if (drag_event) return drag_event(e);
+      return false;
     }
 
-    std::expected<void, error> handle_focus_event(yw::focus_event e) {
-      if (focus_event) focus_event(e);
-      return {};
+    std::expected<bool, error> handle_focus_event(yw::focus_event e) {
+      if (focus_event) return focus_event(e);
+      return false;
     }
 
     /// \note (en) To avoid swallowing system-handled events such as Alt+F4, this function returns a bool.
@@ -530,22 +530,22 @@ public:
       return false;
     }
 
-    std::expected<void, error> handle_pointer_event(yw::pointer_event e) {
+    std::expected<bool, error> handle_pointer_event(yw::pointer_event e) {
       if (const auto csp = get_slot<control>(control_id)) {
         const auto hit = csp->hittest(e.pos);
-        if (const auto hcsp = get_slot<control>(hit); hcsp && hcsp->handle_pointer_event(e)) return {};
+        if (const auto hcsp = get_slot<control>(hit); hcsp && hcsp->handle_pointer_event(e)) return true;
       }
-      if (pointer_event) pointer_event(e);
-      return {};
+      if (pointer_event) return pointer_event(e);
+      return false;
     }
 
-    std::expected<void, error> handle_wheel_event(yw::wheel_event e) {
+    std::expected<bool, error> handle_wheel_event(yw::wheel_event e) {
       if (const auto csp = get_slot<control>(control_id)) {
         const auto hit = csp->hittest(e.pos);
-        if (const auto hcsp = get_slot<control>(hit); hcsp && hcsp->handle_wheel_event(e)) { return {}; }
+        if (const auto hcsp = get_slot<control>(hit); hcsp && hcsp->handle_wheel_event(e)) { return true; }
       }
-      if (wheel_event) wheel_event(e);
-      return {};
+      if (wheel_event) return wheel_event(e);
+      return false;
     }
   };
 

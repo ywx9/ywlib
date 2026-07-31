@@ -1,6 +1,6 @@
 #pragma once
-#include "yw/string.h"
-#include "yw/tuple.h"
+#include <yw/string.h>
+#include <yw/tuple.h>
 
 inline constexpr char yw_vector[] = "yw/vector.h";
 

@@ -5,7 +5,6 @@ namespace yw {
 
 class drawing {
   inline static void* _target = nullptr;
-  inline static int _type = 0; // 0: none, 2: d2d, 3: d3d, other: invalid (undefined behavior)
   bool _active = false;
 
 public:
@@ -25,12 +24,11 @@ public:
   }
 
   static std::expected<drawing, error> create(ID2D1Image* Target) {
-    if (_target || _type != 0) return std::unexpected(error(errors::invalid_operation, "already in drawing"));
+    if (_target) return std::unexpected(error(errors::invalid_operation, "already in drawing"));
     if (!Target) return std::unexpected(error(errors::invalid_argument, "invalid target"));
     d2d::context()->SetTarget(Target);
     d2d::context()->BeginDraw();
     _target = Target;
-    _type = 2;
     drawing d;
     d._active = true;
     return d;
@@ -41,51 +39,14 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<drawing, error> create(ID3D11RenderTargetView* Target) {
-    if (_target || _type != 0) return std::unexpected(error(errors::invalid_operation, "already in drawing"));
-    if (!Target) return std::unexpected(error(errors::invalid_argument, "invalid target"));
-    d3d::context()->OMSetRenderTargets(1, &Target, nullptr);
-    _target = Target;
-    _type = 3;
-    drawing d;
-    d._active = true;
-    return d;
-  }
-
-  drawing(ID3D11RenderTargetView* Target, const source_line& sl = here()) {
-    if (auto res = create(Target)) *this = std::move(*res);
-    else res.error().add_footprint().go_off(sl);
-  }
-
-  static std::expected<drawing, error> create(ID3D11RenderTargetView* Target, ID3D11DepthStencilView* Depth) {
-    if (_target || _type != 0) return std::unexpected(error(errors::invalid_operation, "already in drawing"));
-    if (!Target) return std::unexpected(error(errors::invalid_argument, "invalid target"));
-    d3d::context()->OMSetRenderTargets(1, &Target, Depth);
-    _target = Target;
-    _type = 3;
-    drawing d;
-    d._active = true;
-    return d;
-  }
-
-  drawing(ID3D11RenderTargetView* Target, ID3D11DepthStencilView* Depth, const source_line& sl = here()) {
-    if (auto res = create(Target, Depth)) *this = std::move(*res);
-    else res.error().add_footprint().go_off(sl);
-  }
-
-  explicit operator bool() const noexcept { return _active && _target != nullptr && _type != 0; }
-
-  static bool not_drawing() noexcept { return _target == nullptr && _type == 0; }
-  static bool d2d_drawing() noexcept { return _target != nullptr && _type == 2; }
-  static bool d3d_drawing() noexcept { return _target != nullptr && _type == 3; }
+  explicit operator bool() const noexcept { return _active && _target != nullptr; }
+  static bool d2d_drawing() noexcept { return _target != nullptr; }
 
   std::expected<void, error> close() {
     if (!_active) return {};
-    if (d2d_drawing()) {
-      hresult_test(d2d::context()->EndDraw);
-      d2d::context()->SetTarget(nullptr);
-    } else if (d3d_drawing()) d3d::context()->OMSetRenderTargets(0, nullptr, nullptr);
-    _target = nullptr, _type = 0, _active = false;
+    hresult_test(d2d::context()->EndDraw);
+    d2d::context()->SetTarget(nullptr);
+    _target = nullptr, _active = false;
     return {};
   }
 };

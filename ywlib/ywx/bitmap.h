@@ -39,7 +39,7 @@ public:
   }
 
   /// creates empty bitmap.
-  bitmap(uint2 Size, const source_line& sl = here()) {
+  explicit bitmap(uint2 Size, const source_line& sl = here()) {
     if (auto res = create(Size); !res) res.error().go_off(sl);
     else *this = std::move(*res);
   }
@@ -57,7 +57,7 @@ public:
   }
 
   /// creates bitmap by copying from another.
-  bitmap(const bitmap& Other, const source_line& sl = here()) {
+  explicit bitmap(const bitmap& Other, const source_line& sl = here()) {
     if (auto res = create(Other); !res) res.error().go_off(sl);
     else *this = std::move(*res);
   }
@@ -83,7 +83,7 @@ public:
   }
 
   /// creates bitmap from file.
-  bitmap(const std::filesystem::path& Path, const source_line& sl = here()) {
+  explicit bitmap(const std::filesystem::path& Path, const source_line& sl = here()) {
     if (auto res = create(Path); !res) res.error().go_off(sl);
     else *this = std::move(*res);
   }
@@ -191,11 +191,25 @@ public:
 /// MARK: draw_bitmap
 
 inline std::expected<void, error> draw_bitmap(
-  float2 Pos, float2 Size, const bitmap& b) {
+  float2 Pos, float2 Size, castable_to<ID2D1Bitmap*> auto&& b, float1 Opacity = 1.0f) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "drawing not begun"));
+  D2D1_RECT_F rect(Pos.x, Pos.y, Pos.x + Size.x, Pos.y + Size.y);
+  d2d::context()->DrawBitmap(static_cast<ID2D1Bitmap*>(b), &rect, Opacity.x);
+  return {};
+}
+
+inline std::expected<void, error> draw_bitmap(float2 Pos, castable_to<ID2D1Bitmap*> auto&& b, float1 Opacity = 1.0f) {
+  if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "drawing not begun"));
+  const auto size = static_cast<ID2D1Bitmap*>(b)->GetPixelSize();
+  D2D1_RECT_F rect = D2D1::RectF(Pos.x, Pos.y, Pos.x + size.width, Pos.y + size.height);
+  d2d::context()->DrawBitmap(static_cast<ID2D1Bitmap*>(b), &rect, Opacity.x);
+  return {};
+}
+
+inline std::expected<void, error> draw_bitmap(
+  float2 Pos, float2 Size, const bitmap& b) {
   if (const auto sp = bitmap::slot::get_as<bitmap>(b.id())) {
-    D2D1_RECT_F rect(Pos.x, Pos.y, Pos.x + Size.x, Pos.y + Size.y);
-    d2d::context()->DrawBitmap(sp->bitmap.get(), &rect, sp->opacity);
+    if (auto res = draw_bitmap(Pos, Size, sp->bitmap.get(), sp->opacity); !res) res.error().go_off();
   } else return std::unexpected(error(errors::invalid_argument, "invalid bitmap"));
   return {};
 }
@@ -203,8 +217,7 @@ inline std::expected<void, error> draw_bitmap(
 inline std::expected<void, error> draw_bitmap(float2 Pos, const bitmap& b) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "drawing not begun"));
   if (const auto sp = bitmap::slot::get_as<bitmap>(b.id())) {
-    D2D1_RECT_F rect = D2D1::RectF(Pos.x, Pos.y, Pos.x + b.size().x, Pos.y + b.size().y);
-    d2d::context()->DrawBitmap(sp->bitmap.get(), &rect, sp->opacity);
+    if (auto res = draw_bitmap(Pos, sp->size, sp->bitmap.get(), sp->opacity); !res) res.error().go_off();
   } else return std::unexpected(error(errors::invalid_argument, "invalid bitmap"));
   return {};
 }

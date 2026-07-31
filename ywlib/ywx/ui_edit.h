@@ -11,8 +11,8 @@ public:
     yw::text placeholder_text = yw::text(L"");
     std::optional<uint32_t> max_length = std::nullopt;
     function<bool, wchar_t> filter{};
-    function<void, string_view<wchar_t>> change_event{};
-    function<void, yw::key_event> enter_event{};
+    function<bool, string_view<wchar_t>> change_event{};
+    function<bool, yw::key_event> enter_event{};
     bool readonly = false;
 
     //-- override functions --//
@@ -56,8 +56,7 @@ public:
       if (!e.down) return true;
       if (readonly) return selectable_label::slot::handle_key_event(e);
       if (e.key == keys::enter) {
-        if (enter_event) enter_event(e);
-        return true;
+        return enter_event ? enter_event(e) : true;
       }
       if (e.mods.ctrl) {
         if (e.key == keys::backspace) {
@@ -350,7 +349,7 @@ public:
     return self;
   }
 
-  auto& change_event(this auto& self, function<void, string_view<wchar_t>> f) noexcept {
+  auto& change_event(this auto& self, function<bool, string_view<wchar_t>> f) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) {
       error(errors::invalid_slotid).fizzle_out();
@@ -360,7 +359,7 @@ public:
     return self;
   }
 
-  auto& enter_event(this auto& self, function<void, yw::key_event> f) noexcept {
+  auto& enter_event(this auto& self, function<bool, yw::key_event> f) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) {
       error(errors::invalid_slotid).fizzle_out();

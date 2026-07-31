@@ -37,11 +37,6 @@ Simplest uncompressed archive
 
 namespace yw::archive {
 
-template<integral T> static constexpr T _to_le(T a) noexcept {
-  if constexpr (std::endian::native == std::endian::little) return a;
-  else return std::byteswap(a);
-}
-
 inline constexpr uint32_t entry_magic = 0x45415759;  // 'YWAE'
 inline constexpr uint32_t footer_magic = 0x46415759; // 'YWAF'
 inline constexpr uint32_t max_name_size = 2048;
@@ -103,16 +98,15 @@ public:
       }
       if (auto res = file_handle.seek(-8, seek_whence::end); !res) return res.error().relay();
       if (auto res = file_handle.read_trivial<uint64_t>(footer_offset); !res) return res.error().relay();
-      footer_offset = _to_le(footer_offset);
       if (footer_offset + sizeof(footer) + sizeof(uint64_t) > fsize)
         return std::unexpected(error(errors::invalid_file_format, "invalid footer offset"));
       footer f{};
       if (auto res = file_handle.seek(static_cast<int64_t>(footer_offset)); !res) return res.error().relay();
       if (auto res = file_handle.read_trivial(f); !res) return res.error().relay();
-      if (_to_le(f.magic) != footer_magic)
+      if (f.magic != footer_magic)
         return std::unexpected(error(errors::invalid_file_format, "invalid footer magic"));
 
-      const auto entry_count = _to_le(f.entry_count);
+      const auto entry_count = f.entry_count;
       const auto footer_size =
         sizeof(footer) + static_cast<uint64_t>(entry_count) * sizeof(uint64_t) + sizeof(uint64_t);
       if (footer_offset + footer_size != fsize)
@@ -125,7 +119,6 @@ public:
       std::vector<uint64_t> offsets(entry_count);
       if (auto res = file_handle.read_exact(offsets.data(), offsets.size() * sizeof(uint64_t)); !res)
         return res.error().relay();
-      for (auto& off : offsets) off = _to_le(off);
 
       entries.resize(entry_count);
       entry_offset = offsets.front();
@@ -135,14 +128,14 @@ public:
         if (auto res = file_handle.seek(static_cast<int64_t>(off)); !res) return res.error().relay();
         header h{};
         if (auto res = file_handle.read_trivial(h); !res) return res.error().relay();
-        if (_to_le(h.magic) != entry_magic)
+        if (h.magic != entry_magic)
           return std::unexpected(error(errors::invalid_file_format, "invalid entry magic"));
-        const auto name_length = _to_le(h.name_length);
+        const auto name_length = h.name_length;
         if (name_length == 0 || name_length > max_name_size)
           return std::unexpected(error(errors::invalid_file_format, "invalid name length"));
         if (off + sizeof(header) + name_length > footer_offset)
           return std::unexpected(error(errors::invalid_file_format, "invalid entry size"));
-        const auto data_length = _to_le(h.data_length);
+        const auto data_length = h.data_length;
         const auto data_offset = off + sizeof(header) + name_length;
         const auto crc_offset = data_offset + data_length;
 
@@ -155,7 +148,6 @@ public:
         if (auto res = file_handle.seek(static_cast<int64_t>(data_length), seek_whence::current); !res)
           return res.error().relay();
         if (auto res = file_handle.read_trivial<uint32_t>(e.crc32); !res) return res.error().relay();
-        e.crc32 = _to_le(e.crc32);
         const bool is_last = i + 1 == entry_count;
         const auto next = is_last ? footer_offset : offsets[i + 1];
         if (crc_offset + sizeof(uint32_t) != next)
@@ -314,11 +306,11 @@ public:
     if (!_is_write_mode(sp->mode))
       return std::unexpected(error(errors::invalid_operation, "archive not opened in write mode"));
     if (auto res = sp->file_handle.seek(static_cast<int64_t>(sp->footer_offset)); !res) return res.error().relay();
-    const footer f{_to_le(footer_magic), _to_le(static_cast<uint32_t>(sp->entries.size()))};
+    const footer f{footer_magic, static_cast<uint32_t>(sp->entries.size())};
     if (auto res = sp->file_handle.write_exact(&f, sizeof(f)); !res) return res.error().relay();
     std::vector<uint64_t> offsets(sp->entries.size() + 1);
-    for (size_t i = 0; i < sp->entries.size(); ++i) offsets[i] = _to_le(sp->entries[i].entry_offset);
-    offsets.back() = _to_le(sp->footer_offset);
+    for (size_t i = 0; i < sp->entries.size(); ++i) offsets[i] = sp->entries[i].entry_offset;
+    offsets.back() = sp->footer_offset;
     if (auto res = sp->file_handle.write_exact(offsets.data(), offsets.size() * sizeof(uint64_t)); !res)
       return res.error().relay();
     if (auto res = sp->file_handle.truncate_to_current(); !res) return res.error().relay();
@@ -354,7 +346,7 @@ public:
     if (auto res = sp->file_handle.seek(static_cast<int64_t>(sp->footer_offset)); !res) return res.error().relay();
 
     const header h{
-      _to_le(entry_magic), _to_le(static_cast<uint32_t>(sv.size())), _to_le(static_cast<uint64_t>(data_length))};
+      entry_magic, static_cast<uint32_t>(sv.size()), static_cast<uint64_t>(data_length)};
     if (auto res = sp->file_handle.write_exact(&h, sizeof(h)); !res) return res.error().relay();
     if (auto res = sp->file_handle.write_exact(sv.data(), sv.size()); !res) return res.error().relay();
     if (data_length > 0)
@@ -363,8 +355,7 @@ public:
     uint32_t crc = 0xFFFFFFFF;
     if (data_length > 0) crc = _crc32_update(crc, static_cast<const std::byte*>(data), data_length);
     crc ^= 0xFFFFFFFF;
-    const auto crc_le = _to_le(crc);
-    if (auto res = sp->file_handle.write_exact(&crc_le, sizeof(crc_le)); !res) return res.error().relay();
+    if (auto res = sp->file_handle.write_exact(&crc, sizeof(crc)); !res) return res.error().relay();
 
     const auto new_entry_offset = sp->footer_offset;
     const auto data_offset = new_entry_offset + sizeof(header) + sv.size();

@@ -21,7 +21,7 @@ public:
     int hovered_button = 0;
     bool syncing_string = false;
 
-    function<void, T> change_event{};
+    function<bool, T> change_event{};
 
     //-- override functions --//
 
@@ -100,8 +100,9 @@ public:
       }
       if (e.down) {
         pressed_button = hit;
-        step_by(hit, e.mods.shift ? 10 : 1);
+        const bool handled = step_by(hit, e.mods.shift ? 10 : 1);
         make_dirty();
+        return handled;
       } else if (pressed_button != 0) {
         pressed_button = 0;
         make_dirty();
@@ -153,19 +154,18 @@ public:
         if (spin_key) return true;
         return edit::slot::handle_key_event(e);
       }
-      if (e.key == keys::up) return step_by(+1, e.mods.shift ? 10 : 1), true;
-      if (e.key == keys::down) return step_by(-1, e.mods.shift ? 10 : 1), true;
-      if (e.key == keys::page_up) return step_by(+1, 10), true;
-      if (e.key == keys::page_down) return step_by(-1, 10), true;
-      if (e.key == keys::home) return set_value(minimum), true;
-      if (e.key == keys::end) return set_value(maximum), true;
+      if (e.key == keys::up) return step_by(+1, e.mods.shift ? 10 : 1);
+      if (e.key == keys::down) return step_by(-1, e.mods.shift ? 10 : 1);
+      if (e.key == keys::page_up) return step_by(+1, 10);
+      if (e.key == keys::page_down) return step_by(-1, 10);
+      if (e.key == keys::home) return set_value(minimum);
+      if (e.key == keys::end) return set_value(maximum);
       return edit::slot::handle_key_event(e);
     }
 
     virtual bool handle_wheel_event(yw::wheel_event e) override {
       if (!enabled || !visible || e.horizontal || e.delta == 0) return false;
-      step_by(e.delta > 0 ? +1 : -1, e.mods.shift ? 10 : 1);
-      return true;
+      return step_by(e.delta > 0 ? +1 : -1, e.mods.shift ? 10 : 1);
     }
 
     //-- shared functions --//
@@ -242,15 +242,15 @@ public:
       syncing_string = false;
     }
 
-    void set_value(T v, bool Notify = true) {
+    bool set_value(T v, bool Notify = true) {
       const auto next = normalize_value(v);
       if (value == next) {
         sync_string();
-        return;
+        return true;
       }
       value = next;
       sync_string();
-      if (Notify && change_event) change_event(value);
+      return Notify && change_event ? change_event(value) : true;
     }
 
     T stepped_value(T Base, int Direction) const noexcept {
@@ -270,12 +270,12 @@ public:
       }
     }
 
-    void step_by(int Direction, int Multiplier = 1) {
-      if (Direction == 0) return;
+    bool step_by(int Direction, int Multiplier = 1) {
+      if (Direction == 0) return true;
       commit_string();
       auto next = value;
       for (int i = 0; i < Multiplier; ++i) next = stepped_value(next, Direction);
-      set_value(next);
+      return set_value(next);
     }
   };
 
@@ -311,6 +311,7 @@ public:
     const auto spinbox_id = temp_id;
     sp->enter_event = [spinbox_id](yw::key_event) {
       if (const auto sp = get_slot<spinbox>(spinbox_id)) sp->commit_string();
+      return true;
     };
     sp->sync_string();
     return s;
@@ -505,7 +506,7 @@ public:
     return self;
   }
 
-  auto& change_event(this auto& self, function<void, T> f) noexcept {
+  auto& change_event(this auto& self, function<bool, T> f) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) {
       error(errors::invalid_slotid).fizzle_out();

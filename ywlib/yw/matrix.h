@@ -1,7 +1,11 @@
 #pragma once
-#include "yw/vector.h"
+#include <yw/math.h>
+#include <yw/tuple.h>
+#include <yw/vector.h>
 
 namespace yw {
+
+using float4x4 = vector4<vector4<float>>;
 
 struct matrix {
   union {
@@ -13,6 +17,13 @@ struct matrix {
 
   __m128& operator[](size_t i) { return rows[i]; }
   const __m128& operator[](size_t i) const { return rows[i]; }
+
+  void store(float4x4& Out) const noexcept {
+    _mm_storeu_ps(Out.x.data(), x);
+    _mm_storeu_ps(Out.y.data(), y);
+    _mm_storeu_ps(Out.z.data(), z);
+    _mm_storeu_ps(Out.w.data(), w);
+  }
 
   void t(matrix& Out) const {
     Out[0] = mm_permute<2, 3, 6, 7>(x, y);
@@ -63,27 +74,31 @@ inline void inverse_rotation_matrix(const __m128 Cos, const __m128 Sin, matrix& 
   Out.w = mm_set<3>(1.0f);
 }
 
-inline void matrix_transform(const matrix& M, const __m128 V, __m128& Out) {
+inline __m128 matrix_transform(const matrix& M, const __m128 V) {
   auto t0 = mm_permute<0, 1, 4, 5>(M.x, M.y);
   auto t1 = mm_permute<0, 1, 4, 5>(M.z, M.w);
-  Out = _mm_mul_ps(mm_permute<0, 1, 4, 5>(t0, t1), mm_permute<0, 0, 0, 0>(V));
-  Out = _mm_add_ps(Out, _mm_mul_ps(mm_permute<2, 3, 6, 7>(t0, t1), mm_permute<1, 1, 1, 1>(V)));
+  auto out = _mm_mul_ps(mm_permute<0, 2, 4, 6>(t0, t1), mm_permute<0, 0, 0, 0>(V));
+  out = _mm_add_ps(out, _mm_mul_ps(mm_permute<1, 3, 5, 7>(t0, t1), mm_permute<1, 1, 1, 1>(V)));
   t0 = mm_permute<2, 3, 6, 7>(M.x, M.y);
   t1 = mm_permute<2, 3, 6, 7>(M.z, M.w);
-  Out = _mm_add_ps(Out, _mm_mul_ps(mm_permute<0, 1, 4, 5>(t0, t1), mm_permute<2, 2, 2, 2>(V)));
-  Out = _mm_add_ps(Out, _mm_mul_ps(mm_permute<2, 3, 6, 7>(t0, t1), mm_permute<3, 3, 3, 3>(V)));
+  out = _mm_add_ps(out, _mm_mul_ps(mm_permute<0, 2, 4, 6>(t0, t1), mm_permute<2, 2, 2, 2>(V)));
+  return _mm_add_ps(out, _mm_mul_ps(mm_permute<1, 3, 5, 7>(t0, t1), mm_permute<3, 3, 3, 3>(V)));
 }
 
+inline __m128 matrix_transform(const __m128 V, const matrix& M) {
+  auto out = _mm_mul_ps(mm_permute<0, 0, 0, 0>(V), M.x);
+  out = _mm_add_ps(out, _mm_mul_ps(mm_permute<1, 1, 1, 1>(V), M.y));
+  out = _mm_add_ps(out, _mm_mul_ps(mm_permute<2, 2, 2, 2>(V), M.z));
+  return _mm_add_ps(out, _mm_mul_ps(mm_permute<3, 3, 3, 3>(V), M.w));
+}
+
+/// Calculates `Out = M * N`.
 inline void matrix_transform(const matrix& M, const matrix& N, matrix& Out) {
-  matrix tN;
-  N.t(tN);
-  matrix_transform(M, tN.x, Out.x);
-  matrix_transform(M, tN.y, Out.y);
-  matrix_transform(M, tN.z, Out.z);
-  matrix_transform(M, tN.w, Out.w);
+  Out.x = matrix_transform(M.x, N);
+  Out.y = matrix_transform(M.y, N);
+  Out.z = matrix_transform(M.z, N);
+  Out.w = matrix_transform(M.w, N);
 }
-
-using float4x4 = vector4<vector4<float>>;
 
 inline constexpr void rotation_matrix(float4 rad, float4x4& out) {
   const auto c = vapply_r<float4>(yw::cos, rad);
@@ -157,4 +172,51 @@ inline constexpr void inverse_rotation_matrix(float4 rad, float4x4& out) {
   }
 }
 
+inline constexpr float4 matrix_transform(const float4x4& M, const float4 V) {
+  if (std::is_constant_evaluated()) {
+    return {M.x.x * V.x + M.y.x * V.y + M.z.x * V.z + M.w.x * V.w,
+    M.x.y * V.x + M.y.y * V.y + M.z.y * V.z + M.w.y * V.w,
+     M.x.z * V.x + M.y.z * V.y + M.z.z * V.z + M.w.z * V.w,
+     M.x.w * V.x + M.y.w * V.y + M.z.w * V.z + M.w.w * V.w};
+  } else {
+    auto m0 = _mm_loadu_ps(M.x.data());
+    auto m1 = _mm_loadu_ps(M.y.data());
+    auto m2 = _mm_loadu_ps(M.z.data());
+    auto m3 = _mm_loadu_ps(M.w.data());
+    auto v = _mm_loadu_ps(V.data());
+    auto t0 = mm_permute<0, 1, 4, 5>(m0, m1);
+    auto t1 = mm_permute<0, 1, 4, 5>(m2, m3);
+    auto t2 = _mm_mul_ps(mm_permute<0, 2, 4, 6>(t0, t1), mm_permute<0, 0, 0, 0>(v));
+    t2 = _mm_add_ps(t2, _mm_mul_ps(mm_permute<1, 3, 5, 7>(t0, t1), mm_permute<1, 1, 1, 1>(v)));
+    t0 = mm_permute<2, 3, 6, 7>(m0, m1);
+    t1 = mm_permute<2, 3, 6, 7>(m2, m3);
+    t2 = _mm_add_ps(t2, _mm_mul_ps(mm_permute<0, 2, 4, 6>(t0, t1), mm_permute<2, 2, 2, 2>(v)));
+    float4 out;
+    _mm_storeu_ps(out.data(), _mm_add_ps(t2, _mm_mul_ps(mm_permute<1, 3, 5, 7>(t0, t1), mm_permute<3, 3, 3, 3>(v))));
+    return out;
+  }
+}
+
+inline constexpr float4 matrix_transform(const float4 V, const float4x4& M) {
+  if (std::is_constant_evaluated()) {
+    return V.x * M.x + V.y * M.y + V.z * M.z + V.w * M.w;
+  } else {
+    auto v = _mm_loadu_ps(V.data());
+    auto out = _mm_mul_ps(mm_permute<0, 0, 0, 0>(v), _mm_loadu_ps(M.x.data()));
+    out = _mm_add_ps(out, _mm_mul_ps(mm_permute<1, 1, 1, 1>(v), _mm_loadu_ps(M.y.data())));
+    out = _mm_add_ps(out, _mm_mul_ps(mm_permute<2, 2, 2, 2>(v), _mm_loadu_ps(M.z.data())));
+    out = _mm_add_ps(out, _mm_mul_ps(mm_permute<3, 3, 3, 3>(v), _mm_loadu_ps(M.w.data())));
+    float4 result;
+    _mm_storeu_ps(result.data(), out);
+    return result;
+  }
+}
+
+/// Calculates `Out = M * N`.
+inline constexpr void matrix_transform(const float4x4& M, const float4x4& N, float4x4& Out) {
+  Out.x = matrix_transform(M.x, N);
+  Out.y = matrix_transform(M.y, N);
+  Out.z = matrix_transform(M.z, N);
+  Out.w = matrix_transform(M.w, N);
+}
 } // namespace yw

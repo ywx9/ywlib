@@ -11,7 +11,7 @@ public:
     alignment text_align = center;
     bool pressed = false;
 
-    function<void, yw::button_event> click_event{};
+    function<bool, yw::button_event> click_event{};
 
     //-- override functions --//
 
@@ -60,8 +60,7 @@ public:
 
     virtual bool handle_click_event(yw::button_event e) override {
       if (!enabled || !visible || e.down || e.key != keys::lbutton) return false;
-      invoke(e);
-      return true;
+      return invoke(e);
     }
 
     virtual bool handle_focus_event(yw::focus_event e) override {
@@ -86,7 +85,7 @@ public:
       pressed = false;
       if (was_pressed) {
         make_dirty();
-        invoke({{}, e.key, e.mods, false});
+        return invoke({{}, e.key, e.mods, false});
       }
       return true;
     }
@@ -102,8 +101,8 @@ public:
 
     //-- vertual functions --//
 
-    virtual void invoke(yw::button_event e) {
-      if (click_event) click_event(e);
+    virtual bool invoke(yw::button_event e) {
+      return click_event ? click_event(e) : true;
     }
   };
 
@@ -241,7 +240,7 @@ public:
     return self;
   }
 
-  auto& click_event(this auto& self, function<void, yw::button_event> f) noexcept {
+  auto& click_event(this auto& self, function<bool, yw::button_event> f) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) {
       error(errors::invalid_slotid).fizzle_out();

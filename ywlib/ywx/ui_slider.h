@@ -18,7 +18,7 @@ public:
     color thumb_color;
     bool pressed = false;
 
-    function<void, double> change_event{};
+    function<bool, double> change_event{};
 
     virtual bool is_focusable() const override { return enabled && visible; }
     virtual bool is_interactive() const override { return true; }
@@ -95,9 +95,8 @@ public:
       if (!enabled || !visible || e.key != keys::lbutton) return false;
       if (e.down) {
         pressed = true;
-        set_value(value_from_point(float2(float(e.pos.x), float(e.pos.y))));
         make_dirty();
-        return true;
+        return set_value(value_from_point(float2(float(e.pos.x), float(e.pos.y))));
       }
       if (!pressed) return false;
       pressed = false;
@@ -113,8 +112,7 @@ public:
       if (!enabled || !visible || !pressed) return false;
       const auto axis = orientation == ui::vertical;
       const auto direction = axis ? -1.0 : 1.0;
-      set_value(value + direction * double(e.delta[axis]) * value_range() / double(track_length()));
-      return true;
+      return set_value(value + direction * double(e.delta[axis]) * value_range() / double(track_length()));
     }
 
     virtual bool handle_focus_event(yw::focus_event e) override {
@@ -131,20 +129,19 @@ public:
                               e.key == keys::page_up || e.key == keys::page_down || e.key == keys::home ||
                               e.key == keys::end;
       if (!e.down) return slider_key || control::slot::handle_key_event(e);
-      if (e.key == keys::left || e.key == keys::down) return step_by(-1, e.mods.shift ? 10 : 1), true;
-      if (e.key == keys::right || e.key == keys::up) return step_by(+1, e.mods.shift ? 10 : 1), true;
-      if (e.key == keys::page_down) return step_by(-1, 10), true;
-      if (e.key == keys::page_up) return step_by(+1, 10), true;
-      if (e.key == keys::home) return set_value(minimum), true;
-      if (e.key == keys::end) return set_value(maximum), true;
+      if (e.key == keys::left || e.key == keys::down) return step_by(-1, e.mods.shift ? 10 : 1);
+      if (e.key == keys::right || e.key == keys::up) return step_by(+1, e.mods.shift ? 10 : 1);
+      if (e.key == keys::page_down) return step_by(-1, 10);
+      if (e.key == keys::page_up) return step_by(+1, 10);
+      if (e.key == keys::home) return set_value(minimum);
+      if (e.key == keys::end) return set_value(maximum);
       return control::slot::handle_key_event(e);
     }
 
     virtual bool handle_wheel_event(yw::wheel_event e) override {
       if (!enabled || !visible || e.delta == 0) return false;
       if ((orientation == ui::horizontal) != e.horizontal) return false;
-      step_by(e.delta > 0 ? +1 : -1, e.mods.shift ? 10 : 1);
-      return true;
+      return step_by(e.delta > 0 ? +1 : -1, e.mods.shift ? 10 : 1);
     }
 
     double clamp_value(double v) const noexcept { return yw::clamp(v, minimum, maximum); }
@@ -164,17 +161,17 @@ public:
       else return yw::clamp((value - minimum) / range, 0.0, 1.0);
     }
 
-    void set_value(double v, bool Notify = true) noexcept {
+    bool set_value(double v, bool Notify = true) noexcept {
       const auto next = clamp_value(v);
-      if (value == next) return;
+      if (value == next) return true;
       value = next;
       make_dirty();
-      if (Notify && change_event) change_event(value);
+      return Notify && change_event ? change_event(value) : true;
     }
 
-    void step_by(int Direction, int Multiplier = 1) noexcept {
-      if (Direction == 0 || step <= 0.0) return;
-      set_value(value + step * double(Direction) * double(Multiplier));
+    bool step_by(int Direction, int Multiplier = 1) noexcept {
+      if (Direction == 0 || step <= 0.0) return true;
+      return set_value(value + step * double(Direction) * double(Multiplier));
     }
 
     float thumb_radius() const noexcept { return bar_width * 0.5f; }
@@ -457,7 +454,7 @@ public:
     return self;
   }
 
-  auto& change_event(this auto& self, function<void, double> f) noexcept {
+  auto& change_event(this auto& self, function<bool, double> f) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) {
       error(errors::invalid_slotid).fizzle_out();

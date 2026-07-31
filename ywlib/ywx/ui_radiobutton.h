@@ -27,7 +27,7 @@ public:
     size_t pressed_index = npos;
     size_t hovered_index = npos;
 
-    function<void, size_t> change_event{};
+    function<bool, size_t> change_event{};
 
     //-- override functions --//
 
@@ -137,8 +137,7 @@ public:
       const auto hit = item_at(float2(float(e.pos.x), float(e.pos.y)));
       if (hit == npos) return false;
       selected_index = hit;
-      check(hit);
-      return true;
+      return check(hit);
     }
 
     virtual bool handle_focus_event(yw::focus_event e) override {
@@ -173,9 +172,8 @@ public:
       }
       const bool was_pressed = pressed_index == target;
       pressed_index = npos;
-      if (was_pressed) check(target);
       make_dirty();
-      return true;
+      return was_pressed ? check(target) : true;
     }
 
     //-- shared functions --//
@@ -211,11 +209,11 @@ public:
       return npos;
     }
 
-    void check(size_t Index) {
-      if (Index >= items.size() || checked_index == Index) return;
+    bool check(size_t Index) {
+      if (Index >= items.size() || checked_index == Index) return true;
       checked_index = Index;
       make_dirty();
-      if (change_event) change_event(checked_index);
+      return change_event ? change_event(checked_index) : true;
     }
 
     void move_selection(bool Backward) {
@@ -431,7 +429,7 @@ public:
     return self;
   }
 
-  auto& change_event(this auto& self, function<void, size_t> f) noexcept {
+  auto& change_event(this auto& self, function<bool, size_t> f) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) {
       error(errors::invalid_slotid).fizzle_out();

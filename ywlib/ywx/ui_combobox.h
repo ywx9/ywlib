@@ -18,7 +18,7 @@ public:
     float button_width = common_size_value;
     bool pressed = false;
 
-    function<void, size_t> change_event{};
+    function<bool, size_t> change_event{};
 
     //-- override functions --//
 
@@ -282,6 +282,7 @@ public:
         if (auto res = sp->select(Index); !res) res.error().go_off();
         sp->close_dropdown();
       }
+      return true;
     };
     icon_sp->drag_event = [combobox_id](yw::drag_event e) {
       if (const auto sp = get_slot<combobox>(combobox_id))
@@ -450,7 +451,7 @@ public:
     return self;
   }
 
-  auto& change_event(this auto& self, function<void, size_t> f) noexcept {
+  auto& change_event(this auto& self, function<bool, size_t> f) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).fizzle_out();
     else sp->change_event = std::move(f);

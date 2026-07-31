@@ -55,6 +55,7 @@ public:
   }
 
   explicit operator ID3D11Texture2D*() const noexcept { return d3d_texture(); }
+  explicit operator ID2D1Bitmap*() const noexcept { return d2d_bitmap(); }
   explicit operator ID2D1Bitmap1*() const noexcept { return d2d_bitmap(); }
   explicit operator ID3D11ShaderResourceView*() const noexcept { return d3d_srv(); }
   explicit operator ID3D11RenderTargetView*() const noexcept { return d3d_rtv(); }
@@ -203,7 +204,7 @@ public:
 
   /// creates a texture by copying a bitmap resource.
   /// \note `unordered_access` is not allowed.
-  texture(const bitmap& Bitmap, yw::flags<flag> Flags = flag::d2d_bitmap | flag::shader_resource,
+  explicit texture(const bitmap& Bitmap, yw::flags<flag> Flags = flag::d2d_bitmap | flag::shader_resource,
     const source_line& sl = here()) {
     if (auto res = create(Bitmap, Flags); !res) res.error().go_off(sl);
     else *this = std::move(*res);
@@ -211,7 +212,7 @@ public:
 
   /// creates a texture by moving a bitmap resource.
   /// \note `unordered_access` is not allowed.
-  texture(bitmap&& Bitmap, yw::flags<flag> Flags = flag::d2d_bitmap | flag::shader_resource,
+  explicit texture(bitmap&& Bitmap, yw::flags<flag> Flags = flag::d2d_bitmap | flag::shader_resource,
     const source_line& sl = here()) {
     if (auto res = create(std::move(Bitmap), Flags); !res) res.error().go_off(sl);
     else *this = std::move(*res);
@@ -219,7 +220,7 @@ public:
 
   /// creates a texture from a file through `yw::bitmap`.
   /// \note `unordered_access` is not allowed.
-  texture(const path& Path, yw::flags<flag> Flags = flag::d2d_bitmap | flag::shader_resource,
+  explicit texture(const path& Path, yw::flags<flag> Flags = flag::d2d_bitmap | flag::shader_resource,
     const source_line& sl = here()) {
     if (auto res = create(Path, Flags); !res) res.error().go_off(sl);
     else *this = std::move(*res);
@@ -227,7 +228,7 @@ public:
 
   /// creates a texture with `bitmap::dxgiformat`.
   /// \note `d2d_bitmap` and `unordered_access` are mutually exclusive.
-  texture(
+  explicit texture(
     int2 Size, yw::flags<flag> Flags = flag::d2d_bitmap | flag::shader_resource | flag::render_target,
     const source_line& sl = here()) {
     if (auto res = create(Size, Flags); !res) res.error().go_off(sl);
@@ -236,10 +237,18 @@ public:
 
   /// creates a texture with an explicit DXGI format.
   /// \note `d2d_bitmap` is not allowed.
-  texture(int2 Size, DXGI_FORMAT Format, yw::flags<flag> Flags = flag::shader_resource,
+  explicit texture(int2 Size, DXGI_FORMAT Format, yw::flags<flag> Flags = flag::shader_resource,
     const source_line& sl = here()) {
     if (auto res = create(Size, Format, Flags); !res) res.error().go_off(sl);
     else *this = std::move(*res);
+  }
+
+  /// clears the texture with a specified color.
+  /// \note `render_target` flag must be set.
+  std::expected<void, error> clear(const color& ClearColor = colors::transparent) {
+    if (!d3d_rtv()) return std::unexpected(error(errors::invalid_operation, "texture is not a render target"));
+    d3d::context()->ClearRenderTargetView(d3d_rtv(), &ClearColor.r);
+    return {};
   }
 };
 
@@ -326,6 +335,14 @@ public:
   depth_texture(int2 Size, yw::flags<flag> Flags = flag::shader_resource, const source_line& sl = here()) {
     if (auto res = create(Size, Flags); !res) res.error().go_off(sl);
     else *this = std::move(*res);
+  }
+
+  /// clears the depth texture with a specified depth value.
+  /// \param Depth set to `0.0f` if reverse-z is enabled, otherwise set to `1.0f`.
+  std::expected<void, error> clear(float Depth = 1.0f) {
+    if (!d3d_dsv()) return std::unexpected(error(errors::invalid_operation, "depth texture is not a depth stencil view"));
+    d3d::context()->ClearDepthStencilView(d3d_dsv(), D3D11_CLEAR_DEPTH, Depth, 0);
+    return {};
   }
 };
 

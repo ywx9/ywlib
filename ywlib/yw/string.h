@@ -192,15 +192,23 @@ public:
     std::swap(_capacity, Other._capacity);
   }
 
-  friend constexpr bool operator==(const string& a, const string& b) noexcept { return string_view<C>(a) == string_view<C>(b); }
+  friend constexpr bool operator==(const string& a, const string& b) noexcept {
+    return string_view<C>(a) == string_view<C>(b);
+  }
 
   template<stringable<C> S> requires different_from<remove_cvref<S>, string>
-  friend constexpr bool operator==(const string& a, S&& b) noexcept { return string_view<C>(a) == string_view<C>(b); }
+  friend constexpr bool operator==(const string& a, S&& b) noexcept {
+    return string_view<C>(a) == string_view<C>(b);
+  }
 
-  friend constexpr auto operator<=>(const string& a, const string& b) noexcept { return string_view<C>(a) <=> string_view<C>(b); }
+  friend constexpr auto operator<=>(const string& a, const string& b) noexcept {
+    return string_view<C>(a) <=> string_view<C>(b);
+  }
 
   template<stringable<C> S> requires different_from<remove_cvref<S>, string>
-  friend constexpr auto operator<=>(const string& a, S&& b) noexcept { return string_view<C>(a) <=> string_view<C>(b); }
+  friend constexpr auto operator<=>(const string& a, S&& b) noexcept {
+    return string_view<C>(a) <=> string_view<C>(b);
+  }
 };
 
 template<stringable S> string(S&&) -> string<iter_value_t<S>>;
@@ -306,9 +314,7 @@ template<char_type C> constexpr C* float_to_string(long double Value, C* Out) {
   } else {
     Out = uint_to_string<C>(int_part, Out);
     *Out++ = '.';
-    for (auto k = 100'000ull; frac_part != 0; frac_part %= k, k /= 10) {
-      *Out++ = '0' + frac_part / k;
-    }
+    for (auto k = 100'000ull; frac_part != 0; frac_part %= k, k /= 10) { *Out++ = '0' + frac_part / k; }
   }
   if (exponent) {
     *Out++ = 'e';
@@ -384,20 +390,31 @@ template<char_type In, char_type Out> constexpr Out* _unicode(const In* i, size_
 }
 } // namespace internal
 
-template<char_type C> inline constexpr auto unicode = []<stringable S>(S&& s) -> string<C> {
-  using From = iter_value_t<S>;
-  if constexpr (same_as<S&&, string<C>&&>) return std::move(s);
-  if constexpr (same_as<From, C>) return string(string_view<C>(s));
-  const auto sv_original = string_view<From>(s);
-  if constexpr (sizeof(From) == sizeof(C)) return string(std::bit_cast<string_view<C>>(sv_original));
-  using T = select_type<sizeof(From) / 2, char8_t, char16_t, char32_t>;
-  const auto sv = std::bit_cast<std::basic_string_view<T>>(sv_original);
-  constexpr auto scale = select_value<yw::max(int(sizeof(T)) - int(sizeof(C)), 0), 1, 3, 2, 4>;
-  auto r = string<C>(sv.size() * scale, C{});
-  auto out = internal::_unicode(sv.data(), sv.size(), r.data());
-  r.resize(out - r.data());
-  return r;
-};
+template<typename C> requires char_type<C> || same_as<C, std::filesystem::path> inline constexpr auto unicode =
+  []<stringable S>(S&& s) -> select_type<same_as<C, std::filesystem::path>, std::filesystem::path, string<C>> {
+    using From = iter_value_t<S>;
+    if constexpr (same_as<S&&, string<C>&&>) return std::move(s);
+    if constexpr (same_as<From, C>) return string(string_view<C>(s));
+    const auto sv_original = string_view<From>(s);
+    if constexpr (sizeof(From) == sizeof(C)) return string(std::bit_cast<string_view<C>>(sv_original));
+    using T = select_type<sizeof(From) / 2, char8_t, char16_t, char32_t>;
+    const auto sv = std::bit_cast<string_view<T>>(sv_original);
+    if constexpr (same_as<C, std::filesystem::path>) {
+      using string_type = std::filesystem::path::string_type;
+      using char_type = iter_value_t<string_type>;
+      constexpr auto scale = select_value<yw::max(int(sizeof(T)) - int(sizeof(char_type)), 0), 1, 3, 2, 4>;
+      auto r = string_type(sv.size() * scale, char_type{});
+      auto out = internal::_unicode(sv.data(), sv.size(), r.data());
+      r.resize(out - r.data());
+      return std::filesystem::path(std::move(r));
+    } else {
+      constexpr auto scale = select_value<yw::max(int(sizeof(T)) - int(sizeof(C)), 0), 1, 3, 2, 4>;
+      auto r = string<C>(sv.size() * scale, C{});
+      auto out = internal::_unicode(sv.data(), sv.size(), r.data());
+      r.resize(out - r.data());
+      return r;
+    }
+  };
 
 /// MARK: format
 

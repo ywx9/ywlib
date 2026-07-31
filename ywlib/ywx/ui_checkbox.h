@@ -16,7 +16,7 @@ public:
     bool checked = false;
     bool pressed = false;
 
-    function<void, bool> change_event{};
+    function<bool, bool> change_event{};
 
     //-- override functions --//
 
@@ -105,8 +105,7 @@ public:
 
     virtual bool handle_click_event(yw::button_event e) override {
       if (!enabled || !visible || e.down || e.key != keys::lbutton) return false;
-      toggle();
-      return true;
+      return toggle();
     }
 
     virtual bool handle_focus_event(yw::focus_event e) override {
@@ -129,8 +128,7 @@ public:
       }
       const bool was_pressed = pressed;
       pressed = false;
-      if (was_pressed) toggle();
-      return true;
+      return was_pressed ? toggle() : true;
     }
 
     //-- shared functions --//
@@ -151,10 +149,10 @@ public:
       return {};
     }
 
-    void toggle() {
+    bool toggle() {
       checked = !checked;
       make_dirty();
-      if (change_event) change_event(checked);
+      return change_event ? change_event(checked) : true;
     }
   };
 
@@ -325,7 +323,7 @@ public:
     return self;
   }
 
-  auto& change_event(this auto& self, function<void, bool> f) noexcept {
+  auto& change_event(this auto& self, function<bool, bool> f) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) {
       error(errors::invalid_slotid).fizzle_out();

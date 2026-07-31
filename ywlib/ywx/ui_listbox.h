@@ -16,7 +16,7 @@ public:
     size_t pressed_index = npos;
     size_t hovered_index = npos;
 
-    function<void, size_t> change_event{};
+    function<bool, size_t> change_event{};
 
     virtual bool is_focusable() const override { return enabled && visible; }
 
@@ -65,9 +65,8 @@ public:
       if (e.down) {
         if (hit == npos) return false;
         pressed_index = hit;
-        select(hit);
         make_dirty();
-        return true;
+        return select(hit);
       }
       if (pressed_index == npos) return false;
       pressed_index = npos;
@@ -112,11 +111,11 @@ public:
                             e.key == keys::page_down || e.key == keys::home || e.key == keys::end;
       if (!e.down) return list_key || control::slot::handle_key_event(e);
       const auto old = selected_index == npos ? 0 : selected_index;
-      if (e.key == keys::up) return select(old == 0 ? 0 : old - 1), true;
-      if (e.key == keys::down) return select(yw::min(old + 1, items.size() - 1)), true;
-      if (e.key == keys::home) return select(0), true;
-      if (e.key == keys::end) return select(items.size() - 1), true;
-      if (e.key == keys::page_up || e.key == keys::page_down) return select(page_item(old, e.key == keys::page_down)), true;
+      if (e.key == keys::up) return select(old == 0 ? 0 : old - 1);
+      if (e.key == keys::down) return select(yw::min(old + 1, items.size() - 1));
+      if (e.key == keys::home) return select(0);
+      if (e.key == keys::end) return select(items.size() - 1);
+      if (e.key == keys::page_up || e.key == keys::page_down) return select(page_item(old, e.key == keys::page_down));
       return control::slot::handle_key_event(e);
     }
 
@@ -213,12 +212,12 @@ public:
       return items.empty() ? npos : items.size() - 1;
     }
 
-    void select(size_t Index, bool Notify = true) noexcept {
-      if (Index >= items.size() || selected_index == Index) return;
+    bool select(size_t Index, bool Notify = true) noexcept {
+      if (Index >= items.size() || selected_index == Index) return true;
       selected_index = Index;
       ensure_visible(Index);
       make_dirty();
-      if (Notify && change_event) change_event(selected_index);
+      return Notify && change_event ? change_event(selected_index) : true;
     }
 
     float content_height() const noexcept {
@@ -395,7 +394,7 @@ public:
     return self;
   }
 
-  auto& change_event(this auto& self, function<void, size_t> f) noexcept {
+  auto& change_event(this auto& self, function<bool, size_t> f) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).fizzle_out();
     else sp->change_event = std::move(f);
