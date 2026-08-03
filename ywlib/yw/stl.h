@@ -45,7 +45,7 @@ public:
   static std::expected<stl, error> create(stringable auto&& Path) {
     if (!file::exists(Path)) return std::unexpected(error(errors::operation_failed, "file not found"));
     if (auto f = file::handle::create(static_cast<decltype(Path)&&>(Path), file::open_mode::read_existing)) {
-      const auto fsize = f->file_size();
+      const auto fsize = f->rest();
       if (fsize < 84) return std::unexpected(error(errors::invalid_file_format, "binary STL is too small"));
       stl m;
       if (auto res = f->read_exact(m.header.data(), m.header.size()); !res) return res.error().relay();

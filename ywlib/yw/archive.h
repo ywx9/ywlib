@@ -173,7 +173,6 @@ public:
     else res.error().go_off(sl);
   }
 
-
   bool is_open() const noexcept {
     const auto sp = get_slot(this);
     return sp && sp->file_handle.is_open();
@@ -371,22 +370,23 @@ inline handle open(stringable auto&& path, file::open_mode mode, const source_li
   return {};
 }
 
-inline std::expected<void, error> pack(stringable auto&& src_path, stringable auto&& dst_path,
-  file::open_mode mode = file::open_mode::create_always) {
-  if (!file::is_directory(src_path))
+inline std::expected<void, error> pack(
+  stringable auto&& src_path, stringable auto&& dst_path, file::open_mode mode = file::open_mode::create_always) {
+  auto src = unicode<file::path_char>(static_cast<decltype(src_path)&&>(src_path));
+  if (!file::is_directory(src))
     return std::unexpected(error(yw::errors::invalid_argument, "source path is not a directory"));
   auto archive = handle::create(static_cast<decltype(dst_path)&&>(dst_path), mode);
   if (!archive) return std::unexpected(error(yw::errors::operation_failed, "failed to open archive file"));
-  for (const auto& item : file::list_files(src_path, true)) {
+  for (const auto& item : file::list_files(src, true)) {
     if (!file::is_file(item)) continue;
     auto fh = file::handle::create(static_cast<decltype(item)&&>(item), file::open_mode::read_existing);
     if (!fh) return std::unexpected(error(yw::errors::operation_failed, "failed to open source file"));
-    if (auto res = fh.seek(0, file::seek_whence::end); !res) return res.error().relay();
-    const auto file_size = static_cast<uint64_t>(fh.tell());
-    if (auto res = fh.seek(0, file::seek_whence::begin); !res) return res.error().relay();
+    if (auto res = fh->seek(0, file::seek_whence::end); !res) return res.error().relay();
+    const auto file_size = static_cast<uint64_t>(fh->tell());
+    if (auto res = fh->seek(0, file::seek_whence::begin); !res) return res.error().relay();
     std::vector<std::byte> data(static_cast<size_t>(file_size));
-    if (auto res = fh.read_exact(data.data(), data.size()); !res) return res.error().relay();
-    const auto filename = unicode<char>(file::relative(item.path(), src_path).native());
+    if (auto res = fh->read_exact(data.data(), data.size()); !res) return res.error().relay();
+    const auto filename = unicode<char>(file::relative(item, src));
     if (auto res = archive->append(filename, data.data(), data.size()); !res) return res.error().relay();
   }
   if (auto res = archive->close(); !res) return res.error().relay();
@@ -396,7 +396,7 @@ inline std::expected<void, error> pack(stringable auto&& src_path, stringable au
 inline std::expected<void, error> extract(stringable auto&& src_path, stringable auto&& dst_path) {
   auto archive = handle::create(static_cast<decltype(src_path)&&>(src_path), file::open_mode::read_existing);
   if (!archive) return std::unexpected(error(yw::errors::operation_failed, "failed to open archive file"));
-  for (const auto& e : archive.entries()) {
+  for (const auto& e : archive->entries()) {
     auto data = archive->read(e.name);
     if (data.size() != e.data_length)
       return std::unexpected(error(yw::errors::operation_failed, "failed to read entry"));
@@ -405,8 +405,8 @@ inline std::expected<void, error> extract(stringable auto&& src_path, stringable
     file::create_directories(parent);
     auto fh = file::handle::create(out_path, file::open_mode::create_always);
     if (!fh) return std::unexpected(error(yw::errors::operation_failed, "failed to open output file"));
-    if (auto res = fh.write_exact(data.data(), data.size()); !res) return res.error().relay();
-    if (auto res = fh.close(); !res) return res.error().relay();
+    if (auto res = fh->write_exact(data.data(), data.size()); !res) return res.error().relay();
+    if (auto res = fh->close(); !res) return res.error().relay();
   }
   if (auto res = archive->close(); !res) return res.error().relay();
   return {};

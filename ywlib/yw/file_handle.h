@@ -133,7 +133,7 @@ public:
     }
 
     std::expected<void, error> close() {
-      if (!file) return std::unexpected(error(errors::not_initialized));
+      if (!file) return {};
       if (std::fclose(std::exchange(file, nullptr)) != 0)
         return std::unexpected(error(errors::operation_failed, "failed to close file", errno));
       else return {};
@@ -194,7 +194,7 @@ public:
     const auto sp = handle_base::make_slot<handle>();
     if (!sp) return std::unexpected(error(errors::slot_creation_failed));
     auto p = unicode<path_char>(static_cast<decltype(Path)&&>(Path));
-    if (auto res = internal::_open(p.data(), m); !res) {
+    if (auto res = internal::_open(p.c_str(), m); !res) {
       erase_slot(sp->id);
       return res.error().relay();
     } else sp->file = *res;

@@ -1,5 +1,5 @@
 #pragma once
-#include "yw/core.h"
+#include <yw/core.h>
 
 namespace yw {
 
@@ -474,12 +474,12 @@ template<bool Error, typename T> void _print_single(T&& Arg) {
 #else
   if constexpr (stringable<T, char>) {
     auto sv = string_view<char>(Arg);
-    if constexpr (Error) std::fputs(sv.data(), stderr);
-    else std::fputs(sv.data(), stdout);
+    if constexpr (Error) std::fwrite(sv.data(), 1, sv.size(), stderr);
+    else std::fwrite(sv.data(), 1, sv.size(), stdout);
   } else {
     auto s = format<char>(static_cast<T&&>(Arg));
-    if constexpr (Error) std::fputs(s.data(), stderr);
-    else std::fputs(s.data(), stdout);
+    if constexpr (Error) std::fwrite(s.data(), 1, s.size(), stderr);
+    else std::fwrite(s.data(), 1, s.size(), stdout);
   }
 #endif
 }
@@ -529,52 +529,6 @@ struct {
 #endif
   }
 } print_fallback;
-
-/// MARK: null_terminated
-
-template<char_type C> class null_terminated {
-  static_assert(same_as<C, remove_cv<C>>);
-  template<typename S> static constexpr bool _is_array = is_bounded_array<remove_ref<S>> && same_as<iter_value_t<S>, C>;
-  std::variant<string<C>, string_view<C>> _data;
-
-public:
-  constexpr null_terminated() : _data(string_view<C>{}) {}
-  constexpr null_terminated(string<C>& str) : _data(std::in_place_index_t<1>{}, str) {}
-  constexpr null_terminated(const string<C>& str) : _data(std::in_place_index_t<1>{}, str) {}
-  constexpr null_terminated(string<C>&& str) : _data(std::in_place_index_t<0>{}, std::move(str)) {}
-  constexpr null_terminated(const string<C>&& str) : _data(std::in_place_index_t<0>{}, std::move(str)) {}
-
-  template<typename S> requires _is_array<S> constexpr null_terminated(const S& a)
-    : _data(std::in_place_index_t<1>{}, string_view<C>(a, std::char_traits<C>::length(a))) {}
-
-  template<stringable S> requires(!_is_array<S>) constexpr null_terminated(S&& s) : _data() {
-    if constexpr (different_from<iter_value_t<S>, C>) _data.template emplace<0>(unicode<C>(static_cast<S&&>(s)));
-    else _data.template emplace<0>(string<C>(string_view<C>(static_cast<S&&>(s))));
-  }
-
-  constexpr operator string_view<C>() const {
-    return std::visit([](const auto& v) { return string_view<C>(v); }, _data);
-  }
-
-  bool empty() const noexcept {
-    return std::visit([](const auto& v) { return v.empty(); }, _data);
-  }
-  size_t size() const noexcept {
-    return std::visit([](const auto& v) { return v.size(); }, _data);
-  }
-  const C* data() const noexcept {
-    return std::visit([](const auto& v) { return v.data(); }, _data);
-  }
-  const C* c_str() const noexcept {
-    return std::visit([](const auto& v) { return v.data(); }, _data);
-  }
-  const C* begin() const noexcept {
-    return std::visit([](const auto& v) { return v.data(); }, _data);
-  }
-  const C* end() const noexcept {
-    return std::visit([](const auto& v) { return v.data() + v.size(); }, _data);
-  }
-};
 
 /// MARK: ministr
 
@@ -708,13 +662,6 @@ template<typename C> struct formatter<yw::string<C>, C> {
   formatter<basic_string_view<C>, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::string<C>& str, auto& ctx) const {
-    return fmt.format(static_cast<basic_string_view<C>>(str), ctx);
-  }
-};
-template<typename C> struct formatter<yw::null_terminated<C>, C> {
-  formatter<basic_string_view<C>, C> fmt;
-  constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
-  auto format(const yw::null_terminated<C>& str, auto& ctx) const {
     return fmt.format(static_cast<basic_string_view<C>>(str), ctx);
   }
 };

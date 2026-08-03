@@ -1,6 +1,7 @@
 #pragma once
 #include <yw/datetime.h>
 #include <yw/error.h>
+#include <yw/null_terminated.h>
 
 namespace yw::file {
 
@@ -194,9 +195,8 @@ inline std::expected<info, error> _query_info(const char* p) {
   return result;
 }
 #endif
-inline std::expected<info, error> query_info(stringable auto&& Path) {
-  auto p = unicode<path_char>(static_cast<decltype(Path)&&>(Path));
-  return _query_info(p.data());
+inline std::expected<info, error> query_info(null_terminated<path_char> Path) {
+  return _query_info(Path.data());
 }
 } // namespace internal
 
@@ -401,45 +401,37 @@ inline std::expected<void, error> remove_directory(const char* p) {
 #endif
 } // namespace internal
 
-inline std::expected<void, error> rename(stringable auto&& From, stringable auto&& To) {
-  auto from = unicode<path_char>(static_cast<decltype(From)&&>(From));
-  auto to = unicode<path_char>(static_cast<decltype(To)&&>(To));
-  if (auto res = internal::rename(from.data(), to.data())) return {};
+inline std::expected<void, error> rename(null_terminated<path_char> From, null_terminated<path_char> To) {
+  if (auto res = internal::rename(From.data(), To.data())) return {};
   else return res.error().relay();
 }
 
-inline std::expected<void, error> copy_file(stringable auto&& From, stringable auto&& To, bool overwrite = false) {
-  auto from = unicode<path_char>(static_cast<decltype(From)&&>(From));
-  auto to = unicode<path_char>(static_cast<decltype(To)&&>(To));
-  if (auto res = internal::copy_file(from.data(), to.data(), overwrite)) return {};
+inline std::expected<void, error> copy_file(null_terminated<path_char> From, null_terminated<path_char> To, bool overwrite = false) {
+  if (auto res = internal::copy_file(From.data(), To.data(), overwrite)) return {};
   else return res.error().relay();
 }
 
-inline std::expected<void, error> remove_file(stringable auto&& Path) {
-  auto p = unicode<path_char>(static_cast<decltype(Path)&&>(Path));
-  if (auto res = internal::remove_file(p.data())) return {};
+inline std::expected<void, error> remove_file(null_terminated<path_char> Path) {
+  if (auto res = internal::remove_file(Path.data())) return {};
   else return res.error().relay();
 }
 
-inline std::expected<void, error> resize_file(stringable auto&& Path, uint64_t size) {
-  auto p = unicode<path_char>(static_cast<decltype(Path)&&>(Path));
-  if (auto res = internal::resize_file(p.data(), size)) return {};
+inline std::expected<void, error> resize_file(null_terminated<path_char> Path, uint64_t size) {
+  if (auto res = internal::resize_file(Path.data(), size)) return {};
   else return res.error().relay();
 }
 
-inline std::expected<void, error> create_directory(stringable auto&& Path) {
-  auto p = unicode<path_char>(static_cast<decltype(Path)&&>(Path));
-  if (auto res = internal::create_directory(p.data())) return {};
+inline std::expected<void, error> create_directory(null_terminated<path_char> Path) {
+  if (auto res = internal::create_directory(Path.data())) return {};
   else return res.error().relay();
 }
 
-inline std::expected<void, error> remove_directory(stringable auto&& Path) {
-  auto p = unicode<path_char>(static_cast<decltype(Path)&&>(Path));
-  if (auto res = internal::remove_directory(p.data())) return {};
+inline std::expected<void, error> remove_directory(null_terminated<path_char> Path) {
+  if (auto res = internal::remove_directory(Path.data())) return {};
   else return res.error().relay();
 }
 
-inline std::expected<void, error> create_directories(stringable auto&& Path) {
+inline std::expected<void, error> create_directories(stringable auto Path) {
   auto p = unicode<path_char>(static_cast<decltype(Path)&&>(Path));
   const auto root = internal::root_length(string_view<path_char>(p.data(), p.size()));
   for (size_t i = root; i < p.size(); ++i) {
@@ -534,12 +526,12 @@ inline std::expected<void, error> list_files(
 #endif
 } // namespace internal
 
-inline std::expected<std::vector<string<path_char>>, error> list_files(
-  stringable auto&& Directory, bool recursive = false) {
-  auto directory = unicode<path_char>(static_cast<decltype(Directory)&&>(Directory));
+inline std::vector<string<path_char>> list_files(
+  null_terminated<path_char> Directory, bool recursive = false, const source_line& sl = here()) {
   std::vector<string<path_char>> result;
-  if (auto res = internal::list_files(directory.data(), recursive, result)) return result;
-  else return res.error().relay();
+  if (auto res = internal::list_files(Directory.data(), recursive, result); !res)
+    res.error().add_footprint().fizzle_out(sl);
+  return result;
 }
 
 /// MARK: relative
@@ -584,10 +576,11 @@ template<char_type C> auto relative(string_view<C> path, string_view<C> base) {
   }
   path_pos = common_path_pos, base_pos = common_base_pos;
   size_t parent_count = 0;
+  const auto dot_char = C('.');
   for (;;) {
     const auto component = next_component(base, base_pos);
     if (component.empty()) break;
-    if (component != string_view<C>(C("."), 1)) ++parent_count;
+    if (component != string_view<C>(&dot_char, 1)) ++parent_count;
   }
   while (path_pos < path.size() && is_separator(path[path_pos])) ++path_pos;
   string<C> result;
