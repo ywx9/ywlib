@@ -37,14 +37,14 @@ public:
 
   explicit stl(size_t TriangleCount, std::array<char, 80> Header = {}) : header(Header), triangles(TriangleCount) {}
 
-  explicit stl(const file::path& Path, const source_line& sl = here()) {
-    if (auto res = create(Path)) *this = std::move(*res);
+  explicit stl(stringable auto&& Path, const source_line& sl = here()) {
+    if (auto res = create(static_cast<decltype(Path)&&>(Path))) *this = std::move(*res);
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<stl, error> create(const file::path& Path) {
+  static std::expected<stl, error> create(stringable auto&& Path) {
     if (!file::exists(Path)) return std::unexpected(error(errors::operation_failed, "file not found"));
-    if (auto f = file_handle::create(Path, open_mode::read_existing)) {
+    if (auto f = file::handle::create(static_cast<decltype(Path)&&>(Path), file::open_mode::read_existing)) {
       const auto fsize = f->file_size();
       if (fsize < 84) return std::unexpected(error(errors::invalid_file_format, "binary STL is too small"));
       stl m;
@@ -63,11 +63,11 @@ public:
   auto& operator[](this auto& self, size_t Index) noexcept { return self.triangles[Index]; }
   auto& stl_header(this auto& self) noexcept { return self.header; }
 
-  std::expected<void, error> save(const file::path& Path, bool AllowOverwrite) const {
-    const auto mode = AllowOverwrite ? open_mode::create_always : open_mode::create_new;
+  std::expected<void, error> save(stringable auto&& Path, bool AllowOverwrite) const {
+    const auto mode = AllowOverwrite ? file::open_mode::create_always : file::open_mode::create_new;
     if (auto count = static_cast<uint32_t>(triangles.size()); count > std::numeric_limits<uint32_t>::max())
       return std::unexpected(error(errors::invalid_argument, "too many triangles for binary STL"));
-    else if (auto f = file_handle::create(Path, mode); !f) return f.error().relay();
+    else if (auto f = file::handle::create(static_cast<decltype(Path)&&>(Path), mode); !f) return f.error().relay();
     else if (auto res = f->write_exact(header.data(), header.size()); !res) return res.error().relay();
     else if (auto res = f->write_trivial(count); !res) return res.error().relay();
     else if (!triangles.empty()) {

@@ -167,6 +167,7 @@ public:
 namespace errors {
 inline constexpr error::kind unreachable{"unreachable"};
 inline constexpr error::kind invalid_argument{"invalid argument"};
+inline constexpr error::kind invalid_file_format{"invalid file format"};
 inline constexpr error::kind invalid_operation{"invalid operation"};
 inline constexpr error::kind operation_failed{"operation failed"};
 inline constexpr error::kind not_initialized{"not initialized"};

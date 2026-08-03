@@ -7,8 +7,8 @@
 namespace yw {
 
 template<typename T> concept window_options_like = requires(T t) {
-  { t.pos } -> convertible_to<std::optional<int2>>;
-  { t.size } -> convertible_to<std::optional<int2>>;
+  { t.pos } -> convertible_to<optional<int2>>;
+  { t.size } -> convertible_to<optional<int2>>;
   { t.get_title() } -> convertible_to<string<wchar_t>>;
   { t.get_style() } -> convertible_to<DWORD>;
   { t.get_exstyle() } -> convertible_to<DWORD>;
@@ -18,8 +18,8 @@ class window : public interface {
 public:
   struct options {
     string<wchar_t> title{};
-    std::optional<int2> pos{};
-    std::optional<int2> size{};
+    optional<int2> pos{};
+    optional<int2> size{};
     bool has_border = true;
     bool has_caption = true;
     bool resizable = true;
@@ -77,7 +77,7 @@ public:
     color hover_overlay_color;
     color press_overlay_color;
 
-    std::optional<float3> caret_pos{};
+    optional<float3> caret_pos{};
 
     TRACKMOUSEEVENT track_mouse_event{sizeof(TRACKMOUSEEVENT), TME_LEAVE};
     int2 last_cursor_pos{}; // updated in mouse_move_event
@@ -1229,8 +1229,8 @@ inline void control::slot::sync_layout() noexcept {
 
 struct custom_window_options {
   string<wchar_t> title{};
-  std::optional<int2> pos{};
-  std::optional<int2> size{};
+  optional<int2> pos{};
+  optional<int2> size{};
   DWORD style = WS_OVERLAPPEDWINDOW;
   DWORD exstyle = WS_EX_ACCEPTFILES;
   const string<wchar_t>& get_title() const noexcept { return title; }

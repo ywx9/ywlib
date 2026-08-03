@@ -196,8 +196,8 @@ public:
   /// creates a texture from a file through `yw::bitmap`.
   /// \note `unordered_access` is not allowed.
   static std::expected<texture, error> create(
-    const path& Path, yw::flags<flag> Flags = flag::d2d_bitmap | flag::shader_resource) {
-    if (auto b = bitmap::create(Path); !b) return b.error().relay();
+    stringable auto&& Path, yw::flags<flag> Flags = flag::d2d_bitmap | flag::shader_resource) {
+    if (auto b = bitmap::create(static_cast<decltype(Path)&&>(Path)); !b) return b.error().relay();
     else if (auto res = create(std::move(*b), Flags); !res) return res.error().relay();
     else return std::move(*res);
   }
@@ -220,9 +220,9 @@ public:
 
   /// creates a texture from a file through `yw::bitmap`.
   /// \note `unordered_access` is not allowed.
-  explicit texture(const path& Path, yw::flags<flag> Flags = flag::d2d_bitmap | flag::shader_resource,
+  explicit texture(stringable auto&& Path, yw::flags<flag> Flags = flag::d2d_bitmap | flag::shader_resource,
     const source_line& sl = here()) {
-    if (auto res = create(Path, Flags); !res) res.error().go_off(sl);
+    if (auto res = create(static_cast<decltype(Path)&&>(Path), Flags); !res) res.error().go_off(sl);
     else *this = std::move(*res);
   }
 

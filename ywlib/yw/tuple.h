@@ -334,11 +334,10 @@ template<typename... Ts> tuple(Ts...) -> tuple<Ts...>;
 
 /// MARK: vapply_r
 
-template<typename R> inline constexpr auto vapply_r = []<typename Fn, typename... Tps>(Fn&& fn, Tps&&... tps) -> R
-  requires requires { requires((extent<R> == extent<Tps>) && ...); }
-{
-  constexpr auto foo = []<size_t I>(constant<I>, Fn & fn, Tps & ... tps) { return yw::invoke(fn, yw::get<I>(tps)...); };
-  return [&foo]<size_t... Is>(sequence<Is...>, Fn & fn, Tps & ... tps) -> R {
+template<typename R, typename Fn, typename... Tps> constexpr R vapply_r(Fn&& fn, Tps&&... tps)
+  requires requires { requires((extent<R> == extent<Tps>) && ...); } {
+  constexpr auto foo = []<size_t I>(constant<I>, Fn& fn, Tps&... tps) { return yw::invoke(fn, yw::get<I>(tps)...); };
+  return [&foo]<size_t... Is>(sequence<Is...>, Fn& fn, Tps&... tps) -> R {
     return construct<R>(foo(constant<Is>{}, fn, tps...)...);
   }(make_indices_for<R>{}, fn, tps...);
 };

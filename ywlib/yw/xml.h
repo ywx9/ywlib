@@ -170,12 +170,10 @@ public:
 };
 
 /// opens and parses an XML document from a file
-inline document<false> open(const std::filesystem::path& path) {
-  auto fh = yw::open(path, open_mode::read_existing);
-  if (!fh) return {};
-  auto doc = document<false>::parse(fh.read_as_string());
-  if (doc) return std::move(*doc);
-  doc.error().add_footprint().fizzle_out(); // warning
+inline document<false> open(stringable auto&& path) {
+  if (auto fh = file::open(static_cast<decltype(path)&&>(path), file::open_mode::read_existing); !fh) return {};
+  else if (auto doc = document<false>::parse(fh.read_as_string()); doc) return std::move(*doc);
+  else doc.error().add_footprint().fizzle_out(); // warning
   return {};
 }
 } // namespace yw::xml

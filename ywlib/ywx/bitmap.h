@@ -63,13 +63,14 @@ public:
   }
 
   /// creates bitmap from file.
-  static std::expected<bitmap, error> create(const std::filesystem::path& Path) {
+  static std::expected<bitmap, error> create(stringable auto&& Path) {
     const auto sp = make_slot<bitmap>();
     if (!sp) return std::unexpected(error(errors::slot_creation_failed, "failed to create bitmap slot"));
     comptr<IWICBitmapDecoder> decoder;
     const auto option = WICDecodeMetadataCacheOnLoad;
     const auto wicf = wic::factory();
-    hresult_test(wicf->CreateDecoderFromFilename, Path.c_str(), nullptr, GENERIC_READ, option, &decoder.get());
+    const auto path = null_terminated<wchar_t>(static_cast<decltype(Path)&&>(Path));
+    hresult_test(wicf->CreateDecoderFromFilename, path.c_str(), nullptr, GENERIC_READ, option, &decoder.get());
     comptr<IWICBitmapFrameDecode> frame;
     hresult_test(decoder->GetFrame, 0, &frame.get());
     comptr<IWICFormatConverter> converter;
@@ -83,8 +84,8 @@ public:
   }
 
   /// creates bitmap from file.
-  explicit bitmap(const std::filesystem::path& Path, const source_line& sl = here()) {
-    if (auto res = create(Path); !res) res.error().go_off(sl);
+  explicit bitmap(stringable auto&& Path, const source_line& sl = here()) {
+    if (auto res = create(static_cast<decltype(Path)&&>(Path)); !res) res.error().go_off(sl);
     else *this = std::move(*res);
   }
 
@@ -139,12 +140,12 @@ public:
     } else return res.error().relay();
   }
 
-  std::expected<void, error> save_as(const path& Path, const GUID& Format) const {
+  std::expected<void, error> save_as(null_terminated<wchar_t> Path, const GUID& Format) const {
     const auto sp = slot::get_as<bitmap>(id());
     if (!sp) return std::unexpected(error(errors::invalid_slotid));
     comptr<IWICStream> stream;
     hresult_test(wic::factory()->CreateStream, &stream.get());
-    hresult_test(stream->InitializeFromFilename, Path.c_str(), GENERIC_WRITE);
+    hresult_test(stream->InitializeFromFilename, Path.data(), GENERIC_WRITE);
     comptr<IWICBitmapEncoder> encoder;
     hresult_test(wic::factory()->CreateEncoder, Format, nullptr, &encoder.get());
     hresult_test(encoder->Initialize, stream.get(), WICBitmapEncoderNoCache);
@@ -160,13 +161,13 @@ public:
     return {};
   }
 
-  std::expected<void, error> save_as_png(const path& Path) const {
-    if (auto res = save_as(Path, GUID_ContainerFormatPng)) return {};
+  std::expected<void, error> save_as_png(null_terminated<wchar_t> Path) const {
+    if (auto res = save_as(std::move(Path), GUID_ContainerFormatPng)) return {};
     else return res.error().relay();
   }
 
-  std::expected<void, error> save_as_jpeg(const path& Path) const {
-    if (auto res = save_as(Path, GUID_ContainerFormatJpeg)) return {};
+  std::expected<void, error> save_as_jpeg(null_terminated<wchar_t> Path) const {
+    if (auto res = save_as(std::move(Path), GUID_ContainerFormatJpeg)) return {};
     else return res.error().relay();
   }
 

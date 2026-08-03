@@ -65,11 +65,10 @@ public:
 
   ~dll() noexcept { close(); }
 
-  static std::expected<dll, error> open(const std::filesystem::path& Path) {
+  static std::expected<dll, error> open(null_terminated<wchar_t> Path) {
     if (Path.empty()) return std::unexpected(error(errors::invalid_argument, "Path is empty"));
-    const auto hm = ::LoadLibraryW(Path.c_str());
+    const auto hm = ::LoadLibraryW(Path.data());
     if (!hm) return std::unexpected(error(errors::operation_failed, "LoadLibraryW failed"));
-
     std::unique_ptr<slot> sp{};
     try {
       sp = std::make_unique<slot>();
@@ -78,7 +77,6 @@ public:
       return std::unexpected(error(errors::operation_failed, "Failed to allocate dll slot"));
     }
     sp->_hmodule = hm;
-
     dll res{};
     res._id = dlls.add(std::move(sp));
     if (!res._id) {

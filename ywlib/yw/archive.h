@@ -1,5 +1,5 @@
 #pragma once
-#include "yw/file.h"
+#include <yw/file_handle.h>
 
 /*
 # .ywa file
@@ -41,9 +41,9 @@ inline constexpr uint32_t entry_magic = 0x45415759;  // 'YWAE'
 inline constexpr uint32_t footer_magic = 0x46415759; // 'YWAF'
 inline constexpr uint32_t max_name_size = 2048;
 
-inline constexpr bool _is_write_mode(const open_mode mode) noexcept {
-  return mode == open_mode::create_always || mode == open_mode::create_new || mode == open_mode::update_existing ||
-         mode == open_mode::update_or_create;
+inline constexpr bool _is_write_mode(const file::open_mode mode) noexcept {
+  return mode == file::open_mode::create_always || mode == file::open_mode::create_new ||
+         mode == file::open_mode::update_existing || mode == file::open_mode::update_or_create;
 }
 
 inline constexpr uint32_t _crc32_update(uint32_t crc, const std::byte* data, const size_t size) noexcept {
@@ -75,37 +75,35 @@ struct header {
 };
 static_assert(sizeof(header) == 16);
 
-class handle : public general_handle {
+class handle : public handle_base {
 public:
-  struct slot : general_handle::slot {
-    yw::file_handle file_handle;
+  struct slot : handle_base::slot {
+    file::handle file_handle;
     std::vector<entry> entries;
-    open_mode mode = open_mode::unknown;
+    file::open_mode mode = file::open_mode::unknown;
     uint64_t entry_offset = 0;
     uint64_t footer_offset = 0;
 
-    std::expected<void, error> initialize(std::filesystem::path&& Path, open_mode Mode) {
-      const auto fh_mode = Mode == open_mode::append ? open_mode::update_or_create : Mode;
-      if (auto fh = yw::file_handle::create(std::move(Path), fh_mode, here())) file_handle = std::move(*fh);
+    std::expected<void, error> initialize(stringable auto&& Path, file::open_mode Mode) {
+      const auto fh_mode = Mode == file::open_mode::append ? file::open_mode::update_or_create : Mode;
+      if (auto fh = file::handle::create(static_cast<decltype(Path)&&>(Path), fh_mode)) file_handle = std::move(*fh);
       else return fh.error().relay();
       mode = Mode;
-      if (fh_mode == open_mode::create_always || fh_mode == open_mode::create_new) return {};
-      if (auto res = file_handle.seek(0, seek_whence::end); !res) return res.error().relay();
+      if (fh_mode == file::open_mode::create_always || fh_mode == file::open_mode::create_new) return {};
+      if (auto res = file_handle.seek(0, file::seek_whence::end); !res) return res.error().relay();
       const auto fsize = static_cast<uint64_t>(file_handle.tell());
       if (fsize == 0) {
-        if (fh_mode == open_mode::update_or_create) return {};
+        if (fh_mode == file::open_mode::update_or_create) return {};
         else return std::unexpected(error(errors::invalid_file_format, "non-archive file"));
       }
-      if (auto res = file_handle.seek(-8, seek_whence::end); !res) return res.error().relay();
+      if (auto res = file_handle.seek(-8, file::seek_whence::end); !res) return res.error().relay();
       if (auto res = file_handle.read_trivial<uint64_t>(footer_offset); !res) return res.error().relay();
       if (footer_offset + sizeof(footer) + sizeof(uint64_t) > fsize)
         return std::unexpected(error(errors::invalid_file_format, "invalid footer offset"));
       footer f{};
       if (auto res = file_handle.seek(static_cast<int64_t>(footer_offset)); !res) return res.error().relay();
       if (auto res = file_handle.read_trivial(f); !res) return res.error().relay();
-      if (f.magic != footer_magic)
-        return std::unexpected(error(errors::invalid_file_format, "invalid footer magic"));
-
+      if (f.magic != footer_magic) return std::unexpected(error(errors::invalid_file_format, "invalid footer magic"));
       const auto entry_count = f.entry_count;
       const auto footer_size =
         sizeof(footer) + static_cast<uint64_t>(entry_count) * sizeof(uint64_t) + sizeof(uint64_t);
@@ -115,11 +113,9 @@ public:
         entry_offset = footer_offset;
         return {};
       }
-
       std::vector<uint64_t> offsets(entry_count);
       if (auto res = file_handle.read_exact(offsets.data(), offsets.size() * sizeof(uint64_t)); !res)
         return res.error().relay();
-
       entries.resize(entry_count);
       entry_offset = offsets.front();
       for (uint32_t i = 0; i < entry_count; ++i) {
@@ -128,8 +124,7 @@ public:
         if (auto res = file_handle.seek(static_cast<int64_t>(off)); !res) return res.error().relay();
         header h{};
         if (auto res = file_handle.read_trivial(h); !res) return res.error().relay();
-        if (h.magic != entry_magic)
-          return std::unexpected(error(errors::invalid_file_format, "invalid entry magic"));
+        if (h.magic != entry_magic) return std::unexpected(error(errors::invalid_file_format, "invalid entry magic"));
         const auto name_length = h.name_length;
         if (name_length == 0 || name_length > max_name_size)
           return std::unexpected(error(errors::invalid_file_format, "invalid name length"));
@@ -138,14 +133,13 @@ public:
         const auto data_length = h.data_length;
         const auto data_offset = off + sizeof(header) + name_length;
         const auto crc_offset = data_offset + data_length;
-
         auto& e = entries[i];
         e.name.resize(name_length);
         e.entry_offset = off;
         e.data_offset = data_offset;
         e.data_length = data_length;
         if (auto res = file_handle.read_exact(e.name.data(), name_length); !res) return res.error().relay();
-        if (auto res = file_handle.seek(static_cast<int64_t>(data_length), seek_whence::current); !res)
+        if (auto res = file_handle.seek(static_cast<int64_t>(data_length), file::seek_whence::current); !res)
           return res.error().relay();
         if (auto res = file_handle.read_trivial<uint32_t>(e.crc32); !res) return res.error().relay();
         const bool is_last = i + 1 == entry_count;
@@ -157,39 +151,45 @@ public:
     }
   };
 
+  explicit operator bool() const noexcept {
+    const auto sp = get_slot(this);
+    return sp && static_cast<bool>(sp->file_handle);
+  }
+
   handle() noexcept = default;
-  using general_handle::operator bool;
+
+  static std::expected<handle, error> create(stringable auto&& Path, file::open_mode m) {
+    const auto sp = make_slot<handle>();
+    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
+    if (auto res = sp->initialize(static_cast<decltype(Path)&&>(Path), m); !res) {
+      erase_slot(sp->id);
+      return res.error().relay();
+    } else return make_handle<handle>(sp->id);
+  }
 
   /// creates handle of archive file
-  handle(std::filesystem::path Path, open_mode Mode, const source_line& sl = here()) {
-    if (auto res = initialize(std::move(Path), Mode); !res) {
-      slot::erase(std::exchange(_id, {}));
-      res.error().fizzle_out(sl); // warning
-    }
+  handle(stringable auto&& Path, file::open_mode m, const source_line& sl = here()) {
+    if (auto res = create(static_cast<decltype(Path)&&>(Path), m)) *this = std::move(*res);
+    else res.error().go_off(sl);
   }
 
-  template<typename... As> requires constructible<handle, As...> std::expected<handle, error> create(As&&... Args) {
-    handle h;
-    if (auto res = h.initialize(std::forward<As>(Args)...); !res) return res.error().relay();
-    return h;
-  }
 
   bool is_open() const noexcept {
     const auto sp = get_slot(this);
     return sp && sp->file_handle.is_open();
   }
 
-  const std::filesystem::path& path() const {
+  const string<file::path_char>& path() const {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
     return sp->file_handle.path();
   }
 
-  open_mode mode() const {
+  file::open_mode mode() const {
     const auto sp = get_slot(this);
     if (!sp) {
       error(errors::invalid_slotid).fizzle_out();
-      return open_mode::unknown;
+      return file::open_mode::unknown;
     } else return sp->mode;
   }
 
@@ -233,12 +233,12 @@ public:
     }
     const auto& e = sp->entries[index];
     if (auto res = sp->file_handle.seek(static_cast<int64_t>(e.data_offset)); !res) {
-      res.error().add_footprint().add_footprint(sp->source_line).fizzle_out(); // warning
+      res.error().add_footprint().fizzle_out(); // warning
       return {};
     }
     std::vector<std::byte> data(static_cast<size_t>(e.data_length));
     if (auto res = sp->file_handle.read_exact(data.data(), data.size()); !res) {
-      res.error().add_footprint().add_footprint(sp->source_line).fizzle_out(); // warning
+      res.error().add_footprint().fizzle_out(); // warning
       return {};
     }
     return data;
@@ -269,7 +269,7 @@ public:
     }
     const auto& e = sp->entries[index];
     if (auto res = sp->file_handle.seek(static_cast<int64_t>(e.data_offset)); !res) {
-      res.error().add_footprint().add_footprint(sp->source_line).fizzle_out(); // warning
+      res.error().add_footprint().fizzle_out(); // warning
       return false;
     }
     uint32_t crc = 0xFFFFFFFF;
@@ -278,7 +278,7 @@ public:
     for (uint64_t remaining = e.data_length; remaining > 0;) {
       const auto to_read = yw::min(static_cast<uint64_t>(buffer_size), remaining);
       if (auto res = sp->file_handle.read_exact(buffer.data(), static_cast<size_t>(to_read)); !res) {
-        res.error().add_footprint().add_footprint(sp->source_line).fizzle_out(); // warning
+        res.error().add_footprint().fizzle_out(); // warning
         return false;
       }
       crc = _crc32_update(crc, buffer.data(), static_cast<size_t>(to_read));
@@ -345,8 +345,7 @@ public:
       return std::unexpected(error(errors::invalid_operation, "archive not opened in write mode"));
     if (auto res = sp->file_handle.seek(static_cast<int64_t>(sp->footer_offset)); !res) return res.error().relay();
 
-    const header h{
-      entry_magic, static_cast<uint32_t>(sv.size()), static_cast<uint64_t>(data_length)};
+    const header h{entry_magic, static_cast<uint32_t>(sv.size()), static_cast<uint64_t>(data_length)};
     if (auto res = sp->file_handle.write_exact(&h, sizeof(h)); !res) return res.error().relay();
     if (auto res = sp->file_handle.write_exact(sv.data(), sv.size()); !res) return res.error().relay();
     if (data_length > 0)
@@ -364,62 +363,52 @@ public:
     sp->footer_offset = data_offset + data_length + sizeof(uint32_t);
     return {};
   }
-
-private:
-  std::expected<void, error> initialize(std::filesystem::path&& Path, open_mode Mode) {
-    const auto sp = create_slot<handle>(here());
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    if (auto res = sp->initialize(std::move(Path), Mode); !res) {
-      slot::erase(sp->id);
-      return res.error().relay();
-    } else _id = sp->id;
-    return {};
-  }
 };
 
-inline handle open(const std::filesystem::path& path, open_mode mode, const source_line& sl = here()) {
-  return handle(path, mode, sl);
-}
-
-inline std::expected<void, error> pack(
-  const std::filesystem::path& src_path, const std::filesystem::path& dst_path,
-  open_mode mode = open_mode::create_always) {
-  if (!std::filesystem::is_directory(src_path))
-    return std::unexpected(error(yw::errors::invalid_argument, "source path is not a directory"));
-  auto archive = yw::archive::open(dst_path, mode);
-  if (!archive) return std::unexpected(error(yw::errors::operation_failed, "failed to open archive file"));
-  for (const auto& item : std::filesystem::recursive_directory_iterator(src_path)) {
-    if (!item.is_regular_file()) continue;
-    auto fh = yw::open(item.path(), open_mode::read_existing);
-    if (!fh) return std::unexpected(error(yw::errors::operation_failed, "failed to open source file"));
-    if (auto res = fh.seek(0, seek_whence::end); !res) return res.error().relay();
-    const auto file_size = static_cast<uint64_t>(fh.tell());
-    if (auto res = fh.seek(0, seek_whence::begin); !res) return res.error().relay();
-    std::vector<std::byte> data(static_cast<size_t>(file_size));
-    if (auto res = fh.read_exact(data.data(), data.size()); !res) return res.error().relay();
-    const auto filename = unicode<char>(std::filesystem::relative(item.path(), src_path).native());
-    if (auto res = archive.append(filename, data.data(), data.size()); !res) return res.error().relay();
-  }
-  if (auto res = archive.close(); !res) return res.error().relay();
+inline handle open(stringable auto&& path, file::open_mode mode, const source_line& sl = here()) {
+  if (auto res = handle::create(static_cast<decltype(path)&&>(path), mode)) return std::move(*res);
+  else res.error().fizzle_out(sl);
   return {};
 }
 
-inline std::expected<void, error> extract(
-  const std::filesystem::path& src_path, const std::filesystem::path& dst_path) {
-  auto archive = yw::archive::open(src_path, open_mode::read_existing);
+inline std::expected<void, error> pack(stringable auto&& src_path, stringable auto&& dst_path,
+  file::open_mode mode = file::open_mode::create_always) {
+  if (!file::is_directory(src_path))
+    return std::unexpected(error(yw::errors::invalid_argument, "source path is not a directory"));
+  auto archive = handle::create(static_cast<decltype(dst_path)&&>(dst_path), mode);
+  if (!archive) return std::unexpected(error(yw::errors::operation_failed, "failed to open archive file"));
+  for (const auto& item : file::list_files(src_path, true)) {
+    if (!file::is_file(item)) continue;
+    auto fh = file::handle::create(static_cast<decltype(item)&&>(item), file::open_mode::read_existing);
+    if (!fh) return std::unexpected(error(yw::errors::operation_failed, "failed to open source file"));
+    if (auto res = fh.seek(0, file::seek_whence::end); !res) return res.error().relay();
+    const auto file_size = static_cast<uint64_t>(fh.tell());
+    if (auto res = fh.seek(0, file::seek_whence::begin); !res) return res.error().relay();
+    std::vector<std::byte> data(static_cast<size_t>(file_size));
+    if (auto res = fh.read_exact(data.data(), data.size()); !res) return res.error().relay();
+    const auto filename = unicode<char>(file::relative(item.path(), src_path).native());
+    if (auto res = archive->append(filename, data.data(), data.size()); !res) return res.error().relay();
+  }
+  if (auto res = archive->close(); !res) return res.error().relay();
+  return {};
+}
+
+inline std::expected<void, error> extract(stringable auto&& src_path, stringable auto&& dst_path) {
+  auto archive = handle::create(static_cast<decltype(src_path)&&>(src_path), file::open_mode::read_existing);
   if (!archive) return std::unexpected(error(yw::errors::operation_failed, "failed to open archive file"));
   for (const auto& e : archive.entries()) {
-    auto data = archive.read(e.name);
+    auto data = archive->read(e.name);
     if (data.size() != e.data_length)
       return std::unexpected(error(yw::errors::operation_failed, "failed to read entry"));
-    const auto out_path = dst_path / unicode<path::value_type>(e.name).view();
-    std::filesystem::create_directories(out_path.parent_path());
-    auto fh = yw::open(out_path, open_mode::create_always);
+    const auto out_path = format<file::path_char>(dst_path, file::path_char('/'), e.name);
+    const auto parent = file::parent(out_path);
+    file::create_directories(parent);
+    auto fh = file::handle::create(out_path, file::open_mode::create_always);
     if (!fh) return std::unexpected(error(yw::errors::operation_failed, "failed to open output file"));
     if (auto res = fh.write_exact(data.data(), data.size()); !res) return res.error().relay();
     if (auto res = fh.close(); !res) return res.error().relay();
   }
-  if (auto res = archive.close(); !res) return res.error().relay();
+  if (auto res = archive->close(); !res) return res.error().relay();
   return {};
 }
 } // namespace yw::archive

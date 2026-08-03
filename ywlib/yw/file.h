@@ -1,16 +1,21 @@
 #pragma once
-#include "yw/datetime.h"
-#include "yw/slotset.h"
+#include <yw/datetime.h>
+#include <yw/error.h>
 
 namespace yw::file {
 
-using path = std::filesystem::path;
+#ifdef _WIN32
+using path_char = wchar_t;
+#else
+using path_char = char;
+#endif
 
 enum class kind {
   unknown,
-  regular = static_cast<int>(std::filesystem::file_type::regular),
-  directory = static_cast<int>(std::filesystem::file_type::directory),
-  symlink = static_cast<int>(std::filesystem::file_type::symlink),
+  regular,
+  directory,
+  symlink,
+  other,
 };
 
 struct info {
@@ -21,518 +26,593 @@ struct info {
   datetime last_write_time{{0, 0, 0}, {0, 0, 0}};
 };
 
-inline bool exists(const path& path) {
-  std::error_code ec;
-  const bool result = std::filesystem::exists(path, ec);
-  if (ec) error(errors::operation_failed, "failed to check file existence", int32_t(ec.value())).fizzle_out();
-  return result;
-}
-
-inline bool is_file(const path& path) {
-  std::error_code ec;
-  const bool result = std::filesystem::is_regular_file(path, ec);
-  if (ec) error(errors::operation_failed, "failed to check regular file", int32_t(ec.value())).fizzle_out();
-  return result;
-}
-
-inline bool is_directory(const path& path) {
-  std::error_code ec;
-  const bool result = std::filesystem::is_directory(path, ec);
-  if (ec) error(errors::operation_failed, "failed to check directory", int32_t(ec.value())).fizzle_out();
-  return result;
-}
-
-inline uint64_t size(const path& path) {
-  std::error_code ec;
-  const auto result = std::filesystem::file_size(path, ec);
-  if (ec) {
-    error(errors::operation_failed, "failed to get file size", int32_t(ec.value())).fizzle_out();
-    return 0;
-  } else return static_cast<uint64_t>(result);
-}
-
 namespace internal {
-inline datetime to_datetime(const std::filesystem::file_time_type& tp) {
-  const auto sys_tp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-    tp - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
-  return datetime(sys_tp);
+inline constexpr auto is_separator = []<char_type C>(C c) noexcept {
+#ifdef _WIN32
+  return c == C('/') || c == C('\\');
+#else
+  return c == C('/');
+#endif
+};
+
+template<char_type C> constexpr auto filename(string_view<C> sv) noexcept {
+  for (size_t i = sv.size(); i != 0; --i)
+    if (is_separator(sv[i - 1])) return string_view<C>(sv.data() + i, sv.size() - i);
+  return sv;
+}
+
+template<char_type C> constexpr auto parent(string_view<C> sv) noexcept {
+  for (size_t i = sv.size(); i != 0; --i)
+    if (is_separator(sv[i - 1])) return i == 1 ? string_view<C>(sv.data(), 1) : string_view<C>(sv.data(), i - 1);
+  return string_view<C>();
+}
+
+template<char_type C> constexpr auto extension_position(string_view<C> sv) noexcept {
+  const auto name = filename(sv);
+  for (size_t i = name.size(); i > 1; --i)
+    if (name[i - 1] == C('.')) return size_t(name.data() - sv.data()) + i - 1;
+  return npos;
+}
+template<char_type C> constexpr auto extension(string_view<C> sv) noexcept {
+  const auto pos = extension_position(sv);
+  if (pos == npos) return string_view<C>();
+  return string_view<C>(sv.data() + pos, sv.size() - pos);
+}
+
+template<char_type C> constexpr auto stem(string_view<C> sv) noexcept {
+  const auto name = filename(sv);
+  const auto pos = extension_position(name);
+  if (pos == npos) return name;
+  return string_view<C>(name.data(), pos);
+}
+
+template<char_type C> constexpr auto replace_extension(string_view<C> sv, string_view<C> new_ext) noexcept {
+  const auto pos = extension_position(sv);
+  const auto len = pos == npos ? sv.size() : pos;
+  const bool add_dot = !new_ext.empty() && new_ext[0] != C('.');
+  string<C> result;
+  result.reserve(len + add_dot + new_ext.size());
+  result.append(sv.data(), len);
+  if (add_dot) result.push_back(C('.'));
+  result.append(new_ext.data(), new_ext.size());
+  return result;
+}
+
+template<char_type C> constexpr size_t root_length(string_view<C> sv) noexcept {
+  if (sv.empty()) return 0;
+#ifdef _WIN32
+  // Drive root: C:\ or C:/
+  if (sv.size() >= 3 && ((sv[0] >= C('A') && sv[0] <= C('Z')) || (sv[0] >= C('a') && sv[0] <= C('z'))) &&
+      sv[1] == C(':') && is_separator(sv[2]))
+    return 3;
+  // UNC root: \\server\share\ or //server/share/
+  if (sv.size() >= 2 && is_separator(sv[0]) && is_separator(sv[1])) {
+    size_t i = 2;
+    while (i < sv.size() && is_separator(sv[i])) ++i;
+    while (i < sv.size() && !is_separator(sv[i])) ++i;
+    while (i < sv.size() && is_separator(sv[i])) ++i;
+    while (i < sv.size() && !is_separator(sv[i])) ++i;
+    if (i < sv.size() && is_separator(sv[i])) return i + 1;
+    return i;
+  }
+#endif
+  // Root-relative path: \foo
+  return is_separator(sv[0]);
 }
 } // namespace internal
 
-inline datetime last_write_time(const path& path) {
-  std::error_code ec;
-  const auto result = std::filesystem::last_write_time(path, ec);
-  if (ec) {
-    error(errors::operation_failed, "failed to get last write time", int32_t(ec.value())).fizzle_out();
-    return datetime{{0, 0, 0}, {0, 0, 0}};
-  } else return internal::to_datetime(result);
+template<stringable S> constexpr auto filename(S&& Path) noexcept {
+  return internal::filename(string_view<iter_value_t<S>>(Path));
 }
 
-inline info stat(const path& path) {
+template<stringable S> constexpr auto parent(S&& Path) noexcept {
+  return internal::parent(string_view<iter_value_t<S>>(Path));
+}
+
+template<stringable S> constexpr auto extension(S&& Path) noexcept {
+  return internal::extension(string_view<iter_value_t<S>>(Path));
+}
+
+template<stringable S> constexpr auto stem(S&& Path) noexcept {
+  return internal::stem(string_view<iter_value_t<S>>(Path));
+}
+
+template<stringable S> constexpr bool has_extension(S&& Path) noexcept {
+  return internal::extension_position(string_view<iter_value_t<S>>(Path)) != npos;
+}
+
+template<stringable S, stringable<iter_value_t<S>> E> constexpr auto replace_extension(S&& Path, E&& NewExt) noexcept {
+  return internal::replace_extension(string_view<iter_value_t<S>>(Path), string_view<iter_value_t<S>>(NewExt));
+}
+
+template<char Sep, stringable S> requires(Sep == '/' || Sep == '\\')
+constexpr auto normalize_separators(S&& Path) noexcept {
+  constexpr auto sep = static_cast<iter_value_t<S>>(Sep);
+  const auto sv = string_view<iter_value_t<S>>(Path);
+  string<iter_value_t<S>> result;
+  result.reserve(Path.size());
+  bool skip = false;
+  for (const auto c : sv)
+    if (internal::is_separator(c)) {
+      if (!skip) result.push_back(sep);
+      skip = true;
+    } else result.push_back(c), skip = false;
+  return result;
+}
+
+namespace internal {
+#ifdef _WIN32
+inline datetime to_datetime(FILETIME ft) noexcept {
+  constexpr uint64_t epoch = 116444736000000000ull;
+  ULARGE_INTEGER v{.LowPart = ft.dwLowDateTime, .HighPart = ft.dwHighDateTime};
+  if (v.QuadPart < epoch) return {};
+  const auto duration = std::chrono::duration<uint64_t, std::ratio<1, 10000000>>(v.QuadPart - epoch);
+  return datetime(
+    std::chrono::system_clock::time_point(std::chrono::duration_cast<std::chrono::system_clock::duration>(duration)));
+}
+inline std::expected<info, error> _query_info(const wchar_t* p) {
+  WIN32_FILE_ATTRIBUTE_DATA data;
+  if (!::GetFileAttributesExW(p, GetFileExInfoStandard, &data)) {
+    const auto ec = ::GetLastError();
+    if (ec == ERROR_FILE_NOT_FOUND || ec == ERROR_PATH_NOT_FOUND || ec == ERROR_INVALID_NAME) return info();
+    return std::unexpected(error(errors::operation_failed, "GetFileAttributesExW failed", static_cast<int32_t>(ec)));
+  }
   info result;
-  std::error_code ec;
-  const auto st = std::filesystem::status(path, ec);
-  if (ec) {
-    error(errors::operation_failed, "failed to get file status", int32_t(ec.value())).fizzle_out();
-    return result;
-  }
-  result.exists = std::filesystem::exists(st);
-  switch (st.type()) {
-  case std::filesystem::file_type::regular: result.kind = kind::regular; break;
-  case std::filesystem::file_type::directory: result.kind = kind::directory; break;
-  case std::filesystem::file_type::symlink: result.kind = kind::symlink; break;
-  default: result.kind = kind::unknown; break;
-  }
-  result.read_only = (st.permissions() & (std::filesystem::perms::owner_write | std::filesystem::perms::group_write |
-                                           std::filesystem::perms::others_write)) == std::filesystem::perms::none;
-  if (!result.exists) return result;
-  if (result.kind == kind::regular) result.size = file::size(path);
-
-  const auto modified = std::filesystem::last_write_time(path, ec);
-  if (ec) error(errors::operation_failed, "failed to get last write time", int32_t(ec.value())).fizzle_out();
-  else result.last_write_time = internal::to_datetime(modified);
+  result.exists = true;
+  result.read_only = (data.dwFileAttributes & FILE_ATTRIBUTE_READONLY) != 0;
+  if (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) result.kind = kind::symlink;
+  else if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) result.kind = kind::directory;
+  else result.kind = kind::regular;
+  if (result.kind == kind::regular) result.size = (uint64_t(data.nFileSizeHigh) << 32) | uint64_t(data.nFileSizeLow);
+  result.last_write_time = to_datetime(data.ftLastWriteTime);
   return result;
 }
-inline std::expected<void, error> rename(const path& from, const path& to) {
-  std::error_code ec;
-  std::filesystem::rename(from, to, ec);
-  if (ec) return std::unexpected(error(errors::operation_failed, "failed to rename file", int32_t(ec.value())));
-  return {};
+#else
+inline datetime to_datetime(const timespec& ts) noexcept {
+  return datetime(
+    std::chrono::system_clock::time_point(std::chrono::seconds(ts.tv_sec) + std::chrono::nanoseconds(ts.tv_nsec)));
 }
-
-inline std::expected<void, error> copy_file(const path& from, const path& to, bool overwrite) {
-  std::error_code ec;
-  const auto options =
-    overwrite ? std::filesystem::copy_options::overwrite_existing : std::filesystem::copy_options::none;
-  if (!std::filesystem::copy_file(from, to, options, ec) && ec)
-    return std::unexpected(error(errors::operation_failed, "failed to copy file", int32_t(ec.value())));
-  return {};
-}
-
-inline std::expected<void, error> remove_file(const path& path) {
-  std::error_code ec;
-  if (!std::filesystem::remove(path, ec) && ec)
-    return std::unexpected(error(errors::operation_failed, "failed to remove file", int32_t(ec.value())));
-  return {};
-}
-
-inline std::expected<void, error> resize_file(const path& path, uint64_t size) {
-  std::error_code ec;
-  std::filesystem::resize_file(path, size, ec);
-  if (ec) return std::unexpected(error(errors::operation_failed, "failed to resize file", int32_t(ec.value())));
-  return {};
-}
-
-inline std::expected<void, error> create_directory(const path& path, bool recursive) {
-  std::error_code ec;
-  if (recursive) std::filesystem::create_directories(path, ec);
-  else std::filesystem::create_directory(path, ec);
-  if (ec) return std::unexpected(error(errors::operation_failed, "failed to create directory", int32_t(ec.value())));
-  return {};
-}
-
-inline std::expected<void, error> remove_directory(const path& path, bool recursive) {
-  std::error_code ec;
-  if (recursive) std::filesystem::remove_all(path, ec);
-  else if (!std::filesystem::remove(path, ec) && ec)
-    return std::unexpected(error(errors::operation_failed, "failed to remove directory", int32_t(ec.value())));
-  if (ec) return std::unexpected(error(errors::operation_failed, "failed to remove directory", int32_t(ec.value())));
-  return {};
-}
-
-std::vector<path> list_files(const path& directory, bool recursive = false) {
-  std::vector<path> result;
-  std::error_code ec;
-  if (recursive) {
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(directory, ec)) {
-      if (ec) error(errors::operation_failed, "failed to list files", int32_t(ec.value())).fizzle_out();
-      if (entry.is_regular_file()) result.push_back(entry.path());
-    }
-  } else {
-    for (const auto& entry : std::filesystem::directory_iterator(directory, ec)) {
-      if (ec) error(errors::operation_failed, "failed to list files", int32_t(ec.value())).fizzle_out();
-      if (entry.is_regular_file()) result.push_back(entry.path());
-    }
+inline std::expected<info, error> _query_info(const char* p) {
+  struct stat st;
+  if (::stat(p, &st) != 0) {
+    if (errno == ENOENT || errno == ENOTDIR) return info();
+    return std::unexpected(error(errors::operation_failed, "stat failed", errno));
   }
+  info result;
+  result.exists = true;
+  result.read_only = (st.st_mode & (S_IWUSR | S_IWGRP | S_IWOTH)) == 0;
+  if (S_ISREG(st.st_mode)) result.kind = kind::regular;
+  else if (S_ISDIR(st.st_mode)) result.kind = kind::directory;
+  else if (S_ISLNK(st.st_mode)) result.kind = kind::symlink;
+  else result.kind = kind::other;
+  if (result.kind == kind::regular) result.size = static_cast<uint64_t>(st.st_size);
+#ifdef __APPLE__
+  result.last_write_time = to_datetime(st.st_mtimespec);
+#else
+  result.last_write_time = to_datetime(st.st_mtim);
+#endif
   return result;
 }
-} // namespace yw::file
+#endif
+inline std::expected<info, error> query_info(stringable auto&& Path) {
+  auto p = unicode<path_char>(static_cast<decltype(Path)&&>(Path));
+  return _query_info(p.data());
+}
+} // namespace internal
 
-namespace yw {
+inline info stat(stringable auto&& Path) {
+  if (auto res = internal::query_info(static_cast<decltype(Path)&&>(Path)); !res) {
+    res.error().add_footprint().fizzle_out();
+    return {};
+  } else return *res;
+}
 
-/// MARK: file_handle
+inline bool exists(stringable auto&& Path) {
+  if (auto res = internal::query_info(static_cast<decltype(Path)&&>(Path)); !res) {
+    res.error().add_footprint().fizzle_out();
+    return false;
+  } else return res->exists;
+}
 
-enum class open_mode { unknown, read_existing, update_existing, create_always, create_new, append, update_or_create };
-enum class seek_whence { begin = SEEK_SET, current = SEEK_CUR, end = SEEK_END };
+inline bool is_file(stringable auto&& Path) {
+  if (auto res = internal::query_info(static_cast<decltype(Path)&&>(Path)); !res) {
+    res.error().add_footprint().fizzle_out();
+    return false;
+  } else return res->kind == kind::regular;
+}
 
-namespace errors {
-inline constexpr error::kind invalid_open_mode{"invalid open mode"};
-inline constexpr error::kind invalid_file_format{"invalid file format"};
-} // namespace errors
+inline bool is_directory(stringable auto&& Path) {
+  if (auto res = internal::query_info(static_cast<decltype(Path)&&>(Path)); !res) {
+    res.error().add_footprint().fizzle_out();
+    return false;
+  } else return res->kind == kind::directory;
+}
 
-class file_handle;
+inline uint64_t size(stringable auto&& Path) {
+  if (auto res = internal::query_info(static_cast<decltype(Path)&&>(Path)); !res) {
+    res.error().add_footprint().fizzle_out();
+  } else if (res->kind == kind::regular) return res->size;
+  return 0;
+}
 
-} // namespace yw
+inline datetime last_write_time(stringable auto&& Path) {
+  if (auto res = internal::query_info(static_cast<decltype(Path)&&>(Path)); !res) {
+    res.error().add_footprint().fizzle_out();
+    return {};
+  } else return res->last_write_time;
+}
 
-#include <fcntl.h>
+namespace internal {
+#ifdef _WIN32
+inline std::expected<void, error> rename(const wchar_t* from, const wchar_t* to) {
+  if (::MoveFileExW(from, to, MOVEFILE_REPLACE_EXISTING)) return {};
+  return std::unexpected(error(errors::operation_failed, "MoveFileExW failed", int32_t(::GetLastError())));
+}
+
+inline std::expected<void, error> copy_file(const wchar_t* from, const wchar_t* to, bool overwrite) {
+  if (::CopyFileW(from, to, overwrite ? FALSE : TRUE)) return {};
+  const auto ec = ::GetLastError();
+  if (!overwrite && (ec == ERROR_FILE_EXISTS || ec == ERROR_ALREADY_EXISTS)) return {};
+  return std::unexpected(error(errors::operation_failed, "CopyFileW failed", int32_t(ec)));
+}
+
+inline std::expected<void, error> remove_file(const wchar_t* p) {
+  if (::DeleteFileW(p)) return {};
+  const auto ec = ::GetLastError();
+  if (ec == ERROR_FILE_NOT_FOUND || ec == ERROR_PATH_NOT_FOUND) return {};
+  return std::unexpected(error(errors::operation_failed, "DeleteFileW failed", int32_t(ec)));
+}
+
+inline std::expected<void, error> resize_file(const wchar_t* p, uint64_t size) {
+  if (size > uint64_t(std::numeric_limits<LONGLONG>::max()))
+    return std::unexpected(error(errors::invalid_argument, "file size is too large"));
+  const auto h = ::CreateFileW(
+    p, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+    FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (h == INVALID_HANDLE_VALUE)
+    return std::unexpected(error(errors::operation_failed, "CreateFileW failed", int32_t(::GetLastError())));
+
+  LARGE_INTEGER pos;
+  pos.QuadPart = static_cast<LONGLONG>(size);
+  if (!::SetFilePointerEx(h, pos, nullptr, FILE_BEGIN)) {
+    const auto ec = ::GetLastError();
+    ::CloseHandle(h);
+    return std::unexpected(error(errors::operation_failed, "SetFilePointerEx failed", int32_t(ec)));
+  }
+  if (!::SetEndOfFile(h)) {
+    const auto ec = ::GetLastError();
+    ::CloseHandle(h);
+    return std::unexpected(error(errors::operation_failed, "SetEndOfFile failed", int32_t(ec)));
+  }
+  if (!::CloseHandle(h))
+    return std::unexpected(error(errors::operation_failed, "CloseHandle failed", int32_t(::GetLastError())));
+  return {};
+}
+
+inline std::expected<void, error> create_directory(const wchar_t* p) {
+  if (::CreateDirectoryW(p, nullptr)) return {};
+  const auto ec = ::GetLastError();
+  if (ec == ERROR_ALREADY_EXISTS) {
+    const auto attributes = ::GetFileAttributesW(p);
+    if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY)) return {};
+  }
+  return std::unexpected(error(errors::operation_failed, "CreateDirectoryW failed", int32_t(ec)));
+}
+
+inline std::expected<void, error> remove_directory(const wchar_t* p) {
+  if (::RemoveDirectoryW(p)) return {};
+  const auto ec = ::GetLastError();
+  if (ec == ERROR_FILE_NOT_FOUND || ec == ERROR_PATH_NOT_FOUND) return {};
+  return std::unexpected(error(errors::operation_failed, "RemoveDirectoryW failed", int32_t(ec)));
+}
+
+#else
+
+inline std::expected<void, error> rename(const char* from, const char* to) {
+  if (::rename(from, to) == 0) return {};
+  return std::unexpected(error(errors::operation_failed, "rename failed", errno));
+}
+
+inline std::expected<void, error> copy_file(const char* from, const char* to, bool overwrite) {
+  const int src = ::open(from, O_RDONLY);
+  if (src == -1) return std::unexpected(error(errors::operation_failed, "open source failed", errno));
+
+  struct stat st;
+  if (::fstat(src, &st) != 0) {
+    const auto ec = errno;
+    ::close(src);
+    return std::unexpected(error(errors::operation_failed, "fstat failed", ec));
+  }
+
+  const int flags = O_WRONLY | O_CREAT | (overwrite ? O_TRUNC : O_EXCL);
+  const int dst = ::open(to, flags, st.st_mode & 0777);
+  if (dst == -1) {
+    const auto ec = errno;
+    ::close(src);
+    if (!overwrite && ec == EEXIST) return {};
+    return std::unexpected(error(errors::operation_failed, "open destination failed", ec));
+  }
+
+  std::byte buffer[65536];
+  for (;;) {
+    const auto n = ::read(src, buffer, sizeof(buffer));
+    if (n == 0) break;
+    if (n < 0) {
+      if (errno == EINTR) continue;
+      const auto ec = errno;
+      ::close(dst);
+      ::close(src);
+      ::unlink(to);
+      return std::unexpected(error(errors::operation_failed, "read failed", ec));
+    }
+
+    ssize_t written = 0;
+    while (written < n) {
+      const auto m = ::write(dst, buffer + written, size_t(n - written));
+      if (m < 0) {
+        if (errno == EINTR) continue;
+        const auto ec = errno;
+        ::close(dst);
+        ::close(src);
+        ::unlink(to);
+        return std::unexpected(error(errors::operation_failed, "write failed", ec));
+      }
+      written += m;
+    }
+  }
+
+  if (::close(dst) != 0) {
+    const auto ec = errno;
+    ::close(src);
+    return std::unexpected(error(errors::operation_failed, "close destination failed", ec));
+  }
+  if (::close(src) != 0) return std::unexpected(error(errors::operation_failed, "close source failed", errno));
+  return {};
+}
+
+inline std::expected<void, error> remove_file(const char* p) {
+  if (::unlink(p) == 0 || errno == ENOENT) return {};
+  return std::unexpected(error(errors::operation_failed, "unlink failed", errno));
+}
+
+inline std::expected<void, error> resize_file(const char* p, uint64_t size) {
+  if (size > uint64_t(std::numeric_limits<off_t>::max()))
+    return std::unexpected(error(errors::invalid_argument, "file size is too large"));
+  if (::truncate(p, static_cast<off_t>(size)) == 0) return {};
+  return std::unexpected(error(errors::operation_failed, "truncate failed", errno));
+}
+
+inline std::expected<void, error> create_directory(const char* p) {
+  if (::mkdir(p, 0777) == 0) return {};
+
+  const auto ec = errno;
+  if (ec == EEXIST) {
+    struct stat st;
+    if (::stat(p, &st) == 0 && S_ISDIR(st.st_mode)) return {};
+  }
+  return std::unexpected(error(errors::operation_failed, "mkdir failed", ec));
+}
+
+inline std::expected<void, error> remove_directory(const char* p) {
+  if (::rmdir(p) == 0 || errno == ENOENT) return {};
+  return std::unexpected(error(errors::operation_failed, "rmdir failed", errno));
+}
+
+#endif
+} // namespace internal
+
+inline std::expected<void, error> rename(stringable auto&& From, stringable auto&& To) {
+  auto from = unicode<path_char>(static_cast<decltype(From)&&>(From));
+  auto to = unicode<path_char>(static_cast<decltype(To)&&>(To));
+  if (auto res = internal::rename(from.data(), to.data())) return {};
+  else return res.error().relay();
+}
+
+inline std::expected<void, error> copy_file(stringable auto&& From, stringable auto&& To, bool overwrite = false) {
+  auto from = unicode<path_char>(static_cast<decltype(From)&&>(From));
+  auto to = unicode<path_char>(static_cast<decltype(To)&&>(To));
+  if (auto res = internal::copy_file(from.data(), to.data(), overwrite)) return {};
+  else return res.error().relay();
+}
+
+inline std::expected<void, error> remove_file(stringable auto&& Path) {
+  auto p = unicode<path_char>(static_cast<decltype(Path)&&>(Path));
+  if (auto res = internal::remove_file(p.data())) return {};
+  else return res.error().relay();
+}
+
+inline std::expected<void, error> resize_file(stringable auto&& Path, uint64_t size) {
+  auto p = unicode<path_char>(static_cast<decltype(Path)&&>(Path));
+  if (auto res = internal::resize_file(p.data(), size)) return {};
+  else return res.error().relay();
+}
+
+inline std::expected<void, error> create_directory(stringable auto&& Path) {
+  auto p = unicode<path_char>(static_cast<decltype(Path)&&>(Path));
+  if (auto res = internal::create_directory(p.data())) return {};
+  else return res.error().relay();
+}
+
+inline std::expected<void, error> remove_directory(stringable auto&& Path) {
+  auto p = unicode<path_char>(static_cast<decltype(Path)&&>(Path));
+  if (auto res = internal::remove_directory(p.data())) return {};
+  else return res.error().relay();
+}
+
+inline std::expected<void, error> create_directories(stringable auto&& Path) {
+  auto p = unicode<path_char>(static_cast<decltype(Path)&&>(Path));
+  const auto root = internal::root_length(string_view<path_char>(p.data(), p.size()));
+  for (size_t i = root; i < p.size(); ++i) {
+    if (!internal::is_separator(p[i])) continue;
+    const auto separator = std::exchange(p[i], path_char());
+    if (i != 0)
+      if (auto res = internal::create_directory(p.data()); !res) return res.error().relay();
+    p[i] = separator;
+    while (i + 1 < p.size() && internal::is_separator(p[i + 1])) ++i;
+  }
+  if (p.size() != root)
+    if (auto res = internal::create_directory(p.data()); !res) return res.error().relay();
+  return {};
+}
+
+namespace internal {
+template<char_type C> string<C> child_path(string_view<C> directory, string_view<C> name) {
+  string<C> result;
+  const bool add_separator = !directory.empty() && !is_separator(directory.back());
+  result.reserve(directory.size() + size_t(add_separator) + name.size());
+  result.append(directory);
+  if (add_separator) {
+#ifdef _WIN32
+    result.push_back(C('\\'));
+#else
+    result.push_back(C('/'));
+#endif
+  }
+  result.append(name);
+  return result;
+}
 
 #ifdef _WIN32
-#include <io.h>
-namespace yw::internal {
-inline std::expected<FILE*, error> _open(const std::filesystem::path& p, open_mode mode) {
-  const auto generic_read_write = GENERIC_READ | GENERIC_WRITE;
-  DWORD desired = 0, disp = 0, share = FILE_SHARE_READ;
-  const char* fdopen_mode = nullptr;
-  int osf_flags = _O_BINARY;
-  switch (mode) {
-  case open_mode::read_existing:
-    desired = GENERIC_READ, disp = OPEN_EXISTING, fdopen_mode = "rb", osf_flags = _O_RDONLY;
-    break;
-  case open_mode::update_existing:
-    desired = generic_read_write, disp = OPEN_EXISTING, fdopen_mode = "r+b", osf_flags = _O_RDWR;
-    break;
-  case open_mode::create_always:
-    desired = generic_read_write, disp = CREATE_ALWAYS, fdopen_mode = "w+b", osf_flags = _O_RDWR;
-    break;
-  case open_mode::create_new:
-    desired = generic_read_write, disp = CREATE_NEW, fdopen_mode = "w+b", osf_flags = _O_RDWR;
-    break;
-  case open_mode::append:
-    desired = FILE_APPEND_DATA, disp = OPEN_ALWAYS, fdopen_mode = "ab", osf_flags = _O_WRONLY | _O_APPEND;
-    break;
-  case open_mode::update_or_create:
-    desired = generic_read_write, disp = OPEN_ALWAYS, fdopen_mode = "r+b", osf_flags = _O_RDWR;
-    break;
-  default: return std::unexpected(error(errors::invalid_open_mode));
+inline std::expected<void, error> list_files(
+  const wchar_t* directory, bool recursive, std::vector<string<path_char>>& result) {
+  const string_view<wchar_t> dir(directory);
+  auto pattern = child_path<wchar_t>(dir, L"*");
+  WIN32_FIND_DATAW data;
+  const auto find = ::FindFirstFileW(pattern.data(), &data);
+  if (find == INVALID_HANDLE_VALUE) {
+    const auto ec = ::GetLastError();
+    if (ec == ERROR_FILE_NOT_FOUND) return {};
+    return std::unexpected(error(errors::operation_failed, "FindFirstFileW failed", int32_t(ec)));
   }
-  const auto h = ::CreateFileW(p.c_str(), desired, share, nullptr, disp, FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (h != INVALID_HANDLE_VALUE) {
-    if (const int fd = ::_open_osfhandle(reinterpret_cast<intptr_t>(h), osf_flags); fd == -1) {
-      ::CloseHandle(h);
-      return std::unexpected(error(errors::operation_failed, "_open_osfhandle failed", errno));
-    } else if (std::FILE* f = ::_fdopen(fd, fdopen_mode); !f) {
-      ::_close(fd);
-      return std::unexpected(error(errors::operation_failed, "_fdopen failed", errno));
-    } else return f;
-  } else return std::unexpected(error(errors::operation_failed, "CreateFileW failed", int32_t(::GetLastError())));
+  do {
+    const string_view<wchar_t> name(data.cFileName);
+    if (name == L"." || name == L"..") continue;
+    auto path = child_path(dir, name);
+    if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+      if (recursive && !(data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
+        if (auto res = list_files(path.data(), true, result); !res) {
+          ::FindClose(find);
+          return res.error().relay();
+        }
+    } else result.push_back(std::move(path));
+  } while (::FindNextFileW(find, &data));
+  const auto ec = ::GetLastError();
+  ::FindClose(find);
+  if (ec != ERROR_NO_MORE_FILES)
+    return std::unexpected(error(errors::operation_failed, "FindNextFileW failed", int32_t(ec)));
+  return {};
 }
-inline std::expected<void, error> _seek(FILE* f, int64_t off, seek_whence w) {
-  if (::_fseeki64(f, static_cast<__int64>(off), static_cast<int>(w)) != 0)
-    return std::unexpected(error(errors::operation_failed, "failed to seek", errno));
-  else return {};
-}
-inline std::expected<int64_t, error> _tell(FILE* f) {
-  if (auto pos = ::_ftelli64(f); pos < 0)
-    return std::unexpected(error(errors::operation_failed, "failed to tell position", errno));
-  else return static_cast<int64_t>(pos);
-}
-inline std::expected<void, error> _truncate(FILE* f) {
-  if (::_chsize(::_fileno(f), ::_ftelli64(f)) != 0)
-    return std::unexpected(error(errors::operation_failed, "failed to truncate file", errno));
-  else return {};
-}
-} // namespace yw::internal
 #else
-#include <unistd.h>
-namespace yw::internal {
-inline std::expected<FILE*, error> _open(const std::filesystem::path& p, open_mode mode) {
-  int flags = 0;
-  const char* fdopen_mode = nullptr;
-  switch (mode) {
-  case open_mode::read_existing: flags = O_RDONLY, fdopen_mode = "rb"; break;
-  case open_mode::update_existing: flags = O_RDWR, fdopen_mode = "r+b"; break;
-  case open_mode::create_always: flags = O_RDWR | O_CREAT | O_TRUNC, fdopen_mode = "r+b"; break;
-  case open_mode::create_new: flags = O_RDWR | O_CREAT | O_EXCL, fdopen_mode = "r+b"; break;
-  case open_mode::append: flags = O_WRONLY | O_CREAT | O_APPEND, fdopen_mode = "ab"; break;
-  case open_mode::update_or_create: flags = O_RDWR | O_CREAT, fdopen_mode = "r+b"; break;
-  default: return std::unexpected(error(errors::invalid_open_mode, "invalid file mode", 0));
+inline std::expected<void, error> list_files(
+  const char* directory, bool recursive, std::vector<string<path_char>>& result) {
+  const string_view<char> dirpath(directory);
+  auto dir = ::opendir(directory);
+  if (!dir) return std::unexpected(error(errors::operation_failed, "opendir failed", errno));
+  errno = 0;
+  while (const auto entry = ::readdir(dir)) {
+    const string_view<char> name(entry->d_name);
+    if (name == "." || name == "..") continue;
+    auto path = child_path(dirpath, name);
+    struct stat st;
+    if (::lstat(path.data(), &st) != 0) {
+      const auto ec = errno;
+      ::closedir(dir);
+      return std::unexpected(error(errors::operation_failed, "lstat failed", ec));
+    }
+    if (S_ISREG(st.st_mode)) result.push_back(std::move(path));
+    else if (recursive && S_ISDIR(st.st_mode))
+      if (auto res = list_files(path.data(), true, result); !res) {
+        ::closedir(dir);
+        return res.error().relay();
+      }
   }
-  const mode_t perms = 0666;
-  if (int fd = ::open(p.c_str(), flags, perms); fd == -1) {
-    return std::unexpected(error(errors::operation_failed, "open failed", errno));
-  } else if (std::FILE* f = ::fdopen(fd, fdopen_mode); !f) {
-    ::close(fd);
-    return std::unexpected(error(errors::operation_failed, "fdopen failed", errno));
-  } else return f;
+  const auto ec = errno;
+  if (::closedir(dir) != 0) return std::unexpected(error(errors::operation_failed, "closedir failed", errno));
+  if (ec != 0) return std::unexpected(error(errors::operation_failed, "readdir failed", ec));
+  return {};
 }
-inline std::expected<void, error> _seek(FILE* f, int64_t off, seek_whence w) {
-  if (::fseeko(f, static_cast<off_t>(off), static_cast<int>(w)) != 0)
-    return std::unexpected(error(errors::operation_failed, "failed to seek", errno));
-  else return {};
-}
-inline std::expected<int64_t, error> _tell(FILE* f) {
-  if (auto pos = ::ftello(f); pos < 0)
-    return std::unexpected(error(errors::operation_failed, "failed to tell position", errno));
-  else return static_cast<int64_t>(pos);
-}
-inline std::expected<void, error> _truncate(FILE* f) {
-  if (fflush(f) != 0) return std::unexpected(error(errors::operation_failed, "failed to flush file", errno));
-  if (auto pos = ::ftello(f); pos < 0)
-    return std::unexpected(error(errors::operation_failed, "failed to tell position for truncation", errno));
-  else if (::ftruncate(fileno(f), static_cast<off_t>(pos)) != 0)
-    return std::unexpected(error(errors::operation_failed, "failed to truncate file", errno));
-  else return {};
-}
-} // namespace yw::internal
 #endif
+} // namespace internal
 
-namespace yw {
-
-/// MARK: file_handle
-
-class file_handle : public general_handle {
-public:
-  struct slot : general_handle::slot {
-    std::FILE* file = nullptr;
-    std::filesystem::path path;
-    open_mode mode = open_mode::unknown;
-
-    std::expected<void, error> seek(int64_t off, seek_whence w) {
-      if (!file) return std::unexpected(error(errors::not_initialized));
-      if (auto res = internal::_seek(file, off, w)) return {};
-      else return res.error().relay();
-    }
-
-    std::expected<int64_t, error> tell() {
-      if (!file) return std::unexpected(error(errors::not_initialized));
-      if (auto res = internal::_tell(file)) return *res;
-      else return res.error().relay();
-    }
-
-    std::expected<void, error> close() {
-      if (!file) return std::unexpected(error(errors::not_initialized));
-      if (std::fclose(std::exchange(file, nullptr)) != 0)
-        return std::unexpected(error(errors::operation_failed, "failed to close file", errno));
-      else return {};
-    }
-
-    std::expected<size_t, error> size() {
-      if (!file) return std::unexpected(error(errors::not_initialized));
-      if (auto cur = tell(); !cur) return cur.error().relay();
-      else if (auto res = seek(0, seek_whence::end); !res) return res.error().relay();
-      else if (auto size = tell(); !size) return size.error().relay();
-      else if (auto res = seek(*cur, seek_whence::begin); !res) return res.error().relay();
-      else return static_cast<size_t>(*size);
-    }
-
-    std::expected<size_t, error> read(void* dst, size_t bytes) {
-      if (!file) return std::unexpected(error(errors::not_initialized));
-      if (bytes == 0) return 0;
-      if (!dst) return std::unexpected(error(errors::invalid_argument, "null destination buffer"));
-      if (const auto n = std::fread(dst, 1, bytes, file); n != 0) return n;
-      else if (std::ferror(file)) return std::unexpected(error(errors::operation_failed, "read error", errno));
-      else return 0;
-    }
-
-    std::expected<size_t, error> write(const void* src, size_t bytes) {
-      if (!file) return std::unexpected(error(errors::not_initialized));
-      if (bytes == 0) return 0;
-      if (!src) return std::unexpected(error(errors::invalid_argument, "null source buffer"));
-      if (const auto n = std::fwrite(src, 1, bytes, file); n != bytes)
-        return std::unexpected(error(errors::operation_failed, "write error", errno));
-      else return n;
-    }
-
-    std::expected<void, error> flush() {
-      if (!file) return std::unexpected(error(errors::not_initialized));
-      if (std::fflush(file) != 0) return std::unexpected(error(errors::operation_failed, "flush error", errno));
-      else return {};
-    }
-
-    std::expected<void, error> truncate_to_current() {
-      if (!file) return std::unexpected(error(errors::not_initialized));
-      if (auto res = internal::_truncate(file)) return {};
-      else return res.error().relay();
-    }
-  };
-
-  file_handle() noexcept = default;
-
-  file_handle(std::filesystem::path path, open_mode mode, const source_line& sl = here()) {
-    if (auto res = initialize(std::move(path), mode, sl); !res) {
-      slot::erase(std::exchange(_id, {}));
-      res.error().add_footprint().fizzle_out(sl); // warning
-    }
-  }
-
-  template<typename... As> requires constructible<file_handle, As...>
-  static std::expected<file_handle, error> create(As&&... Args) {
-    file_handle fh;
-    if (auto res = fh.initialize(static_cast<As&&>(Args)...); !res) {
-      slot::erase(std::exchange(fh._id, {}));
-      return res.error().relay();
-    } else return std::move(fh);
-  }
-
-  const std::filesystem::path& path() const {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off(); // fatal
-    return sp->path;
-  }
-
-  open_mode mode() const {
-    if (const auto sp = get_slot(this); !sp) {
-      error(errors::invalid_slotid).fizzle_out(); // warning
-      return open_mode::unknown;
-    } else return sp->mode;
-  }
-
-  bool is_open() const noexcept {
-    if (const auto sp = get_slot(this); !sp) {
-      error(errors::invalid_slotid).fizzle_out(); // warning
-      return false;
-    } else return sp->file != nullptr;
-  }
-
-  explicit operator bool() const noexcept { return is_open(); }
-
-  std::expected<void, error> close() {
-    if (const auto sp = get_slot(this))
-      if (auto res = sp->close(); !res) return res.error().relay();
-    return {};
-  }
-
-  int64_t tell() const {
-    if (const auto sp = get_slot(this)) {
-      if (auto res = sp->tell()) return *res;
-      else res.error().add_footprint().fizzle_out(sp->source_line); // warning
-    } else error(errors::invalid_slotid).fizzle_out();              // warning
-    return 0;
-  }
-
-  std::expected<void, error> seek(integral auto off, seek_whence w = seek_whence::begin) {
-    if (const auto sp = get_slot(this); !sp) return std::unexpected(error(errors::invalid_slotid));
-    else if (auto res = sp->seek(static_cast<int64_t>(off), w)) return {};
-    else return res.error().relay();
-  }
-
-  int64_t file_size() const {
-    if (const auto sp = get_slot(this)) {
-      if (auto res = sp->size()) return *res;
-      else res.error().add_footprint().fizzle_out(sp->source_line); // warning
-    } else error(errors::invalid_slotid).fizzle_out();              // warning
-    return 0;
-  }
-
-  std::expected<size_t, error> read(void* dst, size_t bytes) {
-    if (const auto sp = get_slot(this); !sp) return std::unexpected(error(errors::invalid_slotid));
-    else if (auto res = sp->read(dst, bytes)) return *res;
-    else return res.error().relay();
-  }
-
-  std::expected<void, error> read_exact(void* dst, size_t bytes) {
-    if (const auto sp = get_slot(this)) {
-      for (size_t total = 0; total < bytes;) {
-        if (auto res = sp->read(static_cast<std::byte*>(dst) + total, bytes - total); !res) return res.error().relay();
-        else if (*res == 0) return std::unexpected(error(errors::operation_failed, "unexpected end of file"));
-        else total += *res;
-      }
-      return {};
-    } else return std::unexpected(error(errors::invalid_slotid));
-  }
-
-  template<trivial T> std::expected<T, error> read_trivial() {
-    T v{};
-    if (auto res = read_exact(&v, sizeof(T))) return v;
-    else return res.error().relay();
-  }
-
-  template<trivial T> std::expected<void, error> read_trivial(T& v) {
-    if (auto res = read_exact(&v, sizeof(T))) return {};
-    else return res.error().relay();
-  }
-
-  string<char> read_as_string(size_t Max = npos) {
-    if (const auto sp = get_slot(this)) {
-      if (auto res = sp->size()) {
-        string<char> result(yw::min(static_cast<size_t>(*res), Max));
-        if (auto res = read_exact(result.data(), result.size())) return result;
-        else res.error().add_footprint().fizzle_out(sp->source_line); // warning
-      } else res.error().add_footprint().fizzle_out(sp->source_line); // warning
-    }
-    return {};
-  }
-
-  std::expected<size_t, error> write(const void* src, size_t bytes) {
-    if (const auto sp = get_slot(this); !sp) return std::unexpected(error(errors::invalid_slotid));
-    else if (auto res = sp->write(src, bytes)) return *res;
-    else return res.error().relay();
-  }
-
-  template<contiguous_iterator It, sized_sentinel_for<It> Se> requires trivial<iter_value_t<It>>
-  std::expected<size_t, error> write(It first, Se last) {
-    if (first >= last) return std::unexpected(error(errors::invalid_argument, "invalid iterator range"));
-    return write(std::to_address(first), std::ranges::distance(first, last) * sizeof(iter_value_t<It>));
-  }
-
-  template<contiguous_range R> requires trivial<iter_value_t<R>> std::expected<size_t, error> write(R&& range) {
-    return write(std::ranges::data(range), std::ranges::size(range) * sizeof(iter_value_t<R>));
-  }
-
-  std::expected<void, error> write_exact(const void* src, size_t bytes) {
-    if (const auto sp = get_slot(this)) {
-      const auto p = static_cast<const std::byte*>(src);
-      for (size_t total = 0; total < bytes;) {
-        if (auto res = sp->write(p + total, bytes - total); !res) return res.error().relay();
-        else if (*res == 0) return std::unexpected(error(errors::operation_failed, "incomplete write"));
-        else total += *res;
-      }
-      return {};
-    } else return std::unexpected(error(errors::invalid_slotid));
-  }
-
-  template<contiguous_iterator It, sized_sentinel_for<It> Se> requires trivial<iter_value_t<It>>
-  std::expected<void, error> write_exact(It first, Se last) {
-    if (first >= last) return std::unexpected(error(errors::invalid_argument, "invalid iterator range"));
-    return write_exact(std::to_address(first), std::ranges::distance(first, last) * sizeof(iter_value_t<It>));
-  }
-
-  template<contiguous_range R> requires trivial<iter_value_t<R>> std::expected<void, error> write_exact(R&& range) {
-    return write_exact(std::ranges::data(range), std::ranges::size(range) * sizeof(iter_value_t<R>));
-  }
-
-  template<trivial T> std::expected<void, error> write_trivial(const T& v) {
-    if (auto res = write_exact(&v, sizeof(T))) return {};
-    else return res.error().relay();
-  }
-
-  template<typename T> requires is_bounded_array<T> && same_as<iter_value_t<T>, char>
-  std::expected<void, error> write_literal(const T& arr) {
-    return write_exact(arr, (arraysize(arr) - 1) * sizeof(char));
-  }
-
-  std::expected<void, error> flush() {
-    if (const auto sp = get_slot(this); !sp) return std::unexpected(error(errors::invalid_slotid));
-    else if (auto res = sp->flush()) return {};
-    else return res.error().relay();
-  }
-
-  std::expected<void, error> truncate_to_current() {
-    if (const auto sp = get_slot(this); !sp) return std::unexpected(error(errors::invalid_slotid));
-    else if (auto res = sp->truncate_to_current()) return {};
-    else return res.error().relay();
-  }
-
-  std::expected<void, error> close_at_current() {
-    if (auto res = truncate_to_current(); !res) return res.error().relay();
-    if (auto res = close(); !res) return res.error().relay();
-    return {};
-  }
-
-private:
-  std::expected<void, error> initialize(std::filesystem::path&& Path, open_mode Mode, const source_line& sl) {
-    const auto sp = create_slot<file_handle>(sl);
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    if (auto res = internal::_open(Path, Mode)) sp->file = *res;
-    else return res.error().relay();
-    sp->path = std::move(Path);
-    sp->mode = Mode;
-    _id = sp->id;
-    return {};
-  }
-};
-
-inline file_handle open(const std::filesystem::path& path, open_mode mode, const source_line& sl = here()) {
-  return file_handle(path, mode, sl);
+inline std::expected<std::vector<string<path_char>>, error> list_files(
+  stringable auto&& Directory, bool recursive = false) {
+  auto directory = unicode<path_char>(static_cast<decltype(Directory)&&>(Directory));
+  std::vector<string<path_char>> result;
+  if (auto res = internal::list_files(directory.data(), recursive, result)) return result;
+  else return res.error().relay();
 }
-} // namespace yw
+
+/// MARK: relative
+
+namespace internal {
+template<char_type C> constexpr bool path_char_equal(C a, C b) noexcept {
+  if (is_separator(a) && is_separator(b)) return true;
+#ifdef _WIN32
+  if (a >= C('A') && a <= C('Z')) a += C('a') - C('A');
+  if (b >= C('A') && b <= C('Z')) b += C('a') - C('A');
+#endif
+  return a == b;
+}
+
+template<char_type C> constexpr auto next_component(string_view<C> sv, size_t& pos) noexcept {
+  while (pos < sv.size() && is_separator(sv[pos])) ++pos;
+  const auto begin = pos;
+  while (pos < sv.size() && !is_separator(sv[pos])) ++pos;
+  return string_view<C>(sv.data() + begin, pos - begin);
+}
+
+template<char_type C> constexpr bool component_equal(string_view<C> a, string_view<C> b) noexcept {
+  if (a.size() != b.size()) return false;
+  for (size_t i = 0; i < a.size(); ++i)
+    if (!path_char_equal(a[i], b[i])) return false;
+  return true;
+}
+
+template<char_type C> auto relative(string_view<C> path, string_view<C> base) {
+  const auto path_root = root_length(path);
+  const auto base_root = root_length(base);
+  if (path_root != base_root || !component_equal(path.substr(0, path_root), base.substr(0, base_root)))
+    return string<C>();
+  size_t path_pos = path_root, base_pos = base_root, common_path_pos = path_pos, common_base_pos = base_pos;
+  for (;;) {
+    const auto old_path_pos = path_pos, old_base_pos = base_pos;
+    const auto path_component = next_component(path, path_pos), base_component = next_component(base, base_pos);
+    if (path_component.empty() || base_component.empty() || !component_equal(path_component, base_component)) {
+      path_pos = old_path_pos, base_pos = old_base_pos;
+      break;
+    } else common_path_pos = path_pos, common_base_pos = base_pos;
+  }
+  path_pos = common_path_pos, base_pos = common_base_pos;
+  size_t parent_count = 0;
+  for (;;) {
+    const auto component = next_component(base, base_pos);
+    if (component.empty()) break;
+    if (component != string_view<C>(C("."), 1)) ++parent_count;
+  }
+  while (path_pos < path.size() && is_separator(path[path_pos])) ++path_pos;
+  string<C> result;
+  constexpr auto separator =
+#ifdef _WIN32
+    C('\\');
+#else
+    C('/');
+#endif
+  for (size_t i = 0; i < parent_count; ++i) {
+    if (!result.empty()) result.push_back(separator);
+    result.push_back(C('.')), result.push_back(C('.'));
+  }
+  if (path_pos < path.size()) {
+    if (!result.empty()) result.push_back(separator);
+    for (; path_pos < path.size(); ++path_pos)
+      result.push_back(is_separator(path[path_pos]) ? separator : path[path_pos]);
+  }
+  if (result.empty()) result.push_back(C('.'));
+  return result;
+}
+} // namespace internal
+
+template<stringable P, stringable<iter_value_t<P>> B> auto relative(P&& Path, B&& Base) {
+  using C = iter_value_t<P>;
+  return internal::relative(string_view<C>(Path), string_view<C>(Base));
+}
+} // namespace yw::file

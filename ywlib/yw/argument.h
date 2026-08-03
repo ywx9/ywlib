@@ -1,7 +1,8 @@
 #pragma once
 
-#include "yw/slotset.h"
-#include "yw/tuple.h"
+#include <yw/file.h>
+#include <yw/slotset.h>
+#include <yw/tuple.h>
 
 #include <map>
 
@@ -401,7 +402,7 @@ inline std::vector<string<char>> collect_argv(int argc, char** argv, string<char
   args.reserve(static_cast<size_t>(argc));
   for (int i = 0; i < argc; ++i) args.emplace_back(argv[i]);
 #endif
-  if (!args.empty() && name.empty()) name = unicode<char>(path(args.front().view()).stem().native());
+  if (!args.empty() && name.empty()) name = unicode<char>(file::stem(args[0]));
   return args;
 }
 
