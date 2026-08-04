@@ -346,4 +346,21 @@ public:
   }
 };
 
+/// MARK: draw_texture
+
+/// draws texture to current d2d render target.
+inline std::expected<void, error> draw_texture(float2 Pos, float2 Size, const texture& Texture, float1 Opacity = 1.0f) {
+  if (!Texture) return std::unexpected(error(errors::invalid_argument, "invalid texture"));
+  if (!Texture.d2d_bitmap()) return std::unexpected(error(errors::invalid_argument, "texture is not a d2d bitmap"));
+  if (auto res = yw::draw_bitmap(Pos, Size, Texture.d2d_bitmap(), Opacity); !res) return res.error().relay();
+  return {};
+}
+
+/// draws texture to current d2d render target.
+inline std::expected<void, error> draw_texture(float2 Pos, const texture& Texture, float1 Opacity = 1.0f) {
+  if (!Texture) return std::unexpected(error(errors::invalid_argument, "invalid texture"));
+  if (!Texture.d2d_bitmap()) return std::unexpected(error(errors::invalid_argument, "texture is not a d2d bitmap"));
+  if (auto res = yw::draw_bitmap(Pos, Texture.size(), Texture.d2d_bitmap(), Opacity); !res) return res.error().relay();
+  return {};
+}
 } // namespace yw

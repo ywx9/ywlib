@@ -36,12 +36,12 @@ public:
     return sp && bool(sp->vs);
   }
 
-  ID3D11VertexShader* d3d_vertex_shader(this auto& self) noexcept {
-    const auto sp = get_slot(&self);
+  ID3D11VertexShader* d3d_vertex_shader() const noexcept {
+    const auto sp = get_slot(this);
     return sp ? sp->vs.get() : nullptr;
   }
 
-  explicit operator ID3D11VertexShader*(this auto& self) noexcept { return d3d_vertex_shader(self); }
+  explicit operator ID3D11VertexShader*() const noexcept { return d3d_vertex_shader(); }
 
   vertex_shader() noexcept = default;
 

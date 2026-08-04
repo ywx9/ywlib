@@ -66,7 +66,7 @@ public:
     return std::move(r);
   }
 
-  template<castable_to<ID3D11VertexShader*> T, typename... Us>
+  template<typename T, typename... Us> requires castable_to<const T&, ID3D11VertexShader*>
   std::expected<void, error> set_vs(const T& vs, const Us&... cbuffers_resources) {
     constexpr size_t i_resources = inspect<castable_to<const Us&, ID3D11ShaderResourceView*>...>;
     constexpr size_t num_cbuffers = i_resources;
@@ -98,7 +98,7 @@ public:
     return {};
   }
 
-  template<castable_to<ID3D11GeometryShader*> T, typename... Us>
+  template<typename T, typename... Us> requires castable_to<const T&, ID3D11GeometryShader*>
   std::expected<void, error> set_gs(const T& gs, const Us&... cbuffers_resources) {
     constexpr size_t i_resources = inspect<castable_to<const Us&, ID3D11ShaderResourceView*>...>;
     constexpr size_t num_cbuffers = i_resources;
@@ -130,7 +130,7 @@ public:
     return {};
   }
 
-  template<castable_to<ID3D11PixelShader*> T, typename... Us>
+  template<typename T, typename... Us> requires castable_to<const T&, ID3D11PixelShader*>
   std::expected<void, error> set_ps(const T& ps, const Us&... cbuffers_resources) {
     constexpr size_t i_resources = inspect<castable_to<const Us&, ID3D11ShaderResourceView*>...>;
     constexpr size_t num_cbuffers = i_resources;

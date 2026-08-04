@@ -82,7 +82,7 @@ public:
 
   staging_buffer(uint1 Size, const source_line& sl = here()) {
     if (auto res = create(Size); !res) res.error().go_off(sl);
-    else *this = std::move(res.value());
+    else *this = std::move(*res);
   }
 
   static std::expected<staging_buffer, error> create(const buffer<T>& Other) {
@@ -93,7 +93,7 @@ public:
 
   staging_buffer(const buffer<T>& Other, const source_line& sl = here()) {
     if (auto res = create(Other); !res) res.error().go_off(sl);
-    else *this = std::move(res.value());
+    else *this = std::move(*res);
   }
 
   std::expected<void, error> copy_to_cpu(void* o) const {
@@ -152,7 +152,7 @@ public:
 
   constant_buffer(const T& Val, const source_line& sl = here()) {
     if (auto res = create(Val); !res) res.error().go_off(sl);
-    else *this = std::move(res.value());
+    else *this = std::move(*res);
   }
 
   std::expected<void, error> copy_from(const T& Val) {
@@ -219,7 +219,7 @@ public:
 
   structured_buffer(uint1 Size, const source_line& sl = here()) {
     if (auto res = create(Size); !res) res.error().go_off(sl);
-    else *this = std::move(res.value());
+    else *this = std::move(*res);
   }
 
   static std::expected<structured_buffer, error> create(const T* Data, uint1 Size) {
@@ -231,7 +231,7 @@ public:
 
   structured_buffer(const T* Data, uint1 Size, const source_line& sl = here()) {
     if (auto res = create(Data, Size); !res) res.error().go_off(sl);
-    else *this = std::move(res.value());
+    else *this = std::move(*res);
   }
 
   template<contiguous_range<T> Rg> static std::expected<structured_buffer, error> create(Rg&& rg) {
@@ -243,7 +243,7 @@ public:
 
   template<contiguous_range<T> Rg> structured_buffer(Rg&& rg, const source_line& sl = here()) {
     if (auto res = create(yw::data(rg), yw::size(rg)); !res) res.error().go_off(sl);
-    else *this = std::move(res.value());
+    else *this = std::move(*res);
   }
 
   std::expected<void, error> copy_from(const T* Data, uint1 Size) {
