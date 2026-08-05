@@ -12,6 +12,7 @@ public:
     color selection_color = color(colors::dodgerblue, 0.35f);
     color pressed_item_color = color(colors::black, 0.08f);
     float4 item_padding = float4::fill(arbitrary_value);
+    size_t visible_item_count = 4;
     size_t selected_index = npos;
     size_t pressed_index = npos;
     size_t hovered_index = npos;
@@ -44,7 +45,7 @@ public:
       size_t count = 0;
       for (size_t i = 0; i < items.size(); ++i) {
         inner.x = yw::max(inner.x, items[i].size().x + item_padding.x + item_padding.z);
-        if (count++ < 4) inner.y += item_height(i);
+        if (count++ < visible_item_count) inner.y += item_height(i);
       }
       inner += padding.xy() + padding.zw();
       return calc_necessary_size_by_policy(inner.add<0>(bar_width));
@@ -318,6 +319,16 @@ public:
     return sp->selection_color;
   }
 
+  /// Number of top items used to calculate the preferred list height.
+  size_t visible_item_count() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return {};
+    }
+    return sp->visible_item_count;
+  }
+
   const auto& text(size_t Index) const noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
@@ -412,6 +423,14 @@ public:
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).fizzle_out();
     else sp->selection_color = Color, sp->make_dirty();
+    return self;
+  }
+
+  auto& visible_item_count(this auto& self, size_t Count) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).fizzle_out();
+    else if (Count == 0) error(errors::invalid_argument, "listbox visible_item_count must be positive").fizzle_out();
+    else sp->visible_item_count = Count, sp->make_messy();
     return self;
   }
 

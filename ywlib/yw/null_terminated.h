@@ -16,8 +16,8 @@ public:
   constexpr null_terminated(string<C>&& str) : _data(std::move(str)) {}
   constexpr null_terminated(const string<C>&& str) : _data(std::move(str)) {}
 
-  template<typename S> requires _is_array<S> constexpr null_terminated(const S& a)
-    : _data(std::in_place_index_t<1>{}, string_view<C>(a, std::char_traits<C>::length(a))) {}
+  template<typename S> requires _is_array<S>
+  constexpr null_terminated(const S& a) : _data(string_view<C>(a, std::char_traits<C>::length(a))) {}
 
   template<stringable S> requires(!_is_array<S>) constexpr null_terminated(S&& s) : _data() {
     if constexpr (different_from<iter_value_t<S>, C>) _data.template emplace<0>(unicode<C>(static_cast<S&&>(s)));

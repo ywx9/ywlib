@@ -2,12 +2,15 @@
 
 #include <ywlib>
 
+#include <commdlg.h>
 #include <d2d1_1.h>
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <dwrite_1.h>
 #include <dxgi1_3.h>
 #include <imm.h>
+#include <rpc.h>
+#include <shlobj.h>
 #include <wincodec.h>
 #include <xaudio2.h>
 
@@ -27,22 +30,6 @@ namespace yw {
 
 inline constexpr float arbitrary_value = 4.0f;
 inline constexpr float common_size_value = 16.0f;
-
-/// MARK: ok/yes
-
-inline bool ok(
-  null_terminated<wchar_t> Text, null_terminated<wchar_t> Title = L"Confirmation", bool topmost = false,
-  bool modal = false) {
-  UINT flags = MB_OK | (topmost ? MB_TOPMOST : 0) | (modal ? MB_TASKMODAL : 0);
-  return ::MessageBoxW(nullptr, Text.data(), Title.data(), flags) == IDOK;
-}
-
-inline bool yes(
-  null_terminated<wchar_t> Text, null_terminated<wchar_t> Title = L"Confirmation", bool topmost = false,
-  bool modal = false) {
-  UINT flags = MB_YESNO | (topmost ? MB_TOPMOST : 0) | (modal ? MB_TASKMODAL : 0);
-  return ::MessageBoxW(nullptr, Text.data(), Title.data(), flags) == IDYES;
-}
 
 /// MARK: desktop_client_size
 
@@ -103,7 +90,6 @@ protected:
   }
 
 public:
-
   virtual ~interface() noexcept { slot::slots.erase(_id); }
   interface() noexcept = default;
   interface(const interface&) = delete;
@@ -624,6 +610,5 @@ public:
     if (_ptr) _ptr->Release();
     _ptr = New;
   }
-
 };
 } // namespace yw

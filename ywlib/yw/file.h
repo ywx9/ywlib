@@ -7,8 +7,10 @@ namespace yw::file {
 
 #ifdef _WIN32
 using path_char = wchar_t;
+using path_string = string<wchar_t>;
 #else
 using path_char = char;
+using path_string = string<char>;
 #endif
 
 enum class kind {
@@ -26,6 +28,12 @@ struct info {
   bool read_only = false;
   datetime last_write_time{{0, 0, 0}, {0, 0, 0}};
 };
+
+#ifdef _WIN32
+inline constexpr path_char preferred_separator = L'\\';
+#else
+inline constexpr path_char preferred_separator = '/';
+#endif
 
 namespace internal {
 inline constexpr auto is_separator = []<char_type C>(C c) noexcept {
@@ -139,6 +147,20 @@ constexpr auto normalize_separators(S&& Path) noexcept {
       skip = true;
     } else result.push_back(c), skip = false;
   return result;
+}
+
+template<typename... Ss> requires ((stringable<Ss> || char_type<Ss>) && ...)
+constexpr auto join(Ss&&... Paths) noexcept {
+  if constexpr (sizeof...(Paths) == 0) return string<path_char>();
+  else {
+    string<path_char> result = format<path_char>(select<0>(static_cast<Ss&&>(Paths)...));
+    auto f = [&]<size_t I>(constant<I>) {
+      result.push_back(preferred_separator);
+      result.append(format<path_char>(select<I>(static_cast<Ss&&>(Paths)...)));
+    };
+    [&]<size_t... Is>(sequence<Is...>) { (f(constant<Is>{}), ...); }(make_sequence<1, sizeof...(Paths)>());
+    return result;
+  }
 }
 
 namespace internal {

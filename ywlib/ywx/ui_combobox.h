@@ -279,7 +279,13 @@ public:
     };
     list_sp->change_event = [combobox_id](size_t Index) {
       if (const auto sp = get_slot<combobox>(combobox_id)) {
-        if (auto res = sp->select(Index); !res) res.error().go_off();
+        if (Index < sp->item_count()) {
+          const auto lbsp = get_slot<listbox>(sp->dropdown_listbox.id());
+          if (!lbsp) error(errors::invalid_slotid).go_off();
+          sp->text.string(lbsp->items[Index].string());
+          sp->make_messy();
+          if (sp->change_event) sp->change_event(Index);
+        }
         sp->close_dropdown();
       }
       return true;
@@ -321,6 +327,12 @@ public:
     return sp && sp->dropdown_window.visible();
   }
 
+  decltype(auto) dropdown(this auto& self) noexcept {
+    const auto sp = get_slot(&self);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    return static_cast<copy_cvref<decltype(self), listbox>>(sp->dropdown_listbox);
+  }
+
   float button_width() const noexcept {
     const auto sp = get_slot(this);
     if (!sp) {
@@ -342,6 +354,7 @@ public:
     return sp->item_padding;
   }
 
+  /// returns `yw::text` of selected item.
   const auto& text(size_t Index) const noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
@@ -351,7 +364,21 @@ public:
     return lbsp->items[Index];
   }
 
+  /// returns `yw::text` of selected item.
+  const auto& selected_text() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::invalid_slotid).go_off();
+    const auto lbsp = get_slot<listbox>(sp->dropdown_listbox.id());
+    if (!lbsp) error(errors::invalid_slotid).go_off();
+    if (lbsp->selected_index == npos) error(errors::invalid_operation, "no item selected").go_off();
+    return lbsp->items[lbsp->selected_index];
+  }
+
+  /// returns `yw::string<wchar_t>` of selected item.
   const auto& string(size_t Index) const noexcept { return text(Index).string(); }
+
+  /// returns `yw::string<wchar_t>` of selected item.
+  const auto& selected_string() const noexcept { return selected_text().string(); }
 
   //-- setter --//
 

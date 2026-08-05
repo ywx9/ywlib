@@ -137,6 +137,12 @@ public:
     return {};
   }
 
+  /// returns the field of view in degrees if the camera is perspective, otherwise returns 0.0f.
+  float fov() const noexcept {
+    if (const auto sp = get_slot(this); sp && !sp->orthographic) return 0.5f * sp->factor * 180.0f / float(pi);
+    else return 0.0f;
+  }
+
   std::expected<void, error> orthographic(float1 magnification) {
     const auto sp = get_slot(this);
     if (!sp) return std::unexpected(error(errors::not_initialized, "camera not initialized"));
@@ -148,6 +154,12 @@ public:
     sp->orthographic = true;
     sp->dirty = true;
     return {};
+  }
+
+  /// returns the magnification if the camera is orthographic, otherwise returns 0.0f.
+  float magnification() const noexcept {
+    if (const auto sp = get_slot(this); sp && sp->orthographic) return sp->factor;
+    else return 0.0f;
   }
 
   float far_() const noexcept {

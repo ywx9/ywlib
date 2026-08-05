@@ -151,6 +151,16 @@ public:
     _ticking = false;
   }
 
+  string<char> to_string() const {
+    if (_footprints.empty()) return {};
+    if (_system_code != 0) {
+      if (_position == npos) return format(_kind.to_string(), ": ", _message, " (code=", _system_code, ")");
+      else return format(_kind.to_string(), ": ", _message, " (code=", _system_code, ", offset=", _position, ")");
+    } else if (_position != npos) return format(_kind.to_string(), ": ", _message, " (offset=", _position, ")");
+    else if (_message.empty()) return format(_kind.to_string());
+    else return format(_kind.to_string(), ": ", _message);
+  }
+
   /// returns std::unexpected<error> while adding footprint to error stack
   constexpr std::unexpected<error> relay(const source_line& Source = here()) & {
     add_footprint(Source);

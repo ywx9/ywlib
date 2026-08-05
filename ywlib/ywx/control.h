@@ -393,6 +393,18 @@ public:
     return {};
   }
 
+  float width() const noexcept {
+    if (const auto sp = get_slot(this)) return sp->size.x;
+    error(errors::not_initialized).fizzle_out();
+    return {};
+  }
+
+  float height() const noexcept {
+    if (const auto sp = get_slot(this)) return sp->size.y;
+    error(errors::not_initialized).fizzle_out();
+    return {};
+  }
+
   float2 radius() const noexcept {
     if (const auto sp = get_slot(this)) return sp->radius;
     error(errors::not_initialized).fizzle_out();
