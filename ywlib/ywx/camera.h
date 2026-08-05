@@ -43,15 +43,43 @@ public:
     bool dirty{true};
     float4 offset;   // offset of lens from camera body
     float4 rotation; // degree
+    float4 orientation{0.0f, 0.0f, 0.0f, 1.0f};
     float4 position; // position of camera body
   };
 
 private:
+  static float4 _euler_deg_from_orientation(float4 Orientation) noexcept {
+    const auto rad = yw::euler_from_quaternion(Orientation);
+    return float4(rad.x * 180.0f / float(pi), rad.y * 180.0f / float(pi), rad.z * 180.0f / float(pi), 0.0f);
+  }
+
+  static float4 _orientation_from_euler_deg(float4 Rotation) noexcept {
+    return yw::quaternion_from_euler(
+      float4(
+        Rotation.x * float(pi) / 180.0f, Rotation.y * float(pi) / 180.0f, Rotation.z * float(pi) / 180.0f, 0.0f));
+  }
+
+  static void _load_matrix(const float4x4& f, matrix& m) noexcept {
+    m.x = _mm_loadu_ps(f.x.data());
+    m.y = _mm_loadu_ps(f.y.data());
+    m.z = _mm_loadu_ps(f.z.data());
+    m.w = _mm_loadu_ps(f.w.data());
+  }
+
+  static void _rotation_matrix(slot* sp, matrix& m) {
+    float4x4 f;
+    yw::rotation_matrix_from_quaternion(sp->orientation, f);
+    _load_matrix(f, m);
+  }
+
+  static void _inverse_rotation_matrix(slot* sp, matrix& m) {
+    float4x4 f;
+    yw::inverse_rotation_matrix_from_quaternion(sp->orientation, f);
+    _load_matrix(f, m);
+  }
+
   static void _view_matrix(slot* sp, matrix& m) {
-    const auto radians = vapply_r<float4>([](float deg) { return deg * float(pi) / 180.0f; }, sp->rotation);
-    const auto cos = vapply_r<float4>(yw::cos, radians);
-    const auto sin = vapply_r<float4>(yw::sin, radians);
-    yw::inverse_rotation_matrix(_mm_loadu_ps(cos.data()), _mm_loadu_ps(sin.data()), m);
+    _inverse_rotation_matrix(sp, m);
     const auto pos = mm_neg(_mm_loadu_ps(sp->position.data()));
     m.x = mm_insert<0, 3>(mm_dot<3>(pos, m.x), m.x);
     m.y = mm_insert<0, 3>(mm_dot<3>(pos, m.y), m.y);
@@ -63,10 +91,7 @@ private:
   }
 
   static void _inverse_view_matrix(slot* sp, matrix& m) {
-    const auto radians = vapply_r<float4>([](float deg) { return deg * float(pi) / 180.0f; }, sp->rotation);
-    const auto cos = vapply_r<float4>(yw::cos, radians);
-    const auto sin = vapply_r<float4>(yw::sin, radians);
-    yw::rotation_matrix(_mm_loadu_ps(cos.data()), _mm_loadu_ps(sin.data()), m);
+    _rotation_matrix(sp, m);
     const auto off = _mm_loadu_ps(sp->offset.data());
     const auto pos = _mm_loadu_ps(sp->position.data());
     m.x = mm_insert<0, 3>(mm_dot<3>(off, m.x), m.x);
@@ -192,7 +217,7 @@ public:
   }
 
   float4 rotation() const noexcept {
-    if (const auto sp = get_slot(this)) return sp->rotation;
+    if (const auto sp = get_slot(this)) return _euler_deg_from_orientation(sp->orientation);
     else return {};
   }
 
@@ -201,6 +226,7 @@ public:
     if (!sp) return std::unexpected(error(errors::not_initialized, "camera not initialized"));
     if (!_finite(Rotation)) return std::unexpected(error(errors::invalid_argument, "rotation must be finite"));
     sp->rotation = Rotation;
+    sp->orientation = _orientation_from_euler_deg(Rotation);
     sp->dirty = true;
     return {};
   }
@@ -227,7 +253,32 @@ public:
     if (!_finite(Offset)) return std::unexpected(error(errors::invalid_argument, "offset must be finite"));
     sp->position = Position;
     sp->rotation = Rotation;
+    sp->orientation = _orientation_from_euler_deg(Rotation);
     sp->offset = Offset;
+    sp->dirty = true;
+    return {};
+  }
+
+  std::expected<void, error> rotate_axis(float3 Axis, float1 AngleDeg) {
+    const auto sp = get_slot(this);
+    if (!sp) return std::unexpected(error(errors::not_initialized, "camera not initialized"));
+    if (!_finite(float4(Axis.x, Axis.y, Axis.z, AngleDeg.x)))
+      return std::unexpected(error(errors::invalid_argument, "axis rotation must be finite"));
+    const auto delta = yw::quaternion_from_axis_angle(Axis, AngleDeg.x * float(pi) / 180.0f);
+    sp->orientation = yw::quaternion_multiply(delta, sp->orientation);
+    sp->rotation = _euler_deg_from_orientation(sp->orientation);
+    sp->dirty = true;
+    return {};
+  }
+
+  std::expected<void, error> rotate_local_axis(float3 Axis, float1 AngleDeg) {
+    const auto sp = get_slot(this);
+    if (!sp) return std::unexpected(error(errors::not_initialized, "camera not initialized"));
+    if (!_finite(float4(Axis.x, Axis.y, Axis.z, AngleDeg.x)))
+      return std::unexpected(error(errors::invalid_argument, "axis rotation must be finite"));
+    const auto delta = yw::quaternion_from_axis_angle(Axis, AngleDeg.x * float(pi) / 180.0f);
+    sp->orientation = yw::quaternion_multiply(sp->orientation, delta);
+    sp->rotation = _euler_deg_from_orientation(sp->orientation);
     sp->dirty = true;
     return {};
   }
@@ -250,8 +301,10 @@ public:
 
     if (x_zero && z_zero) {
       sp->rotation.x = dy > 0.0f ? -90.0f : 90.0f;
+      sp->rotation.y = 0.0f;
       sp->rotation.z = 0.0f;
       sp->rotation.w = 0.0f;
+      sp->orientation = _orientation_from_euler_deg(sp->rotation);
       sp->dirty = true;
       return {};
     }
@@ -263,6 +316,7 @@ public:
     sp->rotation.y = yaw * 180.0f / float(pi);
     sp->rotation.z = 0.0f;
     sp->rotation.w = 0.0f;
+    sp->orientation = _orientation_from_euler_deg(sp->rotation);
     sp->dirty = true;
     return {};
   }
@@ -302,6 +356,30 @@ public:
     else return float4(0, 0, 1, 0);
   }
 
+  float4 right_direction() const noexcept {
+    if (const auto sp = get_slot(this)) {
+      float4x4 m;
+      yw::rotation_matrix_from_quaternion(sp->orientation, m);
+      return float4(-m.x.x, -m.y.x, -m.z.x, 0.0f);
+    } else return float4(-1, 0, 0, 0);
+  }
+
+  float4 up_direction() const noexcept {
+    if (const auto sp = get_slot(this)) {
+      float4x4 m;
+      yw::rotation_matrix_from_quaternion(sp->orientation, m);
+      return float4(m.x.y, m.y.y, m.z.y, 0.0f);
+    } else return float4(0, 1, 0, 0);
+  }
+
+  float4 forward_direction() const noexcept {
+    if (const auto sp = get_slot(this)) {
+      float4x4 m;
+      yw::rotation_matrix_from_quaternion(sp->orientation, m);
+      return float4(m.x.z, m.y.z, m.z.z, 0.0f);
+    } else return float4(0, 0, 1, 0);
+  }
+
   const auto& constant_buffer() const noexcept {
     static yw::constant_buffer<constants> empty;
     if (const auto sp = get_slot(this)) return sp->cb;
@@ -317,6 +395,7 @@ public:
       return std::unexpected(error(errors::invalid_argument, "far plane must be greater than zero"));
     if (!_finite(sp->position)) return std::unexpected(error(errors::invalid_argument, "position must be finite"));
     if (!_finite(sp->rotation)) return std::unexpected(error(errors::invalid_argument, "rotation must be finite"));
+    if (!_finite(sp->orientation)) return std::unexpected(error(errors::invalid_argument, "orientation must be finite"));
     if (!_finite(sp->offset)) return std::unexpected(error(errors::invalid_argument, "offset must be finite"));
     if (sp->orthographic) {
       if (!_finite(sp->factor))

@@ -7,6 +7,66 @@ namespace yw {
 
 using float4x4 = vector4<vector4<float>>;
 
+inline constexpr float3 normalize(float3 v) noexcept {
+  const auto len = yw::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+  if (len <= 0.0f) return {};
+  return v / len;
+}
+
+inline constexpr float4 quaternion_normalize(float4 q) noexcept {
+  const auto len = yw::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+  if (len <= 0.0f) return float4(0, 0, 0, 1);
+  return q / len;
+}
+
+inline constexpr float4 quaternion_multiply(float4 a, float4 b) noexcept {
+  return quaternion_normalize(
+    float4(
+      a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+      a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+      a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+      a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z));
+}
+
+inline constexpr float4 quaternion_from_axis_angle(float3 Axis, float AngleRad) noexcept {
+  const auto axis = normalize(Axis);
+  if (axis.x == 0.0f && axis.y == 0.0f && axis.z == 0.0f) return float4(0, 0, 0, 1);
+  const auto half = AngleRad * 0.5f;
+  const auto s = yw::sin(half);
+  return quaternion_normalize(float4(axis.x * s, axis.y * s, axis.z * s, yw::cos(half)));
+}
+
+inline constexpr float4 quaternion_from_rotation_matrix(const float4x4& m) noexcept {
+  const auto trace = m.x.x + m.y.y + m.z.z;
+  float4 q;
+  if (trace > 0.0f) {
+    const auto s = yw::sqrt(trace + 1.0f) * 2.0f;
+    q.w = 0.25f * s;
+    q.x = (m.z.y - m.y.z) / s;
+    q.y = (m.x.z - m.z.x) / s;
+    q.z = (m.y.x - m.x.y) / s;
+  } else if (m.x.x > m.y.y && m.x.x > m.z.z) {
+    const auto s = yw::sqrt(1.0f + m.x.x - m.y.y - m.z.z) * 2.0f;
+    q.w = (m.z.y - m.y.z) / s;
+    q.x = 0.25f * s;
+    q.y = (m.x.y + m.y.x) / s;
+    q.z = (m.x.z + m.z.x) / s;
+  } else if (m.y.y > m.z.z) {
+    const auto s = yw::sqrt(1.0f + m.y.y - m.x.x - m.z.z) * 2.0f;
+    q.w = (m.x.z - m.z.x) / s;
+    q.x = (m.x.y + m.y.x) / s;
+    q.y = 0.25f * s;
+    q.z = (m.y.z + m.z.y) / s;
+  } else {
+    const auto s = yw::sqrt(1.0f + m.z.z - m.x.x - m.y.y) * 2.0f;
+    q.w = (m.y.x - m.x.y) / s;
+    q.x = (m.x.z + m.z.x) / s;
+    q.y = (m.y.z + m.z.y) / s;
+    q.z = 0.25f * s;
+  }
+  return quaternion_normalize(q);
+}
+
 struct matrix {
   union {
     __m128 rows[4];
@@ -134,6 +194,68 @@ inline constexpr void rotation_matrix(float4 rad, float4x4& out) {
     _mm_storeu_ps(out.z.data(), t2);
     out.w = float4(0, 0, 0, 1);
   }
+}
+
+inline constexpr float4 quaternion_from_euler(float4 rad) noexcept {
+  float4x4 m;
+  rotation_matrix(rad, m);
+  return quaternion_from_rotation_matrix(m);
+}
+
+inline constexpr void rotation_matrix_from_quaternion(float4 q, float4x4& out) noexcept {
+  q = quaternion_normalize(q);
+  const auto xx = q.x * q.x;
+  const auto yy = q.y * q.y;
+  const auto zz = q.z * q.z;
+  const auto xy = q.x * q.y;
+  const auto xz = q.x * q.z;
+  const auto yz = q.y * q.z;
+  const auto wx = q.w * q.x;
+  const auto wy = q.w * q.y;
+  const auto wz = q.w * q.z;
+
+  out.x = float4(1.0f - 2.0f * (yy + zz), 2.0f * (xy - wz), 2.0f * (xz + wy), 0.0f);
+  out.y = float4(2.0f * (xy + wz), 1.0f - 2.0f * (xx + zz), 2.0f * (yz - wx), 0.0f);
+  out.z = float4(2.0f * (xz - wy), 2.0f * (yz + wx), 1.0f - 2.0f * (xx + yy), 0.0f);
+  out.w = float4(0.0f, 0.0f, 0.0f, 1.0f);
+}
+
+inline constexpr void inverse_rotation_matrix_from_quaternion(float4 q, float4x4& out) noexcept {
+  rotation_matrix_from_quaternion(q, out);
+  auto t = out.x.y;
+  out.x.y = out.y.x;
+  out.y.x = t;
+  t = out.x.z;
+  out.x.z = out.z.x;
+  out.z.x = t;
+  t = out.y.z;
+  out.y.z = out.z.y;
+  out.z.y = t;
+}
+
+inline constexpr float4 euler_from_quaternion(float4 q) noexcept {
+  float4x4 m;
+  rotation_matrix_from_quaternion(q, m);
+  constexpr float eps = 1e-6f;
+  const auto sy = yw::clamp(-m.z.x, -1.0f, 1.0f);
+  const auto cy = yw::sqrt(yw::max(0.0f, 1.0f - sy * sy));
+  float4 rad;
+  rad.y = yw::asin(sy);
+  if (cy > eps) {
+    rad.x = yw::atan2(m.z.y, m.z.z);
+    rad.z = yw::atan2(m.y.x, m.x.x);
+  } else {
+    rad.x = yw::atan2(-m.y.z, m.y.y);
+    rad.z = 0.0f;
+  }
+  rad.w = 0.0f;
+  return rad;
+}
+
+inline constexpr float3 rotate(float3 v, float3 Axis, float AngleRad) noexcept {
+  const auto q = quaternion_from_axis_angle(Axis, AngleRad);
+  const auto u = float3(q.x, q.y, q.z);
+  return v + 2.0f * q.w * cross(u, v) + 2.0f * cross(u, cross(u, v));
 }
 
 inline constexpr void inverse_rotation_matrix(float4 rad, float4x4& out) {
