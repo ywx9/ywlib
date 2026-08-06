@@ -4,7 +4,14 @@ import argparse
 import subprocess
 import sys
 
-from _common import cmake_configure, project_root, run
+from _common import (
+    cmake_configure,
+    ensure_file_from_template,
+    project_root,
+    run,
+    templates_dir,
+)
+from _project import load_project_config, project_template_values
 
 
 def parse_args() -> argparse.Namespace:
@@ -20,6 +27,24 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     root = project_root()
+
+    project_json_path = root / "project.json"
+    if not project_json_path.is_file():
+        print(
+            "error: project.json is missing. Run: python tools/init.py first.",
+            file=sys.stderr,
+        )
+        return 1
+
+    cmake_lists_path = root / "CMakeLists.txt"
+    if not cmake_lists_path.is_file():
+        config = load_project_config(project_json_path)
+        ensure_file_from_template(
+            cmake_lists_path,
+            templates_dir() / "CMakeLists.txt.in",
+            project_template_values(config),
+            overwrite=False,
+        )
 
     build_dir = root / "build"
     build_type = "Debug" if args.debug else "Release"

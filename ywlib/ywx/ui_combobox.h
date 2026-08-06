@@ -172,7 +172,9 @@ public:
       dropdown_window.sync_layout();
       lbsp->ensure_visible(lbsp->selected_index);
       dropdown_window.sync_redraw();
-      dropdown_window.window_pos(dropdown_pos);
+      // dropdown_window.window_pos(dropdown_pos);
+      ::SetWindowPos(
+        dropdown_wsp->hwnd, HWND_TOPMOST, dropdown_pos.x, dropdown_pos.y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
       if (auto res = dropdown_window.show(); !res) return res.error().relay();
       return {};
     }
@@ -243,8 +245,9 @@ public:
     sp->policy = {size_policy::fit, size_policy::fit};
     sp->padding = float4::fill(arbitrary_value);
 
-    window::options op{.has_border = true, .has_caption = false, .resizable = false, .visible = false};
-    if (auto res = window::create(std::move(op))) sp->dropdown_window = std::move(*res);
+    if (auto res = window::create(
+          {.has_border = true, .has_caption = false, .resizable = false, .visible = false, .topmost = true}))
+      sp->dropdown_window = std::move(*res);
     else return res.error().relay();
     if (auto res = vlayout::create(sp->dropdown_window)) sp->dropdown_layout = std::move(*res);
     else return res.error().relay();
@@ -430,7 +433,8 @@ public:
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).fizzle_out();
     else if (const auto lbsp = get_slot<listbox>(sp->dropdown_listbox.id())) {
-      if (Index >= lbsp->items.size()) error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
+      if (Index >= lbsp->items.size())
+        error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
       else {
         sp->close_dropdown();
         lbsp->items.erase(lbsp->items.begin() + Index);
@@ -503,7 +507,8 @@ public:
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).fizzle_out();
     else if (const auto lbsp = get_slot<listbox>(sp->dropdown_listbox.id())) {
-      if (Index >= lbsp->items.size()) error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
+      if (Index >= lbsp->items.size())
+        error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
       else {
         lbsp->items[Index] = std::move(Text);
         if (Index == lbsp->selected_index)
@@ -519,7 +524,8 @@ public:
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).fizzle_out();
     else if (const auto lbsp = get_slot<listbox>(sp->dropdown_listbox.id())) {
-      if (Index >= lbsp->items.size()) error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
+      if (Index >= lbsp->items.size())
+        error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
       else {
         if (auto res = lbsp->items[Index].string(std::move(String)); !res) res.error().fizzle_out();
         if (Index == lbsp->selected_index)

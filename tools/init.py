@@ -10,7 +10,7 @@ from _common import (
     templates_dir,
 )
 from _gen_umbrella import generate_all
-from _project import load_project_config
+from _project import load_project_config, project_template_values
 
 
 def main() -> int:
@@ -27,15 +27,11 @@ def main() -> int:
             },
             overwrite=False,
         )
+        return 0
 
     config = load_project_config(project_json_path)
 
-    values = {
-        "PROJECT_NAME": config.project_name,
-        "SOURCE_FILE": config.source_file,
-        "TARGET_TYPE": config.target_type,
-        "LIBRARY": config.library,
-    }
+    values = project_template_values(config)
 
     generate_all(root / "ywlib")
 

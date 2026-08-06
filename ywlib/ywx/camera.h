@@ -421,7 +421,7 @@ public:
     _inverse_view_matrix(sp, m);
     m.store(ivm);
     if (sp->orthographic) {
-      const float sx = -2.0f * sp->factor / sp->size.x;
+      const float sx = 2.0f * sp->factor / sp->size.x;
       const float sy = 2.0f * sp->factor / sp->size.y;
       const float sz = 1.0f / sp->far_plane;
       pm.x = float4(sx, 0, 0, 0);
@@ -437,7 +437,7 @@ public:
       const float a = f * sp->size.y / sp->size.x;
       constexpr float b = -1.0f / (far_by_near - 1.0f);
       const float c = -sp->far_plane * b;
-      pm.x = float4(-a, 0, 0, 0);
+      pm.x = float4(a, 0, 0, 0);
       pm.y = float4(0, f, 0, 0);
       pm.z = float4(0, 0, b, c);
       pm.w = float4(0, 0, 1, 0);

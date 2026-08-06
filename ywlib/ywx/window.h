@@ -25,6 +25,7 @@ public:
     bool resizable = true;
     bool visible = true;
     bool enabled = true;
+    bool topmost = false;
     const string<wchar_t>& get_title() const noexcept { return title; }
     DWORD get_style() const noexcept {
       DWORD s = has_caption ? WS_CAPTION | WS_SYSMENU : WS_POPUP;
@@ -93,6 +94,7 @@ public:
 
     bool visible = true;
     bool enabled = true;
+    bool topmost = false;
     bool fit_to_necessary_size = false;
     bool messy = false;
     bool dirty = false;
@@ -416,10 +418,14 @@ public:
       sp->visible = static_cast<bool>(sp->style & WS_VISIBLE);
       if constexpr (requires { op.enabled; }) sp->enabled = static_cast<bool>(op.enabled);
       else sp->enabled = true;
+      if constexpr (requires { op.topmost; }) sp->topmost = static_cast<bool>(op.topmost);
+      else sp->topmost = false;
       sp->fit_to_necessary_size = !(sp->style & WS_THICKFRAME) && !op.size.has_value();
       sp->size = vapply_r<uint2>(yw::max, op.size.value_or(int2(cr.right, cr.bottom)), uint2::fill(arbitrary_value));
       const auto b = sp->get_bounds();
-      win32_bool_test(::SetWindowPos, sp->hwnd, 0, sp->pos.x, sp->pos.y, b.x, b.y, SWP_NOZORDER | SWP_NOACTIVATE);
+      win32_bool_test(
+        ::SetWindowPos, sp->hwnd, sp->topmost ? HWND_TOPMOST : HWND_NOTOPMOST, sp->pos.x, sp->pos.y, b.x, b.y,
+        SWP_NOACTIVATE);
       if (!sp->enabled) win32_bool_test(::EnableWindow, sp->hwnd, false);
       if (auto res = sp->update_rendertarget(); !res) return res.error().relay();
       if (sp->style & WS_VISIBLE) ::ShowWindow(sp->hwnd, SW_SHOW);
@@ -637,6 +643,17 @@ public:
     return {};
   }
 
+  std::expected<void, error> topmost(bool b) {
+    if (const auto sp = get_slot<window>(_id); sp) {
+      if (sp->topmost == b) return {};
+      win32_bool_test(
+        ::SetWindowPos, sp->hwnd, b ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+      sp->topmost = b;
+    }
+    return {};
+  }
+
   std::expected<drawing, error> begin_draw() {
     const auto sp = get_slot<window>(_id);
     if (!sp) return std::unexpected(error(errors::invalid_slotid));
@@ -713,6 +730,12 @@ public:
 
   bool enabled() const noexcept {
     if (const auto sp = get_slot(this)) return sp->enabled;
+    error(errors::invalid_slotid).fizzle_out();
+    return false;
+  }
+
+  bool topmost() const noexcept {
+    if (const auto sp = get_slot(this)) return sp->topmost;
     error(errors::invalid_slotid).fizzle_out();
     return false;
   }
@@ -1233,6 +1256,7 @@ struct custom_window_options {
   optional<int2> size{};
   DWORD style = WS_OVERLAPPEDWINDOW;
   DWORD exstyle = WS_EX_ACCEPTFILES;
+  bool topmost = false;
   const string<wchar_t>& get_title() const noexcept { return title; }
   DWORD get_style() const noexcept { return style; }
   DWORD get_exstyle() const noexcept { return exstyle; }

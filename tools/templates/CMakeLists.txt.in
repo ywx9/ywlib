@@ -16,7 +16,7 @@ if("@TARGET_TYPE@" STREQUAL "dll")
     PREFIX ""
   )
 else()
-  add_executable(${PROJECT_NAME} @SOURCE_FILE@)
+  add_executable(${PROJECT_NAME} @EXECUTABLE_OPTIONS@ @SOURCE_FILE@)
 endif()
 
 set_target_properties(${PROJECT_NAME} PROPERTIES

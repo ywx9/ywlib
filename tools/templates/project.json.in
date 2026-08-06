@@ -2,5 +2,6 @@
   "project_name": "@PROJECT_NAME@",
   "source_file": "source.cpp",
   "target_type": "exe",
+  "show_console": true,
   "library": "ywlib"
 }
