@@ -47,7 +47,10 @@ inline std::expected<FILE*, error> _open(const wchar_t* p, open_mode m) {
       ::_close(fd);
       return std::unexpected(error(errors::operation_failed, "_fdopen failed", errno));
     } else return f;
-  } else return std::unexpected(error(errors::operation_failed, "CreateFileW failed", int32_t(::GetLastError())));
+  } else
+    return std::unexpected(error(
+      errors::operation_failed, format("CreateFileW failed: ", *p ? string_view<wchar_t>(p) : L"<empty>"sv),
+      int32_t(::GetLastError())));
 }
 inline std::expected<void, error> _seek(FILE* f, int64_t off, seek_whence w) {
   if (::_fseeki64(f, static_cast<__int64>(off), static_cast<int>(w)) != 0)
@@ -84,7 +87,8 @@ inline std::expected<FILE*, error> _open(const char* p, open_mode m) {
   }
   const mode_t perms = 0666;
   if (int fd = ::open(p, flags, perms); fd == -1) {
-    return std::unexpected(error(errors::operation_failed, "open failed", errno));
+    return std::unexpected(
+      error(errors::operation_failed, format("open failed: ", *p ? string_view<char>(p) : "<empty>"sv), errno));
   } else if (std::FILE* f = ::fdopen(fd, fdopen_mode); !f) {
     ::close(fd);
     return std::unexpected(error(errors::operation_failed, "fdopen failed", errno));
@@ -218,7 +222,6 @@ public:
 
   bool is_open() const noexcept {
     if (const auto sp = get_slot(this); !sp) {
-      error(errors::invalid_slotid).fizzle_out(); // warning
       return false;
     } else return sp->file != nullptr;
   }

@@ -468,7 +468,7 @@ inline void parse(int argc, char** argv) {
 
       if (sp->type == handle::type::option) {
         if (!specified && i + 1 < args.size()) {
-          const auto next = args[i + 1];
+          const auto& next = args[i + 1];
           if (!internal::is_option_token(next) || internal::is_negative_number_token(next))
             value = next, specified = true, ++i;
         }

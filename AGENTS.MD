@@ -21,4 +21,5 @@ Windows / MinGW / CMake support is important.
 - Read source files and comments as UTF-8 by default.
   Do not rely on PowerShell's default text encoding when inspecting files.
 - Do not routinely run `git status` or broad `git diff`.
-- The name of source file is written in `project.json`.
+- Source file named in `project.json` is gitignored and located in the root directory.
+  Do not rely on `rg --files` to find it.
