@@ -7,11 +7,11 @@ namespace yw {
 
 using float4x4 = vector4<vector4<float>>;
 
-inline constexpr float3 normalize(float3 v) noexcept {
-  const auto len = yw::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-  if (len <= 0.0f) return {};
-  return v / len;
-}
+// inline constexpr float3 normalize(float3 v) noexcept {
+//   const auto len = yw::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+//   if (len <= 0.0f) return {};
+//   return v / len;
+// }
 
 inline constexpr float4 quaternion_normalize(float4 q) noexcept {
   const auto len = yw::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
@@ -29,7 +29,7 @@ inline constexpr float4 quaternion_multiply(float4 a, float4 b) noexcept {
 }
 
 inline constexpr float4 quaternion_from_axis_angle(float3 Axis, float AngleRad) noexcept {
-  const auto axis = normalize(Axis);
+  const auto axis = Axis.normalized();
   if (axis.x == 0.0f && axis.y == 0.0f && axis.z == 0.0f) return float4(0, 0, 0, 1);
   const auto half = AngleRad * 0.5f;
   const auto s = yw::sin(half);

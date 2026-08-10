@@ -295,7 +295,7 @@ public:
         desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT, desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
         hresult_test(dxgi::factory()->CreateSwapChainForHwnd, d3d::device(), hwnd, &desc, 0, 0, &swapchain.get());
       } else hresult_test(swapchain->ResizeBuffers, 0, size.x, size.y, bitmap::dxgiformat, 0);
-      if (auto res = bitmap::create(swapchain.get())) rendertarget = std::move(*res);
+      if (auto res = bitmap::create_from_swapchain(swapchain.get())) rendertarget = std::move(*res);
       else return res.error().relay();
       if (auto res = bitmap::create(size)) controllayer = std::move(*res);
       else return res.error().relay();

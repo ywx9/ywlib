@@ -471,6 +471,12 @@ public:
     return {};
   }
 
+  const auto& geometry() const noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) error(errors::not_initialized).go_off();
+    return sp->geometry;
+  }
+
   //-- setter --//
 
   auto& enabled(this auto& self, bool b) noexcept {

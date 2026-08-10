@@ -1,4 +1,5 @@
 #pragma once
+#include <yw/math.h>
 #include <yw/string.h>
 #include <yw/tuple.h>
 
@@ -86,6 +87,23 @@ template<std::regular T, size_t N> struct vector {
     res._vals[I] += V;
     return res;
   }
+
+  constexpr auto squared_length() const requires requires { T{} * T{}; } {
+    using RT = decltype(T{} * T{});
+    RT result{};
+    for (size_t i = 0; i < N; ++i) result += operator[](i) * operator[](i);
+    return result;
+  }
+
+  constexpr auto length() const requires requires(const vector& v) { yw::sqrt(v.squared_length()); } {
+    return yw::sqrt(squared_length());
+  }
+
+  constexpr auto normalized() const requires requires(const vector& v) { v / v.length(); } {
+    const auto len = length();
+    if (len <= 0) return decltype(*this / len){};
+    return *this / len;
+  }
 };
 
 template<typename T, typename... Ts> vector(T&&, Ts&&...) -> vector<T, sizeof...(Ts) + 1>;
@@ -141,6 +159,15 @@ template<typename T, size_t N> constexpr vector<T, N> operator+(const vector<T, 
 
 template<typename T, size_t N> constexpr vector<T, N> operator-(const vector<T, N>& a) {
   return [&]<size_t... Is>(sequence<Is...>) -> vector<T, N> { return {(-get<Is>(a))...}; }(make_sequence<0, N>{});
+}
+
+//////////////////////////////////////// MARK: logical not
+
+template<typename T, size_t N> requires requires(const T& a) { !a; }
+constexpr vector<decltype(!std::declval<const T&>()), N> operator!(const vector<T, N>& a) {
+  return [&]<size_t... Is>(sequence<Is...>) -> vector<decltype(!std::declval<const T&>()), N> {
+    return {(!get<Is>(a))...};
+  }(make_sequence<0, N>{});
 }
 
 //////////////////////////////////////// MARK: binary plus
@@ -346,6 +373,18 @@ template<std::regular T> struct vector<T, 1> {
     noexcept(noexcept(operator[](I) + V)) requires requires { operator[](I) + V; } {
     return vector<decltype(operator[](I) + V), 1>(x + V);
   }
+
+  constexpr auto squared_length() const requires requires { x * x; } { return x * x; }
+
+  constexpr auto length() const requires requires(const vector& v) { yw::sqrt(v.squared_length()); } {
+    return yw::sqrt(squared_length());
+  }
+
+  constexpr auto normalized() const requires requires(const vector& v) { v / v.length(); } {
+    const auto len = length();
+    if (len <= 0) return decltype(*this / len){};
+    return *this / len;
+  }
 };
 
 //////////////////////////////////////// MARK: VECTOR2
@@ -369,8 +408,8 @@ template<std::regular T> struct vector<T, 2> {
   template<tuple_like<2> Tp> requires(!castable_to<Tp, T> && !same_as<remove_cvref<Tp>, vector>)
   constexpr vector(Tp&& tp) : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))) {}
 
-  constexpr bool empty() const noexcept { return false; }
-  constexpr size_t size() const noexcept { return 2; }
+  static constexpr bool empty() noexcept { return false; }
+  static constexpr size_t size() noexcept { return 2; }
 
   T* begin() noexcept { return &x; }
   const T* begin() const noexcept { return &x; }
@@ -424,6 +463,18 @@ template<std::regular T> struct vector<T, 2> {
     if constexpr (I == 0) return vector<decltype(operator[](I) + V), 2>(x + V, y);
     else return vector<decltype(operator[](I) + V), 2>(x, y + V);
   }
+
+  constexpr auto squared_length() const requires requires { x * x + y * y; } { return x * x + y * y; }
+
+  constexpr auto length() const requires requires(const vector& v) { yw::sqrt(v.squared_length()); } {
+    return yw::sqrt(squared_length());
+  }
+
+  constexpr auto normalized() const requires requires(const vector& v) { v / v.length(); } {
+    const auto len = length();
+    if (len <= 0) return decltype(*this / len){};
+    return *this / len;
+  }
 };
 
 //////////////////////////////////////// MARK: VECTOR3
@@ -452,8 +503,8 @@ template<std::regular T> struct vector<T, 3> {
     : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))),
       z(T(yw::get<2>(static_cast<Tp&&>(tp)))) {}
 
-  constexpr bool empty() const noexcept { return false; }
-  constexpr size_t size() const noexcept { return count; }
+  static constexpr bool empty() noexcept { return false; }
+  static constexpr size_t size() noexcept { return count; }
 
   T* data() noexcept { return &x; }
   const T* data() const noexcept { return &x; }
@@ -514,6 +565,18 @@ template<std::regular T> struct vector<T, 3> {
     else if constexpr (I == 1) return vector<decltype(operator[](I) + V), 3>(x, y + V, z);
     else return vector<decltype(operator[](I) + V), 3>(x, y, z + V);
   }
+
+  constexpr auto squared_length() const requires requires { x * x + y * y + z * z; } { return x * x + y * y + z * z; }
+
+  constexpr auto length() const requires requires(const vector& v) { yw::sqrt(v.squared_length()); } {
+    return yw::sqrt(squared_length());
+  }
+
+  constexpr auto normalized() const requires requires(const vector& v) { v / v.length(); } {
+    const auto len = length();
+    if (len <= 0) return decltype(*this / len){};
+    return *this / len;
+  }
 };
 
 //////////////////////////////////////// MARK: VECTOR4
@@ -555,8 +618,8 @@ template<std::regular T> struct vector<T, 4> {
     : x(T(yw::get<0>(static_cast<Tp1&&>(tp1)))), y(T(yw::get<1>(static_cast<Tp1&&>(tp1)))),
       z(T(yw::get<0>(static_cast<Tp2&&>(tp2)))), w(T(yw::get<1>(static_cast<Tp2&&>(tp2)))) {}
 
-  constexpr bool empty() const noexcept { return false; }
-  constexpr size_t size() const noexcept { return count; }
+  static constexpr bool empty() noexcept { return false; }
+  static constexpr size_t size() noexcept { return count; }
 
   T* data() noexcept { return &x; }
   const T* data() const noexcept { return &x; }
@@ -570,12 +633,12 @@ template<std::regular T> struct vector<T, 4> {
   constexpr T& back() noexcept { return w; }
   constexpr const T& back() const noexcept { return w; }
 
-  constexpr T& operator[](integral auto i) {
+  constexpr T& operator[](integral auto i) noexcept {
     const auto ii = size_t((i % 4) + 4) % 4;
     if (!std::is_constant_evaluated()) return *(&x + ii);
     return ii == 0 ? x : (ii == 1 ? y : (ii == 2 ? z : w));
   }
-  constexpr const T& operator[](integral auto i) const {
+  constexpr const T& operator[](integral auto i) const noexcept {
     const auto ii = size_t((i % 4) + 4) % 4;
     if (!std::is_constant_evaluated()) return *(&x + ii);
     return ii == 0 ? x : (ii == 1 ? y : (ii == 2 ? z : w));
@@ -608,6 +671,8 @@ template<std::regular T> struct vector<T, 4> {
     return s;
   }
 
+  constexpr string<char> to_string() const { return to_string<char>(); }
+
   template<size_t I, castable_to<T> U> requires(I < 4) constexpr auto insert(U&& V) const {
     if constexpr (I == 0) return vector<T, 4>(static_cast<U&&>(V), y, z, w);
     else if constexpr (I == 1) return vector<T, 4>(x, static_cast<U&&>(V), z, w);
@@ -621,6 +686,20 @@ template<std::regular T> struct vector<T, 4> {
     else if constexpr (I == 1) return vector<decltype(operator[](I) + V), 4>(x, y + V, z, w);
     else if constexpr (I == 2) return vector<decltype(operator[](I) + V), 4>(x, y, z + V, w);
     else return vector<decltype(operator[](I) + V), 4>(x, y, z, w + V);
+  }
+
+  constexpr auto squared_length() const requires requires { x * x + y * y + z * z + w * w; } {
+    return x * x + y * y + z * z + w * w;
+  }
+
+  constexpr auto length() const requires requires(const vector& v) { yw::sqrt(v.squared_length()); } {
+    return yw::sqrt(squared_length());
+  }
+
+  constexpr auto normalized() const requires requires(const vector& v) { v / v.length(); } {
+    const auto len = length();
+    if (len <= 0) return decltype(*this / len){};
+    return *this / len;
   }
 };
 

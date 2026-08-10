@@ -6,6 +6,16 @@
 
 namespace yw {
 
+inline constexpr uint8_t _premultiply_channel(uint8_t c, uint8_t a) noexcept {
+  return static_cast<uint8_t>((uint32_t(c) * uint32_t(a) + 127) / 255);
+}
+
+inline constexpr uint8_t _straighten_channel(uint8_t c, uint8_t a) noexcept {
+  if (a == 0) return 0;
+  const auto v = (uint32_t(c) * 255 + uint32_t(a) / 2) / uint32_t(a);
+  return static_cast<uint8_t>(v > 255 ? 255 : v);
+}
+
 //////////////////////////////////////// MARK: rgba
 
 struct rgba {
@@ -22,6 +32,14 @@ struct rgba {
     : r(static_cast<uint8_t>((rrggbb >> 16) & 0xFF)), g(static_cast<uint8_t>((rrggbb >> 8) & 0xFF)),
       b(static_cast<uint8_t>(rrggbb & 0xFF)), a(static_cast<uint8_t>(alpha)) {}
   constexpr rgba(integral auto rrggbb) noexcept : rgba(rrggbb, 255) {}
+
+  constexpr rgba premultiplied_alpha() const noexcept {
+    return {_premultiply_channel(r, a), _premultiply_channel(g, a), _premultiply_channel(b, a), a};
+  }
+
+  constexpr rgba straight_alpha() const noexcept {
+    return {_straighten_channel(r, a), _straighten_channel(g, a), _straighten_channel(b, a), a};
+  }
 
   template<uint64_t I> requires(I < 4) constexpr uint8_t& get() noexcept { return select<I>(r, g, b, a); }
   template<uint64_t I> requires(I < 4) constexpr const uint8_t& get() const noexcept { return select<I>(r, g, b, a); }
@@ -47,6 +65,14 @@ struct bgra {
 
   explicit constexpr bgra(const rgba& color) noexcept : bgra(color.b, color.g, color.r, color.a) {}
   explicit constexpr operator rgba() const noexcept { return rgba{r, g, b, a}; }
+
+  constexpr bgra premultiplied_alpha() const noexcept {
+    return {_premultiply_channel(b, a), _premultiply_channel(g, a), _premultiply_channel(r, a), a};
+  }
+
+  constexpr bgra straight_alpha() const noexcept {
+    return {_straighten_channel(b, a), _straighten_channel(g, a), _straighten_channel(r, a), a};
+  }
 
   template<uint64_t I> requires(I < 4) constexpr uint8_t& get() noexcept { return select<I>(b, g, r, a); }
   template<uint64_t I> requires(I < 4) constexpr const uint8_t& get() const noexcept { return select<I>(b, g, r, a); }

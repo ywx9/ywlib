@@ -111,6 +111,25 @@ public:
   explicit constexpr operator bool() const noexcept { return _ticking; }
   static constexpr bool ticking() noexcept { return !_footprints.empty(); }
 
+  /// clears error state
+  void clear() noexcept {
+    _kind = {};
+    _message.clear();
+    _system_code = 0;
+    _position = npos;
+    _footprints.clear();
+    _ticking = false;
+  }
+
+  /// gets error message
+  constexpr string_view<char> message() const noexcept { return _message; }
+
+  /// sets error message
+  constexpr error& message(string<char> Message) & {
+    _message = std::move(Message);
+    return *this;
+  }
+
   /// prints error message and exits program
   void go_off() {
     if (_footprints.empty()) return;

@@ -445,7 +445,7 @@ public:
       error(errors::invalid_slotid).fizzle_out();
       return *this;
     }
-    sp->reserve({Pos.x, Pos.y, Size.x, Size.y});
+    sp->reserve({Pos.y, Pos.x, Size.x, Size.y});
     return *this;
   }
 
