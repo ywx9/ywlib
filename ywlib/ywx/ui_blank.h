@@ -35,11 +35,6 @@ public:
     return b;
   }
 
-  //-- getter --//
-
-  float2 pos() const noexcept { return control::pos(); }
-  float2 size() const noexcept { return control::size(); }
-
 private:
   using control::align;
   using control::background_color;

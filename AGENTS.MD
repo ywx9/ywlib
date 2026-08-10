@@ -23,3 +23,4 @@ Windows / MinGW / CMake support is important.
 - Do not routinely run `git status` or broad `git diff`.
 - Source file named in `project.json` is gitignored and located in the root directory.
   Do not rely on `rg --files` to find it.
+- Do not include invisual library headers; Use umbrella header (`<ywlib>` or `<ywxlib>`).

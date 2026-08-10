@@ -250,7 +250,25 @@ public:
     d3d::context()->ClearRenderTargetView(d3d_rtv(), &ClearColor.r);
     return {};
   }
+
+  /// \note `d2d_bitmap` is required.
+  std::expected<drawing, error> begin_draw() {
+    if (!d2d_bitmap()) return std::unexpected(error(errors::invalid_operation, "texture is not a d2d bitmap"));
+    if (auto res = drawing::create(d2d_bitmap()); !res) return res.error().relay();
+    else return std::move(*res);
+  }
+
+  /// \note `d2d_bitmap` is required.
+  std::expected<drawing, error> begin_draw(const color& ClearColor) {
+    if (!d2d_bitmap()) return std::unexpected(error(errors::invalid_operation, "texture is not a d2d bitmap"));
+    if (auto res = drawing::create(d2d_bitmap())) {
+      d2d::context()->Clear(reinterpret_cast<const D2D1_COLOR_F*>(&ClearColor));
+      return std::move(*res);
+    } else return res.error().relay();
+  }
 };
+
+/// MARK: depth_texture
 
 class depth_texture : public handle_base {
 public:
