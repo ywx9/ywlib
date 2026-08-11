@@ -183,14 +183,10 @@ class d3d {
 
     std::expected<void, error> _init_blend_state() {
       D3D11_BLEND_DESC blend_desc{};
-      blend_desc.RenderTarget[0].BlendEnable = TRUE;
-      blend_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
-      blend_desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-      blend_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-      blend_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-      blend_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
-      blend_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-      blend_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+      for (auto& rt : blend_desc.RenderTarget) {
+        rt.BlendEnable = FALSE;
+        rt.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+      }
       hresult_test(device->CreateBlendState, &blend_desc, &blend_state);
       context->OMSetBlendState(blend_state, nullptr, 0xffffffff);
       return {};

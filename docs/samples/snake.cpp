@@ -63,6 +63,33 @@ struct game_state {
 
 bool opposite(int2 a, int2 b) { return a.x + b.x == 0 && a.y + b.y == 0; }
 
+void turn(game_state& game, int2 dir) {
+  if (!opposite(game.direction, dir)) game.next_direction = dir;
+}
+
+struct input_state {
+  bool launch = false;
+
+  bool set(game_state& game, key k, bool down) {
+    if (!down) {
+      if (k == keys::space || k == keys::up || k == keys::w || k == keys::down || k == keys::s ||
+          k == keys::left || k == keys::a || k == keys::right || k == keys::d)
+        return true;
+      return false;
+    }
+
+    if (k == keys::up || k == keys::w) return turn(game, {0, -1}), true;
+    if (k == keys::down || k == keys::s) return turn(game, {0, 1}), true;
+    if (k == keys::left || k == keys::a) return turn(game, {-1, 0}), true;
+    if (k == keys::right || k == keys::d) return turn(game, {1, 0}), true;
+    if (k == keys::space) {
+      launch = true;
+      return true;
+    }
+    return false;
+  }
+};
+
 void draw_cell(float2 origin, int2 p, const color& c, float inset = 2.0f) {
   brush::color(c);
   fill_rectangle(origin + float2(p) * cell + float2::fill(inset), float2::fill(cell - inset * 2.0f));
@@ -99,22 +126,6 @@ void draw_game(ui::blank& canvas, const game_state& game) {
   if (game.snake.size()) draw_cell(origin, game.snake.front().pos, color(0.55f, 0.92f, 0.62f), 1.5f);
 }
 
-void turn(game_state& game, int2 dir) {
-  if (!opposite(game.direction, dir)) game.next_direction = dir;
-}
-
-void read_input(game_state& game) {
-  if (keys::up.pressed() || keys::w.pressed()) turn(game, {0, -1});
-  if (keys::down.pressed() || keys::s.pressed()) turn(game, {0, 1});
-  if (keys::left.pressed() || keys::a.pressed()) turn(game, {-1, 0});
-  if (keys::right.pressed() || keys::d.pressed()) turn(game, {1, 0});
-
-  if (keys::space.pressed()) {
-    if (game.game_over) game.restart();
-    game.running = true;
-  }
-}
-
 void advance(game_state& game) {
   game.direction = game.next_direction;
   const auto next = game.snake.front().pos + game.direction;
@@ -141,8 +152,12 @@ void advance(game_state& game) {
   } else game.snake.pop_back();
 }
 
-void update_game(game_state& game, float dt) {
-  read_input(game);
+void update_game(game_state& game, input_state& input, float dt) {
+  if (input.launch) {
+    if (game.game_over) game.restart();
+    game.running = true;
+    input.launch = false;
+  }
   if (!game.running) return;
 
   game.elapsed += dt;
@@ -176,12 +191,17 @@ int main() {
   prompt.text_align(ui::center).font({.size = 26.0f});
 
   game_state game;
+  input_state input;
   game.restart();
+
+  win.key_event([&](key_event e) {
+    return input.set(game, e.key, e.down);
+  });
 
   while (mainloop) {
     const auto dt = float(yw::min(mainloop.spf(), 0.25));
 
-    update_game(game, dt);
+    update_game(game, input, dt);
     score.string(format<wchar_t>(L"Score ", game.score));
     length.string(format<wchar_t>(L"Length ", int(game.snake.size())));
     time.string(format<wchar_t>(L"Time ", int(game.elapsed)));

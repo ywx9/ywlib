@@ -58,9 +58,9 @@ public:
 
   constexpr const C* c_str() const noexcept {
     switch (_data.index()) {
-    case 0: return _data.template get<0>().c_str();
-    case 1: return _data.template get<1>().c_str();
-    default: return empty_string<C>.c_str();
+    case 0: return _data.template get<0>().data();
+    case 1: return _data.template get<1>().data();
+    default: return empty_string<C>.data();
     }
   }
 

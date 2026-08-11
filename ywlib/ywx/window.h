@@ -82,6 +82,8 @@ public:
 
     TRACKMOUSEEVENT track_mouse_event{sizeof(TRACKMOUSEEVENT), TME_LEAVE};
     int2 last_cursor_pos{}; // updated in mouse_move_event
+    bool cursor_locked = false;
+    bool cursor_hidden_by_lock = false;
 
     function<bool, yw::button_event> button_event{};
     function<bool, yw::drag_event> drag_event{};
@@ -150,6 +152,13 @@ public:
     int2 get_bounds() const noexcept { return size + frame_thickness.xy() + frame_thickness.zw(); }
     int2 get_client_origin() const noexcept { return pos + frame_thickness.xy(); }
     int2 get_local_pointer_pos() const noexcept { return cursor_pos - get_client_origin(); }
+    int2 get_client_center_pos() const noexcept { return int2(int(size.x) / 2, int(size.y) / 2); }
+
+    int2 get_client_center_screen_pos() const noexcept {
+      POINT p{get_client_center_pos().x, get_client_center_pos().y};
+      ::ClientToScreen(hwnd, &p);
+      return {p.x, p.y};
+    }
 
     std::expected<uint2, error> get_necessary_size() const {
       const auto csp = get_slot<control>(control_id);
@@ -168,7 +177,37 @@ public:
       tooltip_text = {};
     }
 
+    void hide_cursor_for_lock() noexcept {
+      if (cursor_hidden_by_lock) return;
+      while (::ShowCursor(false) >= 0) {}
+      cursor_hidden_by_lock = true;
+    }
+
+    void show_cursor_for_lock() noexcept {
+      if (!cursor_hidden_by_lock) return;
+      while (::ShowCursor(true) < 0) {}
+      cursor_hidden_by_lock = false;
+    }
+
+    void center_locked_cursor() noexcept {
+      if (!cursor_locked || !hwnd) return;
+      const auto center = get_client_center_screen_pos();
+      cursor_pos = center;
+      last_cursor_pos = center;
+      ::SetCursorPos(center.x, center.y);
+    }
+
+    void set_cursor_lock(bool b) noexcept {
+      if (cursor_locked == b) return;
+      cursor_locked = b;
+      if (cursor_locked) {
+        hide_cursor_for_lock();
+        center_locked_cursor();
+      } else show_cursor_for_lock();
+    }
+
     void clear_window_state() noexcept {
+      set_cursor_lock(false);
       if (const auto csp = get_slot<control>(focused_control_id)) csp->handle_focus_event({false});
       focused_control_id = {};
       caret_pos = std::nullopt;
@@ -740,6 +779,12 @@ public:
     return false;
   }
 
+  bool cursor_locked() const noexcept {
+    if (const auto sp = get_slot(this)) return sp->cursor_locked;
+    error(errors::invalid_slotid).fizzle_out();
+    return false;
+  }
+
   const auto& color_theme() const noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
@@ -934,6 +979,16 @@ public:
         error(errors::operation_failed, "EnableWindow failed", int32_t(last_error)).go_off();
     }
     sp->dirty = true;
+    return *this;
+  }
+
+  auto& cursor_lock(bool b) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) {
+      error(errors::invalid_slotid).fizzle_out();
+      return *this;
+    }
+    sp->set_cursor_lock(b);
     return *this;
   }
 

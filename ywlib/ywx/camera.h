@@ -9,8 +9,8 @@ namespace yw {
 
 class camera : public handle_base {
   static constexpr float4x4 identity = {float4(1, 0, 0, 0), float4(0, 1, 0, 0), float4(0, 0, 1, 0), float4(0, 0, 0, 1)};
-  static constexpr float min_perspective_deg = 1.0f;
-  static constexpr float max_perspective_deg = 179.0f;
+  static constexpr float min_perspective_rad = float(pi) / 180.0f;
+  static constexpr float max_perspective_rad = float(pi) * 179.0f / 180.0f;
 
   static bool _finite(float value) noexcept { return value == value && value != inf && value != -inf; }
 
@@ -42,21 +42,19 @@ public:
     bool orthographic{};
     bool dirty{true};
     float4 offset;   // offset of lens from camera body
-    float4 rotation; // degree
+    float4 rotation; // radians
     float4 orientation{0.0f, 0.0f, 0.0f, 1.0f};
     float4 position; // position of camera body
   };
 
 private:
-  static float4 _euler_deg_from_orientation(float4 Orientation) noexcept {
-    const auto rad = yw::euler_from_quaternion(Orientation);
-    return float4(rad.x * 180.0f / float(pi), rad.y * 180.0f / float(pi), rad.z * 180.0f / float(pi), 0.0f);
+  static float4 _euler_from_orientation(float4 Orientation) noexcept {
+    const auto rotation = yw::euler_from_quaternion(Orientation);
+    return float4(rotation.x, rotation.y, rotation.z, 0.0f);
   }
 
-  static float4 _orientation_from_euler_deg(float4 Rotation) noexcept {
-    return yw::quaternion_from_euler(
-      float4(
-        Rotation.x * float(pi) / 180.0f, Rotation.y * float(pi) / 180.0f, Rotation.z * float(pi) / 180.0f, 0.0f));
+  static float4 _orientation_from_euler(float4 Rotation) noexcept {
+    return yw::quaternion_from_euler(float4(Rotation.x, Rotation.y, Rotation.z, 0.0f));
   }
 
   static void _load_matrix(const float4x4& f, matrix& m) noexcept {
@@ -150,21 +148,21 @@ public:
     return {};
   }
 
-  std::expected<void, error> perspective(float1 fov_deg) {
+  std::expected<void, error> perspective(float1 fov) {
     const auto sp = get_slot(this);
     if (!sp) return std::unexpected(error(errors::not_initialized, "camera not initialized"));
-    if (!_finite(fov_deg.x)) return std::unexpected(error(errors::invalid_argument, "perspective fov must be finite"));
-    if (fov_deg.x < min_perspective_deg || fov_deg.x > max_perspective_deg)
-      return std::unexpected(error(errors::invalid_argument, "perspective fov must be in [1, 179] degrees"));
-    sp->factor = fov_deg.x * float(pi) / 180.0f;
+    if (!_finite(fov.x)) return std::unexpected(error(errors::invalid_argument, "perspective fov must be finite"));
+    if (fov.x < min_perspective_rad || fov.x > max_perspective_rad)
+      return std::unexpected(error(errors::invalid_argument, "perspective fov must be in [pi/180, 179*pi/180] radians"));
+    sp->factor = fov.x;
     sp->orthographic = false;
     sp->dirty = true;
     return {};
   }
 
-  /// returns the field of view in degrees if the camera is perspective, otherwise returns 0.0f.
+  /// returns the field of view in radians if the camera is perspective, otherwise returns 0.0f.
   float fov() const noexcept {
-    if (const auto sp = get_slot(this); sp && !sp->orthographic) return 0.5f * sp->factor * 180.0f / float(pi);
+    if (const auto sp = get_slot(this); sp && !sp->orthographic) return sp->factor;
     else return 0.0f;
   }
 
@@ -217,7 +215,7 @@ public:
   }
 
   float4 rotation() const noexcept {
-    if (const auto sp = get_slot(this)) return _euler_deg_from_orientation(sp->orientation);
+    if (const auto sp = get_slot(this)) return _euler_from_orientation(sp->orientation);
     else return {};
   }
 
@@ -226,7 +224,7 @@ public:
     if (!sp) return std::unexpected(error(errors::not_initialized, "camera not initialized"));
     if (!_finite(Rotation)) return std::unexpected(error(errors::invalid_argument, "rotation must be finite"));
     sp->rotation = Rotation;
-    sp->orientation = _orientation_from_euler_deg(Rotation);
+    sp->orientation = _orientation_from_euler(Rotation);
     sp->dirty = true;
     return {};
   }
@@ -253,32 +251,32 @@ public:
     if (!_finite(Offset)) return std::unexpected(error(errors::invalid_argument, "offset must be finite"));
     sp->position = Position;
     sp->rotation = Rotation;
-    sp->orientation = _orientation_from_euler_deg(Rotation);
+    sp->orientation = _orientation_from_euler(Rotation);
     sp->offset = Offset;
     sp->dirty = true;
     return {};
   }
 
-  std::expected<void, error> rotate_axis(float3 Axis, float1 AngleDeg) {
+  std::expected<void, error> rotate_axis(float3 Axis, float1 Angle) {
     const auto sp = get_slot(this);
     if (!sp) return std::unexpected(error(errors::not_initialized, "camera not initialized"));
-    if (!_finite(float4(Axis.x, Axis.y, Axis.z, AngleDeg.x)))
+    if (!_finite(float4(Axis.x, Axis.y, Axis.z, Angle.x)))
       return std::unexpected(error(errors::invalid_argument, "axis rotation must be finite"));
-    const auto delta = yw::quaternion_from_axis_angle(Axis, AngleDeg.x * float(pi) / 180.0f);
+    const auto delta = yw::quaternion_from_axis_angle(Axis, Angle.x);
     sp->orientation = yw::quaternion_multiply(delta, sp->orientation);
-    sp->rotation = _euler_deg_from_orientation(sp->orientation);
+    sp->rotation = _euler_from_orientation(sp->orientation);
     sp->dirty = true;
     return {};
   }
 
-  std::expected<void, error> rotate_local_axis(float3 Axis, float1 AngleDeg) {
+  std::expected<void, error> rotate_local_axis(float3 Axis, float1 Angle) {
     const auto sp = get_slot(this);
     if (!sp) return std::unexpected(error(errors::not_initialized, "camera not initialized"));
-    if (!_finite(float4(Axis.x, Axis.y, Axis.z, AngleDeg.x)))
+    if (!_finite(float4(Axis.x, Axis.y, Axis.z, Angle.x)))
       return std::unexpected(error(errors::invalid_argument, "axis rotation must be finite"));
-    const auto delta = yw::quaternion_from_axis_angle(Axis, AngleDeg.x * float(pi) / 180.0f);
+    const auto delta = yw::quaternion_from_axis_angle(Axis, Angle.x);
     sp->orientation = yw::quaternion_multiply(sp->orientation, delta);
-    sp->rotation = _euler_deg_from_orientation(sp->orientation);
+    sp->rotation = _euler_from_orientation(sp->orientation);
     sp->dirty = true;
     return {};
   }
@@ -300,11 +298,11 @@ public:
     if (x_zero && y_zero && z_zero) return {};
 
     if (x_zero && z_zero) {
-      sp->rotation.x = dy > 0.0f ? -90.0f : 90.0f;
+      sp->rotation.x = dy > 0.0f ? -float(pi) * 0.5f : float(pi) * 0.5f;
       sp->rotation.y = 0.0f;
       sp->rotation.z = 0.0f;
       sp->rotation.w = 0.0f;
-      sp->orientation = _orientation_from_euler_deg(sp->rotation);
+      sp->orientation = _orientation_from_euler(sp->rotation);
       sp->dirty = true;
       return {};
     }
@@ -312,11 +310,11 @@ public:
     const float yaw = yw::atan2(dx, dz);
     const float horizontal = yw::sqrt(dx * dx + dz * dz);
     const float pitch = -yw::atan2(dy, horizontal);
-    sp->rotation.x = pitch * 180.0f / float(pi);
-    sp->rotation.y = yaw * 180.0f / float(pi);
+    sp->rotation.x = pitch;
+    sp->rotation.y = yaw;
     sp->rotation.z = 0.0f;
     sp->rotation.w = 0.0f;
-    sp->orientation = _orientation_from_euler_deg(sp->rotation);
+    sp->orientation = _orientation_from_euler(sp->rotation);
     sp->dirty = true;
     return {};
   }
@@ -403,10 +401,9 @@ public:
       if (sp->factor <= 0.0f)
         return std::unexpected(error(errors::invalid_argument, "orthographic magnification must be greater than zero"));
     } else {
-      const auto fov_deg = sp->factor * 180.0f / float(pi);
-      if (!_finite(fov_deg)) return std::unexpected(error(errors::invalid_argument, "perspective fov must be finite"));
-      if (fov_deg < min_perspective_deg || fov_deg > max_perspective_deg)
-        return std::unexpected(error(errors::invalid_argument, "perspective fov must be in [1, 179] degrees"));
+      if (!_finite(sp->factor)) return std::unexpected(error(errors::invalid_argument, "perspective fov must be finite"));
+      if (sp->factor < min_perspective_rad || sp->factor > max_perspective_rad)
+        return std::unexpected(error(errors::invalid_argument, "perspective fov must be in [pi/180, 179*pi/180] radians"));
     }
 
     auto& vm = sp->cb_value.view;
@@ -462,6 +459,7 @@ public:
     if (!sp || !sp->cb) return std::unexpected(error(errors::not_initialized, "camera not initialized"));
     if (auto res = update(); !res) return res.error().relay();
     D3D11_VIEWPORT vp{0.0f, 0.0f, float(sp->size.x), float(sp->size.y), 0.0f, 1.0f};
+    d3d::context()->IASetInputLayout(nullptr);
     d3d::context()->RSSetViewports(1, &vp);
     d3d::context()->OMSetDepthStencilState(d3d::dss_reverse_z(), 0);
     if (auto res = rendering::create(rtvs_dsv_uavs...); !res) return res.error().relay();

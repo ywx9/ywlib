@@ -206,21 +206,67 @@ public:
 
 class bitmap_texture : public texture_base {
 public:
+  enum class flag : uint8_t {
+    none = 0,
+    shader_resource = 0x1,
+    render_target = 0x2,
+  };
+  friend constexpr flag operator~(flag f) noexcept { return flag(~uint8_t(f)); }
+  friend constexpr flag operator|(flag lhs, flag rhs) noexcept { return flag(uint8_t(lhs) | uint8_t(rhs)); }
+  friend constexpr flag operator&(flag lhs, flag rhs) noexcept { return flag(uint8_t(lhs) & uint8_t(rhs)); }
+  friend constexpr flag operator^(flag lhs, flag rhs) noexcept { return flag(uint8_t(lhs) ^ uint8_t(rhs)); }
+
   struct slot : texture_base::slot {
     comptr<ID2D1Bitmap1> bitmap;
+    comptr<ID3D11ShaderResourceView> srv;
+    comptr<ID3D11RenderTargetView> rtv;
+    yw::flags<flag> flags;
   };
 
   explicit operator ID2D1Bitmap*() const noexcept { return d2d_bitmap(); }
   explicit operator ID2D1Bitmap1*() const noexcept { return d2d_bitmap(); }
+  explicit operator ID3D11ShaderResourceView*() const noexcept { return d3d_srv(); }
+  explicit operator ID3D11RenderTargetView*() const noexcept { return d3d_rtv(); }
 
   ID2D1Bitmap1* d2d_bitmap() const noexcept {
     const auto sp = get_slot(this);
     return sp ? sp->bitmap.get() : nullptr;
   }
 
+  ID3D11ShaderResourceView* d3d_srv() const noexcept {
+    const auto sp = get_slot(this);
+    return sp ? sp->srv.get() : nullptr;
+  }
+
+  ID3D11RenderTargetView* d3d_rtv() const noexcept {
+    const auto sp = get_slot(this);
+    return sp ? sp->rtv.get() : nullptr;
+  }
+
+  yw::flags<flag> flags() const noexcept {
+    const auto sp = get_slot(this);
+    return sp ? sp->flags : yw::flags<flag>{};
+  }
+
   bitmap_texture() noexcept = default;
 
-  static std::expected<bitmap_texture, error> create(int2 Size) {
+private:
+  static std::expected<void, error> create_views(slot* sp) {
+    if (sp->flags.contains(flag::shader_resource)) {
+      D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{sp->dxgiformat, D3D11_SRV_DIMENSION_TEXTURE2D};
+      srv_desc.Texture2D.MipLevels = 1;
+      hresult_test(d3d::device()->CreateShaderResourceView, sp->texture.get(), &srv_desc, &sp->srv.get());
+    }
+    if (sp->flags.contains(flag::render_target)) {
+      D3D11_RENDER_TARGET_VIEW_DESC rtv_desc{sp->dxgiformat, D3D11_RTV_DIMENSION_TEXTURE2D};
+      hresult_test(d3d::device()->CreateRenderTargetView, sp->texture.get(), &rtv_desc, &sp->rtv.get());
+    }
+    return {};
+  }
+
+public:
+  static std::expected<bitmap_texture, error> create(
+    int2 Size, yw::flags<flag> Flags = flag::shader_resource | flag::render_target) {
     if (Size.x <= 0 || Size.y <= 0)
       return std::unexpected(error(errors::invalid_argument, "invalid bitmap texture size"));
     const uint2 sz{Size};
@@ -228,71 +274,87 @@ public:
     if (!sp) return std::unexpected(error(errors::slot_creation_failed));
     sp->size = sz;
     sp->dxgiformat = bitmap::dxgiformat;
+    sp->flags = Flags;
     hresult_test(d2d::context()->CreateBitmap, {sz.x, sz.y}, nullptr, 0, &bitmap::props, &sp->bitmap.get());
     comptr<IDXGISurface> surface;
     hresult_test(sp->bitmap->GetSurface, &surface.get());
     hresult_test(surface->QueryInterface, &sp->texture.get());
+    if (auto res = create_views(sp); !res) return res.error().relay();
     return make_handle<bitmap_texture>(sp->id);
   }
 
-  static std::expected<bitmap_texture, error> create(bitmap&& Bitmap) {
+  static std::expected<bitmap_texture, error> create(bitmap&& Bitmap, yw::flags<flag> Flags = flag::shader_resource) {
     const auto bsp = bitmap::slot::get_as<bitmap>(Bitmap.id());
     if (!bsp || !bsp->bitmap) return std::unexpected(error(errors::invalid_argument, "invalid bitmap"));
     const auto sp = make_slot<bitmap_texture>();
     if (!sp) return std::unexpected(error(errors::slot_creation_failed));
     sp->size = bsp->size;
     sp->dxgiformat = bitmap::dxgiformat;
+    sp->flags = Flags;
     sp->bitmap = std::move(bsp->bitmap);
     comptr<IDXGISurface> surface;
     hresult_test(sp->bitmap->GetSurface, &surface.get());
     hresult_test(surface->QueryInterface, &sp->texture.get());
+    if (auto res = create_views(sp); !res) return res.error().relay();
     return make_handle<bitmap_texture>(sp->id);
   }
 
-  static std::expected<bitmap_texture, error> create(const bitmap& Bitmap) {
+  static std::expected<bitmap_texture, error> create(
+    const bitmap& Bitmap, yw::flags<flag> Flags = flag::shader_resource) {
     if (auto b = bitmap::create(Bitmap); !b) return b.error().relay();
-    else return create(std::move(*b));
+    else return create(std::move(*b), Flags);
   }
 
-  static std::expected<bitmap_texture, error> create(stringable auto&& Path) {
+  static std::expected<bitmap_texture, error> create(
+    stringable auto&& Path, yw::flags<flag> Flags = flag::shader_resource) {
     if (auto b = bitmap::create_from_file(static_cast<decltype(Path)&&>(Path)); !b) return b.error().relay();
-    else return create(std::move(*b));
+    else return create(std::move(*b), Flags);
   }
 
   static std::expected<bitmap_texture, error> create_from_file_data(
-    contiguous_iterator<std::byte> auto First, sized_sentinel_for<decltype(First)> auto Last) {
+    contiguous_iterator<std::byte> auto First, sized_sentinel_for<decltype(First)> auto Last,
+    yw::flags<flag> Flags = flag::shader_resource) {
     if (auto b = bitmap::create_from_file_data(First, Last); !b) return b.error().relay();
-    else return create(std::move(*b));
+    else return create(std::move(*b), Flags);
   }
 
-  static std::expected<bitmap_texture, error> create(contiguous_range<std::byte> auto&& Data) {
+  static std::expected<bitmap_texture, error> create(
+    contiguous_range<std::byte> auto&& Data, yw::flags<flag> Flags = flag::shader_resource) {
     if (auto b = bitmap::create_from_file_data(static_cast<decltype(Data)&&>(Data)); !b) return b.error().relay();
-    else return create(std::move(*b));
+    else return create(std::move(*b), Flags);
   }
 
-  explicit bitmap_texture(int2 Size, const source_line& sl = here()) {
-    if (auto res = create(Size); !res) res.error().go_off(sl);
+  explicit bitmap_texture(
+    int2 Size, yw::flags<flag> Flags = flag::shader_resource | flag::render_target, const source_line& sl = here()) {
+    if (auto res = create(Size, Flags); !res) res.error().go_off(sl);
     else *this = std::move(*res);
   }
 
-  explicit bitmap_texture(bitmap&& Bitmap, const source_line& sl = here()) {
-    if (auto res = create(std::move(Bitmap)); !res) res.error().go_off(sl);
+  explicit bitmap_texture(bitmap&& Bitmap, yw::flags<flag> Flags = flag::shader_resource, const source_line& sl = here()) {
+    if (auto res = create(std::move(Bitmap), Flags); !res) res.error().go_off(sl);
     else *this = std::move(*res);
   }
 
-  explicit bitmap_texture(const bitmap& Bitmap, const source_line& sl = here()) {
-    if (auto res = create(Bitmap); !res) res.error().go_off(sl);
+  explicit bitmap_texture(const bitmap& Bitmap, yw::flags<flag> Flags = flag::shader_resource, const source_line& sl = here()) {
+    if (auto res = create(Bitmap, Flags); !res) res.error().go_off(sl);
     else *this = std::move(*res);
   }
 
-  explicit bitmap_texture(stringable auto&& Path, const source_line& sl = here()) {
-    if (auto res = create(static_cast<decltype(Path)&&>(Path)); !res) res.error().go_off(sl);
+  explicit bitmap_texture(stringable auto&& Path, yw::flags<flag> Flags = flag::shader_resource, const source_line& sl = here()) {
+    if (auto res = create(static_cast<decltype(Path)&&>(Path), Flags); !res) res.error().go_off(sl);
     else *this = std::move(*res);
   }
 
-  explicit bitmap_texture(contiguous_range<std::byte> auto&& Data, const source_line& sl = here()) {
-    if (auto res = create(static_cast<decltype(Data)&&>(Data)); !res) res.error().go_off(sl);
+  explicit bitmap_texture(contiguous_range<std::byte> auto&& Data, yw::flags<flag> Flags = flag::shader_resource,
+    const source_line& sl = here()) {
+    if (auto res = create(static_cast<decltype(Data)&&>(Data), Flags); !res) res.error().go_off(sl);
     else *this = std::move(*res);
+  }
+
+  std::expected<void, error> clear(const color& ClearColor = colors::transparent) {
+    if (!d3d_rtv()) return std::unexpected(error(errors::invalid_operation, "bitmap texture is not a render target"));
+    d3d::context()->ClearRenderTargetView(d3d_rtv(), &ClearColor.r);
+    return {};
   }
 
   std::expected<drawing, error> begin_draw() {

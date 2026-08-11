@@ -200,12 +200,22 @@ public:
     return string_view<C>(a) == string_view<C>(b);
   }
 
+  template<stringable<C> S> requires different_from<remove_cvref<S>, string>
+  friend constexpr bool operator==(S&& a, const string& b) noexcept {
+    return string_view<C>(a) == string_view<C>(b);
+  }
+
   friend constexpr auto operator<=>(const string& a, const string& b) noexcept {
     return string_view<C>(a) <=> string_view<C>(b);
   }
 
   template<stringable<C> S> requires different_from<remove_cvref<S>, string>
   friend constexpr auto operator<=>(const string& a, S&& b) noexcept {
+    return string_view<C>(a) <=> string_view<C>(b);
+  }
+
+  template<stringable<C> S> requires different_from<remove_cvref<S>, string>
+  friend constexpr auto operator<=>(S&& a, const string& b) noexcept {
     return string_view<C>(a) <=> string_view<C>(b);
   }
 };
@@ -658,6 +668,9 @@ consteval source_line here(std::source_location Location = std::source_location:
 } // namespace yw
 
 namespace std {
+template<typename C> struct common_type<yw::string<C>, yw::string_view<C>> : type_identity<yw::string_view<C>> {};
+template<typename C> struct common_type<yw::string_view<C>, yw::string<C>> : type_identity<yw::string_view<C>> {};
+
 template<typename C> struct formatter<yw::string<C>, C> {
   formatter<basic_string_view<C>, C> fmt;
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }

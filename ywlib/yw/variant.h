@@ -184,15 +184,14 @@ public:
   constexpr bool has_value() const noexcept { return _index != 0; }
   constexpr bool empty() const noexcept { return _index == 0; }
 
-  template<size_t I> requires(I < sizeof...(Ts))
-  constexpr auto get_if(this auto&& self) noexcept -> copy_cv<remove_ref<decltype(self)>, select_type<I, Ts...>>* {
+  template<size_t I, typename Self> requires(I < sizeof...(Ts))
+  constexpr copy_cv<remove_ref<Self>, select_type<I, Ts...>>* get_if(this Self&& self) noexcept {
     if (self._index != I + 1) return nullptr;
     return std::addressof(static_cast<decltype(self)&&>(self)._data.template get<I + 1>());
   }
 
   template<typename T, typename Self> requires(count<same_as<T, Ts>...> == 1)
-  constexpr copy_cv<remove_ref<Self>, select_type<inspect<same_as<T, Ts>...>, Ts...>>* get_if(
-    this Self&& self) noexcept {
+  constexpr auto get_if(this Self&& self) noexcept {
     return static_cast<Self&&>(self).template get_if<inspect<same_as<T, Ts>...>>();
   }
 

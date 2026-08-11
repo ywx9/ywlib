@@ -705,6 +705,12 @@ template<std::regular T> struct vector<T, 4> {
 
 //////////////////////////////////////// MARK: SIMD
 
+inline constexpr float2 rotate(float2 v, float AngleRad) noexcept {
+  const auto c = yw::cos(AngleRad);
+  const auto s = yw::sin(AngleRad);
+  return {v.x * c - v.y * s, v.x * s + v.y * c};
+}
+
 template<size_t I> requires(lt(I, 4)) float mm_get(__m128 m) noexcept {
   if constexpr (I == 0) return _mm_cvtss_f32(m);
   else return std::bit_cast<float>(_mm_extract_ps(m, int(I)));

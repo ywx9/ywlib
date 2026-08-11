@@ -4,6 +4,7 @@
 namespace yw {
 
 class rendering {
+  bool _active = false;
   ID3D11VertexShader* _vs{};
   ID3D11GeometryShader* _gs{};
   ID3D11PixelShader* _ps{};
@@ -28,11 +29,37 @@ class rendering {
 
 public:
   rendering() noexcept = default;
-  rendering(rendering&&) noexcept = default;
-  rendering& operator=(rendering&&) noexcept = default;
+  ~rendering() { close(); }
+
+  rendering(rendering&& Other) noexcept { *this = std::move(Other); }
+
+  rendering& operator=(rendering&& Other) noexcept {
+    if (this == &Other) return *this;
+    close();
+    _active = std::exchange(Other._active, false);
+    _vs = std::exchange(Other._vs, nullptr);
+    _gs = std::exchange(Other._gs, nullptr);
+    _ps = std::exchange(Other._ps, nullptr);
+    _num_rtv = std::exchange(Other._num_rtv, 0);
+    _num_dsv = std::exchange(Other._num_dsv, 0);
+    _num_uav = std::exchange(Other._num_uav, 0);
+    _num_vs_cbuffers = std::exchange(Other._num_vs_cbuffers, 0);
+    _num_gs_cbuffers = std::exchange(Other._num_gs_cbuffers, 0);
+    _num_ps_cbuffers = std::exchange(Other._num_ps_cbuffers, 0);
+    _num_vs_resources = std::exchange(Other._num_vs_resources, 0);
+    _num_gs_resources = std::exchange(Other._num_gs_resources, 0);
+    _num_ps_resources = std::exchange(Other._num_ps_resources, 0);
+    return *this;
+  }
 
   rendering(const rendering&) = delete;
   rendering& operator=(const rendering&) = delete;
+
+  void close() noexcept {
+    if (!_active) return;
+    d3d::context()->OMSetRenderTargets(0, nullptr, nullptr);
+    _active = false;
+  }
 
   template<typename... Ts> static std::expected<rendering, error> create(const Ts&... rtvs_dsv_uavs) {
     constexpr size_t i_dsv = inspect<castable_to<const Ts&, ID3D11DepthStencilView*>...>;
@@ -60,6 +87,7 @@ public:
         uint32_t(num_rtv), rtv.data(), dsv, uint32_t(num_rtv), uint32_t(num_uav), buf.data(), nullptr);
     } else d3d::context()->OMSetRenderTargets(uint32_t(num_rtv), rtv.data(), dsv);
     rendering r{};
+    r._active = true;
     r._num_rtv = uint32_t(num_rtv);
     r._num_dsv = uint32_t(num_dsv);
     r._num_uav = uint32_t(num_uav);

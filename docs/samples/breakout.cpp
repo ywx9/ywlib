@@ -23,7 +23,6 @@ struct game_state {
   float paddle_x = (board_width - paddle_width) * 0.5f;
   float2 ball_pos = {board_width * 0.5f, board_height - 76.0f};
   float2 ball_vel = {210.0f, -250.0f};
-  double last_time = 0.0;
   double elapsed = 0.0;
   int score = 0;
   int lives = 3;
@@ -59,6 +58,16 @@ struct game_state {
     paddle_x = (board_width - paddle_width) * 0.5f;
     reset_bricks();
     reset_ball();
+  }
+};
+
+struct input_state {
+  bool launch = false;
+
+  bool set(key k, bool down) {
+    if (k != keys::space) return false;
+    if (down) launch = true;
+    return true;
   }
 };
 
@@ -112,14 +121,15 @@ void draw_game(ui::blank& canvas, const game_state& game) {
   }
 }
 
-void update_game(game_state& game, float dt) {
+void update_game(game_state& game, input_state& input, float dt) {
   if (keys::left.pressed() || keys::a.pressed()) game.paddle_x -= 460.0f * dt;
   if (keys::right.pressed() || keys::d.pressed()) game.paddle_x += 460.0f * dt;
   game.paddle_x = clamp(game.paddle_x, 0.0f, board_width - paddle_width);
 
-  if (keys::space.pressed()) {
+  if (input.launch) {
     if (game.lives <= 0 || std::ranges::none_of(game.bricks, [](const brick& b) { return b.alive; })) game.restart();
     game.running = true;
+    input.launch = false;
   }
 
   if (!game.running) {
@@ -196,14 +206,17 @@ int main() {
   lives.text_align(ui::right).background_color(colors::transparent).text_color(color(0.92f, 0.94f, 0.96f));
 
   game_state game;
+  input_state input;
   game.restart();
 
-  while (mainloop) {
-    const auto now = mainloop.elapsed();
-    const auto dt = float(yw::min(now - game.last_time, 1.0 / 30.0));
-    game.last_time = now;
+  win.key_event([&](key_event e) {
+    return input.set(e.key, e.down);
+  });
 
-    update_game(game, dt);
+  while (mainloop) {
+    const auto dt = float(yw::min(mainloop.spf(), 1.0 / 30.0));
+
+    update_game(game, input, dt);
     score.string(format<wchar_t>(L"Score ", game.score));
     time.string(format<wchar_t>(L"Time ", int(game.elapsed)));
     lives.string(format<wchar_t>(L"Lives ", yw::max(game.lives, 0)));

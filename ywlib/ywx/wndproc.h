@@ -19,13 +19,15 @@ inline modifiers _make_mods() noexcept {
 
 template<UINT Msg> inline LRESULT handle_wm_pointer(window::slot* wsp, WPARAM wp, LPARAM lp) {
   if constexpr (Msg == WM_MOUSEMOVE) {
+    const auto previous_cursor_pos = wsp->last_cursor_pos;
     const auto local_pos = short2(std::bit_cast<int16_t>(LOWORD(lp)), std::bit_cast<int16_t>(HIWORD(lp)));
     window::slot::cursor_pos = local_pos;
     ::ClientToScreen(wsp->hwnd, reinterpret_cast<POINT*>(&window::slot::cursor_pos));
+    const auto delta = window::slot::cursor_pos - previous_cursor_pos;
     if ((wsp->mouse_capture_control_id || wsp->window_mouse_capture) &&
         (wp & (MK_LBUTTON | MK_RBUTTON | MK_MBUTTON | MK_XBUTTON1 | MK_XBUTTON2))) {
       drag_event e{};
-      e.delta = window::slot::cursor_pos - wsp->last_cursor_pos;
+      e.delta = delta;
       e.mods = internal::_make_mods_from_wparam(wp);
       if (wp & MK_LBUTTON) e.key = keys::lbutton;
       else if (wp & MK_RBUTTON) e.key = keys::rbutton;
@@ -34,15 +36,26 @@ template<UINT Msg> inline LRESULT handle_wm_pointer(window::slot* wsp, WPARAM wp
       else if (wp & MK_XBUTTON2) e.key = keys::xbutton2;
       if (auto res = wsp->handle_drag_event(e); !res) res.error().go_off();
     }
-    wsp->last_cursor_pos = window::slot::cursor_pos;
+    if (delta != int2{}) {
+      pointer_event e{};
+      e.pos = local_pos;
+      e.delta = delta;
+      if (auto res = wsp->handle_pointer_event(e); !res) res.error().go_off();
+    }
     if (!wsp->track_mouse_event.hwndTrack) {
       wsp->track_mouse_event.hwndTrack = wsp->hwnd;
       ::TrackMouseEvent(&wsp->track_mouse_event);
     }
     const auto csp = interface::slot::get_as<control>(wsp->control_id);
-    if (!csp) return 0;
+    if (!csp) {
+      if (wsp->cursor_locked) wsp->center_locked_cursor();
+      else wsp->last_cursor_pos = window::slot::cursor_pos;
+      return 0;
+    }
     const auto hit = csp->hittest(local_pos);
     if (auto res = wsp->update_hovered_control(hit, local_pos, true, mainloop.elapsed()); !res) res.error().go_off();
+    if (wsp->cursor_locked) wsp->center_locked_cursor();
+    else wsp->last_cursor_pos = window::slot::cursor_pos;
   } else if constexpr (Msg == WM_MOUSELEAVE) {
     wsp->track_mouse_event.hwndTrack = nullptr;
     if (const auto hcsp = interface::slot::get_as<control>(wsp->hovered_control_id)) {
