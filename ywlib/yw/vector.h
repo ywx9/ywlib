@@ -31,6 +31,10 @@ template<std::regular T, size_t N> struct vector {
     [&]<size_t... Is>(sequence<Is...>) { ((_vals[Is] = T(yw::get<Is>(static_cast<Tp&&>(tp)))), ...); }(seq);
   }
 
+  template<castable_to<T> U> constexpr vector(const vector<U, N>& v) noexcept(nt_castable_to<U, T>) {
+    for (size_t i = 0; i < N; ++i) _vals[i] = static_cast<T>(v[i]);
+  }
+
   static constexpr bool empty() noexcept { return N == 0; }
   static constexpr size_t size() noexcept { return N; }
 
@@ -104,6 +108,12 @@ template<std::regular T, size_t N> struct vector {
     if (len <= 0) return decltype(*this / len){};
     return *this / len;
   }
+
+  constexpr vector<vector<T, 1>, N> transpose() const {
+    vector<vector<T, 1>, N> result;
+    for (size_t i = 0; i < N; ++i) result[i][0] = operator[](i);
+    return result;
+  }
 };
 
 template<typename T, typename... Ts> vector(T&&, Ts&&...) -> vector<T, sizeof...(Ts) + 1>;
@@ -137,6 +147,8 @@ using double1 = vector1<double>;
 using double2 = vector2<double>;
 using double3 = vector3<double>;
 using double4 = vector4<double>;
+
+template<std::regular T, size_t Rows, size_t Cols> using matrix = vector<vector<T, Cols>, Rows>;
 
 template<typename T, std::equality_comparable_with<T> U, size_t N>
 constexpr bool operator==(const vector<T, N>& a, const vector<U, N>& b) {
@@ -285,20 +297,33 @@ constexpr auto dot(const vector<T, N>& a, const vector<U, N>& b) {
   return [&]<size_t... Is>(sequence<Is...>) { return ((get<Is>(a) * get<Is>(b)) + ...); }(make_sequence<0, N>{});
 }
 
-template<typename T, typename U, size_t M, size_t N>
+template<typename T, typename U, size_t Rows, size_t Cols>
 requires(!variation_of<T, vector<int, 1>> && !variation_of<U, vector<int, 1>>)
-constexpr auto dot(const vector<vector<T, N>, M>& a, const vector<U, N>& b) {
-  vector<decltype(T{} * U{}), M> result;
-  for (size_t i = 0; i < M; ++i) result[i] = dot(a[i], b);
+constexpr auto dot(const vector<U, Rows>& a, const matrix<T, Rows, Cols>& b) {
+  if constexpr (Rows != 0 && Cols != 0) {
+    vector<decltype(T{} * U{}), Cols> result;
+    for (size_t i = 0; i < Cols; ++i) {
+      result[i] = a[0] * b[0][i];
+      for (size_t j = 1; j < Rows; ++j) result[i] += a[j] * b[j][i];
+    }
+    return result;
+  } else return vector<decltype(T{} * U{}), Cols>{};
+}
+
+template<typename T, typename U, size_t Rows, size_t Cols>
+requires(!variation_of<T, vector<int, 1>> && !variation_of<U, vector<int, 1>>)
+constexpr auto dot(const matrix<T, Rows, Cols>& a, const matrix<U, Cols, Rows>& b) {
+  matrix<decltype(T{} * U{}), Rows, Rows> result;
+  for (size_t i = 0; i < Rows; ++i) result[i] = dot(a[i], b);
   return result;
 }
 
-template<typename T, typename U, size_t M, size_t N>
+template<typename T, typename U, size_t Rows, size_t Cols>
 requires(!variation_of<T, vector<int, 1>> && !variation_of<U, vector<int, 1>>)
-constexpr auto dot(const vector<vector<T, N>, M>& a, const vector<vector<U, M>, N>& b) {
-  vector<vector<decltype(T{} * U{}), M>, N> result;
-  for (size_t i = 0; i < M; ++i)
-    for (size_t j = 0; j < N; ++j) result[i][j] = dot(a[i], b[j]);
+constexpr auto outer(const vector<T, Rows>& a, const vector<U, Cols>& b) {
+  matrix<decltype(T{} * U{}), Rows, Cols> result;
+  for (size_t i = 0; i < Rows; ++i)
+    for (size_t j = 0; j < Cols; ++j) result[i][j] = a[i] * b[j];
   return result;
 }
 
@@ -329,6 +354,10 @@ template<std::regular T> struct vector<T, 1> {
 
   template<tuple_like<1> Tp> requires(!castable_to<Tp, T> && !same_as<remove_cvref<Tp>, vector>)
   constexpr vector(Tp&& tp) noexcept : x(T(yw::get<0>(static_cast<Tp&&>(tp)))) {}
+
+  template<castable_to<T> U> constexpr vector(const vector<U, 1>& v) noexcept(nt_castable_to<U, T>) {
+    x = static_cast<T>(v[0]);
+  }
 
   static constexpr bool empty() noexcept { return false; }
   static constexpr size_t size() noexcept { return 1; }
@@ -407,6 +436,11 @@ template<std::regular T> struct vector<T, 2> {
 
   template<tuple_like<2> Tp> requires(!castable_to<Tp, T> && !same_as<remove_cvref<Tp>, vector>)
   constexpr vector(Tp&& tp) : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))) {}
+
+  template<castable_to<T> U> constexpr vector(const vector<U, 2>& v) noexcept(nt_castable_to<U, T>) {
+    x = static_cast<T>(v[0]);
+    y = static_cast<T>(v[1]);
+  }
 
   static constexpr bool empty() noexcept { return false; }
   static constexpr size_t size() noexcept { return 2; }
@@ -502,6 +536,12 @@ template<std::regular T> struct vector<T, 3> {
   constexpr vector(Tp&& tp)
     : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))),
       z(T(yw::get<2>(static_cast<Tp&&>(tp)))) {}
+
+  template<castable_to<T> U> constexpr vector(const vector<U, 3>& v) noexcept(nt_castable_to<U, T>) {
+    x = static_cast<T>(v[0]);
+    y = static_cast<T>(v[1]);
+    z = static_cast<T>(v[2]);
+  }
 
   static constexpr bool empty() noexcept { return false; }
   static constexpr size_t size() noexcept { return count; }
@@ -617,6 +657,13 @@ template<std::regular T> struct vector<T, 4> {
   constexpr vector(Tp1&& tp1, Tp2&& tp2)
     : x(T(yw::get<0>(static_cast<Tp1&&>(tp1)))), y(T(yw::get<1>(static_cast<Tp1&&>(tp1)))),
       z(T(yw::get<0>(static_cast<Tp2&&>(tp2)))), w(T(yw::get<1>(static_cast<Tp2&&>(tp2)))) {}
+
+  template<castable_to<T> U> constexpr vector(const vector<U, 4>& v) noexcept(nt_castable_to<U, T>) {
+    x = static_cast<T>(v[0]);
+    y = static_cast<T>(v[1]);
+    z = static_cast<T>(v[2]);
+    w = static_cast<T>(v[3]);
+  }
 
   static constexpr bool empty() noexcept { return false; }
   static constexpr size_t size() noexcept { return count; }

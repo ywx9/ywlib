@@ -57,26 +57,26 @@ private:
     return yw::quaternion_from_euler(float4(Rotation.x, Rotation.y, Rotation.z, 0.0f));
   }
 
-  static void _load_matrix(const float4x4& f, matrix& m) noexcept {
+  static void _load_matrix(const float4x4& f, mm_matrix& m) noexcept {
     m.x = _mm_loadu_ps(f.x.data());
     m.y = _mm_loadu_ps(f.y.data());
     m.z = _mm_loadu_ps(f.z.data());
     m.w = _mm_loadu_ps(f.w.data());
   }
 
-  static void _rotation_matrix(slot* sp, matrix& m) {
+  static void _rotation_matrix(slot* sp, mm_matrix& m) {
     float4x4 f;
     yw::rotation_matrix_from_quaternion(sp->orientation, f);
     _load_matrix(f, m);
   }
 
-  static void _inverse_rotation_matrix(slot* sp, matrix& m) {
+  static void _inverse_rotation_matrix(slot* sp, mm_matrix& m) {
     float4x4 f;
     yw::inverse_rotation_matrix_from_quaternion(sp->orientation, f);
     _load_matrix(f, m);
   }
 
-  static void _view_matrix(slot* sp, matrix& m) {
+  static void _view_matrix(slot* sp, mm_matrix& m) {
     _inverse_rotation_matrix(sp, m);
     const auto pos = mm_neg(_mm_loadu_ps(sp->position.data()));
     m.x = mm_insert<0, 3>(mm_dot<3>(pos, m.x), m.x);
@@ -88,7 +88,7 @@ private:
     m.z = _mm_sub_ps(m.z, mm_insert<2, 3, 0b0111>(off, off));
   }
 
-  static void _inverse_view_matrix(slot* sp, matrix& m) {
+  static void _inverse_view_matrix(slot* sp, mm_matrix& m) {
     _rotation_matrix(sp, m);
     const auto off = _mm_loadu_ps(sp->offset.data());
     const auto pos = _mm_loadu_ps(sp->position.data());
@@ -412,7 +412,7 @@ public:
     auto& ivm = sp->cb_value.inverse_view;
     auto& ipm = sp->cb_value.inverse_projection;
     auto& ivpm = sp->cb_value.inverse_view_projection;
-    matrix m;
+    mm_matrix m;
     _view_matrix(sp, m);
     m.store(vm);
     _inverse_view_matrix(sp, m);

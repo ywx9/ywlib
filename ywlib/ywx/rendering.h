@@ -65,7 +65,7 @@ public:
     constexpr size_t i_dsv = inspect<castable_to<const Ts&, ID3D11DepthStencilView*>...>;
     constexpr size_t num_dsv = i_dsv < sizeof...(Ts);
     constexpr size_t num_rtv = num_dsv ? i_dsv : sizeof...(Ts);
-    constexpr size_t num_uav = sizeof...(Ts) - (num_dsv ? i_dsv + 1 : 0);
+    constexpr size_t num_uav = sizeof...(Ts) - num_rtv - num_dsv;
     static_assert([]<size_t... Is>(sequence<Is...>) {
       return (castable_to<select_type<Is, Ts...>, ID3D11RenderTargetView*> && ...);
     }(make_sequence<0, num_rtv>()));
@@ -77,7 +77,7 @@ public:
       ((rtv[Is] = static_cast<ID3D11RenderTargetView*>(select<Is>(rtvs_dsv_uavs...))), ...);
     }(make_sequence<0, num_rtv>());
     ID3D11DepthStencilView* dsv = nullptr;
-    if (num_dsv) dsv = static_cast<ID3D11DepthStencilView*>(select<i_dsv>(rtvs_dsv_uavs...));
+    if constexpr (num_dsv) dsv = static_cast<ID3D11DepthStencilView*>(select<i_dsv>(rtvs_dsv_uavs...));
     if constexpr (num_uav > 0) {
       std::array<ID3D11UnorderedAccessView*, num_uav> buf{};
       [&]<size_t... Is>(sequence<Is...>) {

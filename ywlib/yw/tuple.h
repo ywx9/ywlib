@@ -32,11 +32,12 @@ template<size_t... Is, size_t N> inline constexpr bool _indices_for<sequence<Is.
 template<typename Sq, typename Tp> concept indices_for = _::_indices_for<to_sequence<Sq, size_t>, extent<Tp>>;
 
 namespace _ {
-template<size_t I, size_t N, auto P, auto... Vs> struct _make_sequence : _make_sequence<I + 1, N, P, Vs..., P(I)> {};
+template<size_t I, size_t N, auto P, auto... Vs> struct _make_sequence
+  : select_type<gt(I, N), std::type_identity<sequence<>>, _make_sequence<I + 1, N, P, Vs..., P(I)>> {};
 template<size_t N, auto P, auto... Vs> struct _make_sequence<N, N, P, Vs...> : std::type_identity<sequence<Vs...>> {};
 } // namespace _
 
-template<size_t Begin, size_t End, auto Proj = pass{}> requires(Begin <= End) && invocable<decltype(Proj), size_t>
+template<size_t Begin, size_t End, auto Proj = pass{}> requires invocable<decltype(Proj), size_t>
 using make_sequence = _::_make_sequence<Begin, End, Proj>::type;
 template<typename T> using make_indices_for = make_sequence<0, extent<T>>;
 

@@ -67,16 +67,18 @@ inline constexpr float4 quaternion_from_rotation_matrix(const float4x4& m) noexc
   return quaternion_normalize(q);
 }
 
-struct matrix {
+using mm_vector = __m128;
+
+struct mm_matrix {
   union {
-    __m128 rows[4];
+    mm_vector rows[4];
     struct {
-      __m128 x, y, z, w;
+      mm_vector x, y, z, w;
     };
   };
 
-  __m128& operator[](size_t i) { return rows[i]; }
-  const __m128& operator[](size_t i) const { return rows[i]; }
+  mm_vector& operator[](size_t i) { return rows[i]; }
+  const mm_vector& operator[](size_t i) const { return rows[i]; }
 
   void store(float4x4& Out) const noexcept {
     _mm_storeu_ps(Out.x.data(), x);
@@ -85,7 +87,7 @@ struct matrix {
     _mm_storeu_ps(Out.w.data(), w);
   }
 
-  void t(matrix& Out) const {
+  void t(mm_matrix& Out) const {
     Out[0] = mm_permute<2, 3, 6, 7>(x, y);
     Out[1] = mm_permute<2, 3, 6, 7>(z, w);
     Out[2] = mm_permute<0, 2, 4, 6>(Out[0], Out[1]);
@@ -108,7 +110,7 @@ struct matrix {
   }
 };
 
-inline void rotation_matrix(const __m128 Cos, const __m128 Sin, matrix& Out) {
+inline void rotation_matrix(const mm_vector Cos, const mm_vector Sin, mm_matrix& Out) {
   Out.y = mm_permute<0, 2, 4, 6>(Cos, Sin);
   Out.x = mm_permute<3, 0, 1, 2>(Out.y);
   Out.w = _mm_mul_ps(Out.y, Out.x);
@@ -121,7 +123,7 @@ inline void rotation_matrix(const __m128 Cos, const __m128 Sin, matrix& Out) {
   Out.w = mm_set<3>(1.0f);
 }
 
-inline void inverse_rotation_matrix(const __m128 Cos, const __m128 Sin, matrix& Out) {
+inline void inverse_rotation_matrix(const mm_vector Cos, const mm_vector Sin, mm_matrix& Out) {
   Out.y = mm_permute<0, 2, 4, 6>(Cos, Sin);
   Out.z = mm_permute<3, 0, 1, 2>(Out.y);
   Out.w = _mm_mul_ps(Out.y, Out.z);
@@ -134,7 +136,7 @@ inline void inverse_rotation_matrix(const __m128 Cos, const __m128 Sin, matrix& 
   Out.w = mm_set<3>(1.0f);
 }
 
-inline __m128 matrix_transform(const matrix& M, const __m128 V) {
+inline mm_vector matrix_transform(const mm_matrix& M, const mm_vector V) {
   auto t0 = mm_permute<0, 1, 4, 5>(M.x, M.y);
   auto t1 = mm_permute<0, 1, 4, 5>(M.z, M.w);
   auto out = _mm_mul_ps(mm_permute<0, 2, 4, 6>(t0, t1), mm_permute<0, 0, 0, 0>(V));
@@ -145,7 +147,7 @@ inline __m128 matrix_transform(const matrix& M, const __m128 V) {
   return _mm_add_ps(out, _mm_mul_ps(mm_permute<1, 3, 5, 7>(t0, t1), mm_permute<3, 3, 3, 3>(V)));
 }
 
-inline __m128 matrix_transform(const __m128 V, const matrix& M) {
+inline mm_vector matrix_transform(const mm_vector V, const mm_matrix& M) {
   auto out = _mm_mul_ps(mm_permute<0, 0, 0, 0>(V), M.x);
   out = _mm_add_ps(out, _mm_mul_ps(mm_permute<1, 1, 1, 1>(V), M.y));
   out = _mm_add_ps(out, _mm_mul_ps(mm_permute<2, 2, 2, 2>(V), M.z));
@@ -153,7 +155,7 @@ inline __m128 matrix_transform(const __m128 V, const matrix& M) {
 }
 
 /// Calculates `Out = M * N`.
-inline void matrix_transform(const matrix& M, const matrix& N, matrix& Out) {
+inline void matrix_transform(const mm_matrix& M, const mm_matrix& N, mm_matrix& Out) {
   Out.x = matrix_transform(M.x, N);
   Out.y = matrix_transform(M.y, N);
   Out.z = matrix_transform(M.z, N);

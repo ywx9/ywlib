@@ -202,6 +202,36 @@ public:
     d3d::context()->ClearRenderTargetView(d3d_rtv(), &ClearColor.r);
     return {};
   }
+
+  std::expected<void, error> copy_from(const void* Data, size_t Bytes, size_t RowPitch = 0) {
+    if (!Data) return std::unexpected(error(errors::invalid_argument, "null texture data"));
+    const auto sp = get_slot(this);
+    if (!sp || !sp->texture) return std::unexpected(error(errors::not_initialized, "texture not initialized"));
+    const auto pixel_size = dxgi_format_bytes(sp->dxgiformat);
+    if (pixel_size == 0) return std::unexpected(error(errors::invalid_argument, "unsupported texture format"));
+    const auto min_row_pitch = size_t(sp->size.x) * pixel_size;
+    const auto row_pitch = RowPitch != 0 ? RowPitch : min_row_pitch;
+    const auto expected_bytes = row_pitch * size_t(sp->size.y);
+    if (row_pitch < min_row_pitch)
+      return std::unexpected(error(errors::invalid_argument, "texture row pitch is too small"));
+    if (Bytes < expected_bytes) return std::unexpected(error(errors::invalid_argument, "texture data is too small"));
+    d3d::context()->UpdateSubresource(sp->texture.get(), 0, nullptr, Data, UINT(row_pitch), 0);
+    return {};
+  }
+
+  template<contiguous_iterator<std::byte> It>
+  std::expected<void, error> copy_from(It First, sized_sentinel_for<It> auto Last, size_t RowPitch = 0)
+    requires(sizeof(iter_value_t<It>) == 1) {
+    const auto count = Last - First;
+    if (count < 0) return std::unexpected(error(errors::invalid_argument, "invalid texture data range"));
+    return copy_from(std::to_address(First), size_t(count), RowPitch);
+  }
+
+  template<contiguous_range Rg> std::expected<void, error> copy_from(Rg&& Data, size_t RowPitch = 0) {
+    using value_type = remove_cv<iter_value_t<Rg>>;
+    const auto bytes = yw::size(Data) * sizeof(value_type);
+    return copy_from(yw::data(Data), bytes, RowPitch);
+  }
 };
 
 class bitmap_texture : public texture_base {
@@ -354,6 +384,16 @@ public:
   std::expected<void, error> clear(const color& ClearColor = colors::transparent) {
     if (!d3d_rtv()) return std::unexpected(error(errors::invalid_operation, "bitmap texture is not a render target"));
     d3d::context()->ClearRenderTargetView(d3d_rtv(), &ClearColor.r);
+    return {};
+  }
+
+  std::expected<void, error> copy_from(const texture_base& Other) {
+    if (!*this) return std::unexpected(error(errors::not_initialized, "bitmap texture not initialized"));
+    if (!Other) return std::unexpected(error(errors::not_initialized, "source texture not initialized"));
+    if (Other.format() != bitmap::dxgiformat)
+      return std::unexpected(error(errors::invalid_argument, "source texture format must be BGRA"));
+    if (Other.size() != size()) return std::unexpected(error(errors::invalid_argument, "texture sizes do not match"));
+    d3d::context()->CopyResource(d3d_texture(), Other.d3d_texture());
     return {};
   }
 
