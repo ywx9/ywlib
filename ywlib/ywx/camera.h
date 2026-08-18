@@ -444,8 +444,8 @@ public:
       ipm.w = float4(0, 0, 1.0f / c, -b / c);
     }
     // matrix * vector convention: clip = projection * view * world.
-    matrix_transform(pm, vm, vpm);
-    matrix_transform(ivm, ipm, ivpm);
+    dot(pm, vm, vpm);
+    dot(ivm, ipm, ivpm);
     sp->cb_value.camera_pos = sp->position;
     sp->cb_value.camera_dir = float4(ivm.x.z, ivm.y.z, ivm.z.z, 0);
     sp->cb_value.viewport_size = float4(float(sp->size.x), float(sp->size.y), 1.0f / sp->size.x, 1.0f / sp->size.y);

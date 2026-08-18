@@ -222,7 +222,7 @@ constexpr decltype(auto) select(Ts&&... as) noexcept {
 /// \note If I is a bool value, the first type is selected when I is true.
 template<std::convertible_to<size_t> auto I, typename... Ts>
 requires((is_bool<decltype(I)> && sizeof...(Ts) == 2) || (!is_bool<decltype(I)> && I < sizeof...(Ts)))
-using select_type = internal::_select_type<is_bool<decltype(I)> ? size_t(!I) : size_t(I), Ts...>::type;
+using select_type = internal::_select_type < is_bool<decltype(I)> ? size_t(!I) : size_t(I), Ts... > ::type;
 
 /// selects I-th value.
 /// \note If I is a bool value, the first argument is selected when I is true.
@@ -396,6 +396,9 @@ template<typename R, typename T = iter_value_t<R>> concept contiguous_range =
 
 template<typename I, typename T = iter_value_t<I>> concept output_iterator = std::output_iterator<I, T>;
 template<typename R, typename T = iter_value_t<R>> concept output_range = std::ranges::output_range<R, T>;
+/// mutable contiguous range.
+template<typename R, typename T = iter_value_t<R>> concept contiguous_output_range =
+  contiguous_range<R, T> && output_range<R, T>;
 
 template<typename S, typename I> concept sentinel_for = std::sentinel_for<S, I>;
 template<typename S, typename I> concept sized_sentinel_for = std::sized_sentinel_for<S, I>;
@@ -405,8 +408,8 @@ template<typename S, typename I> concept sized_sentinel_for = std::sized_sentine
 
 namespace yw {
 template<typename T> inline constexpr size_t extent = select_type<requires {
-  std::tuple_size<std::remove_reference_t<T>>::value;
-}, std::tuple_size<std::remove_reference_t<T>>, std::extent<std::remove_reference_t<T>>>::value;
+  std::tuple_size<remove_cvref<T>>::value;
+}, std::tuple_size<remove_cvref<T>>, std::extent<remove_cvref<T>>>::value;
 
 template<typename T, size_t N = extent<T>> concept tuple_like = extent<T> == N && N != 0;
 
