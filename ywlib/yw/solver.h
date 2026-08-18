@@ -171,6 +171,17 @@ template<floating T, contiguous_range<T> A, contiguous_range<T> B> constexpr T d
   return result;
 }
 
+template<floating T> struct dof_constraint {
+  size_t dof{};
+  T value{};
+};
+
+template<floating T> struct node_dof_constraint {
+  size_t node{};
+  size_t dof{};
+  T value{};
+};
+
 template<floating T, uint_type SizeType, contiguous_range<T> B>
 std::expected<std::vector<T>, error> solve_cg(
   const sparse_matrix<T, SizeType>& a,
@@ -244,6 +255,13 @@ std::expected<void, error> constrain(sparse_matrix<T, SizeType>& a, B& b, size_t
   return {};
 }
 
+template<floating T, uint_type SizeType, contiguous_output_range<T> B, contiguous_range<dof_constraint<T>> Constraints>
+std::expected<void, error> constrain(sparse_matrix<T, SizeType>& a, B& b, const Constraints& constraints) {
+  for (const auto& c : constraints)
+    if (auto res = constrain(a, b, c.dof, c.value); !res) return res.error().relay();
+  return {};
+}
+
 template<floating T, uint_type SizeType, contiguous_output_range<T> B>
 std::expected<void, error> constrain(
   sparse_matrix<T, SizeType>& a,
@@ -254,6 +272,13 @@ std::expected<void, error> constrain(
   if (Node >= a.node_count()) return std::unexpected(error(errors::invalid_argument, "node index out of range"));
   if (Dof >= a.dof_per_node()) return std::unexpected(error(errors::invalid_argument, "degree of freedom out of range"));
   return constrain(a, b, a.dof_index(Node, Dof), Value);
+}
+
+template<floating T, uint_type SizeType, contiguous_output_range<T> B, contiguous_range<node_dof_constraint<T>> Constraints>
+std::expected<void, error> constrain(sparse_matrix<T, SizeType>& a, B& b, const Constraints& constraints) {
+  for (const auto& c : constraints)
+    if (auto res = constrain(a, b, c.node, c.dof, c.value); !res) return res.error().relay();
+  return {};
 }
 
 template<size_t NodeCount, size_t DofPerNode, floating T, uint_type SizeType>
