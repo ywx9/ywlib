@@ -8,7 +8,6 @@ public:
   struct slot : public handle_base::slot {
     font_config font = font_config::default_;
     string<wchar_t> string{};
-    color color = colors::black;
     comptr<IDWriteTextLayout> layout{};
     float2 size{};
 
@@ -86,12 +85,6 @@ public:
     return sp->font;
   }
 
-  const yw::color& color() const noexcept {
-    const auto sp = slot::get_as<text>(id());
-    if (!sp) error(errors::invalid_operation, "invalid handle").go_off();
-    return sp->color;
-  }
-
   float2 size() const noexcept {
     if (const auto sp = slot::get_as<text>(id()); !sp) {
       error(errors::invalid_operation, "invalid handle").fizzle_out();
@@ -113,12 +106,6 @@ public:
     if (const auto sp = slot::get_as<text>(self.id())) {
       if (auto res = sp->apply_font(Font); !res) res.error().go_off();
     } else error(errors::invalid_operation, "invalid handle").fizzle_out();
-    return self;
-  }
-
-  auto& color(this auto& self, const yw::color& Color) {
-    if (const auto sp = slot::get_as<text>(self.id())) sp->color = Color;
-    else error(errors::invalid_operation, "invalid handle").fizzle_out();
     return self;
   }
 
@@ -195,9 +182,13 @@ inline std::expected<void, error> draw_text(float2 Pos, const text& Text) {
   const auto sp = text::slot::get_as<text>(Text.id());
   if (!sp) return std::unexpected(error(errors::invalid_slotid));
   if (!sp->layout) return std::unexpected(error(errors::not_initialized));
-  brush::color(sp->color);
   d2d::context()->DrawTextLayout({Pos.x, Pos.y}, sp->layout.get(), brush::d2d_brush());
   return {};
+}
+
+inline std::expected<void, error> draw_text(float2 Pos, const text& Text, const color& Color) {
+  brush::color(Color);
+  return draw_text(Pos, Text);
 }
 
 } // namespace yw

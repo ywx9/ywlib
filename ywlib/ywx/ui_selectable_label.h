@@ -27,8 +27,8 @@ class selectable_label : public label {
 
 public:
   struct slot : label::slot {
-    color selection_overlay_color;
-    color caret_color = colors::black;
+    optional<color> selection_overlay_color;
+    optional<color> caret_color;
     float caret_thickness = 1.0f;
     uint32_t caret = 0;
     uint32_t anchor = 0;
@@ -41,21 +41,25 @@ public:
     virtual bool is_focusable() const override { return enabled && visible; }
     virtual bool is_interactive() const override { return true; }
 
-    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
-      if (auto res = label::slot::apply_color_theme(Theme, Recursive); !res) return res.error().relay();
-      selection_overlay_color = color(Theme.accent, default_overlay_opacity.selection);
-      caret_color = Theme.text;
-      make_dirty();
-      return {};
+    virtual color get_selection_overlay_color(const interface::slot* Window) const noexcept {
+      if (selection_overlay_color) return *selection_overlay_color;
+      if (auto theme = get_color_theme(Window)) return color((*theme)->accent, default_overlay_opacity.selection);
+      return colors::transparent;
     }
 
-    virtual std::expected<void, error> draw_forecontent() override {
+    virtual color get_caret_color(const interface::slot* Window) const noexcept {
+      if (caret_color) return *caret_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->text;
+      return colors::transparent;
+    }
+
+    virtual std::expected<void, error> draw_forecontent(interface::slot* Window) override {
       if (auto res = update_scroll_offset(); !res) return res.error().relay();
       const auto origin = text_origin();
-      if (auto res = draw_selection(origin); !res) return res.error().relay();
-      if (auto res = yw::draw_text(origin, text); !res) return res.error().relay();
+      if (auto res = draw_selection(Window, origin); !res) return res.error().relay();
+      if (auto res = yw::draw_text(origin, text, get_text_color(Window)); !res) return res.error().relay();
       if (is_focused()) {
-        if (auto res = draw_caret(); !res) return res.error().relay();
+        if (auto res = draw_caret(Window); !res) return res.error().relay();
       }
       return {};
     }
@@ -274,24 +278,109 @@ public:
       return float3(p.x, p.y, ht->size.y);
     }
 
-    std::expected<void, error> draw_selection(float2 Origin) {
+    std::expected<void, error> draw_selection(interface::slot* Window, float2 Origin) {
       if (caret == anchor) return {};
       if (auto res = text.hittest_range(selected_range(), Origin)) {
-        brush::color(selection_overlay_color);
+        brush::color(get_selection_overlay_color(Window));
         for (const auto& r : *res)
           if (auto fill = fill_rectangle(r.pos, r.size); !fill) return fill.error().relay();
         return {};
       } else return res.error().relay();
     }
 
-    std::expected<void, error> draw_caret() {
-      if (caret_color.a <= 0.0f || caret_thickness <= 0.0f) return {};
+    std::expected<void, error> draw_caret(interface::slot* Window) {
+      const auto color = get_caret_color(Window);
+      if (color.a <= 0.0f || caret_thickness <= 0.0f) return {};
       auto cp = caret_pos();
       if (!cp) return cp.error().relay();
-      brush::color(caret_color);
+      brush::color(color);
       const auto p = cp->xy();
       if (auto res = stroke_line(p, p + float2(0.0f, cp->z), caret_thickness); !res) return res.error().relay();
       return {};
+    }
+  };
+
+  class proxy : public label::proxy {
+    friend class selectable_label;
+  protected:
+    using label::proxy::proxy;
+    selectable_label::slot* _get_slot() const noexcept { return static_cast<selectable_label::slot*>(_slot); }
+
+  public:
+    using label::proxy::string;
+    using label::proxy::text;
+
+    //-- getter --//
+
+    color selection_overlay_color() const&& noexcept {
+      return _get_slot()->get_selection_overlay_color(interface::slot::slots.get(_get_slot()->window_id));
+    }
+    color caret_color() const&& noexcept {
+      return _get_slot()->get_caret_color(interface::slot::slots.get(_get_slot()->window_id));
+    }
+    auto caret_thickness() const&& noexcept { return _get_slot()->caret_thickness; }
+    auto caret() const&& noexcept { return _get_slot()->caret; }
+    auto anchor() const&& noexcept { return _get_slot()->anchor; }
+    auto selected_string() const&& noexcept { return _get_slot()->selected_string(); }
+
+    //-- setter --//
+
+    auto selection_overlay_color(this auto&& Self, const color& Color) noexcept {
+      Self._get_slot()->selection_overlay_color = Color;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto selection_overlay_color(this auto&& Self, none) noexcept {
+      Self._get_slot()->selection_overlay_color = none();
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto caret_color(this auto&& Self, const color& Color) noexcept {
+      Self._get_slot()->caret_color = Color;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto caret_color(this auto&& Self, none) noexcept {
+      Self._get_slot()->caret_color = none();
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto caret_thickness(this auto&& Self, float Thickness) noexcept {
+      Self._get_slot()->caret_thickness = Thickness;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto caret(this auto&& Self, int1 Caret) noexcept {
+      Self._get_slot()->caret = yw::clamp(Caret.x, 0, Self._get_slot()->text.string().size());
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto anchor(this auto&& Self, int1 Anchor) noexcept {
+      Self._get_slot()->anchor = yw::clamp(Anchor.x, 0, Self._get_slot()->text.string().size());
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto text(this auto&& Self, yw::text Text) noexcept {
+      Self._get_slot()->text = std::move(Text);
+      Self._get_slot()->caret = yw::clamp(Self._get_slot()->caret, 0, Self._get_slot()->text.string().size());
+      Self._get_slot()->anchor = yw::clamp(Self._get_slot()->anchor, 0, Self._get_slot()->text.string().size());
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto string(this auto&& Self, yw::string<wchar_t> String) noexcept {
+      Self._get_slot()->text.string(std::move(String));
+      Self._get_slot()->caret = yw::clamp(Self._get_slot()->caret, 0, Self._get_slot()->text.string().size());
+      Self._get_slot()->anchor = yw::clamp(Self._get_slot()->anchor, 0, Self._get_slot()->text.string().size());
+      Self._messy = true;
+      return std::move(Self);
     }
   };
 
@@ -304,133 +393,27 @@ public:
 
   static std::expected<selectable_label, error> create(derived_from<interface> auto& Parent) {
     selectable_label l;
-    const auto temp_id = make_slot<selectable_label>();
-    const auto sp = get_slot<selectable_label>(temp_id);
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    const auto psp = get_slot<control>(Parent.id());
-    if (!psp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = psp->attach(temp_id); !res) {
-      slot::slots.erase(temp_id);
-      return res.error().relay();
-    }
-    l._id = temp_id;
-    sp->id = temp_id;
-    sp->window_id = psp->get_window_id();
+    selectable_label::slot* sp;
+    if (auto res = create_control<selectable_label>(Parent)) sp = *res;
+    else return res.error().relay();
+    l._id = sp->id;
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
-    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
-    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
     return l;
   }
 
-  //-- getter --//
-
-  const auto& selection_overlay_color() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->selection_overlay_color;
+  yw_control_getter_setter(selection_overlay_color, color);
+  auto selection_overlay_color(this auto& Self, none None) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).selection_overlay_color(None);
   }
-
-  const auto& caret_color() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->caret_color;
+  yw_control_getter_setter(caret_color, color);
+  auto caret_color(this auto& Self, none None) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).caret_color(None);
   }
-
-  auto caret_thickness() const noexcept {
-    if (const auto sp = get_slot(this); !sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return 0.0f;
-    } else return sp->caret_thickness;
-  }
-
-  auto caret() const noexcept {
-    if (const auto sp = get_slot(this); !sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return 0u;
-    } else return sp->caret;
-  }
-
-  auto anchor() const noexcept {
-    if (const auto sp = get_slot(this); !sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return 0u;
-    } else return sp->anchor;
-  }
-
-  auto selected_string() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return string_view<wchar_t>();
-    } else return sp->selected_string();
-  }
-
-  //-- setter --//
-
-  auto& selection_overlay_color(this auto& self, const color& c) noexcept {
-    if (const auto sp = get_slot(&self)) {
-      sp->selection_overlay_color = c;
-      sp->make_dirty();
-    } else error(errors::invalid_slotid).fizzle_out();
-    return self;
-  }
-
-  auto& caret_color(this auto& self, const color& c) noexcept {
-    if (const auto sp = get_slot(&self)) {
-      sp->caret_color = c;
-      sp->make_dirty();
-    } else error(errors::invalid_slotid).fizzle_out();
-    return self;
-  }
-
-  auto& caret_thickness(this auto& self, float v) noexcept {
-    if (const auto sp = get_slot(&self)) {
-      sp->caret_thickness = v;
-      sp->make_dirty();
-    } else error(errors::invalid_slotid).fizzle_out();
-    return self;
-  }
-
-  auto& caret(this auto& self, int1 Caret) noexcept {
-    if (const auto sp = get_slot(&self)) {
-      sp->caret = yw::clamp(Caret.x, 0, sp->text.string().size());
-      sp->make_dirty();
-    } else error(errors::invalid_slotid).fizzle_out();
-    return self;
-  }
-
-  auto& anchor(this auto& self, int1 Anchor) noexcept {
-    if (const auto sp = get_slot(&self)) {
-      sp->anchor = yw::clamp(Anchor.x, 0, sp->text.string().size());
-      sp->make_dirty();
-    } else error(errors::invalid_slotid).fizzle_out();
-    return self;
-  }
-
-  auto& text(this auto& self, yw::text Text) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->text = std::move(Text);
-    sp->caret = yw::clamp(sp->caret, 0, sp->text.string().size());
-    sp->anchor = yw::clamp(sp->anchor, 0, sp->text.string().size());
-    sp->make_messy();
-    return self;
-  }
-
-  auto& string(this auto& self, yw::string<wchar_t> s) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->text.string(std::move(s));
-    sp->caret = yw::clamp(sp->caret, 0, sp->text.string().size());
-    sp->anchor = yw::clamp(sp->anchor, 0, sp->text.string().size());
-    sp->make_messy();
-    return self;
-  }
+  yw_control_getter_setter(caret_thickness, float);
+  yw_control_getter_setter(caret, int1);
+  yw_control_getter_setter(anchor, int1);
+  yw_control_getter(selected_string);
+  yw_control_getter_setter(text, yw::text);
+  yw_control_getter_setter(string, yw::string<wchar_t>);
 };
 } // namespace yw::ui

@@ -68,7 +68,7 @@ simulation_config parse_config(int argc, char** argv) {
                .description("fixed simulation seconds per frame")
                .default_value(default_fixed_spf);
 
-  argument::parse(argc, argv);
+  if (auto res = argument::parse(argc, argv); !res) res.error().go_off();
 
   return {
     .initial_offset = x0.value(),
@@ -179,8 +179,7 @@ void draw_marker(float x, float top, float bottom, const color& c) {
 
 void draw_text_line(float2 pos, string<wchar_t> s, float size = 17.0f) {
   text t(std::move(s), {.size = size});
-  t.color(color(0.86f, 0.90f, 0.94f));
-  if (auto res = draw_text(pos, t); !res) res.error().go_off();
+  if (auto res = draw_text(pos, t, color(0.86f, 0.90f, 0.94f)); !res) res.error().go_off();
 }
 
 void render_simulation(bitmap& target, const simulation_state& state, const simulation_config& config) {

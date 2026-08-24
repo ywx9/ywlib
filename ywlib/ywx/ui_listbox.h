@@ -8,9 +8,9 @@ class listbox : public scrollbar<orientation::vertical> {
 public:
   struct slot : scrollbar<orientation::vertical>::slot {
     std::vector<yw::text> items{};
-    color text_color = colors::black;
-    color selection_color = color(colors::dodgerblue, 0.35f);
-    color pressed_item_color = color(colors::black, 0.08f);
+    optional<color> text_color;
+    optional<color> selection_color;
+    optional<color> pressed_item_color;
     float4 item_padding = float4::fill(arbitrary_value);
     size_t visible_item_count = 4;
     size_t selected_index = npos;
@@ -21,22 +21,28 @@ public:
 
     virtual bool is_focusable() const override { return enabled && visible; }
 
-    virtual std::expected<void, error> apply_color_theme(const color_theme& Theme, bool Recursive) override {
-      if (auto res = scrollbar<orientation::vertical>::slot::apply_color_theme(Theme, Recursive); !res)
-        return res.error().relay();
-      background_color = Theme.surface;
-      text_color = Theme.text;
-      selection_color = color(Theme.accent, default_overlay_opacity.selection);
-      pressed_item_color = color(Theme.accent, default_overlay_opacity.press);
-      for (auto& item : items) item.color(text_color);
-      make_dirty();
-      return {};
+    virtual color get_text_color(const interface::slot* Window) const noexcept {
+      if (text_color) return *text_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->text;
+      return colors::transparent;
     }
 
-    virtual std::expected<void, error> draw_forecontent() override {
-      if (auto res = draw_items(); !res) return res.error().relay();
-      if (auto res = draw_item_hover_overlay(); !res) return res.error().relay();
-      if (auto res = scrollbar<orientation::vertical>::slot::draw_forecontent(); !res) return res.error().relay();
+    virtual color get_selection_color(const interface::slot* Window) const noexcept {
+      if (selection_color) return *selection_color;
+      if (auto theme = get_color_theme(Window)) return color((*theme)->accent, default_overlay_opacity.selection);
+      return colors::transparent;
+    }
+
+    virtual color get_pressed_item_color(const interface::slot* Window) const noexcept {
+      if (pressed_item_color) return *pressed_item_color;
+      if (auto theme = get_color_theme(Window)) return color((*theme)->accent, default_overlay_opacity.press);
+      return colors::transparent;
+    }
+
+    virtual std::expected<void, error> draw_forecontent(interface::slot* Window) override {
+      if (auto res = draw_items(Window); !res) return res.error().relay();
+      if (auto res = draw_item_hover_overlay(Window); !res) return res.error().relay();
+      if (auto res = scrollbar<orientation::vertical>::slot::draw_forecontent(Window); !res) return res.error().relay();
       return {};
     }
 
@@ -128,10 +134,10 @@ public:
       return lt.x <= Pt.x && Pt.x < rb.x && lt.y <= Pt.y && Pt.y < rb.y;
     }
 
-    std::expected<void, error> draw_item_hover_overlay() const {
+    std::expected<void, error> draw_item_hover_overlay(interface::slot* Window) const {
       if (hovered_index == npos || hovered_index >= items.size()) return {};
-      const auto wsp = get_slot<window>(window_id);
-      if (!wsp) return std::unexpected(error(errors::invalid_slotid));
+      const auto wsp = static_cast<window::slot*>(Window);
+      if (!wsp) return {};
       if (wsp->hover_overlay_color.a <= 0.0f) return {};
       const auto rect = item_rect(hovered_index);
       if (!visible_rect(rect)) return {};
@@ -140,7 +146,7 @@ public:
       return {};
     }
 
-    std::expected<void, error> draw_items() const {
+    std::expected<void, error> draw_items(interface::slot* Window) const {
       const auto origin = content_origin();
       const auto area = content_area();
       float y = origin.y - scroll_offset;
@@ -149,14 +155,14 @@ public:
         const auto row = float4(origin.x, y, origin.x + area.x, y + h);
         if (visible_rect(row)) {
           if (i == selected_index) {
-            brush::color(selection_color);
+            brush::color(get_selection_color(Window));
             if (auto res = fill_rectangle(clipped_item_rect(row)); !res) return res.error().relay();
           } else if (i == pressed_index) {
-            brush::color(pressed_item_color);
+            brush::color(get_pressed_item_color(Window));
             if (auto res = fill_rectangle(clipped_item_rect(row)); !res) return res.error().relay();
           }
           const auto text_pos = float2(origin.x + item_padding.x, y + item_padding.y);
-          if (auto res = yw::draw_text(text_pos, items[i]); !res) return res.error().relay();
+          if (auto res = yw::draw_text(text_pos, items[i], get_text_color(Window)); !res) return res.error().relay();
         }
         y += h;
         if (y > origin.y + area.y) break;
@@ -256,6 +262,97 @@ public:
   };
 
   using scrollbar<orientation::vertical>::operator bool;
+  class proxy : public control::proxy {
+    friend class listbox;
+    using control::proxy::proxy;
+    listbox::slot* _get_slot() const noexcept { return static_cast<listbox::slot*>(_slot); }
+
+  public:
+    //-- getter --//
+
+    size_t item_count() const&& noexcept { return _get_slot()->items.size(); }
+    size_t selected_index() const&& noexcept { return _get_slot()->selected_index; }
+    const auto& change_event() const&& noexcept { return _get_slot()->change_event; }
+    const auto& item_padding() const&& noexcept { return _get_slot()->item_padding; }
+    color selection_color() const&& noexcept {
+      return _get_slot()->get_selection_color(interface::slot::slots.get(_get_slot()->window_id));
+    }
+    color text_color() const&& noexcept {
+      return _get_slot()->get_text_color(interface::slot::slots.get(_get_slot()->window_id));
+    }
+    size_t visible_item_count() const&& noexcept { return _get_slot()->visible_item_count; }
+    const auto& text(size_t Index) const&& noexcept {
+      if (Index >= _get_slot()->items.size()) error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
+      return _get_slot()->items[Index];
+    }
+    const auto& string(size_t Index) const&& noexcept {
+      if (Index >= _get_slot()->items.size()) error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
+      return _get_slot()->items[Index].string();
+    }
+
+    //-- setter --//
+
+    auto selected_index(this auto&& Self, size_t Index) noexcept {
+      if (Index >= Self._get_slot()->items.size())
+        error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
+      else Self._get_slot()->select(Index);
+      return std::move(Self);
+    }
+
+    auto change_event(this auto&& Self, function<bool, size_t> Event) noexcept {
+      Self._get_slot()->change_event = std::move(Event);
+      return std::move(Self);
+    }
+
+    auto item_padding(this auto&& Self, float4 Padding) noexcept {
+      Self._get_slot()->item_padding = Padding;
+      Self._get_slot()->update_content_size();
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto selection_color(this auto&& Self, const color& Color) noexcept {
+      Self._get_slot()->selection_color = Color;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto selection_color(this auto&& Self, none) noexcept {
+      Self._get_slot()->selection_color = none();
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto visible_item_count(this auto&& Self, size_t Count) noexcept {
+      if (Count == 0) error(errors::invalid_argument, "listbox visible_item_count must be positive").fizzle_out();
+      else Self._get_slot()->visible_item_count = Count, Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto text_color(this auto&& Self, const color& Color) noexcept {
+      Self._get_slot()->text_color = Color;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto text_color(this auto&& Self, none) noexcept {
+      Self._get_slot()->text_color = none();
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto string(this auto&& Self, size_t Index, yw::string<wchar_t> String) noexcept {
+      if (Index >= Self._get_slot()->items.size())
+        error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
+      else {
+        Self._get_slot()->items[Index].string(std::move(String));
+        Self._get_slot()->update_content_size();
+        Self._messy = true;
+      }
+      return std::move(Self);
+    }
+  };
+
   listbox() noexcept = default;
 
   listbox(derived_from<interface> auto& Parent, const source_line& sl = here()) {
@@ -265,85 +362,35 @@ public:
 
   static std::expected<listbox, error> create(derived_from<interface> auto& Parent) {
     listbox l;
-    const auto temp_id = make_slot<listbox>();
-    const auto sp = get_slot<listbox>(temp_id);
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    const auto psp = get_slot<control>(Parent.id());
-    if (!psp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = psp->attach(temp_id); !res) {
-      slot::slots.erase(temp_id);
-      return res.error().relay();
-    }
-    l._id = temp_id;
-    sp->id = temp_id;
-    sp->window_id = psp->get_window_id();
+    listbox::slot* sp;
+    if (auto res = create_control<listbox>(Parent)) sp = *res;
+    else return res.error().relay();
+    l._id = sp->id;
     sp->policy = {ui::fit, ui::free};
-    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
-    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
     return l;
   }
 
-  size_t item_count() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->items.size();
+  yw_control_getter(item_count);
+  yw_control_getter_setter(selected_index, size_t);
+  yw_control_getter_setter(change_event, function<bool, size_t>);
+  yw_control_getter_setter(item_padding, float4);
+  yw_control_getter_setter(selection_color, color);
+  auto selection_color(this auto& Self, none None) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).selection_color(None);
   }
-
-  size_t selected_index() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return npos;
-    }
-    return sp->selected_index;
+  yw_control_getter_setter(text_color, color);
+  auto text_color(this auto& Self, none None) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).text_color(None);
   }
-
-  const auto& change_event() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->change_event;
-  }
-
-  const auto& item_padding() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->item_padding;
-  }
-
-  const auto& selection_color() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->selection_color;
-  }
-
-  /// Number of top items used to calculate the preferred list height.
-  size_t visible_item_count() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->visible_item_count;
-  }
-
-  const auto& text(size_t Index) const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    if (Index >= sp->items.size()) error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
-    return sp->items[Index];
-  }
-
-  const auto& string(size_t Index) const noexcept { return text(Index).string(); }
+  yw_control_getter_setter(visible_item_count, size_t);
+  const auto& text(size_t Index) const noexcept { return proxy(get_slot(this)).text(Index); }
+  const auto& string(size_t Index) const noexcept { return proxy(get_slot(this)).string(Index); }
 
   auto& add(this auto& self, yw::string<wchar_t> String) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).fizzle_out();
     else {
       sp->items.emplace_back(std::move(String));
-      sp->items.back().color(sp->text_color);
       if (sp->selected_index == npos) sp->selected_index = 0;
       sp->update_content_size();
       sp->make_messy();
@@ -356,7 +403,6 @@ public:
     if (!sp) error(errors::invalid_slotid).fizzle_out();
     else {
       sp->items.push_back(std::move(Text));
-      sp->items.back().color(sp->text_color);
       if (sp->selected_index == npos) sp->selected_index = 0;
       sp->update_content_size();
       sp->make_messy();
@@ -397,60 +443,8 @@ public:
     return self;
   }
 
-  auto& selected_index(this auto& self, size_t Index) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).fizzle_out();
-    else if (Index >= sp->items.size()) error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
-    else sp->select(Index);
-    return self;
-  }
-
-  auto& change_event(this auto& self, function<bool, size_t> f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).fizzle_out();
-    else sp->change_event = std::move(f);
-    return self;
-  }
-
-  auto& item_padding(this auto& self, float4 Padding) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).fizzle_out();
-    else sp->item_padding = Padding, sp->update_content_size(), sp->make_messy();
-    return self;
-  }
-
-  auto& selection_color(this auto& self, const color& Color) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).fizzle_out();
-    else sp->selection_color = Color, sp->make_dirty();
-    return self;
-  }
-
-  auto& visible_item_count(this auto& self, size_t Count) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).fizzle_out();
-    else if (Count == 0) error(errors::invalid_argument, "listbox visible_item_count must be positive").fizzle_out();
-    else sp->visible_item_count = Count, sp->make_messy();
-    return self;
-  }
-
-  auto& text_color(this auto& self, const color& Color) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).fizzle_out();
-    else {
-      sp->text_color = Color;
-      for (auto& item : sp->items) item.color(Color);
-      sp->make_dirty();
-    }
-    return self;
-  }
-
-  auto& string(this auto& self, size_t Index, yw::string<wchar_t> String) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).fizzle_out();
-    else if (Index >= sp->items.size()) error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
-    else sp->items[Index].string(std::move(String)), sp->update_content_size(), sp->make_messy();
-    return self;
+  auto string(this auto& Self, size_t Index, yw::string<wchar_t> String) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).string(Index, std::move(String));
   }
 };
 } // namespace yw::ui

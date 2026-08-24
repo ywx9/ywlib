@@ -8,38 +8,52 @@ class icon : public control {
 public:
   struct slot : control::slot {
     yw::icon content{};
+    optional<color> fill_color;
+    optional<color> stroke_color;
     alignment icon_align = center;
 
     //-- override functions --//
 
-    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool) override {
-      background_color = Theme.surface;
-      border_color = colors::transparent;
-      if (auto vector = content.get_if_vector()) {
-        vector->fill_color(Theme.text);
-        vector->stroke_color(Theme.text);
-      }
-      make_dirty();
-      return {};
+    virtual color get_fill_color(const interface::slot* Window) const noexcept {
+      if (fill_color) return *fill_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->text;
+      return colors::transparent;
     }
 
-    virtual std::expected<void, error> draw_backcontent() override {
+    virtual color get_stroke_color(const interface::slot* Window) const noexcept {
+      if (stroke_color) return *stroke_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->text;
+      return colors::transparent;
+    }
+
+    virtual color get_border_color(const interface::slot*) const noexcept override {
+      return border_color ? *border_color : colors::transparent;
+    }
+
+    virtual std::expected<void, error> draw_backcontent(interface::slot* Window) override {
       const auto origin = pos + padding.xy();
       const auto area = size - padding.xy() - padding.zw();
       const auto pos = align_position(origin, area, content.size(), icon_align);
       if (content.is_bitmap()) {
         if (auto res = draw_bitmap(pos, content.get_bitmap()); !res) return res.error().relay();
       } else if (content.is_vector())
-        if (auto res = fill_svgpath(pos, content.get_vector()); !res) return res.error().relay();
+        if (const auto fill = get_fill_color(Window); fill.a > 0.0f) {
+          const auto& vector = content.get_vector();
+          if (auto res = fill_svgpath(pos, vector.path, fill); !res) return res.error().relay();
+        }
       return {};
     }
 
-    virtual std::expected<void, error> draw_forecontent() override {
+    virtual std::expected<void, error> draw_forecontent(interface::slot* Window) override {
       const auto origin = pos + padding.xy();
       const auto area = size - padding.xy() - padding.zw();
       const auto pos = align_position(origin, area, content.size(), icon_align);
       if (content.is_vector())
-        if (auto res = stroke_svgpath(pos, content.get_vector()); !res) return res.error().relay();
+        if (const auto stroke = get_stroke_color(Window); stroke.a > 0.0f) {
+          const auto& vector = content.get_vector();
+          if (auto res = stroke_svgpath(pos, vector.path, stroke, vector.stroke_width); !res)
+            return res.error().relay();
+        }
       return {};
     }
 
@@ -52,6 +66,32 @@ public:
     //-- internal functions --//
   };
 
+  class proxy : public control::proxy {
+    friend class icon;
+    using control::proxy::proxy;
+    icon::slot* _get_slot() const noexcept { return static_cast<icon::slot*>(_slot); }
+
+  public:
+    //-- getter --//
+
+    const auto& content() const&& noexcept { return _get_slot()->content; }
+    alignment icon_align() const&& noexcept { return _get_slot()->icon_align; }
+
+    //-- setter --//
+
+    auto content(this auto&& Self, yw::icon Icon) noexcept {
+      Self._get_slot()->content = std::move(Icon);
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto icon_align(this auto&& Self, alignment Align) noexcept {
+      Self._get_slot()->icon_align = Align;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+  };
+
   icon() noexcept = default;
 
   icon(derived_from<interface> auto& Parent, const source_line& sl = here()) {
@@ -61,63 +101,15 @@ public:
 
   static std::expected<icon, error> create(derived_from<interface> auto& Parent) {
     icon i;
-    const auto temp_id = make_slot<icon>();
-    const auto sp = get_slot<icon>(temp_id);
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    const auto psp = get_slot<control>(Parent.id());
-    if (!psp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = psp->attach(temp_id); !res) {
-      slot::slots.erase(temp_id);
-      return res.error().relay();
-    }
-    i._id = temp_id;
-    sp->id = temp_id;
-    sp->window_id = psp->get_window_id();
+    icon::slot* sp;
+    if (auto res = create_control<icon>(Parent)) sp = *res;
+    else return res.error().relay();
+    i._id = sp->id;
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
-    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
-    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
     return i;
   }
 
-  //-- getter --//
-
-  const auto& content() const noexcept {
-    const auto sp = get_slot(&*this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->content;
-  }
-
-  alignment icon_align() const noexcept {
-    const auto sp = get_slot(&*this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->icon_align;
-  }
-
-  //-- setter --//
-
-  auto& content(this auto& self, yw::icon Icon) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->content = std::move(Icon);
-    sp->make_messy();
-    return self;
-  }
-
-  auto& icon_align(this auto& self, alignment v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->icon_align = v;
-    sp->make_dirty();
-    return self;
-  }
+  yw_control_getter_setter(content, yw::icon);
+  yw_control_getter_setter(icon_align, alignment);
 };
 } // namespace yw::ui

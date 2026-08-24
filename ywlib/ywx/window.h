@@ -131,7 +131,7 @@ public:
 
     //-- functions --//
 
-    std::expected<void, error> apply_color_theme(const ui::color_theme& Theme, bool Recursive) {
+    std::expected<void, error> set_color_theme(const ui::color_theme& Theme, bool Recursive) {
       color_theme = Theme;
       background_color = Theme.canvas;
       tooltip_background_color = color(Theme.surface_popup, 0.95f);
@@ -142,7 +142,7 @@ public:
       press_overlay_color = color(Theme.accent, ui::default_overlay_opacity.press);
       if (Recursive) {
         if (const auto csp = get_slot<control>(control_id)) {
-          if (auto res = csp->apply_color_theme(Theme, true); !res) return res.error().relay();
+          csp->make_dirty();
         } else if (control_id) return std::unexpected(error(errors::invalid_slotid));
       }
       dirty = true;
@@ -208,12 +208,12 @@ public:
 
     void clear_window_state() noexcept {
       set_cursor_lock(false);
-      if (const auto csp = get_slot<control>(focused_control_id)) csp->handle_focus_event({false});
+      if (const auto csp = get_slot<control>(focused_control_id)) csp->handle_focus_event(this, {false});
       focused_control_id = {};
       caret_pos = std::nullopt;
 
       if (const auto csp = get_slot<control>(hovered_control_id)) {
-        csp->handle_hover_event(yw::hover_event::create::leave(get_local_pointer_pos()));
+        csp->handle_hover_event(this, yw::hover_event::create::leave(get_local_pointer_pos()));
         dirty = true;
       }
       hovered_control_id = {};
@@ -253,7 +253,7 @@ public:
     }
 
     std::expected<void, error> update_caret_pos() {
-      if (const auto csp = get_slot<control>(focused_control_id)) caret_pos = csp->get_caret_pos();
+      if (const auto csp = get_slot<control>(focused_control_id)) caret_pos = csp->get_caret_pos(this);
       else caret_pos = std::nullopt;
       update_ime_window();
       return {};
@@ -264,9 +264,9 @@ public:
       if (!csp) return {};
       const auto old_fc_id = focused_control_id;
       bool found = !slot::slots.contains(old_fc_id);
-      focused_control_id = csp->find_next_tabstop(old_fc_id, Backward, found);
-      if (const auto old_fcsp = get_slot<control>(old_fc_id)) old_fcsp->handle_focus_event({false});
-      if (const auto new_fcsp = get_slot<control>(focused_control_id)) new_fcsp->handle_focus_event({true});
+      focused_control_id = csp->find_next_tabstop(this, old_fc_id, Backward, found);
+      if (const auto old_fcsp = get_slot<control>(old_fc_id)) old_fcsp->handle_focus_event(this, {false});
+      if (const auto new_fcsp = get_slot<control>(focused_control_id)) new_fcsp->handle_focus_event(this, {true});
       if (auto res = update_caret_pos(); !res) return res.error().relay();
       return {};
     }
@@ -274,7 +274,7 @@ public:
     std::expected<void, error> update_hovered_control(slotid New, float2 Pos, bool Moved, double Time) {
       if (New != hovered_control_id) {
         if (const auto csp = get_slot<control>(hovered_control_id)) {
-          csp->handle_hover_event(yw::hover_event::create::leave(Pos));
+          csp->handle_hover_event(this, yw::hover_event::create::leave(Pos));
           dirty = true;
         }
         hovered_control_id = New;
@@ -283,13 +283,13 @@ public:
         tooltip_enter_time = Time;
         tooltip_anchor_pos = Pos;
         if (const auto csp = get_slot<control>(hovered_control_id)) {
-          csp->handle_hover_event(yw::hover_event::create::enter(Pos));
+          csp->handle_hover_event(this, yw::hover_event::create::enter(Pos));
           dirty = true;
         }
       } else if (Moved) {
         tooltip_anchor_pos = Pos;
         if (const auto csp = get_slot<control>(hovered_control_id))
-          csp->handle_hover_event(yw::hover_event::create::move(Pos));
+          csp->handle_hover_event(this, yw::hover_event::create::move(Pos));
       }
       return {};
     }
@@ -316,8 +316,8 @@ public:
         brush::color(tooltip_background_color);
         if (auto res = fill_round_rectangle(pos, size, tooltip_radius); !res) return res.error().relay();
       }
-      brush::color(tooltip_text_color);
-      if (auto res = draw_text(pos + tooltip_padding.xy(), tooltip_text); !res) return res.error().relay();
+      if (auto res = draw_text(pos + tooltip_padding.xy(), tooltip_text, tooltip_text_color); !res)
+        return res.error().relay();
       if (tooltip_border_color.a > 0.0f && tooltip_border_thickness > 0.0f) {
         brush::color(tooltip_border_color);
         if (auto res = stroke_round_rectangle(pos, size, tooltip_radius, tooltip_border_thickness); !res)
@@ -370,10 +370,10 @@ public:
       if (dirty) {
         if (auto d = controllayer.begin_draw(colors::transparent)) {
           if (csp) {
-            if (auto rr = csp->redraw(); !rr) return rr.error().relay();
+            if (auto rr = csp->redraw(this); !rr) return rr.error().relay();
             if (auto res = update_caret_pos(); !res) return res.error().relay();
             if (track_mouse_event.hwndTrack != nullptr) {
-              const auto hit = csp->hittest(get_local_pointer_pos());
+              const auto hit = csp->hittest(this, get_local_pointer_pos());
               if (auto res = update_hovered_control(hit, get_local_pointer_pos(), false, Time); !res)
                 return res.error().relay();
             }
@@ -404,7 +404,7 @@ public:
       const auto csp = get_slot<control>(control_id);
       if (auto d = controllayer.begin_draw(colors::transparent)) {
         if (csp) {
-          if (auto rr = csp->redraw(); !rr) return rr.error().relay();
+          if (auto rr = csp->redraw(this); !rr) return rr.error().relay();
           if (auto res = update_caret_pos(); !res) return res.error().relay();
         }
         if (auto res = d->close(); !res) return res.error().relay();
@@ -439,7 +439,7 @@ public:
       sp->title = op.get_title();
       sp->style = op.get_style();
       sp->exstyle = op.get_exstyle();
-      if (auto res = sp->apply_color_theme(sp->color_theme, false); !res) return res.error().relay();
+      if (auto res = sp->set_color_theme(sp->color_theme, false); !res) return res.error().relay();
       sp->hwnd = ::CreateWindowExW(
         sp->exstyle, wclass::name(), sp->title.c_str(), sp->style & ~WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
         int(arbitrary_value), int(arbitrary_value), nullptr, nullptr, wclass::hinstance(), nullptr);
@@ -478,25 +478,25 @@ public:
       last_cursor_pos = pos + frame_thickness.xy() + e.pos;
       if (const auto csp = get_slot<control>(control_id)) {
         const auto old_fc_id = focused_control_id;
-        const auto hit_id = csp->hittest(e.pos);
+        const auto hit_id = csp->hittest(this, e.pos);
         const auto hcsp = get_slot<control>(hit_id);
         const auto focus_id = (hcsp && hcsp->is_focusable()) ? hit_id : slotid{};
         if (e.key == keys::lbutton)
           if (e.down && focused_control_id != focus_id) {
             focused_control_id = focus_id;
             dirty = true;
-            if (const auto old_fcsp = get_slot<control>(old_fc_id)) old_fcsp->handle_focus_event({false});
-            if (const auto new_fcsp = get_slot<control>(focused_control_id)) new_fcsp->handle_focus_event({true});
+            if (const auto old_fcsp = get_slot<control>(old_fc_id)) old_fcsp->handle_focus_event(this, {false});
+            if (const auto new_fcsp = get_slot<control>(focused_control_id)) new_fcsp->handle_focus_event(this, {true});
             if (auto res = update_caret_pos(); !res) return res.error().relay();
           }
         if (e.down) {
-          if (hcsp) control_handled = hcsp->handle_button_event(e);
+          if (hcsp) control_handled = hcsp->handle_button_event(this, e);
           mouse_capture_control_id = hit_id;
           dirty = true;
           if (hit_id) ::SetCapture(hwnd);
         } else if (const auto ccsp = get_slot<control>(mouse_capture_control_id)) {
-          control_handled = ccsp->handle_button_event(e);
-          if (hit_id == mouse_capture_control_id) control_handled |= ccsp->handle_click_event(e);
+          control_handled = ccsp->handle_button_event(this, e);
+          if (hit_id == mouse_capture_control_id) control_handled |= ccsp->handle_click_event(this, e);
           mouse_capture_control_id = {};
           dirty = true;
           ::ReleaseCapture();
@@ -519,14 +519,14 @@ public:
 
     std::expected<bool, error> handle_char_event(wchar_t c) {
       if (const auto csp = get_slot<control>(focused_control_id))
-        if (csp->handle_char_event(c)) return true;
+        if (csp->handle_char_event(this, c)) return true;
       return false;
     }
 
     std::expected<bool, error> handle_double_click_event(yw::button_event e) {
       if (const auto csp = get_slot<control>(control_id)) {
-        const auto hit_id = csp->hittest(e.pos);
-        if (const auto hcsp = get_slot<control>(hit_id); hcsp && hcsp->handle_double_click_event(e)) {
+        const auto hit_id = csp->hittest(this, e.pos);
+        if (const auto hcsp = get_slot<control>(hit_id); hcsp && hcsp->handle_double_click_event(this, e)) {
           if (auto res = update_caret_pos(); !res) return res.error().relay();
           return true;
         }
@@ -535,7 +535,7 @@ public:
     }
 
     std::expected<bool, error> handle_drag_event(yw::drag_event e) {
-      if (const auto ccsp = get_slot<control>(mouse_capture_control_id); ccsp && ccsp->handle_drag_event(e)) {
+      if (const auto ccsp = get_slot<control>(mouse_capture_control_id); ccsp && ccsp->handle_drag_event(this, e)) {
         if (auto res = update_caret_pos(); !res) return res.error().relay();
         return true;
       }
@@ -554,19 +554,19 @@ public:
         if (e.down && e.key == keys::tab && !e.mods.ctrl) {
           const auto old_fc_id = focused_control_id;
           bool found = !slot::slots.contains(old_fc_id);
-          focused_control_id = csp->find_next_tabstop(old_fc_id, e.mods.shift, found);
-          if (const auto old_fcsp = get_slot<control>(old_fc_id)) old_fcsp->handle_focus_event({false});
-          if (const auto new_fcsp = get_slot<control>(focused_control_id)) new_fcsp->handle_focus_event({true});
+          focused_control_id = csp->find_next_tabstop(this, old_fc_id, e.mods.shift, found);
+          if (const auto old_fcsp = get_slot<control>(old_fc_id)) old_fcsp->handle_focus_event(this, {false});
+          if (const auto new_fcsp = get_slot<control>(focused_control_id)) new_fcsp->handle_focus_event(this, {true});
           if (auto res = update_caret_pos(); !res) return res.error().relay();
           return true;
         } else if (e.down && e.key == keys::escape && focused_control_id && !e.mods.ctrl && !e.mods.shift &&
                    !e.mods.alt) {
           const auto old_fc_id = focused_control_id;
           focused_control_id = {};
-          if (const auto old_fcsp = get_slot<control>(old_fc_id)) old_fcsp->handle_focus_event({false});
+          if (const auto old_fcsp = get_slot<control>(old_fc_id)) old_fcsp->handle_focus_event(this, {false});
           if (auto res = update_caret_pos(); !res) return res.error().relay();
           return true;
-        } else if (const auto fcsp = get_slot<control>(focused_control_id); fcsp && fcsp->handle_key_event(e)) {
+        } else if (const auto fcsp = get_slot<control>(focused_control_id); fcsp && fcsp->handle_key_event(this, e)) {
           if (auto res = update_caret_pos(); !res) return res.error().relay();
           return true;
         }
@@ -577,8 +577,8 @@ public:
 
     std::expected<bool, error> handle_pointer_event(yw::pointer_event e) {
       if (const auto csp = get_slot<control>(control_id)) {
-        const auto hit = csp->hittest(e.pos);
-        if (const auto hcsp = get_slot<control>(hit); hcsp && hcsp->handle_pointer_event(e)) return true;
+        const auto hit = csp->hittest(this, e.pos);
+        if (const auto hcsp = get_slot<control>(hit); hcsp && hcsp->handle_pointer_event(this, e)) return true;
       }
       if (pointer_event) return pointer_event(e);
       return false;
@@ -586,8 +586,8 @@ public:
 
     std::expected<bool, error> handle_wheel_event(yw::wheel_event e) {
       if (const auto csp = get_slot<control>(control_id)) {
-        const auto hit = csp->hittest(e.pos);
-        if (const auto hcsp = get_slot<control>(hit); hcsp && hcsp->handle_wheel_event(e)) { return true; }
+        const auto hit = csp->hittest(this, e.pos);
+        if (const auto hcsp = get_slot<control>(hit); hcsp && hcsp->handle_wheel_event(this, e)) { return true; }
       }
       if (wheel_event) return wheel_event(e);
       return false;
@@ -998,7 +998,7 @@ public:
       error(errors::invalid_slotid).fizzle_out();
       return *this;
     }
-    if (auto res = sp->apply_color_theme(Theme, true); !res) res.error().fizzle_out();
+    if (auto res = sp->set_color_theme(Theme, true); !res) res.error().fizzle_out();
     return *this;
   }
 
@@ -1215,12 +1215,14 @@ public:
 
 /// MARK: Other functions
 
-inline std::expected<void, error> control::slot::draw_foreground() {
-  if (border_color.a > 0.0f && border_thickness > 0.0f) {
-    brush::color(border_color);
+inline std::expected<void, error> control::slot::draw_foreground(interface::slot* Window) {
+  const auto border = get_border_color(Window);
+  if (border.a > 0.0f && border_thickness > 0.0f) {
+    brush::color(border);
     if (auto res = stroke_geometry(geometry.get(), border_thickness); !res) return res.error().relay();
   }
-  if (const auto wsp = get_slot<window>(window_id); !wsp) return std::unexpected(error(errors::invalid_slotid));
+  const auto wsp = static_cast<window::slot*>(Window);
+  if (!wsp) return {};
   else if (id == wsp->focused_control_id && wsp->focus_overlay_color.a > 0.0f) {
     brush::color(wsp->focus_overlay_color);
     if (auto res = stroke_geometry(geometry.get(), border_thickness + 1.0f); !res) return res.error().relay();
@@ -1228,9 +1230,9 @@ inline std::expected<void, error> control::slot::draw_foreground() {
   return {};
 }
 
-inline std::expected<void, error> control::slot::draw_overlay() {
-  const auto wsp = get_slot<window>(window_id);
-  if (!wsp) return std::unexpected(error(errors::invalid_slotid));
+inline std::expected<void, error> control::slot::draw_overlay(interface::slot* Window) {
+  const auto wsp = static_cast<window::slot*>(Window);
+  if (!wsp) return {};
   if (id == wsp->mouse_capture_control_id && is_interactive() && wsp->press_overlay_color.a > 0.0f) {
     brush::color(wsp->press_overlay_color);
     if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
@@ -1245,7 +1247,7 @@ inline void control::slot::clear_window_state() noexcept {
   const auto wsp = get_slot<window>(window_id);
   if (!wsp) return;
   if (wsp->focused_control_id == id) {
-    handle_focus_event({false});
+    handle_focus_event(wsp, {false});
     wsp->focused_control_id = {};
     wsp->caret_pos = std::nullopt;
   }
@@ -1261,6 +1263,24 @@ inline void control::slot::clear_window_state() noexcept {
 inline std::expected<const ui::color_theme*, error> control::slot::get_color_theme() const noexcept {
   if (const auto wsp = get_slot<window>(window_id)) return &wsp->color_theme;
   else return std::unexpected(error(errors::invalid_slotid));
+}
+
+inline std::expected<const ui::color_theme*, error> control::slot::get_color_theme(
+  const interface::slot* Window) const noexcept {
+  if (Window) return &static_cast<const window::slot*>(Window)->color_theme;
+  return get_color_theme();
+}
+
+inline color control::slot::get_background_color(const interface::slot* Window) const noexcept {
+  if (background_color) return *background_color;
+  if (auto theme = get_color_theme(Window)) return (*theme)->surface;
+  return colors::transparent;
+}
+
+inline color control::slot::get_border_color(const interface::slot* Window) const noexcept {
+  if (border_color) return *border_color;
+  if (auto theme = get_color_theme(Window)) return (*theme)->outline;
+  return colors::transparent;
 }
 
 inline std::expected<command_manager*, error> control::slot::get_command_manager() const noexcept {

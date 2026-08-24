@@ -13,8 +13,8 @@ public:
     T minimum = std::numeric_limits<T>::lowest();
     T maximum = std::numeric_limits<T>::max();
     T step = T(1);
-    color arrow_color;
-    color button_color;
+    optional<color> arrow_color;
+    optional<color> button_color;
     float arrow_thickness = 1.0f;
     float button_width = common_size_value;
     int pressed_button = 0;
@@ -25,26 +25,30 @@ public:
 
     //-- override functions --//
 
-    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
-      if (auto res = edit::slot::apply_color_theme(Theme, Recursive); !res) return res.error().relay();
-      arrow_color = Theme.text;
-      button_color = Theme.part;
-      make_dirty();
-      return {};
+    virtual color get_arrow_color(const interface::slot* Window) const noexcept {
+      if (arrow_color) return *arrow_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->text;
+      return colors::transparent;
     }
 
-    virtual std::expected<void, error> draw_backcontent() override {
-      if (auto res = edit::slot::draw_backcontent(); !res) return res.error().relay();
+    virtual color get_button_color(const interface::slot* Window) const noexcept {
+      if (button_color) return *button_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->part;
+      return colors::transparent;
+    }
+
+    virtual std::expected<void, error> draw_backcontent(interface::slot* Window) override {
+      if (auto res = edit::slot::draw_backcontent(Window); !res) return res.error().relay();
       const auto origin = pos + float2(size.x - button_width, 0.0f);
-      brush::color(button_color);
+      brush::color(get_button_color(Window));
       if (auto res = fill_rectangle(origin, float2(button_width, size.y)); !res) return res.error().relay();
       return {};
     }
 
-    virtual std::expected<void, error> draw_overlay() override {
+    virtual std::expected<void, error> draw_overlay(interface::slot* Window) override {
       std::optional<int> pressed_button_;
-      const auto wsp = get_slot<window>(window_id);
-      if (!wsp) return std::unexpected(error(errors::invalid_slotid));
+      const auto wsp = static_cast<window::slot*>(Window);
+      if (!wsp) return {};
       if (id == wsp->mouse_capture_control_id && wsp->press_overlay_color.a > 0.0f) {
         pressed_button_ = pressed_button;
         brush::color(wsp->press_overlay_color);
@@ -59,17 +63,17 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> draw_forecontent() override {
+    virtual std::expected<void, error> draw_forecontent(interface::slot* Window) override {
       const auto origin = pos + float2(size.x - button_width, 0.0f);
       const auto half_y = size.y * 0.5f;
       const auto arrow_size = float2(button_width, half_y);
       const auto origin2 = origin.add<1>(half_y);
-      if (auto res = edit::slot::draw_forecontent(); !res) return res.error().relay();
-      brush::color(border_color);
+      if (auto res = edit::slot::draw_forecontent(Window); !res) return res.error().relay();
+      brush::color(get_border_color(Window));
       if (auto res = stroke_line(origin, origin.add<1>(size.y), border_thickness); !res) return res.error().relay();
       if (auto res = stroke_line(origin2, origin2.add<0>(button_width), border_thickness); !res)
         return res.error().relay();
-      brush::color(arrow_color);
+      brush::color(get_arrow_color(Window));
       if (auto res = draw_arrow<ui::top>(origin, arrow_size, arrow_thickness); !res) return res.error().relay();
       if (auto res = draw_arrow<ui::bottom>(origin2, arrow_size, arrow_thickness); !res) return res.error().relay();
       return {};
@@ -280,6 +284,118 @@ public:
   };
 
   using edit::operator bool;
+  class proxy : public edit::proxy {
+    friend class spinbox;
+    using edit::proxy::proxy;
+    spinbox::slot* _get_slot() const noexcept { return static_cast<spinbox::slot*>(_slot); }
+
+  public:
+    //-- getter --//
+
+    float4 padding() const&& noexcept { return _get_slot()->padding.template add<2>(-_get_slot()->button_width); }
+    T value() const&& noexcept { return _get_slot()->value; }
+    T minimum() const&& noexcept { return _get_slot()->minimum; }
+    T maximum() const&& noexcept { return _get_slot()->maximum; }
+    T step() const&& noexcept { return _get_slot()->step; }
+    float button_width() const&& noexcept { return _get_slot()->button_width; }
+    color arrow_color() const&& noexcept {
+      return _get_slot()->get_arrow_color(interface::slot::slots.get(_get_slot()->window_id));
+    }
+    color button_color() const&& noexcept {
+      return _get_slot()->get_button_color(interface::slot::slots.get(_get_slot()->window_id));
+    }
+    const auto& change_event() const&& noexcept { return _get_slot()->change_event; }
+
+    //-- setter --//
+
+    auto padding(this auto&& Self, float4 Padding) noexcept {
+      Self._get_slot()->padding = Padding.add<2>(Self._get_slot()->button_width);
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto value(this auto&& Self, T Value) noexcept {
+      Self._get_slot()->set_value(Value);
+      return std::move(Self);
+    }
+
+    auto range(this auto&& Self, T Min, T Max) noexcept {
+      if (Max < Min) {
+        error(errors::invalid_argument, "spinbox range maximum must be greater than or equal to minimum").fizzle_out();
+        return std::move(Self);
+      }
+      Self._get_slot()->minimum = Min;
+      Self._get_slot()->maximum = Max;
+      Self._get_slot()->set_value(Self._get_slot()->value);
+      return std::move(Self);
+    }
+
+    auto minimum(this auto&& Self, T Value) noexcept {
+      if (Self._get_slot()->maximum < Value) {
+        error(errors::invalid_argument, "spinbox minimum must be less than or equal to maximum").fizzle_out();
+        return std::move(Self);
+      }
+      Self._get_slot()->minimum = Value;
+      Self._get_slot()->set_value(Self._get_slot()->value);
+      return std::move(Self);
+    }
+
+    auto maximum(this auto&& Self, T Value) noexcept {
+      if (Value < Self._get_slot()->minimum) {
+        error(errors::invalid_argument, "spinbox maximum must be greater than or equal to minimum").fizzle_out();
+        return std::move(Self);
+      }
+      Self._get_slot()->maximum = Value;
+      Self._get_slot()->set_value(Self._get_slot()->value);
+      return std::move(Self);
+    }
+
+    auto step(this auto&& Self, T Step) noexcept {
+      if (Step <= T{}) error(errors::invalid_argument, "spinbox step must be positive").fizzle_out();
+      else Self._get_slot()->step = Step, Self._get_slot()->set_value(Self._get_slot()->value, false);
+      return std::move(Self);
+    }
+
+    auto button_width(this auto&& Self, float1 Width) noexcept {
+      if (Width.x <= 0.0f) {
+        error(errors::invalid_argument, "spinbox button_width must be positive").fizzle_out();
+        return std::move(Self);
+      }
+      Self._get_slot()->padding.z -= Self._get_slot()->button_width - Width.x;
+      Self._get_slot()->button_width = Width.x;
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto arrow_color(this auto&& Self, const color& Color) noexcept {
+      Self._get_slot()->arrow_color = Color;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto arrow_color(this auto&& Self, none) noexcept {
+      Self._get_slot()->arrow_color = none();
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto button_color(this auto&& Self, const color& Color) noexcept {
+      Self._get_slot()->button_color = Color;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto button_color(this auto&& Self, none) noexcept {
+      Self._get_slot()->button_color = none();
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto change_event(this auto&& Self, function<bool, T> Event) noexcept {
+      Self._get_slot()->change_event = std::move(Event);
+      return std::move(Self);
+    }
+  };
 
   spinbox() noexcept = default;
 
@@ -290,25 +406,15 @@ public:
 
   static std::expected<spinbox, error> create(derived_from<interface> auto& Parent) {
     spinbox s;
-    const auto temp_id = make_slot<spinbox>();
-    const auto sp = get_slot<spinbox>(temp_id);
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    const auto psp = get_slot<control>(Parent.id());
-    if (!psp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = psp->attach(temp_id); !res) {
-      slot::slots.erase(temp_id);
-      return res.error().relay();
-    }
-    s._id = temp_id;
-    sp->id = temp_id;
-    sp->window_id = psp->get_window_id();
+    spinbox::slot* sp;
+    if (auto res = create_control<spinbox>(Parent)) sp = *res;
+    else return res.error().relay();
+    s._id = sp->id;
     sp->policy = {ui::free, ui::fit};
     sp->text_align = alignment::right;
     sp->filter = [](wchar_t c) { return slot::is_number_char(c); };
-    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
-    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
     sp->padding.z += sp->button_width;
-    const auto spinbox_id = temp_id;
+    const auto spinbox_id = sp->id;
     sp->enter_event = [spinbox_id](yw::key_event) {
       if (const auto sp = get_slot<spinbox>(spinbox_id)) sp->commit_string();
       return true;
@@ -317,204 +423,24 @@ public:
     return s;
   }
 
-  //-- getter --//
-
-  float4 padding() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->padding.template add<2>(-sp->button_width);
+  yw_control_getter_setter(padding, float4);
+  yw_control_getter_setter(value, T);
+  auto range(this auto& Self, T Min, T Max) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).range(Min, Max);
   }
-
-  T value() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->value;
+  yw_control_getter_setter(minimum, T);
+  yw_control_getter_setter(maximum, T);
+  yw_control_getter_setter(step, T);
+  yw_control_getter_setter(button_width, float1);
+  yw_control_getter_setter(arrow_color, color);
+  auto arrow_color(this auto& Self, none None) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).arrow_color(None);
   }
-
-  T minimum() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->minimum;
+  yw_control_getter_setter(button_color, color);
+  auto button_color(this auto& Self, none None) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).button_color(None);
   }
-
-  T maximum() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->maximum;
-  }
-
-  T step() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->step;
-  }
-
-  float button_width() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->button_width;
-  }
-
-  const auto& arrow_color() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->arrow_color;
-  }
-
-  const auto& button_color() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->button_color;
-  }
-
-  const auto& change_event() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->change_event;
-  }
-
-  //-- setter --//
-
-  auto& padding(this auto& self, float4 v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->padding = v.add<2>(sp->button_width);
-    sp->make_messy();
-    return self;
-  }
-
-  auto& value(this auto& self, T v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->set_value(v);
-    return self;
-  }
-
-  auto& range(this auto& self, T Min, T Max) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (Max < Min) {
-      error(errors::invalid_argument, "spinbox range maximum must be greater than or equal to minimum").fizzle_out();
-      return self;
-    }
-    sp->minimum = Min;
-    sp->maximum = Max;
-    sp->set_value(sp->value);
-    return self;
-  }
-
-  auto& minimum(this auto& self, T v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (sp->maximum < v) {
-      error(errors::invalid_argument, "spinbox minimum must be less than or equal to maximum").fizzle_out();
-      return self;
-    }
-    sp->minimum = v;
-    sp->set_value(sp->value);
-    return self;
-  }
-
-  auto& maximum(this auto& self, T v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (v < sp->minimum) {
-      error(errors::invalid_argument, "spinbox maximum must be greater than or equal to minimum").fizzle_out();
-      return self;
-    }
-    sp->maximum = v;
-    sp->set_value(sp->value);
-    return self;
-  }
-
-  auto& step(this auto& self, T v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).fizzle_out();
-    else if (v <= T{}) error(errors::invalid_argument, "spinbox step must be positive").fizzle_out();
-    else sp->step = v, sp->set_value(sp->value, false);
-    return self;
-  }
-
-  auto& button_width(this auto& self, float1 v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (v.x <= 0.0f) {
-      error(errors::invalid_argument, "spinbox button_width must be positive").fizzle_out();
-      return self;
-    }
-    sp->padding.z -= sp->button_width - v.x;
-    sp->button_width = v.x;
-    sp->make_messy();
-    return self;
-  }
-
-  auto& arrow_color(this auto& self, const color& c) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->arrow_color = c;
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& button_color(this auto& self, const color& c) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->button_color = c;
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& change_event(this auto& self, function<bool, T> f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->change_event = std::move(f);
-    return self;
-  }
+  yw_control_getter_setter(change_event, function<bool, T>);
 
 private:
   using control::padding;

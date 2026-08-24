@@ -44,18 +44,6 @@ public:
 
     //-- override functions --//
 
-    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
-      background_color = colors::transparent;
-      border_color = colors::transparent;
-      if (Recursive)
-        for (const auto& it : items)
-          if (const auto csp = get_slot<control>(it.control_id)) {
-            if (auto res = csp->apply_color_theme(Theme, true); !res) return res.error().relay();
-          } else return std::unexpected(error(errors::invalid_slotid));
-      make_dirty();
-      return {};
-    }
-
     virtual bool attachable() const override { return true; }
 
     virtual std::expected<void, error> attach(slotid Child) override {
@@ -151,10 +139,10 @@ public:
       return id;
     }
 
-    virtual std::expected<void, error> draw_backcontent() override {
+    virtual std::expected<void, error> draw_backcontent(interface::slot* Window) override {
       for (const auto& it : items)
         if (const auto csp = get_slot<control>(it.control_id)) {
-          if (auto res = csp->redraw(); !res) return res.error().relay();
+          if (auto res = csp->redraw(Window); !res) return res.error().relay();
         } else return std::unexpected(error(errors::invalid_slotid));
       return {};
     }
@@ -346,6 +334,39 @@ public:
     }
   };
 
+  class proxy : public control::proxy {
+    friend class grid_layout;
+    using control::proxy::proxy;
+    grid_layout::slot* _get_slot() const noexcept { return static_cast<grid_layout::slot*>(_slot); }
+
+  public:
+    //-- getter --//
+
+    float column_gap() const&& noexcept { return _get_slot()->column_gap; }
+    float row_gap() const&& noexcept { return _get_slot()->row_gap; }
+
+    //-- setter --//
+
+    auto column_gap(this auto&& Self, float Gap) noexcept {
+      Self._get_slot()->column_gap = yw::max(0.0f, Gap);
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto row_gap(this auto&& Self, float Gap) noexcept {
+      Self._get_slot()->row_gap = yw::max(0.0f, Gap);
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto gap(this auto&& Self, float2 Gap) noexcept {
+      Self._get_slot()->column_gap = yw::max(0.0f, Gap.x);
+      Self._get_slot()->row_gap = yw::max(0.0f, Gap.y);
+      Self._messy = true;
+      return std::move(Self);
+    }
+  };
+
   grid_layout() noexcept = default;
 
   grid_layout(derived_from<interface> auto& Parent, const source_line& sl = here()) {
@@ -355,41 +376,20 @@ public:
 
   static std::expected<grid_layout, error> create(derived_from<interface> auto& Parent) {
     grid_layout g;
-    const auto temp_id = make_slot<grid_layout>();
-    const auto sp = get_slot<grid_layout>(temp_id);
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    const auto psp = get_slot<control>(Parent.id());
-    if (!psp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = psp->attach(temp_id); !res) {
-      slot::slots.erase(temp_id);
-      return res.error().relay();
-    }
-    g._id = temp_id;
-    sp->id = temp_id;
-    sp->window_id = psp->get_window_id();
+    grid_layout::slot* sp;
+    if (auto res = create_control<grid_layout>(Parent)) sp = *res;
+    else return res.error().relay();
+    g._id = sp->id;
     sp->margin = {};
     sp->padding = {};
     sp->radius = {};
-    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
-    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
+    sp->background_color = colors::transparent;
+    sp->border_color = colors::transparent;
     return g;
   }
 
-  //-- getter --//
-
-  float column_gap() const noexcept {
-    if (const auto sp = get_slot(this)) return sp->column_gap;
-    error(errors::invalid_slotid).fizzle_out();
-    return {};
-  }
-
-  float row_gap() const noexcept {
-    if (const auto sp = get_slot(this)) return sp->row_gap;
-    error(errors::invalid_slotid).fizzle_out();
-    return {};
-  }
-
-  //-- setter --//
+  yw_control_getter_setter(column_gap, float);
+  yw_control_getter_setter(row_gap, float);
 
   template<typename... Specs> requires((is_grid_track_spec<Specs> && ...))
   std::expected<void, error> columns(Specs... Specs_) {
@@ -452,38 +452,8 @@ public:
   grid_layout& cell(uint2 Pos, uint2 Size = {1, 1}) noexcept { return at(Pos, Size); }
   grid_layout& grid(uint2 Pos, uint2 Size = {1, 1}) noexcept { return at(Pos, Size); }
 
-  grid_layout& column_gap(float v) noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return *this;
-    }
-    sp->column_gap = yw::max(0.0f, v);
-    sp->make_messy();
-    return *this;
-  }
-
-  grid_layout& row_gap(float v) noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return *this;
-    }
-    sp->row_gap = yw::max(0.0f, v);
-    sp->make_messy();
-    return *this;
-  }
-
-  grid_layout& gap(float2 v) noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return *this;
-    }
-    sp->column_gap = yw::max(0.0f, v.x);
-    sp->row_gap = yw::max(0.0f, v.y);
-    sp->make_messy();
-    return *this;
+  auto gap(this auto& Self, float2 Gap) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).gap(Gap);
   }
 };
 } // namespace yw::ui

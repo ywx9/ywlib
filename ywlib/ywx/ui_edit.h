@@ -9,6 +9,7 @@ class edit : public selectable_label {
 public:
   struct slot : selectable_label::slot {
     yw::text placeholder_text = yw::text(L"");
+    optional<color> placeholder_color;
     std::optional<uint32_t> max_length = std::nullopt;
     function<bool, wchar_t> filter{};
     function<bool, string_view<wchar_t>> change_event{};
@@ -17,25 +18,29 @@ public:
 
     //-- override functions --//
 
-    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool Recursive) override {
-      if (auto res = selectable_label::slot::apply_color_theme(Theme, Recursive); !res) return res.error().relay();
-      background_color = Theme.surface;
-      border_color = Theme.outline;
-      placeholder_text.color(color(Theme.text_muted, default_overlay_opacity.muted_text));
-      make_dirty();
-      return {};
+    virtual color get_placeholder_color(const interface::slot* Window) const noexcept {
+      if (placeholder_color) return *placeholder_color;
+      if (auto theme = get_color_theme(Window)) return color((*theme)->text_muted, default_overlay_opacity.muted_text);
+      return colors::transparent;
     }
 
-    virtual std::expected<void, error> draw_forecontent() override {
+    virtual color get_border_color(const interface::slot* Window) const noexcept override {
+      if (border_color) return *border_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->outline;
+      return colors::transparent;
+    }
+
+    virtual std::expected<void, error> draw_forecontent(interface::slot* Window) override {
       if (!is_focused() && text.string().empty()) {
         if (auto res = update_scroll_offset(); !res) return res.error().relay();
         const auto origin = text_origin();
         const auto area = size - padding.xy() - padding.zw();
         const auto text_pos = align_position(origin, area, placeholder_text.size(), text_align);
-        if (auto res = draw_text(text_pos, placeholder_text); !res) return res.error().relay();
+        if (auto res = draw_text(text_pos, placeholder_text, get_placeholder_color(Window)); !res)
+          return res.error().relay();
         return {};
       }
-      return selectable_label::slot::draw_forecontent();
+      return selectable_label::slot::draw_forecontent(Window);
     }
 
     virtual std::expected<float2, error> get_necessary_size() const override {
@@ -215,6 +220,113 @@ public:
     }
   };
 
+  class proxy : public selectable_label::proxy {
+    friend class edit;
+  protected:
+    using selectable_label::proxy::proxy;
+    edit::slot* _get_slot() const noexcept { return static_cast<edit::slot*>(_slot); }
+
+  public:
+    using selectable_label::proxy::font;
+    using selectable_label::proxy::string;
+    using selectable_label::proxy::text;
+
+    //-- getter --//
+
+    const auto& placeholder_text() const&& noexcept { return _get_slot()->placeholder_text; }
+    const auto& placeholder_string() const&& noexcept { return _get_slot()->placeholder_text.string(); }
+    color placeholder_color() const&& noexcept {
+      return _get_slot()->get_placeholder_color(interface::slot::slots.get(_get_slot()->window_id));
+    }
+    const auto& max_length() const&& noexcept { return _get_slot()->max_length; }
+    const auto& filter() const&& noexcept { return _get_slot()->filter; }
+    const auto& change_event() const&& noexcept { return _get_slot()->change_event; }
+    const auto& enter_event() const&& noexcept { return _get_slot()->enter_event; }
+    bool readonly() const&& noexcept { return _get_slot()->readonly; }
+
+    //-- setter --//
+
+    auto placeholder_string(this auto&& Self, yw::string<wchar_t> String) noexcept {
+      Self._get_slot()->placeholder_text.string(std::move(String));
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto placeholder_color(this auto&& Self, const color& Color) noexcept {
+      Self._get_slot()->placeholder_color = Color;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto placeholder_color(this auto&& Self, none) noexcept {
+      Self._get_slot()->placeholder_color = none();
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto max_length(this auto&& Self, std::optional<uint32_t> MaxLength) noexcept {
+      Self._get_slot()->max_length = MaxLength;
+      if (MaxLength && Self._get_slot()->text.string().size() > *MaxLength) {
+        Self._get_slot()->text.string(
+          yw::string<wchar_t>(string_view<wchar_t>(Self._get_slot()->text.string()).substr(0, *MaxLength)));
+        Self._get_slot()->caret = yw::clamp(Self._get_slot()->caret, 0, Self._get_slot()->text.string().size());
+        Self._get_slot()->anchor = yw::clamp(Self._get_slot()->anchor, 0, Self._get_slot()->text.string().size());
+        Self._messy = true;
+      }
+      return std::move(Self);
+    }
+
+    auto filter(this auto&& Self, function<bool, wchar_t> Filter) noexcept {
+      Self._get_slot()->filter = std::move(Filter);
+      return std::move(Self);
+    }
+
+    auto change_event(this auto&& Self, function<bool, string_view<wchar_t>> Event) noexcept {
+      Self._get_slot()->change_event = std::move(Event);
+      return std::move(Self);
+    }
+
+    auto enter_event(this auto&& Self, function<bool, yw::key_event> Event) noexcept {
+      Self._get_slot()->enter_event = std::move(Event);
+      return std::move(Self);
+    }
+
+    auto text(this auto&& Self, yw::text Text) noexcept {
+      Self._get_slot()->text = std::move(Text);
+      Self._get_slot()->placeholder_text.font(Self._get_slot()->text.font());
+      Self._get_slot()->caret = yw::clamp(Self._get_slot()->caret, 0, Self._get_slot()->text.string().size());
+      Self._get_slot()->anchor = yw::clamp(Self._get_slot()->anchor, 0, Self._get_slot()->text.string().size());
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto font(this auto&& Self, font_config Font) noexcept {
+      Self._get_slot()->text.font(Font);
+      Self._get_slot()->placeholder_text.font(std::move(Font));
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto string(this auto&& Self, yw::string<wchar_t> String) noexcept {
+      String = Self._get_slot()->limited_input(
+        {0, static_cast<uint32_t>(Self._get_slot()->text.string().size())}, String);
+      const bool changed = string_view<wchar_t>(Self._get_slot()->text.string()) != string_view<wchar_t>(String);
+      Self._get_slot()->text.string(std::move(String));
+      Self._get_slot()->caret = yw::clamp(Self._get_slot()->caret, 0, Self._get_slot()->text.string().size());
+      Self._get_slot()->anchor = yw::clamp(Self._get_slot()->anchor, 0, Self._get_slot()->text.string().size());
+      Self._messy = true;
+      if (changed && !Self._get_slot()->readonly && Self._get_slot()->change_event)
+        Self._get_slot()->change_event(Self._get_slot()->text.string());
+      return std::move(Self);
+    }
+
+    auto readonly(this auto&& Self, bool Readonly) noexcept {
+      Self._get_slot()->readonly = Readonly;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+  };
+
   edit() noexcept = default;
 
   edit(derived_from<interface> auto& Parent, const source_line& sl = here()) {
@@ -227,199 +339,28 @@ public:
 
   static std::expected<edit, error> create(derived_from<interface> auto& Parent) {
     edit e;
-    const auto temp_id = make_slot<edit>();
-    const auto sp = get_slot<edit>(temp_id);
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    const auto psp = get_slot<control>(Parent.id());
-    if (!psp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = psp->attach(temp_id); !res) {
-      slot::slots.erase(temp_id);
-      return res.error().relay();
-    }
-    e._id = temp_id;
-    sp->id = temp_id;
-    sp->window_id = psp->get_window_id();
+    edit::slot* sp;
+    if (auto res = create_control<edit>(Parent)) sp = *res;
+    else return res.error().relay();
+    e._id = sp->id;
     sp->policy = {ui::free, ui::fit};
     sp->text_align = alignment::left;
-    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
-    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
     return e;
   }
 
-  //-- getter --//
-
-  const auto& placeholder_text() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->placeholder_text;
+  yw_control_getter(placeholder_text);
+  yw_control_getter_setter(placeholder_string, yw::string<wchar_t>);
+  yw_control_getter_setter(placeholder_color, color);
+  auto placeholder_color(this auto& Self, none None) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).placeholder_color(None);
   }
-
-  const auto& placeholder_string() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->placeholder_text.string();
-  }
-
-  const auto& placeholder_color() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->placeholder_text.color();
-  }
-
-  const auto& max_length() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->max_length;
-  }
-
-  const auto& filter() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->filter;
-  }
-
-  const auto& change_event() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->change_event;
-  }
-
-  const auto& enter_event() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->enter_event;
-  }
-
-  bool readonly() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->readonly;
-  }
-
-  //-- setter --//
-
-  auto& placeholder_string(this auto& self, yw::string<wchar_t> s) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->placeholder_text.string(std::move(s));
-    sp->make_messy();
-    return self;
-  }
-
-  auto& placeholder_color(this auto& self, const color& c) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->placeholder_text.color(c);
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& max_length(this auto& self, std::optional<uint32_t> v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->max_length = v;
-    if (v && sp->text.string().size() > *v) {
-      sp->text.string(yw::string<wchar_t>(string_view<wchar_t>(sp->text.string()).substr(0, *v)));
-      sp->caret = yw::clamp(sp->caret, 0, sp->text.string().size());
-      sp->anchor = yw::clamp(sp->anchor, 0, sp->text.string().size());
-      sp->make_messy();
-    }
-    return self;
-  }
-
-  auto& filter(this auto& self, function<bool, wchar_t> f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->filter = std::move(f);
-    return self;
-  }
-
-  auto& change_event(this auto& self, function<bool, string_view<wchar_t>> f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->change_event = std::move(f);
-    return self;
-  }
-
-  auto& enter_event(this auto& self, function<bool, yw::key_event> f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->enter_event = std::move(f);
-    return self;
-  }
-
-  auto& text(this auto& self, yw::text Text) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->text = std::move(Text);
-    sp->placeholder_text.font(sp->text.font());
-    sp->caret = yw::clamp(sp->caret, 0, sp->text.string().size());
-    sp->anchor = yw::clamp(sp->anchor, 0, sp->text.string().size());
-    sp->make_messy();
-    return self;
-  }
-
-  auto& font(this auto& self, font_config f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->text.font(f);
-    sp->placeholder_text.font(std::move(f));
-    sp->make_messy();
-    return self;
-  }
-
-  auto& string(this auto& self, yw::string<wchar_t> s) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    s = sp->limited_input({0, static_cast<uint32_t>(sp->text.string().size())}, s);
-    const bool changed = string_view<wchar_t>(sp->text.string()) != string_view<wchar_t>(s);
-    sp->text.string(std::move(s));
-    sp->caret = yw::clamp(sp->caret, 0, sp->text.string().size());
-    sp->anchor = yw::clamp(sp->anchor, 0, sp->text.string().size());
-    sp->make_messy();
-    if (changed && !sp->readonly && sp->change_event) sp->change_event(sp->text.string());
-    return self;
-  }
-
-  auto& readonly(this auto& self, bool v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->readonly = v;
-    sp->make_dirty();
-    return self;
-  }
+  yw_control_getter_setter(max_length, std::optional<uint32_t>);
+  yw_control_getter_setter(filter, function<bool, wchar_t>);
+  yw_control_getter_setter(change_event, function<bool, string_view<wchar_t>>);
+  yw_control_getter_setter(enter_event, function<bool, yw::key_event>);
+  yw_control_getter_setter(text, yw::text);
+  yw_control_getter_setter(font, font_config);
+  yw_control_getter_setter(string, yw::string<wchar_t>);
+  yw_control_getter_setter(readonly, bool);
 };
 } // namespace yw::ui

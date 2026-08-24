@@ -19,6 +19,11 @@ public:
     std::vector<item> items{};
     yw::icon circle;
     yw::icon dot;
+    optional<color> text_color;
+    optional<color> circle_fill_color;
+    optional<color> circle_stroke_color;
+    optional<color> dot_fill_color;
+    optional<color> dot_stroke_color;
     float2 icon_size{common_size_value, common_size_value};
     float icon_gap = arbitrary_value;
     float item_gap = arbitrary_value;
@@ -34,44 +39,80 @@ public:
     virtual bool is_focusable() const override { return enabled && visible; }
     virtual bool is_interactive() const override { return true; }
 
-    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool) override {
-      background_color = Theme.surface;
-      border_color = colors::transparent;
-      for (auto& it : items) it.caption.color(Theme.text);
-      apply_icon_color(circle, colors::transparent, Theme.outline);
-      apply_icon_color(dot, Theme.accent, Theme.accent);
-      make_dirty();
-      return {};
+    virtual color get_text_color(const interface::slot* Window) const noexcept {
+      if (text_color) return *text_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->text;
+      return colors::transparent;
     }
 
-    virtual std::expected<void, error> draw_backcontent() override {
+    virtual color get_border_color(const interface::slot*) const noexcept override {
+      return border_color ? *border_color : colors::transparent;
+    }
+
+    virtual color get_circle_fill_color(const interface::slot*) const noexcept {
+      return circle_fill_color ? *circle_fill_color : colors::transparent;
+    }
+
+    virtual color get_circle_stroke_color(const interface::slot* Window) const noexcept {
+      if (circle_stroke_color) return *circle_stroke_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->outline;
+      return colors::transparent;
+    }
+
+    virtual color get_dot_fill_color(const interface::slot* Window) const noexcept {
+      if (dot_fill_color) return *dot_fill_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->accent;
+      return colors::transparent;
+    }
+
+    virtual color get_dot_stroke_color(const interface::slot* Window) const noexcept {
+      if (dot_stroke_color) return *dot_stroke_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->accent;
+      return colors::transparent;
+    }
+
+    virtual std::expected<void, error> draw_backcontent(interface::slot* Window) override {
       if (circle.is_bitmap()) {
         for (const auto& it : items)
           if (auto res = draw_bitmap(it.icon_pos, icon_size, circle.get_bitmap()); !res) return res.error().relay();
       } else if (circle.is_vector())
-        if (const auto& svg = circle.get_vector(); svg.fill_color().a > 0.0f) {
-          brush::color(svg.fill_color());
+        if (const auto fill = get_circle_fill_color(Window); fill.a > 0.0f) {
+          const auto& vector = circle.get_vector();
           for (const auto& it : items)
-            if (auto res = fill_svgpath(it.icon_pos, circle.get_vector()); !res) return res.error().relay();
+            if (auto res = fill_svgpath(it.icon_pos, vector.path, fill); !res) return res.error().relay();
         }
       return {};
     }
 
-    virtual std::expected<void, error> draw_forecontent() override {
+    virtual std::expected<void, error> draw_forecontent(interface::slot* Window) override {
       if (circle.is_vector())
-        if (const auto& svg = circle.get_vector(); svg.stroke_color().a > 0.0f)
+        if (const auto stroke = get_circle_stroke_color(Window); stroke.a > 0.0f) {
+          const auto& vector = circle.get_vector();
           for (const auto& it : items)
-            if (auto res = stroke_svgpath(it.icon_pos, circle.get_vector()); !res) return res.error().relay();
-      if (checked_index < items.size())
-        if (auto res = draw_icon(items[checked_index].icon_pos, icon_size, dot); !res) return res.error().relay();
+            if (auto res = stroke_svgpath(it.icon_pos, vector.path, stroke, vector.stroke_width); !res)
+              return res.error().relay();
+        }
+      if (checked_index < items.size()) {
+        const auto& it = items[checked_index];
+        if (dot.is_bitmap()) {
+          if (auto res = draw_bitmap(it.icon_pos, icon_size, dot.get_bitmap()); !res) return res.error().relay();
+        } else if (dot.is_vector()) {
+          const auto& vector = dot.get_vector();
+          if (const auto fill = get_dot_fill_color(Window); fill.a > 0.0f)
+            if (auto res = fill_svgpath(it.icon_pos, icon_size, vector.path, fill); !res) return res.error().relay();
+          if (const auto stroke = get_dot_stroke_color(Window); stroke.a > 0.0f && vector.stroke_width > 0.0f)
+            if (auto res = stroke_svgpath(it.icon_pos, icon_size, vector.path, stroke, vector.stroke_width); !res)
+              return res.error().relay();
+        }
+      }
       for (const auto& it : items)
-        if (auto res = draw_text(it.text_pos, it.caption); !res) return res.error().relay();
+        if (auto res = draw_text(it.text_pos, it.caption, get_text_color(Window)); !res) return res.error().relay();
       return {};
     }
 
-    virtual std::expected<void, error> draw_overlay() override {
-      const auto wsp = get_slot<window>(window_id);
-      if (!wsp) return std::unexpected(error(errors::invalid_slotid));
+    virtual std::expected<void, error> draw_overlay(interface::slot* Window) override {
+      const auto wsp = static_cast<window::slot*>(Window);
+      if (!wsp) return {};
       if (pressed_index < items.size() && wsp->press_overlay_color.a > 0.0f) {
         brush::color(wsp->press_overlay_color);
         if (auto res = fill_rectangle(items[pressed_index].pos, items[pressed_index].size); !res)
@@ -84,13 +125,14 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> draw_foreground() override {
-      if (border_color.a > 0.0f && border_thickness > 0.0f) {
-        brush::color(border_color);
+    virtual std::expected<void, error> draw_foreground(interface::slot* Window) override {
+      const auto border = get_border_color(Window);
+      if (border.a > 0.0f && border_thickness > 0.0f) {
+        brush::color(border);
         if (auto res = stroke_geometry(geometry.get(), border_thickness); !res) return res.error().relay();
       }
       if (!is_focused() || selected_index >= items.size()) return {};
-      auto theme = get_color_theme();
+      auto theme = get_color_theme(Window);
       if (!theme) return theme.error().relay();
       brush::color((*theme)->accent);
       if (auto res = stroke_rectangle(items[selected_index].pos, items[selected_index].size, border_thickness + 1.0f);
@@ -178,23 +220,6 @@ public:
 
     //-- shared functions --//
 
-    static void apply_icon_color(yw::icon& Icon, const color& FillColor, const color& StrokeColor) noexcept {
-      if (auto vector = Icon.get_if_vector()) {
-        vector->fill_color(FillColor);
-        vector->stroke_color(StrokeColor);
-      }
-    }
-
-    std::expected<void, error> apply_current_theme_to_content() {
-      if (auto theme = get_color_theme(); !theme) return theme.error().relay();
-      else {
-        for (auto& it : items) it.caption.color((*theme)->text);
-        apply_icon_color(circle, colors::transparent, (*theme)->outline);
-        apply_icon_color(dot, (*theme)->accent, (*theme)->accent);
-      }
-      return {};
-    }
-
     float2 get_row_size(const item& Item) const noexcept {
       const auto text_size = Item.caption.size();
       const auto gap = text_size.x > 0.0f ? icon_gap : 0.0f;
@@ -245,6 +270,121 @@ public:
     }
   };
 
+  class proxy : public control::proxy {
+    friend class radiobutton;
+    using control::proxy::proxy;
+    radiobutton::slot* _get_slot() const noexcept { return static_cast<radiobutton::slot*>(_slot); }
+
+  public:
+    //-- getter --//
+
+    size_t checked_index() const&& noexcept { return _get_slot()->checked_index; }
+    size_t selected_index() const&& noexcept { return _get_slot()->selected_index; }
+    size_t item_count() const&& noexcept { return _get_slot()->items.size(); }
+    const auto& change_event() const&& noexcept { return _get_slot()->change_event; }
+    const auto& circle() const&& noexcept { return _get_slot()->circle; }
+    const auto& dot() const&& noexcept { return _get_slot()->dot; }
+    float2 icon_size() const&& noexcept { return _get_slot()->icon_size; }
+    float icon_gap() const&& noexcept { return _get_slot()->icon_gap; }
+    float item_gap() const&& noexcept { return _get_slot()->item_gap; }
+    color text_color() const&& noexcept {
+      return _get_slot()->get_text_color(interface::slot::slots.get(_get_slot()->window_id));
+    }
+    const auto& string(size_t Index) const&& noexcept {
+      if (Index >= _get_slot()->items.size()) error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
+      return _get_slot()->items[Index].caption.string();
+    }
+
+    //-- setter --//
+
+    auto string(this auto&& Self, size_t Index, yw::string<wchar_t> String) noexcept {
+      if (Index >= Self._get_slot()->items.size())
+        error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
+      else {
+        Self._get_slot()->items[Index].caption.string(std::move(String));
+        Self._messy = true;
+      }
+      return std::move(Self);
+    }
+
+    auto checked_index(this auto&& Self, size_t Index) noexcept {
+      if (Index >= Self._get_slot()->items.size())
+        error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
+      else {
+        Self._get_slot()->selected_index = Index;
+        Self._get_slot()->check(Index);
+      }
+      return std::move(Self);
+    }
+
+    auto selected_index(this auto&& Self, size_t Index) noexcept {
+      if (Index >= Self._get_slot()->items.size())
+        error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
+      else {
+        Self._get_slot()->selected_index = Index;
+        Self._dirty = true;
+      }
+      return std::move(Self);
+    }
+
+    auto change_event(this auto&& Self, function<bool, size_t> Event) noexcept {
+      Self._get_slot()->change_event = std::move(Event);
+      return std::move(Self);
+    }
+
+    auto font(this auto&& Self, font_config Font) noexcept {
+      for (auto& it : Self._get_slot()->items) it.caption.font(Font);
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto text_color(this auto&& Self, const color& Color) noexcept {
+      Self._get_slot()->text_color = Color;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto text_color(this auto&& Self, none) noexcept {
+      Self._get_slot()->text_color = none();
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto circle(this auto&& Self, yw::icon Icon) noexcept {
+      Self._get_slot()->circle = std::move(Icon);
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto dot(this auto&& Self, yw::icon Icon) noexcept {
+      Self._get_slot()->dot = std::move(Icon);
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto icon_size(this auto&& Self, float2 Size) noexcept {
+      if (Size.x <= 0.0f || Size.y <= 0.0f) {
+        error(errors::invalid_argument, format("icon_size must be positive: ", Size)).fizzle_out();
+        return std::move(Self);
+      }
+      Self._get_slot()->icon_size = Size;
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto icon_gap(this auto&& Self, float1 Gap) noexcept {
+      Self._get_slot()->icon_gap = Gap.x;
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto item_gap(this auto&& Self, float1 Gap) noexcept {
+      Self._get_slot()->item_gap = Gap.x;
+      Self._messy = true;
+      return std::move(Self);
+    }
+  };
+
   radiobutton() noexcept = default;
 
   radiobutton(derived_from<interface> auto& Parent, const source_line& sl = here()) {
@@ -254,18 +394,10 @@ public:
 
   static std::expected<radiobutton, error> create(derived_from<interface> auto& Parent) {
     radiobutton r;
-    const auto temp_id = make_slot<radiobutton>();
-    const auto sp = get_slot<radiobutton>(temp_id);
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    const auto psp = get_slot<control>(Parent.id());
-    if (!psp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = psp->attach(temp_id); !res) {
-      slot::slots.erase(temp_id);
-      return res.error().relay();
-    }
-    r._id = temp_id;
-    sp->id = temp_id;
-    sp->window_id = psp->get_window_id();
+    radiobutton::slot* sp;
+    if (auto res = create_control<radiobutton>(Parent)) sp = *res;
+    else return res.error().relay();
+    r._id = sp->id;
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
     constexpr float2 init_icon_size{16.0f, 16.0f};
     sp->icon_size = init_icon_size;
@@ -277,93 +409,23 @@ public:
       yw::svgpath(
         init_icon_size,
         "M8 5 C6.343 5 5 6.343 5 8 C5 9.657 6.343 11 8 11 C9.657 11 11 9.657 11 8 C11 6.343 9.657 5 8 5 Z"));
-    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
-    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
     return r;
   }
 
-  //-- getter --//
-
-  size_t checked_index() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->checked_index;
+  yw_control_getter_setter(checked_index, size_t);
+  yw_control_getter_setter(selected_index, size_t);
+  yw_control_getter(item_count);
+  yw_control_getter_setter(change_event, function<bool, size_t>);
+  yw_control_getter_setter(circle, yw::icon);
+  yw_control_getter_setter(dot, yw::icon);
+  yw_control_getter_setter(icon_size, float2);
+  yw_control_getter_setter(icon_gap, float1);
+  yw_control_getter_setter(item_gap, float1);
+  yw_control_getter_setter(text_color, color);
+  auto text_color(this auto& Self, none None) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).text_color(None);
   }
-
-  size_t selected_index() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->selected_index;
-  }
-
-  size_t item_count() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->items.size();
-  }
-
-  const auto& change_event() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->change_event;
-  }
-
-  const auto& circle() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->circle;
-  }
-
-  const auto& dot() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->dot;
-  }
-
-  float2 icon_size() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->icon_size;
-  }
-
-  float icon_gap() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->icon_gap;
-  }
-
-  float item_gap() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->item_gap;
-  }
-
-  const auto& string(size_t Index) const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    if (Index >= sp->items.size()) error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
-    return sp->items[Index].caption.string();
-  }
-
-  //-- setter --//
+  const auto& string(size_t Index) const noexcept { return proxy(get_slot(this)).string(Index); }
 
   auto& add(this auto& self, yw::string<wchar_t> s) noexcept {
     const auto sp = get_slot(&self);
@@ -374,158 +436,18 @@ public:
     item it;
     it.caption = yw::text(std::move(s));
     sp->items.push_back(std::move(it));
-    if (auto res = sp->apply_current_theme_to_content(); !res) {
-      res.error().fizzle_out();
-      return self;
-    }
     if (sp->selected_index == npos) sp->selected_index = 0;
     if (sp->checked_index == npos) sp->checked_index = 0;
     sp->make_messy();
     return self;
   }
 
-  auto& string(this auto& self, size_t Index, yw::string<wchar_t> s) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (Index >= sp->items.size()) {
-      error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
-      return self;
-    }
-    sp->items[Index].caption.string(std::move(s));
-    sp->make_messy();
-    return self;
+  auto string(this auto& Self, size_t Index, yw::string<wchar_t> String) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).string(Index, std::move(String));
+  }
+  auto font(this auto& Self, font_config Font) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).font(std::move(Font));
   }
 
-  auto& checked_index(this auto& self, size_t Index) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (Index >= sp->items.size()) {
-      error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
-      return self;
-    }
-    sp->selected_index = Index;
-    sp->check(Index);
-    return self;
-  }
-
-  auto& selected_index(this auto& self, size_t Index) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (Index >= sp->items.size()) {
-      error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
-      return self;
-    }
-    sp->selected_index = Index;
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& change_event(this auto& self, function<bool, size_t> f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->change_event = std::move(f);
-    return self;
-  }
-
-  auto& font(this auto& self, font_config f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    for (auto& it : sp->items) it.caption.font(f);
-    sp->make_messy();
-    return self;
-  }
-
-  auto& text_color(this auto& self, const color& c) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    for (auto& it : sp->items) it.caption.color(c);
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& circle(this auto& self, yw::icon Icon) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->circle = std::move(Icon);
-    if (auto res = sp->apply_current_theme_to_content(); !res) {
-      res.error().fizzle_out();
-      return self;
-    }
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& dot(this auto& self, yw::icon Icon) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->dot = std::move(Icon);
-    if (auto res = sp->apply_current_theme_to_content(); !res) {
-      res.error().fizzle_out();
-      return self;
-    }
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& icon_size(this auto& self, float2 v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (v.x <= 0.0f || v.y <= 0.0f) {
-      error(errors::invalid_argument, format("icon_size must be positive: ", v)).fizzle_out();
-      return self;
-    }
-    sp->icon_size = v;
-    sp->make_messy();
-    return self;
-  }
-
-  auto& icon_gap(this auto& self, float1 f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->icon_gap = f.x;
-    sp->make_messy();
-    return self;
-  }
-
-  auto& item_gap(this auto& self, float1 f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->item_gap = f.x;
-    sp->make_messy();
-    return self;
-  }
 };
 } // namespace yw::ui

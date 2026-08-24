@@ -234,11 +234,10 @@ void draw_game(ui::blank& canvas, const game_state& game, const assets& a) {
 
   if (!game.running) {
     text prompt(game.game_over ? L"Game over - flap to retry" : L"Space / Up / W", {.size = 27.0f});
-    prompt.color(color(0.98f, 0.98f, 0.96f));
     const auto p = origin + float2{(board_width - prompt.size().x) * 0.5f, board_height * 0.36f};
-    if (auto res = draw_text(p + float2{2.0f, 2.0f}, prompt.color(color(0.20f, 0.23f, 0.22f, 0.55f))); !res)
+    if (auto res = draw_text(p + float2{2.0f, 2.0f}, prompt, color(0.20f, 0.23f, 0.22f, 0.55f)); !res)
       res.error().go_off();
-    if (auto res = draw_text(p, prompt.color(color(0.98f, 0.98f, 0.96f))); !res) res.error().go_off();
+    if (auto res = draw_text(p, prompt, color(0.98f, 0.98f, 0.96f)); !res) res.error().go_off();
   }
 }
 

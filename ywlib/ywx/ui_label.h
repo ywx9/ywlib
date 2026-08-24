@@ -8,16 +8,19 @@ class label : public control {
 public:
   struct slot : control::slot {
     yw::text text = yw::text(L"");
+    optional<color> text_color;
     alignment text_align = center;
 
     //-- override functions --//
 
-    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool) override {
-      background_color = Theme.surface;
-      border_color = colors::transparent;
-      text.color(Theme.text);
-      make_dirty();
-      return {};
+    virtual color get_text_color(const interface::slot* Window) const noexcept {
+      if (text_color) return *text_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->text;
+      return colors::transparent;
+    }
+
+    virtual color get_border_color(const interface::slot*) const noexcept override {
+      return border_color ? *border_color : colors::transparent;
     }
 
     virtual std::expected<float2, error> get_necessary_size() const override {
@@ -25,17 +28,73 @@ public:
       return calc_necessary_size_by_policy(inner);
     }
 
-    virtual std::expected<void, error> draw_forecontent() override {
+    virtual std::expected<void, error> draw_forecontent(interface::slot* Window) override {
       const auto origin = pos + padding.xy();
       const auto area = size - padding.xy() - padding.zw();
       const auto pos = align_position(origin, area, text.size(), text_align);
-      if (auto res = draw_text(pos, text); !res) return res.error().relay();
+      if (auto res = draw_text(pos, text, get_text_color(Window)); !res) return res.error().relay();
       return {};
     }
 
     //-- virtual functions --//
     //-- shared functions --//
     //-- internal functions --//
+  };
+
+  class proxy : public control::proxy {
+    friend class label;
+  protected:
+    using control::proxy::proxy;
+    label::slot* _get_slot() const noexcept { return static_cast<label::slot*>(_slot); }
+
+  public:
+    //-- getter --//
+
+    const auto& text() const&& noexcept { return _get_slot()->text; }
+    color text_color() const&& noexcept {
+      return _get_slot()->get_text_color(interface::slot::slots.get(_get_slot()->window_id));
+    }
+    alignment text_align() const&& noexcept { return _get_slot()->text_align; }
+    const auto& string() const&& noexcept { return _get_slot()->text.string(); }
+    const auto& font() const&& noexcept { return _get_slot()->text.font(); }
+
+    //-- setter --//
+
+    auto text(this auto&& Self, yw::text Text) noexcept {
+      Self._get_slot()->text = std::move(Text);
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto text_color(this auto&& Self, const color& Color) noexcept {
+      Self._get_slot()->text_color = Color;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto text_color(this auto&& Self, none) noexcept {
+      Self._get_slot()->text_color = none();
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto text_align(this auto&& Self, alignment Align) noexcept {
+      Self._get_slot()->text_align = Align;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto string(this auto&& Self, yw::string<wchar_t> String) noexcept {
+      Self._get_slot()->text.string(std::move(String));
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto font(this auto&& Self, font_config Font) noexcept {
+      Self._get_slot()->text.font(std::move(Font));
+      Self._messy = true;
+      return std::move(Self);
+    }
   };
 
   label() noexcept = default;
@@ -47,114 +106,21 @@ public:
 
   static std::expected<label, error> create(derived_from<interface> auto& Parent) {
     label l;
-    const auto temp_id = make_slot<label>();
-    const auto sp = get_slot<label>(temp_id);
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    const auto psp = get_slot<control>(Parent.id());
-    if (!psp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = psp->attach(temp_id); !res) {
-      slot::slots.erase(temp_id);
-      return res.error().relay();
-    }
-    l._id = temp_id;
-    sp->id = temp_id;
-    sp->window_id = psp->get_window_id();
+    label::slot* sp;
+    if (auto res = create_control<label>(Parent)) sp = *res;
+    else return res.error().relay();
+    l._id = sp->id;
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
-    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
-    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
     return l;
   }
 
-  //-- getter --//
-
-  const auto& text() const noexcept {
-    const auto sp = get_slot(&*this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->text;
+  yw_control_getter_setter(text, yw::text);
+  yw_control_getter_setter(text_color, color);
+  auto text_color(this auto& Self, none None) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).text_color(None);
   }
-
-  const auto& text_color() const noexcept {
-    const auto sp = get_slot(&*this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->text.color();
-  }
-
-  alignment text_align() const noexcept {
-    const auto sp = get_slot(&*this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->text_align;
-  }
-
-  const auto& string() const noexcept {
-    const auto sp = get_slot(&*this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->text.string();
-  }
-
-  const auto& font() const noexcept {
-    const auto sp = get_slot(&*this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->text.font();
-  }
-
-  //-- setter --//
-
-  auto& text(this auto& self, yw::text Text) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->text = std::move(Text);
-    sp->make_messy();
-    return self;
-  }
-
-  auto& text_color(this auto& self, const color& c) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->text.color(c);
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& text_align(this auto& self, alignment v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->text_align = v;
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& string(this auto& self, yw::string<wchar_t> s) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->text.string(std::move(s));
-    sp->make_messy();
-    return self;
-  }
-
-  auto& font(this auto& self, font_config f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->text.font(std::move(f));
-    sp->make_messy();
-    return self;
-  }
+  yw_control_getter_setter(text_align, alignment);
+  yw_control_getter_setter(string, yw::string<wchar_t>);
+  yw_control_getter_setter(font, font_config);
 };
 } // namespace yw::ui

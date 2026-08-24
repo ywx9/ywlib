@@ -10,6 +10,7 @@ class combobox : public control {
 public:
   struct slot : control::slot {
     yw::text text = yw::text(L"");
+    optional<color> text_color;
     window dropdown_window{};
     vlayout dropdown_layout{};
     listbox dropdown_listbox{};
@@ -25,18 +26,15 @@ public:
     virtual bool is_focusable() const override { return enabled && visible; }
     virtual bool is_interactive() const override { return true; }
 
-    virtual std::expected<void, error> apply_color_theme(const color_theme& Theme, bool Recursive) override {
-      background_color = Theme.surface;
-      border_color = Theme.outline;
-      text.color(Theme.text);
-      if (auto res = apply_dropdown_color_theme(Theme); !res) return res.error().relay();
-      make_dirty();
-      return {};
+    virtual color get_text_color(const interface::slot* Window) const noexcept {
+      if (text_color) return *text_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->text;
+      return colors::transparent;
     }
 
-    virtual std::expected<void, error> draw_overlay() override {
-      const auto wsp = get_slot<window>(window_id);
-      if (!wsp) return std::unexpected(error(errors::invalid_slotid));
+    virtual std::expected<void, error> draw_overlay(interface::slot* Window) override {
+      const auto wsp = static_cast<window::slot*>(Window);
+      if (!wsp) return {};
       if (pressed && wsp->press_overlay_color.a > 0.0f) {
         brush::color(wsp->press_overlay_color);
         if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
@@ -47,14 +45,14 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> draw_forecontent() override {
+    virtual std::expected<void, error> draw_forecontent(interface::slot* Window) override {
       const auto text_origin = pos + padding.xy();
       const auto text_area = size - padding.xy() - padding.zw() - float2(button_width, 0.0f);
       const auto text_pos = align_position(text_origin, text_area, text.size(), left);
-      if (auto res = draw_text(text_pos, text); !res) return res.error().relay();
+      if (auto res = draw_text(text_pos, text, get_text_color(Window)); !res) return res.error().relay();
 
       const auto button_origin = pos + float2(size.x - button_width, 0.0f);
-      brush::color(border_color);
+      brush::color(get_border_color(Window));
       if (auto res = stroke_line(button_origin, button_origin.add<1>(size.y), border_thickness); !res)
         return res.error().relay();
       const auto arrow_pos = button_origin.add<1>((size.y - button_width) * 0.5f);
@@ -123,23 +121,19 @@ public:
 
     std::expected<void, error> apply_dropdown_color_theme(const color_theme& Theme) {
       if (const auto wsp = get_slot<window>(dropdown_window.id())) {
-        if (auto res = wsp->apply_color_theme(Theme, false); !res) return res.error().relay();
+        if (auto res = wsp->set_color_theme(Theme, false); !res) return res.error().relay();
       } else if (dropdown_window) return std::unexpected(error(errors::invalid_slotid));
 
       if (const auto lbsp = get_slot<listbox>(dropdown_listbox.id())) {
-        if (auto res = lbsp->apply_color_theme(Theme, false); !res) return res.error().relay();
         lbsp->background_color = Theme.surface_popup;
         lbsp->item_padding = item_padding;
         lbsp->make_messy();
       } else if (dropdown_listbox) return std::unexpected(error(errors::invalid_slotid));
 
       if (const auto isp = get_slot<ui::icon>(dropdown_icon.id())) {
-        if (auto res = isp->apply_color_theme(Theme, false); !res) return res.error().relay();
         isp->background_color = Theme.surface_popup;
-        if (auto vector = isp->content.get_if_vector()) {
-          vector->fill_color(Theme.text_muted);
-          vector->stroke_color(Theme.text_muted);
-        }
+        isp->fill_color = Theme.text_muted;
+        isp->stroke_color = Theme.text_muted;
         isp->make_dirty();
       } else if (dropdown_icon) return std::unexpected(error(errors::invalid_slotid));
       return {};
@@ -221,6 +215,133 @@ public:
   };
 
   using control::operator bool;
+  class proxy : public control::proxy {
+    friend class combobox;
+    using control::proxy::proxy;
+    combobox::slot* _get_slot() const noexcept { return static_cast<combobox::slot*>(_slot); }
+
+  public:
+    //-- getter --//
+
+    size_t item_count() const&& noexcept { return _get_slot()->item_count(); }
+    size_t selected_index() const&& noexcept {
+      const auto lbsp = get_slot<listbox>(_get_slot()->dropdown_listbox.id());
+      return lbsp ? lbsp->selected_index : npos;
+    }
+    bool dropdown_open() const&& noexcept { return _get_slot()->dropdown_window.visible(); }
+    float button_width() const&& noexcept { return _get_slot()->button_width; }
+    const auto& change_event() const&& noexcept { return _get_slot()->change_event; }
+    const auto& item_padding() const&& noexcept { return _get_slot()->item_padding; }
+    color text_color() const&& noexcept {
+      return _get_slot()->get_text_color(interface::slot::slots.get(_get_slot()->window_id));
+    }
+    const auto& text(size_t Index) const&& noexcept {
+      const auto lbsp = get_slot<listbox>(_get_slot()->dropdown_listbox.id());
+      if (!lbsp) error(errors::invalid_slotid).go_off();
+      if (Index >= lbsp->items.size()) error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
+      return lbsp->items[Index];
+    }
+    const auto& selected_text() const&& noexcept {
+      const auto lbsp = get_slot<listbox>(_get_slot()->dropdown_listbox.id());
+      if (!lbsp) error(errors::invalid_slotid).go_off();
+      if (lbsp->selected_index == npos) error(errors::invalid_operation, "no item selected").go_off();
+      return lbsp->items[lbsp->selected_index];
+    }
+    const auto& string(size_t Index) const&& noexcept {
+      const auto lbsp = get_slot<listbox>(_get_slot()->dropdown_listbox.id());
+      if (!lbsp) error(errors::invalid_slotid).go_off();
+      if (Index >= lbsp->items.size()) error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
+      return lbsp->items[Index].string();
+    }
+    const auto& selected_string() const&& noexcept {
+      const auto lbsp = get_slot<listbox>(_get_slot()->dropdown_listbox.id());
+      if (!lbsp) error(errors::invalid_slotid).go_off();
+      if (lbsp->selected_index == npos) error(errors::invalid_operation, "no item selected").go_off();
+      return lbsp->items[lbsp->selected_index].string();
+    }
+
+    //-- setter --//
+
+    auto selected_index(this auto&& Self, size_t Index) noexcept {
+      if (auto res = Self._get_slot()->select(Index); !res) res.error().fizzle_out();
+      return std::move(Self);
+    }
+
+    auto button_width(this auto&& Self, float1 Width) noexcept {
+      if (Width.x <= 0.0f) error(errors::invalid_argument, "combobox button_width must be positive").fizzle_out();
+      else Self._get_slot()->button_width = Width.x, Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto change_event(this auto&& Self, function<bool, size_t> Event) noexcept {
+      Self._get_slot()->change_event = std::move(Event);
+      return std::move(Self);
+    }
+
+    auto item_padding(this auto&& Self, float4 Padding) noexcept {
+      Self._get_slot()->item_padding = Padding;
+      if (const auto lbsp = get_slot<listbox>(Self._get_slot()->dropdown_listbox.id())) {
+        lbsp->item_padding = Padding;
+        lbsp->update_content_size();
+      }
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto text_color(this auto&& Self, const color& Color) noexcept {
+      Self._get_slot()->text_color = Color;
+      if (const auto lbsp = get_slot<listbox>(Self._get_slot()->dropdown_listbox.id())) lbsp->text_color = Color;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto text_color(this auto&& Self, none) noexcept {
+      Self._get_slot()->text_color = none();
+      if (const auto lbsp = get_slot<listbox>(Self._get_slot()->dropdown_listbox.id())) lbsp->text_color = none();
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto text(this auto&& Self, size_t Index, yw::text Text) noexcept {
+      if (const auto lbsp = get_slot<listbox>(Self._get_slot()->dropdown_listbox.id())) {
+        if (Index >= lbsp->items.size()) error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
+        else {
+          lbsp->items[Index] = std::move(Text);
+          if (Index == lbsp->selected_index)
+            if (auto res = Self._get_slot()->select(Index, false); !res) res.error().fizzle_out();
+          lbsp->update_content_size();
+          Self._messy = true;
+        }
+      } else error(errors::invalid_slotid).fizzle_out();
+      return std::move(Self);
+    }
+
+    auto string(this auto&& Self, size_t Index, yw::string<wchar_t> String) noexcept {
+      if (const auto lbsp = get_slot<listbox>(Self._get_slot()->dropdown_listbox.id())) {
+        if (Index >= lbsp->items.size()) error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
+        else {
+          if (auto res = lbsp->items[Index].string(std::move(String)); !res) res.error().fizzle_out();
+          if (Index == lbsp->selected_index)
+            if (auto res = Self._get_slot()->select(Index, false); !res) res.error().fizzle_out();
+          lbsp->update_content_size();
+          Self._messy = true;
+        }
+      } else error(errors::invalid_slotid).fizzle_out();
+      return std::move(Self);
+    }
+
+    auto font(this auto&& Self, font_config Font) noexcept {
+      if (const auto lbsp = get_slot<listbox>(Self._get_slot()->dropdown_listbox.id())) {
+        for (auto& item : lbsp->items) item.font(Font);
+        if (lbsp->selected_index < lbsp->items.size())
+          if (auto res = Self._get_slot()->select(lbsp->selected_index, false); !res) res.error().fizzle_out();
+        lbsp->update_content_size();
+        Self._messy = true;
+      } else error(errors::invalid_slotid).fizzle_out();
+      return std::move(Self);
+    }
+  };
+
   combobox() noexcept = default;
 
   combobox(derived_from<interface> auto& Parent, const source_line& sl = here()) {
@@ -230,18 +351,10 @@ public:
 
   static std::expected<combobox, error> create(derived_from<interface> auto& Parent) {
     combobox c;
-    const auto temp_id = make_slot<combobox>();
-    const auto sp = get_slot<combobox>(temp_id);
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    const auto psp = get_slot<control>(Parent.id());
-    if (!psp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = psp->attach(temp_id); !res) {
-      slot::slots.erase(temp_id);
-      return res.error().relay();
-    }
-    c._id = temp_id;
-    sp->id = temp_id;
-    sp->window_id = psp->get_window_id();
+    combobox::slot* sp;
+    if (auto res = create_control<combobox>(Parent)) sp = *res;
+    else return res.error().relay();
+    c._id = sp->id;
     sp->policy = {size_policy::fit, size_policy::fit};
     sp->padding = float4::fill(arbitrary_value);
 
@@ -270,11 +383,9 @@ public:
     icon_sp->margin = {};
     icon_sp->padding = {};
     icon_sp->radius = {};
-    // icon_sp->required_size = {arbitrary_value, arbitrary_value};
-    // icon_sp->policy = {size_policy::free, size_policy::fixed};
     icon_sp->content = yw::icon(yw::svgpath({32.0f, 16.0f}, "M 3 5 L 16 11 L 29 5 Z"));
 
-    const auto combobox_id = temp_id;
+    const auto combobox_id = sp->id;
     dropdown_wsp->focus_event = [combobox_id](yw::focus_event e) {
       if (e.focused) return false;
       if (const auto sp = get_slot<combobox>(combobox_id)) sp->close_dropdown();
@@ -299,36 +410,12 @@ public:
       return true;
     };
 
-    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
-    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
     return c;
   }
 
-  //-- getter --//
-
-  size_t item_count() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->item_count();
-  }
-
-  size_t selected_index() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return npos;
-    }
-    const auto lbsp = get_slot<listbox>(sp->dropdown_listbox.id());
-    return lbsp ? lbsp->selected_index : npos;
-  }
-
-  bool dropdown_open() const noexcept {
-    const auto sp = get_slot(this);
-    return sp && sp->dropdown_window.visible();
-  }
+  yw_control_getter(item_count);
+  yw_control_getter_setter(selected_index, size_t);
+  yw_control_getter(dropdown_open);
 
   decltype(auto) dropdown(this auto& self) noexcept {
     const auto sp = get_slot(&self);
@@ -336,61 +423,23 @@ public:
     return static_cast<copy_cvref<decltype(self), listbox>>(sp->dropdown_listbox);
   }
 
-  float button_width() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->button_width;
+  yw_control_getter_setter(button_width, float1);
+  yw_control_getter_setter(change_event, function<bool, size_t>);
+  yw_control_getter_setter(item_padding, float4);
+  yw_control_getter_setter(text_color, color);
+  auto text_color(this auto& Self, none None) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).text_color(None);
   }
-
-  const auto& change_event() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->change_event;
-  }
-
-  const auto& item_padding() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->item_padding;
-  }
-
-  /// returns `yw::text` of selected item.
-  const auto& text(size_t Index) const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    const auto lbsp = get_slot<listbox>(sp->dropdown_listbox.id());
-    if (!lbsp) error(errors::invalid_slotid).go_off();
-    if (Index >= lbsp->items.size()) error(errors::invalid_argument, format("invalid item index: ", Index)).go_off();
-    return lbsp->items[Index];
-  }
-
-  /// returns `yw::text` of selected item.
-  const auto& selected_text() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    const auto lbsp = get_slot<listbox>(sp->dropdown_listbox.id());
-    if (!lbsp) error(errors::invalid_slotid).go_off();
-    if (lbsp->selected_index == npos) error(errors::invalid_operation, "no item selected").go_off();
-    return lbsp->items[lbsp->selected_index];
-  }
-
-  /// returns `yw::string<wchar_t>` of selected item.
-  const auto& string(size_t Index) const noexcept { return text(Index).string(); }
-
-  /// returns `yw::string<wchar_t>` of selected item.
-  const auto& selected_string() const noexcept { return selected_text().string(); }
-
-  //-- setter --//
+  const auto& text(size_t Index) const noexcept { return proxy(get_slot(this)).text(Index); }
+  const auto& selected_text() const noexcept { return proxy(get_slot(this)).selected_text(); }
+  const auto& string(size_t Index) const noexcept { return proxy(get_slot(this)).string(Index); }
+  const auto& selected_string() const noexcept { return proxy(get_slot(this)).selected_string(); }
 
   auto& add(this auto& self, yw::string<wchar_t> String) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).fizzle_out();
     else if (const auto lbsp = get_slot<listbox>(sp->dropdown_listbox.id())) {
       lbsp->items.emplace_back(std::move(String));
-      if (auto theme = sp->get_color_theme()) lbsp->items.back().color((*theme)->text);
       if (lbsp->selected_index == npos) {
         if (auto res = sp->select(0, false); !res) res.error().fizzle_out();
       }
@@ -405,7 +454,6 @@ public:
     if (!sp) error(errors::invalid_slotid).fizzle_out();
     else if (const auto lbsp = get_slot<listbox>(sp->dropdown_listbox.id())) {
       lbsp->items.push_back(std::move(Text));
-      if (auto theme = sp->get_color_theme()) lbsp->items.back().color((*theme)->text);
       if (lbsp->selected_index == npos) {
         if (auto res = sp->select(0, false); !res) res.error().fizzle_out();
       }
@@ -453,13 +501,6 @@ public:
     return self;
   }
 
-  auto& selected_index(this auto& self, size_t Index) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).fizzle_out();
-    else if (auto res = sp->select(Index); !res) res.error().fizzle_out();
-    return self;
-  }
-
   auto& open(this auto& self) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) error(errors::invalid_slotid).fizzle_out();
@@ -474,84 +515,16 @@ public:
     return self;
   }
 
-  auto& button_width(this auto& self, float1 Width) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).fizzle_out();
-    else if (Width.x <= 0.0f) error(errors::invalid_argument, "combobox button_width must be positive").fizzle_out();
-    else sp->button_width = Width.x, sp->make_messy();
-    return self;
+  auto text(this auto& Self, size_t Index, yw::text Text) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).text(Index, std::move(Text));
   }
 
-  auto& change_event(this auto& self, function<bool, size_t> f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).fizzle_out();
-    else sp->change_event = std::move(f);
-    return self;
+  auto string(this auto& Self, size_t Index, yw::string<wchar_t> String) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).string(Index, std::move(String));
   }
 
-  auto& item_padding(this auto& self, float4 Padding) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).fizzle_out();
-    else {
-      sp->item_padding = Padding;
-      if (const auto lbsp = get_slot<listbox>(sp->dropdown_listbox.id())) {
-        lbsp->item_padding = Padding;
-        lbsp->update_content_size();
-      }
-      sp->make_messy();
-    }
-    return self;
-  }
-
-  auto& text(this auto& self, size_t Index, yw::text Text) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).fizzle_out();
-    else if (const auto lbsp = get_slot<listbox>(sp->dropdown_listbox.id())) {
-      if (Index >= lbsp->items.size())
-        error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
-      else {
-        lbsp->items[Index] = std::move(Text);
-        if (Index == lbsp->selected_index)
-          if (auto res = sp->select(Index, false); !res) res.error().fizzle_out();
-        lbsp->update_content_size();
-        sp->make_messy();
-      }
-    } else error(errors::invalid_slotid).fizzle_out();
-    return self;
-  }
-
-  auto& string(this auto& self, size_t Index, yw::string<wchar_t> String) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).fizzle_out();
-    else if (const auto lbsp = get_slot<listbox>(sp->dropdown_listbox.id())) {
-      if (Index >= lbsp->items.size())
-        error(errors::invalid_argument, format("invalid item index: ", Index)).fizzle_out();
-      else {
-        if (auto res = lbsp->items[Index].string(std::move(String)); !res) res.error().fizzle_out();
-        if (Index == lbsp->selected_index)
-          if (auto res = sp->select(Index, false); !res) res.error().fizzle_out();
-        lbsp->update_content_size();
-        sp->make_messy();
-      }
-    } else error(errors::invalid_slotid).fizzle_out();
-    return self;
-  }
-
-  auto& font(this auto& self, font_config Font) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).fizzle_out();
-    else if (const auto lbsp = get_slot<listbox>(sp->dropdown_listbox.id())) {
-      for (auto& item : lbsp->items)
-        if (auto res = item.font(Font); !res) {
-          res.error().fizzle_out();
-          return self;
-        }
-      if (lbsp->selected_index < lbsp->items.size())
-        if (auto res = sp->select(lbsp->selected_index, false); !res) res.error().fizzle_out();
-      lbsp->update_content_size();
-      sp->make_messy();
-    } else error(errors::invalid_slotid).fizzle_out();
-    return self;
+  auto font(this auto& Self, font_config Font) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).font(std::move(Font));
   }
 };
 } // namespace yw::ui

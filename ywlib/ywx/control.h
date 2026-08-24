@@ -112,8 +112,8 @@ public:
     function<bool, yw::pointer_event> pointer_event;
     function<bool, yw::wheel_event> wheel_event;
     string<wchar_t> tooltip;
-    color background_color;
-    color border_color;
+    optional<color> background_color;
+    optional<color> border_color;
     float4 margin = float4::fill(arbitrary_value);
     float4 padding = float4::fill(arbitrary_value);
     slotid window_id;
@@ -138,21 +138,24 @@ public:
 
     //-- vertual functions --//
 
-    virtual std::expected<void, error> apply_color_theme(const ui::color_theme& Theme, bool Recursive) { return {}; }
     virtual void close_child_controls() {}
 
-    virtual std::expected<void, error> draw_background() {
-      if (background_color.a > 0.0f) {
-        brush::color(background_color);
+    virtual color get_background_color(const interface::slot* Window) const noexcept;
+    virtual color get_border_color(const interface::slot* Window) const noexcept;
+
+    virtual std::expected<void, error> draw_background(interface::slot* Window) {
+      const auto color = get_background_color(Window);
+      if (color.a > 0.0f) {
+        brush::color(color);
         if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
       }
       return {};
     }
 
-    virtual std::expected<void, error> draw_backcontent() { return {}; }
-    virtual std::expected<void, error> draw_forecontent() { return {}; }
-    virtual std::expected<void, error> draw_foreground(); // defined in `window.h`
-    virtual std::expected<void, error> draw_overlay();    // defined in `window.h`
+    virtual std::expected<void, error> draw_backcontent(interface::slot*) { return {}; }
+    virtual std::expected<void, error> draw_forecontent(interface::slot*) { return {}; }
+    virtual std::expected<void, error> draw_foreground(interface::slot*); // defined in `window.h`
+    virtual std::expected<void, error> draw_overlay(interface::slot*);    // defined in `window.h`
 
     virtual slotid find_next_tabstop(slotid Focused, bool Backward, bool& Found) const {
       if (!is_focusable()) return {};
@@ -160,8 +163,12 @@ public:
       else if (Found) return id;
       return {};
     }
+    virtual slotid find_next_tabstop(interface::slot*, slotid Focused, bool Backward, bool& Found) const {
+      return find_next_tabstop(Focused, Backward, Found);
+    }
 
     virtual std::optional<float3> get_caret_pos() const { return std::nullopt; }
+    virtual std::optional<float3> get_caret_pos(interface::slot*) const { return get_caret_pos(); }
     virtual float2 get_minimum_size() const { return minimum_size; }
     virtual std::expected<float2, error> get_necessary_size() const { return calc_necessary_size_by_policy({}); }
 
@@ -169,6 +176,7 @@ public:
       if (button_event) return button_event(e);
       return false;
     }
+    virtual bool handle_button_event(interface::slot*, yw::button_event e) { return handle_button_event(e); }
 
     virtual bool handle_char_event(wchar_t c) { return false; }
     virtual bool handle_click_event(yw::button_event e) { return false; }
@@ -182,6 +190,15 @@ public:
     virtual bool handle_key_event(yw::key_event e) { return key_event ? key_event(e) : false; }
     virtual bool handle_pointer_event(yw::pointer_event e) { return pointer_event ? pointer_event(e) : false; }
     virtual bool handle_wheel_event(yw::wheel_event e) { return wheel_event ? wheel_event(e) : false; }
+    virtual bool handle_char_event(interface::slot*, wchar_t c) { return handle_char_event(c); }
+    virtual bool handle_click_event(interface::slot*, yw::button_event e) { return handle_click_event(e); }
+    virtual bool handle_double_click_event(interface::slot*, yw::button_event e) { return handle_double_click_event(e); }
+    virtual bool handle_drag_event(interface::slot*, yw::drag_event e) { return handle_drag_event(e); }
+    virtual bool handle_focus_event(interface::slot*, yw::focus_event e) { return handle_focus_event(e); }
+    virtual bool handle_hover_event(interface::slot*, yw::hover_event e) { return handle_hover_event(e); }
+    virtual bool handle_key_event(interface::slot*, yw::key_event e) { return handle_key_event(e); }
+    virtual bool handle_pointer_event(interface::slot*, yw::pointer_event e) { return handle_pointer_event(e); }
+    virtual bool handle_wheel_event(interface::slot*, yw::wheel_event e) { return handle_wheel_event(e); }
 
     virtual bool2 has_free_size_policy() const { return {policy.x == ui::free, policy.y == ui::free}; }
 
@@ -192,6 +209,7 @@ public:
         error(errors::operation_failed, "ID2D1Geometry::FillContainsPoint failed", int32_t(hr)).fizzle_out();
       return contains ? id : slotid{};
     }
+    virtual slotid hittest(interface::slot*, float2 Pt) const { return hittest(Pt); }
 
     virtual bool is_focusable() const { return enabled && bool(focus_event); }
 
@@ -199,31 +217,31 @@ public:
       return enabled && visible && (button_event || drag_event || hover_event || pointer_event || wheel_event);
     }
 
-    virtual std::expected<void, error> redraw() {
+    virtual std::expected<void, error> redraw(interface::slot* Window) {
       if (geometry_dirty) {
         geometry_dirty = false;
         if (auto res = relocate(); !res) return res.error().relay();
       }
       if (!visible) return {};
       d2d::push_layer(geometry.get());
-      if (auto res = draw_background(); !res) {
+      if (auto res = draw_background(Window); !res) {
         d2d::pop_layer();
         return res.error().relay();
       }
-      if (auto res = draw_backcontent(); !res) {
+      if (auto res = draw_backcontent(Window); !res) {
         d2d::pop_layer();
         return res.error().relay();
       }
-      if (auto res = draw_overlay(); !res) {
+      if (auto res = draw_overlay(Window); !res) {
         d2d::pop_layer();
         return res.error().relay();
       }
-      if (auto res = draw_forecontent(); !res) {
+      if (auto res = draw_forecontent(Window); !res) {
         d2d::pop_layer();
         return res.error().relay();
       }
       d2d::pop_layer();
-      if (auto res = draw_foreground(); !res) return res.error().relay();
+      if (auto res = draw_foreground(Window); !res) return res.error().relay();
       return {};
     }
 
@@ -294,6 +312,7 @@ public:
 
     float2 get_bounds() const { return size + margin.xy() + margin.zw(); }
     std::expected<const ui::color_theme*, error> get_color_theme() const noexcept; // defined in `window.h`
+    std::expected<const ui::color_theme*, error> get_color_theme(const interface::slot* Window) const noexcept;
     std::expected<command_manager*, error> get_command_manager() const noexcept;   // defined in `window.h`
     bool is_captured() const noexcept;                                             // defined in `window.h`
     bool is_focused() const noexcept;                                              // defined in `window.h`
@@ -331,376 +350,219 @@ public:
     //-- internal functions --//
   };
 
-  //-- getter --//
+  class proxy {
+  protected:
+    friend class control;
+    slot* _slot{};
+    bool _dirty = false;
+    bool _messy = false;
+    bool _geometry_dirty = false;
+    proxy(derived_from<slot> auto* Sp) noexcept : _slot(Sp) {
+      if (!_slot) error(errors::invalid_argument, "null slot has been passed").go_off();
+    }
 
-  bool enabled() const noexcept {
-    if (const auto sp = get_slot(this)) return sp->enabled;
-    error(errors::not_initialized).fizzle_out();
-    return false;
+  public:
+    ~proxy() noexcept {
+      if (!_slot) return;
+      if (_messy) _slot->make_messy();
+      else if (_geometry_dirty) _slot->make_geometry_dirty();
+      else if (_dirty) _slot->make_dirty();
+    }
+
+    proxy(proxy&& o) noexcept : _slot(o._slot), _dirty(o._dirty), _messy(o._messy), _geometry_dirty(o._geometry_dirty) {
+      o._slot = {};
+    }
+
+    //-- getter --//
+
+    bool enabled() const&& noexcept { return _slot->enabled; }
+    bool visible() const&& noexcept { return _slot->visible; }
+    bool focused() const&& noexcept { return _slot->is_focused(); }
+    bool hovered() const&& noexcept { return _slot->is_hovered(); }
+    color background_color() const&& noexcept { return _slot->get_background_color(interface::slot::slots.get(_slot->window_id)); }
+    color border_color() const&& noexcept { return _slot->get_border_color(interface::slot::slots.get(_slot->window_id)); }
+    float4 margin() const&& noexcept { return _slot->margin; }
+    float4 padding() const&& noexcept { return _slot->padding; }
+    float2 pos() const&& noexcept { return _slot->pos; }
+    float2 size() const&& noexcept { return _slot->size; }
+    float width() const&& noexcept { return _slot->size.x; }
+    float height() const&& noexcept { return _slot->size.y; }
+    float2 radius() const&& noexcept { return _slot->radius; }
+    float2 minimum_size() const&& noexcept { return _slot->minimum_size; }
+    const auto& button_event() const&& noexcept { return _slot->button_event; }
+    const auto& drag_event() const&& noexcept { return _slot->drag_event; }
+    const auto& focus_event() const&& noexcept { return _slot->focus_event; }
+    const auto& hover_event() const&& noexcept { return _slot->hover_event; }
+    const auto& key_event() const&& noexcept { return _slot->key_event; }
+    const auto& pointer_event() const&& noexcept { return _slot->pointer_event; }
+    const auto& wheel_event() const&& noexcept { return _slot->wheel_event; }
+    ui::alignment align() const&& noexcept { return _slot->align; }
+    vector2<ui::size_policy> policy() const&& noexcept { return _slot->policy; }
+    const auto& geometry() const&& noexcept { return _slot->geometry; }
+
+    //-- setter --//
+
+    auto enabled(this auto&& Self, bool Enabled) noexcept {
+      if (Self._slot->enabled != Enabled) {
+        Self._slot->enabled = Enabled;
+        if (!Enabled) Self._slot->clear_window_state();
+        Self._dirty = true;
+      }
+      return std::move(Self);
+    }
+
+    auto visible(this auto&& Self, bool Visible) noexcept {
+      if (Self._slot->visible != Visible) {
+        Self._slot->visible = Visible;
+        if (!Visible) Self._slot->clear_window_state();
+        Self._dirty = true;
+      }
+      return std::move(Self);
+    }
+
+    auto background_color(this auto&& Self, color Color) noexcept {
+      Self._slot->background_color = Color;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto background_color(this auto&& Self, none) noexcept {
+      Self._slot->background_color = none();
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto border_color(this auto&& Self, color Color) noexcept {
+      Self._slot->border_color = Color;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto border_color(this auto&& Self, none) noexcept {
+      Self._slot->border_color = none();
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto margin(this auto&& Self, float4 Margin) noexcept {
+      Self._slot->margin = Margin;
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto padding(this auto&& Self, float4 Padding) noexcept {
+      Self._slot->padding = Padding;
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto size(this auto&& Self, float2 Size) noexcept {
+      Self._slot->required_size = Size;
+      Self._slot->policy = vector2<ui::size_policy>(ui::fixed, ui::fixed);
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto width(this auto&& Self, float Width) noexcept {
+      Self._slot->required_size.x = Width;
+      Self._slot->policy.x = ui::fixed;
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto height(this auto&& Self, float Height) noexcept {
+      Self._slot->required_size.y = Height;
+      Self._slot->policy.y = ui::fixed;
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto radius(this auto&& Self, float2 Radius) noexcept {
+      Self._slot->radius = Radius;
+      Self._geometry_dirty = true;
+      return std::move(Self);
+    }
+
+    auto minimum_size(this auto&& Self, float2 MinimumSize) noexcept {
+      Self._slot->minimum_size = MinimumSize;
+      if (Self._slot->size.x < MinimumSize.x || Self._slot->size.y < MinimumSize.y) Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto button_event(this auto&& Self, function<bool, yw::button_event> Event) noexcept {
+      Self._slot->button_event = std::move(Event);
+      return std::move(Self);
+    }
+
+    auto drag_event(this auto&& Self, function<bool, yw::drag_event> Event) noexcept {
+      Self._slot->drag_event = std::move(Event);
+      return std::move(Self);
+    }
+
+    auto focus_event(this auto&& Self, function<bool, yw::focus_event> Event) noexcept {
+      Self._slot->focus_event = std::move(Event);
+      return std::move(Self);
+    }
+
+    auto hover_event(this auto&& Self, function<bool, yw::hover_event> Event) noexcept {
+      Self._slot->hover_event = std::move(Event);
+      return std::move(Self);
+    }
+
+    auto key_event(this auto&& Self, function<bool, yw::key_event> Event) noexcept {
+      Self._slot->key_event = std::move(Event);
+      return std::move(Self);
+    }
+
+    auto pointer_event(this auto&& Self, function<bool, yw::pointer_event> Event) noexcept {
+      Self._slot->pointer_event = std::move(Event);
+      return std::move(Self);
+    }
+
+    auto wheel_event(this auto&& Self, function<bool, yw::wheel_event> Event) noexcept {
+      Self._slot->wheel_event = std::move(Event);
+      return std::move(Self);
+    }
+
+    auto align(this auto&& Self, ui::alignment Align) noexcept {
+      Self._slot->align = Align;
+      Self._geometry_dirty = true;
+      return std::move(Self);
+    }
+
+    auto policy(this auto&& Self, vector2<ui::size_policy> Policy) noexcept {
+      Self._slot->policy = Policy;
+      Self._messy = true;
+      return std::move(Self);
+    }
+  };
+
+protected:
+  template<derived_from<control> Handle>
+  static std::expected<typename Handle::slot*, error> create_control(derived_from<interface> auto& Parent) {
+    const auto temp_id = make_slot<Handle>();
+    const auto sp = get_slot<Handle>(temp_id);
+    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
+    const auto psp = get_slot<interface>(Parent.id());
+    if (!psp) return std::unexpected(error(errors::invalid_slotid));
+    if (auto res = psp->attach(temp_id); !res) {
+      slot::slots.erase(temp_id);
+      return res.error().relay();
+    }
+    sp->id = temp_id;
+    sp->window_id = psp->get_window_id();
+    return sp;
   }
 
-  bool focused() const noexcept {
-    if (const auto sp = get_slot(this)) return sp->is_focused();
-    error(errors::not_initialized).fizzle_out();
-    return false;
-  }
-
-  bool hovered() const noexcept {
-    if (const auto sp = get_slot(this)) return sp->is_hovered();
-    error(errors::not_initialized).fizzle_out();
-    return false;
-  }
-
-  bool visible() const noexcept {
-    if (const auto sp = get_slot(this)) return sp->visible;
-    error(errors::not_initialized).fizzle_out();
-    return false;
-  }
-
-  const color& background_color() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::not_initialized).go_off();
-    else return sp->background_color;
-  }
-
-  const color& border_color() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::not_initialized).go_off();
-    else return sp->border_color;
-  }
-
-  const float4& margin() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::not_initialized).go_off();
-    else return sp->margin;
-  }
-
-  const float4& padding() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::not_initialized).go_off();
-    else return sp->padding;
-  }
-
-  float2 pos() const noexcept {
-    if (const auto sp = get_slot(this)) return sp->pos;
-    error(errors::not_initialized).fizzle_out();
+public:
+  /// detaches this control from its parent and destroys it.
+  std::expected<void, error> destroy() noexcept {
+    if (auto res = slot::slots.erase(_id); !res) return res.error().relay();
+    _id = {};
     return {};
   }
 
-  float2 size() const noexcept {
-    if (const auto sp = get_slot(this)) return sp->size;
-    error(errors::not_initialized).fizzle_out();
-    return {};
-  }
-
-  float width() const noexcept {
-    if (const auto sp = get_slot(this)) return sp->size.x;
-    error(errors::not_initialized).fizzle_out();
-    return {};
-  }
-
-  float height() const noexcept {
-    if (const auto sp = get_slot(this)) return sp->size.y;
-    error(errors::not_initialized).fizzle_out();
-    return {};
-  }
-
-  float2 radius() const noexcept {
-    if (const auto sp = get_slot(this)) return sp->radius;
-    error(errors::not_initialized).fizzle_out();
-    return {};
-  }
-
-  float2 minimum_size() const noexcept {
-    if (const auto sp = get_slot(this)) return sp->minimum_size;
-    error(errors::not_initialized).fizzle_out();
-    return {};
-  }
-
-  const auto& button_event() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::not_initialized).go_off();
-    else return sp->button_event;
-  }
-
-  const auto& drag_event() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::not_initialized).go_off();
-    else return sp->drag_event;
-  }
-
-  const auto& focus_event() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::not_initialized).go_off();
-    else return sp->focus_event;
-  }
-
-  const auto& hover_event() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::not_initialized).go_off();
-    else return sp->hover_event;
-  }
-
-  const auto& key_event() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::not_initialized).go_off();
-    else return sp->key_event;
-  }
-
-  const auto& pointer_event() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::not_initialized).go_off();
-    else return sp->pointer_event;
-  }
-
-  const auto& wheel_event() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::not_initialized).go_off();
-    else return sp->wheel_event;
-  }
-
-  ui::alignment align() const noexcept {
-    if (const auto sp = get_slot(this)) return sp->align;
-    error(errors::not_initialized).fizzle_out();
-    return {};
-  }
-
-  vector2<ui::size_policy> policy() const noexcept {
-    if (const auto sp = get_slot(this)) return sp->policy;
-    error(errors::not_initialized).fizzle_out();
-    return {};
-  }
-
-  const auto& geometry() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::not_initialized).go_off();
-    return sp->geometry;
-  }
-
-  //-- setter --//
-
-  auto& enabled(this auto& self, bool b) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (sp->enabled == b) return self;
-    sp->enabled = b;
-    if (!b) sp->clear_window_state();
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& visible(this auto& self, bool b) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (sp->visible == b) return self;
-    sp->visible = b;
-    if (!b) sp->clear_window_state();
-    sp->make_messy();
-    return self;
-  }
-
-  auto& background_color(this auto& self, const color& c) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->background_color = c;
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& border_color(this auto& self, const color& c) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->border_color = c;
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& margin(this auto& self, const float4& v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->margin = v;
-    sp->make_messy();
-    return self;
-  }
-
-  auto& padding(this auto& self, const float4& v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->padding = v;
-    sp->make_messy();
-    return self;
-  }
-
-  auto& size(this auto& self, float2 v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->required_size = v;
-    sp->policy = vector2<ui::size_policy>::fill(ui::size_policy::fixed);
-    sp->make_messy();
-    return self;
-  }
-
-  auto& width(this auto& self, float1 v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->required_size.x = v.x;
-    sp->policy.x = ui::size_policy::fixed;
-    sp->make_messy();
-    return self;
-  }
-
-  auto& height(this auto& self, float1 v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->required_size.y = v.x;
-    sp->policy.y = ui::size_policy::fixed;
-    sp->make_messy();
-    return self;
-  }
-
-  auto& radius(this auto& self, float2 v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->radius = v;
-    sp->make_geometry_dirty();
-    return self;
-  }
-
-  auto& minimum_size(this auto& self, float2 v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->minimum_size = v;
-    sp->make_messy();
-    return self;
-  }
-
-  auto& button_event(this auto& self, function<bool, yw::button_event> f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->button_event = std::move(f);
-    return self;
-  }
-
-  auto& drag_event(this auto& self, function<bool, yw::drag_event> f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->drag_event = std::move(f);
-    return self;
-  }
-
-  auto& focus_event(this auto& self, function<bool, yw::focus_event> f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->focus_event = std::move(f);
-    return self;
-  }
-
-  auto& hover_event(this auto& self, function<bool, yw::hover_event> f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->hover_event = std::move(f);
-    return self;
-  }
-
-  auto& key_event(this auto& self, function<bool, yw::key_event> f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->key_event = std::move(f);
-    return self;
-  }
-
-  auto& pointer_event(this auto& self, function<bool, yw::pointer_event> f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->pointer_event = std::move(f);
-    return self;
-  }
-
-  auto& wheel_event(this auto& self, function<bool, yw::wheel_event> f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->wheel_event = std::move(f);
-    return self;
-  }
-
-  auto& align(this auto& self, ui::alignment v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->align = v;
-    sp->make_geometry_dirty();
-    return self;
-  }
-
-  auto& policy(this auto& self, vector2<ui::size_policy> v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->policy = v;
-    sp->make_messy();
-    return self;
-  }
-
-  //-- other functions --//
-
+  /// synchronizes layout of this control with its parent layout.
   void sync_layout(this auto& self) noexcept {
     const auto sp = get_slot(&self);
     if (!sp) {
@@ -709,5 +571,49 @@ public:
     }
     sp->sync_layout();
   }
+
+#define yw_control_getter(Prop)                                         \
+  decltype(auto) Prop(this const auto& Self) noexcept {                 \
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).Prop(); \
+  }
+
+#define yw_control_getter_setter(Prop, ...)                                                              \
+  decltype(auto) Prop(this const auto& Self) noexcept {                                                  \
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).Prop();                                  \
+  }                                                                                                      \
+  auto Prop(this auto& Self, __VA_ARGS__ Value) noexcept {                                               \
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).Prop(static_cast<__VA_ARGS__&&>(Value)); \
+  }
+
+  yw_control_getter_setter(enabled, bool);
+  yw_control_getter_setter(visible, bool);
+  yw_control_getter(focused);
+  yw_control_getter(hovered);
+  yw_control_getter_setter(background_color, color);
+  auto background_color(this auto& Self, none None) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).background_color(None);
+  }
+  yw_control_getter_setter(border_color, color);
+  auto border_color(this auto& Self, none None) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).border_color(None);
+  }
+  yw_control_getter_setter(margin, float4);
+  yw_control_getter_setter(padding, float4);
+  yw_control_getter(pos);
+  yw_control_getter_setter(size, float2);
+  yw_control_getter_setter(width, float);
+  yw_control_getter_setter(height, float);
+  yw_control_getter_setter(radius, float2);
+  yw_control_getter_setter(minimum_size, float2);
+  yw_control_getter_setter(button_event, function<bool, yw::button_event>);
+  yw_control_getter_setter(drag_event, function<bool, yw::drag_event>);
+  yw_control_getter_setter(focus_event, function<bool, yw::focus_event>);
+  yw_control_getter_setter(hover_event, function<bool, yw::hover_event>);
+  yw_control_getter_setter(key_event, function<bool, yw::key_event>);
+  yw_control_getter_setter(pointer_event, function<bool, yw::pointer_event>);
+  yw_control_getter_setter(wheel_event, function<bool, yw::wheel_event>);
+  yw_control_getter_setter(align, ui::alignment);
+  yw_control_getter_setter(policy, vector2<ui::size_policy>);
+  yw_control_getter(geometry);
 };
 } // namespace yw

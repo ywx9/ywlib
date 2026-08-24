@@ -93,6 +93,7 @@ public:
     string<char> value_string;         // option, positional
     string<char> default_value_string; // option, positional
     std::vector<string<char>> aliases; // flag, option
+    std::expected<void, error> (*update_value_fn)(handle::slot&) = nullptr;
     handle::type type;
     bool required = false;
     bool multiple = false;
@@ -119,6 +120,9 @@ public:
       key = uint_to_string(positionals.size());
       metavar = std::move(Metavar);
       type = handle::type::positional;
+      update_value_fn = [](handle::slot& s) -> std::expected<void, error> {
+        return static_cast<slot&>(s).update_value();
+      };
       positionals.push_back(id);
       return {};
     }
@@ -208,6 +212,9 @@ public:
       if (!b) return std::unexpected(error(errors::operation_failed, format("Duplicate key: ", Key)));
       key = std::move(Key);
       type = handle::type::option;
+      update_value_fn = [](handle::slot& s) -> std::expected<void, error> {
+        return static_cast<slot&>(s).update_value();
+      };
       return {};
     }
 
@@ -389,12 +396,13 @@ struct handle_access : handle {
 
 inline void print_help() { argument::print_help(); }
 
-inline std::vector<string<char>> collect_argv(int argc, char** argv, string<char>& name) {
+inline std::expected<std::vector<string<char>>, error> collect_argv(int argc, char** argv, string<char>& name) {
   std::vector<string<char>> args;
 #if defined(_WIN32) || defined(_WIN64)
   int c = 0;
   auto v = ::CommandLineToArgvW(::GetCommandLineW(), &c);
-  if (!v) error(errors::operation_failed, "CommandLineToArgvW failed", ::GetLastError()).go_off(); // fatal
+  if (!v)
+    return std::unexpected(error(errors::operation_failed, "CommandLineToArgvW failed", ::GetLastError()));
   args.reserve(static_cast<size_t>(c));
   for (int i = 0; i < c; ++i) args.emplace_back(unicode<char>(std::wstring_view(v[i])));
   ::LocalFree(v);
@@ -431,17 +439,20 @@ inline void append_option_value(handle::slot& slot, string_view<char> value) {
   slot.value_string.push_back('\x1f');
 }
 
-inline void argument_error(ministr<char> msg) {
+inline std::unexpected<error> argument_error(ministr<char> msg) {
   print_help();
-  error(errors::invalid_command_line_argument, string<char>(msg)).go_off(); // fatal
+  return std::unexpected(error(errors::invalid_command_line_argument, string<char>(msg)));
 }
 } // namespace internal
 
 /// MARK: parse
 
-inline void parse(int argc, char** argv) {
-  if (internal::parsed) error(errors::invalid_operation, "Arguments have already been parsed").go_off(); // fatal
-  auto args = internal::collect_argv(argc, argv, argument::program_name);
+inline std::expected<void, error> parse(int argc, char** argv) {
+  if (internal::parsed)
+    return std::unexpected(error(errors::invalid_operation, "Arguments have already been parsed"));
+  auto argv_result = internal::collect_argv(argc, argv, argument::program_name);
+  if (!argv_result) return argv_result.error().relay();
+  auto args = std::move(*argv_result);
   bool after_double_dash = false;
   size_t positional_index = 0;
   for (size_t i = 1; i < args.size(); ++i) {
@@ -464,7 +475,7 @@ inline void parse(int argc, char** argv) {
         std::exit(0);
       }
       auto* sp = internal::find_named_slot(key);
-      if (!sp) internal::argument_error(format("Unknown option: ", key));
+      if (!sp) return internal::argument_error(format("Unknown option: ", key));
 
       if (sp->type == handle::type::option) {
         if (!specified && i + 1 < args.size()) {
@@ -472,23 +483,23 @@ inline void parse(int argc, char** argv) {
           if (!internal::is_option_token(next) || internal::is_negative_number_token(next))
             value = next, specified = true, ++i;
         }
-        if (!specified) internal::argument_error(format("Missing value for option: ", key));
+        if (!specified) return internal::argument_error(format("Missing value for option: ", key));
         if (sp->specified && !sp->multiple)
-          internal::argument_error(format("Option does not accept multiple values: ", key));
+          return internal::argument_error(format("Option does not accept multiple values: ", key));
         sp->specified = true;
         internal::append_option_value(*sp, value);
-      } else if (specified) internal::argument_error(format("Unexpected value for flag: ", key));
+      } else if (specified) return internal::argument_error(format("Unexpected value for flag: ", key));
       else sp->specified = true;
       continue;
     }
 
     if (positional_index < internal::handle_access::positionals.size()) {
       auto* sp = internal::get_argument_slot(internal::handle_access::positionals[positional_index]);
-      if (!sp) internal::argument_error(format("Unknown, positional argument: ", tok));
+      if (!sp) return internal::argument_error(format("Unknown, positional argument: ", tok));
       sp->specified = true;
       sp->value_string = tok;
       ++positional_index;
-    } else internal::argument_error(format("Unexpected positional argument: ", tok));
+    } else return internal::argument_error(format("Unexpected positional argument: ", tok));
   }
 
   bool missing = false;
@@ -512,8 +523,18 @@ inline void parse(int argc, char** argv) {
   for (const auto& [name, id] : internal::handle_access::name_map) check_required(id);
   for (const auto id : internal::handle_access::positionals) check_required(id);
 
-  if (missing) internal::argument_error(missing_message);
+  if (missing) {
+    internal::print_help();
+    return std::unexpected(error(errors::missing_required_argument, missing_message));
+  }
+
+  for (const auto id : checked) {
+    auto* sp = internal::get_argument_slot(id);
+    if (!sp || !sp->specified || !sp->update_value_fn) continue;
+    if (auto res = sp->update_value_fn(*sp); !res) return res.error().relay();
+  }
   internal::parsed = true;
+  return {};
 }
 
 template<typename T> inline const handle::positional<T>::slot handle::positional<T>::slot::empty_slot{};

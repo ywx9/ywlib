@@ -82,11 +82,11 @@ public:
       return hit;
     }
 
-    virtual std::expected<void, error> draw_backcontent() override {
+    virtual std::expected<void, error> draw_backcontent(interface::slot* Window) override {
       for (const auto& cid : controls) {
         const auto csp = get_slot<control>(cid);
         if (!csp) return std::unexpected(error(errors::invalid_slotid));
-        if (auto res = csp->redraw(); !res) return res.error().relay();
+        if (auto res = csp->redraw(Window); !res) return res.error().relay();
       }
       return {};
     }
@@ -117,17 +117,6 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> apply_color_theme(const ui::color_theme& Theme, bool Recursive) override {
-      background_color = colors::transparent;
-      border_color = colors::transparent;
-      if (Recursive)
-        for (const auto& cid : controls)
-          if (const auto csp = get_slot<control>(cid)) {
-            if (auto res = csp->apply_color_theme(Theme, true); !res) return res.error().relay();
-          } else return std::unexpected(error(errors::invalid_slotid));
-      make_dirty();
-      return {};
-    }
   };
 
   layer() noexcept = default;
@@ -139,23 +128,15 @@ public:
 
   static std::expected<layer, error> create(derived_from<interface> auto& Parent) {
     layer l;
-    const auto temp_id = make_slot<layer>();
-    const auto sp = get_slot<layer>(temp_id);
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    const auto psp = get_slot<control>(Parent.id());
-    if (!psp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = psp->attach(temp_id); !res) {
-      slot::slots.erase(temp_id);
-      return res.error().relay();
-    }
-    l._id = temp_id;
-    sp->id = temp_id;
-    sp->window_id = psp->get_window_id();
+    layer::slot* sp;
+    if (auto res = create_control<layer>(Parent)) sp = *res;
+    else return res.error().relay();
+    l._id = sp->id;
     sp->margin = {};
     sp->padding = {};
     sp->radius = {};
-    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
-    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
+    sp->background_color = colors::transparent;
+    sp->border_color = colors::transparent;
     return l;
   }
 };

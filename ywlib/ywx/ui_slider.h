@@ -13,9 +13,9 @@ public:
     double step = 0.1;
     float bar_width = 16.0f;
     ui::orientation orientation = ui::horizontal;
-    color track_color;
-    color fill_color;
-    color thumb_color;
+    optional<color> track_color;
+    optional<color> fill_color;
+    optional<color> thumb_color;
     bool pressed = false;
 
     function<bool, double> change_event{};
@@ -23,47 +23,59 @@ public:
     virtual bool is_focusable() const override { return enabled && visible; }
     virtual bool is_interactive() const override { return true; }
 
-    virtual std::expected<void, error> apply_color_theme(const ui::color_theme& Theme, bool) override {
-      background_color = Theme.surface;
-      border_color = colors::transparent;
-      track_color = Theme.outline;
-      fill_color = Theme.accent;
-      thumb_color = Theme.part;
-      make_dirty();
-      return {};
+    virtual color get_track_color(const interface::slot* Window) const noexcept {
+      if (track_color) return *track_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->outline;
+      return colors::transparent;
     }
 
-    virtual std::expected<void, error> draw_backcontent() override {
+    virtual color get_fill_color(const interface::slot* Window) const noexcept {
+      if (fill_color) return *fill_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->accent;
+      return colors::transparent;
+    }
+
+    virtual color get_thumb_color(const interface::slot* Window) const noexcept {
+      if (thumb_color) return *thumb_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->part;
+      return colors::transparent;
+    }
+
+    virtual color get_border_color(const interface::slot*) const noexcept override {
+      return border_color ? *border_color : colors::transparent;
+    }
+
+    virtual std::expected<void, error> draw_backcontent(interface::slot* Window) override {
       const auto track = track_rect();
-      brush::color(track_color);
+      brush::color(get_track_color(Window));
       if (auto res = fill_round_rectangle(track.xy(), track.zw() - track.xy(), float2::fill(track_radius())); !res)
         return res.error().relay();
 
       const auto fill = fill_rect();
       if (fill.z > fill.x && fill.w > fill.y) {
-        brush::color(fill_color);
+        brush::color(get_fill_color(Window));
         if (auto res = fill_round_rectangle(fill.xy(), fill.zw() - fill.xy(), float2::fill(track_radius())); !res)
           return res.error().relay();
       }
 
       const auto center = thumb_center();
       const auto radius = thumb_radius();
-      brush::color(thumb_color);
+      brush::color(get_thumb_color(Window));
       if (auto res = fill_ellipse(center, float2::fill(radius)); !res) return res.error().relay();
       return {};
     }
 
-    virtual std::expected<void, error> draw_overlay() override {
+    virtual std::expected<void, error> draw_overlay(interface::slot* Window) override {
       const auto center = thumb_center();
       const auto radius = thumb_radius();
       if (pressed) {
-        if (const auto wsp = get_slot<window>(window_id); !wsp) return std::unexpected(error(errors::invalid_slotid));
+        if (const auto wsp = static_cast<window::slot*>(Window); !wsp) return {};
         else if (wsp->press_overlay_color.a > 0.0f) {
           brush::color(wsp->press_overlay_color);
           if (auto res = fill_ellipse(center, float2::fill(radius)); !res) return res.error().relay();
         }
       } else if (is_hovered()) {
-        if (const auto wsp = get_slot<window>(window_id); !wsp) return std::unexpected(error(errors::invalid_slotid));
+        if (const auto wsp = static_cast<window::slot*>(Window); !wsp) return {};
         else if (wsp->hover_overlay_color.a > 0.0f) {
           brush::color(wsp->hover_overlay_color);
           if (auto res = fill_ellipse(center, float2::fill(radius)); !res) return res.error().relay();
@@ -72,10 +84,10 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> draw_forecontent() override {
+    virtual std::expected<void, error> draw_forecontent(interface::slot* Window) override {
       const auto center = thumb_center();
       const auto radius = thumb_radius();
-      brush::color(border_color);
+      brush::color(get_border_color(Window));
       if (auto res = stroke_ellipse(center, float2::fill(radius), border_thickness); !res) return res.error().relay();
       return {};
     }
@@ -218,6 +230,138 @@ public:
   };
 
   using control::operator bool;
+  class proxy : public control::proxy {
+    friend class slider;
+    using control::proxy::proxy;
+    slider::slot* _get_slot() const noexcept { return static_cast<slider::slot*>(_slot); }
+
+  public:
+    //-- getter --//
+
+    double value() const&& noexcept { return _get_slot()->value; }
+    double minimum() const&& noexcept { return _get_slot()->minimum; }
+    double maximum() const&& noexcept { return _get_slot()->maximum; }
+    double step() const&& noexcept { return _get_slot()->step; }
+    float bar_width() const&& noexcept { return _get_slot()->bar_width; }
+    ui::orientation orientation() const&& noexcept { return _get_slot()->orientation; }
+    color track_color() const&& noexcept {
+      return _get_slot()->get_track_color(interface::slot::slots.get(_get_slot()->window_id));
+    }
+    color fill_color() const&& noexcept {
+      return _get_slot()->get_fill_color(interface::slot::slots.get(_get_slot()->window_id));
+    }
+    color thumb_color() const&& noexcept {
+      return _get_slot()->get_thumb_color(interface::slot::slots.get(_get_slot()->window_id));
+    }
+    const auto& change_event() const&& noexcept { return _get_slot()->change_event; }
+
+    //-- setter --//
+
+    auto value(this auto&& Self, double1 Value) noexcept {
+      Self._get_slot()->set_value(Value.x);
+      return std::move(Self);
+    }
+
+    auto range(this auto&& Self, double1 Min, double1 Max) noexcept {
+      if (Max.x < Min.x) {
+        error(errors::invalid_argument, "slider range maximum must be greater than or equal to minimum").fizzle_out();
+        return std::move(Self);
+      }
+      Self._get_slot()->minimum = Min.x;
+      Self._get_slot()->maximum = Max.x;
+      Self._get_slot()->set_value(Self._get_slot()->value, false);
+      return std::move(Self);
+    }
+
+    auto minimum(this auto&& Self, double1 Value) noexcept {
+      if (Self._get_slot()->maximum < Value.x) {
+        error(errors::invalid_argument, "slider minimum must be less than or equal to maximum").fizzle_out();
+        return std::move(Self);
+      }
+      Self._get_slot()->minimum = Value.x;
+      Self._get_slot()->set_value(Self._get_slot()->value, false);
+      return std::move(Self);
+    }
+
+    auto maximum(this auto&& Self, double1 Value) noexcept {
+      if (Value.x < Self._get_slot()->minimum) {
+        error(errors::invalid_argument, "slider maximum must be greater than or equal to minimum").fizzle_out();
+        return std::move(Self);
+      }
+      Self._get_slot()->maximum = Value.x;
+      Self._get_slot()->set_value(Self._get_slot()->value, false);
+      return std::move(Self);
+    }
+
+    auto step(this auto&& Self, double1 Step) noexcept {
+      if (Step.x <= 0.0) {
+        error(errors::invalid_argument, "slider step must be positive").fizzle_out();
+        return std::move(Self);
+      }
+      Self._get_slot()->step = Step.x;
+      return std::move(Self);
+    }
+
+    auto bar_width(this auto&& Self, float1 Width) noexcept {
+      if (Width.x <= 0.0f) {
+        error(errors::invalid_argument, "slider bar_width must be positive").fizzle_out();
+        return std::move(Self);
+      }
+      Self._get_slot()->bar_width = Width.x;
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto orientation(this auto&& Self, ui::orientation Orientation) noexcept {
+      if (Self._get_slot()->orientation != Orientation) {
+        Self._get_slot()->orientation = Orientation;
+        Self._get_slot()->swap_dimensions();
+      }
+      return std::move(Self);
+    }
+
+    auto track_color(this auto&& Self, const color& Color) noexcept {
+      Self._get_slot()->track_color = Color;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto track_color(this auto&& Self, none) noexcept {
+      Self._get_slot()->track_color = none();
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto fill_color(this auto&& Self, const color& Color) noexcept {
+      Self._get_slot()->fill_color = Color;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto fill_color(this auto&& Self, none) noexcept {
+      Self._get_slot()->fill_color = none();
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto thumb_color(this auto&& Self, const color& Color) noexcept {
+      Self._get_slot()->thumb_color = Color;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto thumb_color(this auto&& Self, none) noexcept {
+      Self._get_slot()->thumb_color = none();
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto change_event(this auto&& Self, function<bool, double> Event) noexcept {
+      Self._get_slot()->change_event = std::move(Event);
+      return std::move(Self);
+    }
+  };
+
   slider() noexcept = default;
 
   slider(derived_from<interface> auto& Parent, const source_line& sl = here()) {
@@ -227,242 +371,36 @@ public:
 
   static std::expected<slider, error> create(derived_from<interface> auto& Parent) {
     slider s;
-    const auto temp_id = make_slot<slider>();
-    const auto sp = get_slot<slider>(temp_id);
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    const auto psp = get_slot<control>(Parent.id());
-    if (!psp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = psp->attach(temp_id); !res) {
-      slot::slots.erase(temp_id);
-      return res.error().relay();
-    }
-    s._id = temp_id;
-    sp->id = temp_id;
-    sp->window_id = psp->get_window_id();
+    slider::slot* sp;
+    if (auto res = create_control<slider>(Parent)) sp = *res;
+    else return res.error().relay();
+    s._id = sp->id;
     sp->policy[sp->orientation == ui::horizontal] = ui::size_policy::fit;
-    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
-    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
     return s;
   }
 
-  double value() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->value;
+  yw_control_getter_setter(value, double1);
+  auto range(this auto& Self, double1 Min, double1 Max) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).range(Min, Max);
   }
-
-  double minimum() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->minimum;
+  yw_control_getter_setter(minimum, double1);
+  yw_control_getter_setter(maximum, double1);
+  yw_control_getter_setter(step, double1);
+  yw_control_getter_setter(bar_width, float1);
+  yw_control_getter_setter(orientation, ui::orientation);
+  yw_control_getter_setter(track_color, color);
+  auto track_color(this auto& Self, none None) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).track_color(None);
   }
-
-  double maximum() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->maximum;
+  yw_control_getter_setter(fill_color, color);
+  auto fill_color(this auto& Self, none None) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).fill_color(None);
   }
-
-  double step() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->step;
+  yw_control_getter_setter(thumb_color, color);
+  auto thumb_color(this auto& Self, none None) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).thumb_color(None);
   }
-
-  float bar_width() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->bar_width;
-  }
-
-  ui::orientation orientation() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->orientation;
-  }
-
-  const auto& track_color() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->track_color;
-  }
-
-  const auto& fill_color() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->fill_color;
-  }
-
-  const auto& thumb_color() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->thumb_color;
-  }
-
-  const auto& change_event() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->change_event;
-  }
-
-  auto& value(this auto& self, double1 v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->set_value(v.x);
-    return self;
-  }
-
-  auto& range(this auto& self, double1 Min, double1 Max) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (Max.x < Min.x) {
-      error(errors::invalid_argument, "slider range maximum must be greater than or equal to minimum").fizzle_out();
-      return self;
-    }
-    sp->minimum = Min.x;
-    sp->maximum = Max.x;
-    sp->set_value(sp->value, false);
-    return self;
-  }
-
-  auto& minimum(this auto& self, double1 v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (sp->maximum < v.x) {
-      error(errors::invalid_argument, "slider minimum must be less than or equal to maximum").fizzle_out();
-      return self;
-    }
-    sp->minimum = v.x;
-    sp->set_value(sp->value, false);
-    return self;
-  }
-
-  auto& maximum(this auto& self, double1 v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (v.x < sp->minimum) {
-      error(errors::invalid_argument, "slider maximum must be greater than or equal to minimum").fizzle_out();
-      return self;
-    }
-    sp->maximum = v.x;
-    sp->set_value(sp->value, false);
-    return self;
-  }
-
-  auto& step(this auto& self, double1 v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (v.x <= 0.0) {
-      error(errors::invalid_argument, "slider step must be positive").fizzle_out();
-      return self;
-    }
-    sp->step = v.x;
-    return self;
-  }
-
-  auto& bar_width(this auto& self, float1 v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (v.x <= 0.0f) {
-      error(errors::invalid_argument, "slider bar_width must be positive").fizzle_out();
-      return self;
-    }
-    sp->bar_width = v.x;
-    sp->make_messy();
-    return self;
-  }
-
-  auto& orientation(this auto& self, ui::orientation v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (sp->orientation != v) {
-      sp->orientation = v;
-      sp->swap_dimensions();
-    }
-    return self;
-  }
-
-  auto& track_color(this auto& self, const color& c) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->track_color = c;
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& fill_color(this auto& self, const color& c) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->fill_color = c;
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& thumb_color(this auto& self, const color& c) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->thumb_color = c;
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& change_event(this auto& self, function<bool, double> f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->change_event = std::move(f);
-    return self;
-  }
+  yw_control_getter_setter(change_event, function<bool, double>);
 
 private:
   using control::padding;

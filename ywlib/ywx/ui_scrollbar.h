@@ -10,10 +10,10 @@ template<orientation Orientation> class scrollbar : public control {
 
 public:
   struct slot : control::slot {
-    color arrow_color;
-    color button_color;
-    color thumb_color;
-    color track_color;
+    optional<color> arrow_color;
+    optional<color> button_color;
+    optional<color> thumb_color;
+    optional<color> track_color;
     float bar_width = common_size_value;
     float line_step = common_size_value;
     float scroll_offset = 0.0f;
@@ -24,31 +24,48 @@ public:
 
     virtual bool is_interactive() const override { return enabled && visible; }
 
-    virtual std::expected<void, error> apply_color_theme(const color_theme& Theme, bool) override {
-      background_color = Theme.surface;
-      border_color = colors::transparent;
-      arrow_color = Theme.text;
-      button_color = Theme.part;
-      thumb_color = Theme.part;
-      track_color = Theme.surface_popup;
-      make_dirty();
-      return {};
+    virtual color get_arrow_color(const interface::slot* Window) const noexcept {
+      if (arrow_color) return *arrow_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->text;
+      return colors::transparent;
     }
 
-    virtual std::expected<void, error> draw_backcontent() override {
-      brush::color(track_color);
+    virtual color get_button_color(const interface::slot* Window) const noexcept {
+      if (button_color) return *button_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->part;
+      return colors::transparent;
+    }
+
+    virtual color get_thumb_color(const interface::slot* Window) const noexcept {
+      if (thumb_color) return *thumb_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->part;
+      return colors::transparent;
+    }
+
+    virtual color get_track_color(const interface::slot* Window) const noexcept {
+      if (track_color) return *track_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->surface_popup;
+      return colors::transparent;
+    }
+
+    virtual color get_border_color(const interface::slot*) const noexcept override {
+      return border_color ? *border_color : colors::transparent;
+    }
+
+    virtual std::expected<void, error> draw_backcontent(interface::slot* Window) override {
+      brush::color(get_track_color(Window));
       if (auto res = draw_scrollbar_part(part::decrease_track); !res) return res.error().relay();
       if (auto res = draw_scrollbar_part(part::increase_track); !res) return res.error().relay();
-      brush::color(button_color);
+      brush::color(get_button_color(Window));
       if (auto res = draw_scrollbar_part(part::decrease_button); !res) return res.error().relay();
       if (auto res = draw_scrollbar_part(part::increase_button); !res) return res.error().relay();
-      brush::color(thumb_color);
+      brush::color(get_thumb_color(Window));
       if (auto res = draw_scrollbar_part(part::thumb); !res) return res.error().relay();
       return {};
     }
 
-    virtual std::expected<void, error> draw_forecontent() override {
-      brush::color(arrow_color);
+    virtual std::expected<void, error> draw_forecontent(interface::slot* Window) override {
+      brush::color(get_arrow_color(Window));
       const auto arrow_size = float2(bar_width, bar_width);
       const auto origin2 = pos + size - arrow_size;
       if constexpr (vertical) {
@@ -63,9 +80,9 @@ public:
       return {};
     }
 
-    virtual std::expected<void, error> draw_overlay() override {
-      const auto wsp = get_slot<window>(window_id);
-      if (!wsp) return std::unexpected(error(errors::invalid_slotid));
+    virtual std::expected<void, error> draw_overlay(interface::slot* Window) override {
+      const auto wsp = static_cast<window::slot*>(Window);
+      if (!wsp) return {};
       if (pressed_part != part::none && wsp->press_overlay_color.a > 0.0f) {
         brush::color(wsp->press_overlay_color);
         if (auto res = draw_scrollbar_part(pressed_part); !res) return res.error().relay();
@@ -245,242 +262,4 @@ public:
 
   scrollbar() noexcept = default;
 };
-
-// class scrollbars : public control {
-// public:
-//   struct slot : control::slot {
-//     enum class part : unsigned char {
-//       none,
-//       horizontal_decrease_button,
-//       horizontal_decrease_track,
-//       horizontal_thumb,
-//       horizontal_increase_track,
-//       horizontal_increase_button,
-//       vertical_decrease_button,
-//       vertical_decrease_track,
-//       vertical_thumb,
-//       vertical_increase_track,
-//       vertical_increase_button,
-//     };
-
-//     ::yw::scrollbar<horizontal> horizontal_bar;
-//     ::yw::scrollbar<vertical> vertical_bar;
-//     float2 content_size{};
-//     float bar_width = common_size_value;
-//     part pressed_part = part::none;
-//     part hovered_part = part::none;
-
-//     function<void, float2> change_event{};
-
-//     virtual bool is_interactive() const override { return enabled && visible; }
-
-//     virtual std::expected<void, error> apply_color_theme(const color_theme& Theme, bool) override {
-//       background_color = Theme.surface;
-//       border_color = colors::transparent;
-//       horizontal_bar.track_color = vertical_bar.track_color = Theme.surface;
-//       horizontal_bar.thumb_color = vertical_bar.thumb_color = Theme.part;
-//       horizontal_bar.button_color = vertical_bar.button_color = Theme.part;
-//       horizontal_bar.arrow_color = vertical_bar.arrow_color = Theme.text;
-//       make_dirty();
-//       return {};
-//     }
-
-//     virtual void reset_state() override {
-//       if (pressed_part == part::none) return;
-//       pressed_part = part::none;
-//       make_dirty();
-//     }
-
-//     virtual bool handle_button_event(yw::button_event e) override {
-//       if (!enabled || !visible || e.key != keys::lbutton) return false;
-//       update_scrollbars();
-//       const auto hit = hittest_scrollbar(float2(float(e.pos.x), float(e.pos.y)));
-//       if (e.down) {
-//         if (hit == part::none) return false;
-//         pressed_part = hit;
-//         if (hit != part::horizontal_thumb && hit != part::vertical_thumb) scroll_part(hit);
-//         make_dirty();
-//         return true;
-//       }
-//       if (pressed_part == part::none) return false;
-//       pressed_part = part::none;
-//       make_dirty();
-//       return true;
-//     }
-
-//     virtual bool handle_click_event(yw::button_event e) override {
-//       if (!enabled || !visible || e.down || e.key != keys::lbutton) return false;
-//       update_scrollbars();
-//       return hittest_scrollbar(float2(float(e.pos.x), float(e.pos.y))) != part::none;
-//     }
-
-//     virtual bool handle_drag_event(yw::drag_event e) override {
-//       if (!enabled || !visible) return false;
-//       update_scrollbars();
-//       if (pressed_part == part::horizontal_thumb) {
-//         const auto movable = horizontal_bar.movable_thumb_length();
-//         if (movable > 0.0f)
-//           scroll_to(float2(horizontal_bar.value + e.delta.x * horizontal_bar.maximum() / movable,
-//           vertical_bar.value));
-//         return true;
-//       }
-//       if (pressed_part == part::vertical_thumb) {
-//         const auto movable = vertical_bar.movable_thumb_length();
-//         if (movable > 0.0f)
-//           scroll_to(float2(horizontal_bar.value, vertical_bar.value + e.delta.y * vertical_bar.maximum() / movable));
-//         return true;
-//       }
-//       return false;
-//     }
-
-//     virtual bool handle_focus_event(yw::focus_event e) override {
-//       if (!e.focused && pressed_part != part::none) {
-//         pressed_part = part::none;
-//         make_dirty();
-//       }
-//       return control::slot::handle_focus_event(e);
-//     }
-
-//     virtual bool handle_hover_event(yw::hover_event e) override {
-//       if (!enabled || !visible) return false;
-//       update_scrollbars();
-//       const auto next = e.leave() ? part::none : hittest_scrollbar(float2(float(e.pos.x), float(e.pos.y)));
-//       if (hovered_part != next) {
-//         hovered_part = next;
-//         make_dirty();
-//       }
-//       return true;
-//     }
-
-//     virtual bool handle_wheel_event(yw::wheel_event e) override {
-//       if (!enabled || !visible || e.delta == 0) return false;
-//       update_scrollbars();
-//       const auto amount = (e.delta > 0 ? -1.0f : 1.0f) * (e.mods.shift ? 10.0f : 1.0f);
-//       if (e.horizontal)
-//         return scroll_by(float2(horizontal_bar.wheel_step * amount, 0.0f)) || horizontal_bar.maximum() > 0.0f;
-//       return scroll_by(float2(0.0f, vertical_bar.wheel_step * amount)) || vertical_bar.maximum() > 0.0f;
-//     }
-
-//     std::expected<void, error> draw_scrollbars() {
-//       update_scrollbars();
-//       if (auto res = draw_bar(horizontal_bar); !res) return res.error().relay();
-//       if (auto res = draw_bar(vertical_bar); !res) return res.error().relay();
-//       brush::color(background_color);
-//       if (auto res = fill_rectangle(corner_rect()); !res) return res.error().relay();
-//       if (auto res = draw_part_overlay(hovered_part, false); !res) return res.error().relay();
-//       if (auto res = draw_part_overlay(pressed_part, true); !res) return res.error().relay();
-//       return {};
-//     }
-
-//     float2 content_area() const noexcept {
-//       return vapply_r<float2>(yw::max, size - padding.xy() - padding.zw() - float2::fill(bar_width), float2{});
-//     }
-
-//     float2 scroll_offset() const noexcept { return float2(horizontal_bar.value, vertical_bar.value); }
-
-//     void update_scrollbars() noexcept {
-//       const auto area = content_area();
-//       horizontal_bar.pos = pos + padding.xy() + float2(0.0f, area.y);
-//       horizontal_bar.size = float2(area.x, bar_width);
-//       horizontal_bar.content_length = content_size.x;
-//       horizontal_bar.clamp_value();
-//       vertical_bar.pos = pos + padding.xy() + float2(area.x, 0.0f);
-//       vertical_bar.size = float2(bar_width, area.y);
-//       vertical_bar.content_length = content_size.y;
-//       vertical_bar.clamp_value();
-//     }
-
-//     bool scroll_by(float2 Delta) noexcept { return scroll_to(scroll_offset() + Delta); }
-
-//     bool scroll_part(part Part) noexcept {
-//       if (Part == part::horizontal_decrease_button) return scroll_by(float2(-horizontal_bar.line_step, 0.0f));
-//       if (Part == part::horizontal_decrease_track) return scroll_by(float2(-horizontal_bar.page_size(), 0.0f));
-//       if (Part == part::horizontal_increase_track) return scroll_by(float2(horizontal_bar.page_size(), 0.0f));
-//       if (Part == part::horizontal_increase_button) return scroll_by(float2(horizontal_bar.line_step, 0.0f));
-//       if (Part == part::vertical_decrease_button) return scroll_by(float2(0.0f, -vertical_bar.line_step));
-//       if (Part == part::vertical_decrease_track) return scroll_by(float2(0.0f, -vertical_bar.page_size()));
-//       if (Part == part::vertical_increase_track) return scroll_by(float2(0.0f, vertical_bar.page_size()));
-//       if (Part == part::vertical_increase_button) return scroll_by(float2(0.0f, vertical_bar.line_step));
-//       return false;
-//     }
-
-//     bool scroll_to(float2 Offset) noexcept {
-//       const auto old = scroll_offset();
-//       horizontal_bar.scroll_to(Offset.x);
-//       vertical_bar.scroll_to(Offset.y);
-//       if (old == scroll_offset()) return false;
-//       make_dirty();
-//       if (change_event) change_event(scroll_offset());
-//       return true;
-//     }
-
-//     auto& track_color(const color& c) noexcept {
-//       return horizontal_bar.track_color = vertical_bar.track_color = c, *this;
-//     }
-//     auto& thumb_color(const color& c) noexcept {
-//       return horizontal_bar.thumb_color = vertical_bar.thumb_color = c, *this;
-//     }
-//     auto& button_color(const color& c) noexcept {
-//       return horizontal_bar.button_color = vertical_bar.button_color = c, *this;
-//     }
-//     auto& arrow_color(const color& c) noexcept {
-//       return horizontal_bar.arrow_color = vertical_bar.arrow_color = c, *this;
-//     }
-
-//   private:
-//     template<orientation O> static std::expected<void, error> draw_bar(const ::yw::scrollbar<O>& Bar) {
-//       if (auto res = Bar.draw_decrease_button(); !res) return res.error().relay();
-//       if (auto res = Bar.draw_decrease_track(); !res) return res.error().relay();
-//       if (auto res = Bar.draw_increase_track(); !res) return res.error().relay();
-//       if (auto res = Bar.draw_thumb(); !res) return res.error().relay();
-//       if (auto res = Bar.draw_increase_button(); !res) return res.error().relay();
-//       return {};
-//     }
-
-//     float4 corner_rect() const noexcept {
-//       return float4(
-//         vertical_bar.pos.x, horizontal_bar.pos.y, vertical_bar.pos.x + vertical_bar.size.x,
-//         horizontal_bar.pos.y + horizontal_bar.size.y);
-//     }
-
-//     std::expected<void, error> draw_part_overlay(part Part, bool Pressed) const {
-//       if (Part == part::none) return {};
-//       const auto wsp = get_slot<window>(window_id);
-//       if (!wsp) return std::unexpected(error(errors::invalid_slotid));
-//       const auto& overlay = Pressed ? wsp->press_overlay_color : wsp->hover_overlay_color;
-//       if (overlay.a <= 0.0f) return {};
-//       switch (Part) {
-//       case part::horizontal_decrease_button: return horizontal_bar.draw_decrease_button(&overlay);
-//       case part::horizontal_decrease_track: return horizontal_bar.draw_decrease_track(&overlay);
-//       case part::horizontal_thumb: return horizontal_bar.draw_thumb(&overlay);
-//       case part::horizontal_increase_track: return horizontal_bar.draw_increase_track(&overlay);
-//       case part::horizontal_increase_button: return horizontal_bar.draw_increase_button(&overlay);
-//       case part::vertical_decrease_button: return vertical_bar.draw_decrease_button(&overlay);
-//       case part::vertical_decrease_track: return vertical_bar.draw_decrease_track(&overlay);
-//       case part::vertical_thumb: return vertical_bar.draw_thumb(&overlay);
-//       case part::vertical_increase_track: return vertical_bar.draw_increase_track(&overlay);
-//       case part::vertical_increase_button: return vertical_bar.draw_increase_button(&overlay);
-//       default: return {};
-//       }
-//     }
-
-//     part hittest_scrollbar(float2 Pt) const noexcept {
-//       const auto h = horizontal_bar.hittest(Pt);
-//       if (h == decltype(horizontal_bar)::part::decrease_button) return part::horizontal_decrease_button;
-//       if (h == decltype(horizontal_bar)::part::decrease_track) return part::horizontal_decrease_track;
-//       if (h == decltype(horizontal_bar)::part::thumb) return part::horizontal_thumb;
-//       if (h == decltype(horizontal_bar)::part::increase_track) return part::horizontal_increase_track;
-//       if (h == decltype(horizontal_bar)::part::increase_button) return part::horizontal_increase_button;
-//       const auto v = vertical_bar.hittest(Pt);
-//       if (v == decltype(vertical_bar)::part::decrease_button) return part::vertical_decrease_button;
-//       if (v == decltype(vertical_bar)::part::decrease_track) return part::vertical_decrease_track;
-//       if (v == decltype(vertical_bar)::part::thumb) return part::vertical_thumb;
-//       if (v == decltype(vertical_bar)::part::increase_track) return part::vertical_increase_track;
-//       if (v == decltype(vertical_bar)::part::increase_button) return part::vertical_increase_button;
-//       return part::none;
-//     }
-//   };
-
-//   scrollbars() noexcept = default;
-// };
 } // namespace yw::ui

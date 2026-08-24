@@ -320,33 +320,37 @@ void draw_hud(const game_state& game, bool locked) {
   }
 
   text score(format<wchar_t>(L"Score ", game.score), {.size = 22.0f});
-  score.color(color(0.92f, 0.96f, 1.0f));
-  if (auto res = draw_text({20.0f, 16.0f}, score); !res) res.error().go_off();
+  if (auto res = draw_text({20.0f, 16.0f}, score, color(0.92f, 0.96f, 1.0f)); !res) res.error().go_off();
 
   text lives(format<wchar_t>(L"Life ", yw::max(game.lives, 0)), {.size = 22.0f});
-  lives.color(color(0.92f, 0.96f, 1.0f));
-  if (auto res = draw_text({float(view_width) - lives.size().x - 20.0f, 16.0f}, lives); !res) res.error().go_off();
+  if (auto res = draw_text({float(view_width) - lives.size().x - 20.0f, 16.0f}, lives, color(0.92f, 0.96f, 1.0f)); !res)
+    res.error().go_off();
 
   text wave(format<wchar_t>(L"Wave ", game.wave), {.size = 18.0f});
-  wave.color(color(0.78f, 0.86f, 0.94f));
-  if (auto res = draw_text({(float(view_width) - wave.size().x) * 0.5f, 18.0f}, wave); !res) res.error().go_off();
+  if (auto res = draw_text({(float(view_width) - wave.size().x) * 0.5f, 18.0f}, wave, color(0.78f, 0.86f, 0.94f)); !res)
+    res.error().go_off();
 
   if (!game.running) {
     const auto message = game.game_over ? L"Game over - click to restart" : L"Click to start";
     text prompt(message, {.size = 30.0f});
-    prompt.color(color(0.94f, 0.98f, 1.0f));
-    if (auto res = draw_text({(float(view_width) - prompt.size().x) * 0.5f, view_height * 0.43f}, prompt); !res)
+    if (auto res =
+          draw_text({(float(view_width) - prompt.size().x) * 0.5f, view_height * 0.43f}, prompt, color(0.94f, 0.98f, 1.0f));
+      !res)
       res.error().go_off();
   } else if (!locked) {
     text prompt(L"Click to capture mouse", {.size = 20.0f});
-    prompt.color(color(0.82f, 0.90f, 0.98f, 0.82f));
-    if (auto res = draw_text({(float(view_width) - prompt.size().x) * 0.5f, view_height - 42.0f}, prompt); !res)
+    if (auto res = draw_text(
+          {(float(view_width) - prompt.size().x) * 0.5f, view_height - 42.0f}, prompt,
+          color(0.82f, 0.90f, 0.98f, 0.82f));
+      !res)
       res.error().go_off();
   }
 
   text exit(L"ESC Exit", {.size = 17.0f});
-  exit.color(color(0.72f, 0.80f, 0.88f, 0.78f));
-  if (auto res = draw_text({float(view_width) - exit.size().x - 20.0f, float(view_height) - 32.0f}, exit); !res)
+  if (auto res = draw_text(
+        {float(view_width) - exit.size().x - 20.0f, float(view_height) - 32.0f}, exit,
+        color(0.72f, 0.80f, 0.88f, 0.78f));
+    !res)
     res.error().go_off();
 }
 

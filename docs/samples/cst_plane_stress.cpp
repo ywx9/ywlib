@@ -218,8 +218,7 @@ void draw_circle(float2 center, float radius, const color& c) {
 
 void draw_text_line(float2 pos, string<wchar_t> s, float size = 17.0f, color c = color(0.88f, 0.91f, 0.94f)) {
   text t(std::move(s), {.size = size});
-  t.color(c);
-  if (auto res = draw_text(pos, t); !res) res.error().go_off();
+  if (auto res = draw_text(pos, t, c); !res) res.error().go_off();
 }
 
 float2 screen_position(size_t index, const analysis_result& result, double scale) {

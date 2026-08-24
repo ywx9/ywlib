@@ -52,14 +52,14 @@ template<UINT Msg> inline LRESULT handle_wm_pointer(window::slot* wsp, WPARAM wp
       else wsp->last_cursor_pos = window::slot::cursor_pos;
       return 0;
     }
-    const auto hit = csp->hittest(local_pos);
+    const auto hit = csp->hittest(wsp, local_pos);
     if (auto res = wsp->update_hovered_control(hit, local_pos, true, mainloop.elapsed()); !res) res.error().go_off();
     if (wsp->cursor_locked) wsp->center_locked_cursor();
     else wsp->last_cursor_pos = window::slot::cursor_pos;
   } else if constexpr (Msg == WM_MOUSELEAVE) {
     wsp->track_mouse_event.hwndTrack = nullptr;
     if (const auto hcsp = interface::slot::get_as<control>(wsp->hovered_control_id)) {
-      hcsp->handle_hover_event(hover_event::create::leave(wsp->get_local_pointer_pos()));
+      hcsp->handle_hover_event(wsp, hover_event::create::leave(wsp->get_local_pointer_pos()));
       wsp->hovered_control_id = {};
     }
     wsp->hide_tooltip();
@@ -74,7 +74,7 @@ template<UINT Msg> LRESULT handle_wm_focus(window::slot* wsp, WPARAM wp, LPARAM 
     if constexpr (Msg == WM_ACTIVATEAPP)
       if (wp) return ::DefWindowProcW(wsp->hwnd, Msg, wp, lp);
     if (const auto hcsp = interface::slot::get_as<control>(wsp->hovered_control_id)) {
-      hcsp->handle_hover_event(hover_event::create::leave(wsp->get_local_pointer_pos()));
+      hcsp->handle_hover_event(wsp, hover_event::create::leave(wsp->get_local_pointer_pos()));
       wsp->hovered_control_id = {};
     }
     wsp->track_mouse_event.hwndTrack = nullptr;

@@ -70,9 +70,9 @@ public:
       return hit;
     }
 
-    virtual std::expected<void, error> draw_backcontent() override {
+    virtual std::expected<void, error> draw_backcontent(interface::slot* Window) override {
       if (const auto csp = active_control()) {
-        if (auto res = csp->redraw(); !res) return res.error().relay();
+        if (auto res = csp->redraw(Window); !res) return res.error().relay();
       } else if (active_index < controls.size()) return std::unexpected(error(errors::invalid_slotid));
       return {};
     }
@@ -113,6 +113,26 @@ public:
     }
   };
 
+  class proxy : public control::proxy {
+    friend class page;
+    using control::proxy::proxy;
+    page::slot* _get_slot() const noexcept { return static_cast<page::slot*>(_slot); }
+
+  public:
+    //-- getter --//
+
+    size_t active() const&& noexcept { return _get_slot()->active_index; }
+    slotid active_control_id() const&& noexcept { return _get_slot()->active_control_id(); }
+    size_t count() const&& noexcept { return _get_slot()->controls.size(); }
+
+    //-- setter --//
+
+    auto active(this auto&& Self, size_t Index) noexcept {
+      if (auto res = Self._get_slot()->set_active(Index); !res) res.error().fizzle_out();
+      return std::move(Self);
+    }
+  };
+
   page() noexcept = default;
 
   page(derived_from<interface> auto& Parent, const source_line& sl = here()) {
@@ -122,62 +142,20 @@ public:
 
   static std::expected<page, error> create(derived_from<interface> auto& Parent) {
     page p;
-    const auto temp_id = make_slot<page>();
-    const auto sp = get_slot<page>(temp_id);
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    const auto psp = get_slot<control>(Parent.id());
-    if (!psp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = psp->attach(temp_id); !res) {
-      slot::slots.erase(temp_id);
-      return res.error().relay();
-    }
-    p._id = temp_id;
-    sp->id = temp_id;
-    sp->window_id = psp->get_window_id();
+    page::slot* sp;
+    if (auto res = create_control<page>(Parent)) sp = *res;
+    else return res.error().relay();
+    p._id = sp->id;
     sp->margin = {};
     sp->padding = {};
     sp->radius = {};
-    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
-    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
+    sp->background_color = colors::transparent;
+    sp->border_color = colors::transparent;
     return p;
   }
 
-  //-- getter --//
-
-  size_t active() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->active_index;
-  }
-
-  slotid active_control_id() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->active_control_id();
-  }
-
-  size_t count() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->controls.size();
-  }
-
-  //-- setter --//
-
-  auto& active(this auto& self, size_t Index) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).fizzle_out();
-    else if (auto res = sp->set_active(Index); !res) res.error().fizzle_out();
-    return self;
-  }
+  yw_control_getter_setter(active, size_t);
+  yw_control_getter(active_control_id);
+  yw_control_getter(count);
 };
 } // namespace yw::ui

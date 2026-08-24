@@ -9,11 +9,8 @@ class svgpath : public handle_base {
 public:
   struct slot : public handle_base::slot {
     comptr<ID2D1PathGeometry> geometry;
-    color fill_color = colors::black;
-    color stroke_color = colors::black;
     D2D1_RECT_F bounds{};
     float2 size{};
-    float stroke_width = 1.0f;
 
     std::expected<comptr<ID2D1PathGeometry>, error> parse_svg_path(string_view<char> Path);
   };
@@ -89,52 +86,12 @@ public:
     else *this = std::move(*res);
   }
 
-  //-- getter --//
-
-  const color& fill_color() const noexcept {
-    const auto sp = slot::get_as<svgpath>(id());
-    if (!sp) error(errors::invalid_slotid, "invalid slotid").go_off();
-    return sp->fill_color;
-  }
-
-  const color& stroke_color() const noexcept {
-    const auto sp = slot::get_as<svgpath>(id());
-    if (!sp) error(errors::invalid_slotid, "invalid slotid").go_off();
-    return sp->stroke_color;
-  }
-
-  float stroke_width() const noexcept {
-    if (const auto sp = slot::get_as<svgpath>(id()); !sp) {
-      error(errors::invalid_slotid, "invalid slotid").fizzle_out();
-      return 0.0f;
-    } else return sp->stroke_width;
-  }
-
-  //-- setter --//
-
-  auto& fill_color(this auto& self, const color& c) noexcept {
-    if (const auto sp = slot::get_as<svgpath>(self.id())) sp->fill_color = c;
-    else error(errors::invalid_slotid, "invalid slotid").fizzle_out();
-    return self;
-  }
-
-  auto& stroke_color(this auto& self, const color& c) noexcept {
-    if (const auto sp = slot::get_as<svgpath>(self.id())) sp->stroke_color = c;
-    else error(errors::invalid_slotid, "invalid slotid").fizzle_out();
-    return self;
-  }
-
-  auto& stroke_width(this auto& self, float1 w) noexcept {
-    if (const auto sp = slot::get_as<svgpath>(self.id())) sp->stroke_width = w.x;
-    else error(errors::invalid_slotid, "invalid slotid").fizzle_out();
-    return self;
-  }
 };
 
 /// MARK: stroke_svgpath
 
 inline std::expected<void, error> stroke_svgpath(
-  float2 Pos, float2 Size, const svgpath& Path) {
+  float2 Pos, float2 Size, const svgpath& Path, const color& Color, float1 Width = 1.0f) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "drawing not begun"));
   const auto sp = svgpath::slot::get_as<svgpath>(Path.id());
   if (!sp) return std::unexpected(error(errors::invalid_slotid));
@@ -142,26 +99,26 @@ inline std::expected<void, error> stroke_svgpath(
   comptr<ID2D1TransformedGeometry> tg;
   D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Scale(scale.x, scale.y) * D2D1::Matrix3x2F::Translation(Pos.x, Pos.y);
   hresult_test(d2d::factory()->CreateTransformedGeometry, sp->geometry.get(), &matrix, &tg.get());
-  brush::color(sp->stroke_color);
-  d2d::context()->DrawGeometry(tg.get(), brush::d2d_brush(), sp->stroke_width, brush::d2d_stroke());
+  brush::color(Color);
+  d2d::context()->DrawGeometry(tg.get(), brush::d2d_brush(), Width.x, brush::d2d_stroke());
   return {};
 }
 
-inline std::expected<void, error> stroke_svgpath(float2 Pos, const svgpath& Path) {
+inline std::expected<void, error> stroke_svgpath(float2 Pos, const svgpath& Path, const color& Color, float1 Width = 1.0f) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "drawing not begun"));
   const auto sp = svgpath::slot::get_as<svgpath>(Path.id());
   if (!sp) return std::unexpected(error(errors::invalid_slotid));
   comptr<ID2D1TransformedGeometry> tg;
   D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Translation(Pos.x, Pos.y);
   hresult_test(d2d::factory()->CreateTransformedGeometry, sp->geometry.get(), &matrix, &tg.get());
-  brush::color(sp->stroke_color);
-  d2d::context()->DrawGeometry(tg.get(), brush::d2d_brush(), sp->stroke_width, brush::d2d_stroke());
+  brush::color(Color);
+  d2d::context()->DrawGeometry(tg.get(), brush::d2d_brush(), Width.x, brush::d2d_stroke());
   return {};
 }
 
 /// MARK: fill_svgpath
 
-inline std::expected<void, error> fill_svgpath(float2 Pos, float2 Size, const svgpath& Path) {
+inline std::expected<void, error> fill_svgpath(float2 Pos, float2 Size, const svgpath& Path, const color& Color) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "drawing not begun"));
   const auto sp = svgpath::slot::get_as<svgpath>(Path.id());
   if (!sp) return std::unexpected(error(errors::invalid_slotid));
@@ -169,51 +126,20 @@ inline std::expected<void, error> fill_svgpath(float2 Pos, float2 Size, const sv
   comptr<ID2D1TransformedGeometry> tg;
   D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Scale(scale.x, scale.y) * D2D1::Matrix3x2F::Translation(Pos.x, Pos.y);
   hresult_test(d2d::factory()->CreateTransformedGeometry, sp->geometry.get(), &matrix, &tg.get());
-  brush::color(sp->fill_color);
+  brush::color(Color);
   d2d::context()->FillGeometry(tg.get(), brush::d2d_brush());
   return {};
 }
 
-inline std::expected<void, error> fill_svgpath(float2 Pos, const svgpath& Path) {
+inline std::expected<void, error> fill_svgpath(float2 Pos, const svgpath& Path, const color& Color) {
   if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "drawing not begun"));
   const auto sp = svgpath::slot::get_as<svgpath>(Path.id());
   if (!sp) return std::unexpected(error(errors::invalid_slotid));
   comptr<ID2D1TransformedGeometry> tg;
   D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Translation(Pos.x, Pos.y);
   hresult_test(d2d::factory()->CreateTransformedGeometry, sp->geometry.get(), &matrix, &tg.get());
-  brush::color(sp->fill_color);
+  brush::color(Color);
   d2d::context()->FillGeometry(tg.get(), brush::d2d_brush());
-  return {};
-}
-
-/// MARK: draw_svgpath
-
-inline std::expected<void, error> draw_svgpath(float2 Pos, float2 Size, const svgpath& Path) {
-  if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "drawing not begun"));
-  const auto sp = svgpath::slot::get_as<svgpath>(Path.id());
-  if (!sp) return std::unexpected(error(errors::invalid_slotid));
-  const float2 scale = Size / sp->size;
-  comptr<ID2D1TransformedGeometry> tg;
-  D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Scale(scale.x, scale.y) * D2D1::Matrix3x2F::Translation(Pos.x, Pos.y);
-  hresult_test(d2d::factory()->CreateTransformedGeometry, sp->geometry.get(), &matrix, &tg.get());
-  brush::color(sp->fill_color);
-  d2d::context()->FillGeometry(tg.get(), brush::d2d_brush());
-  brush::color(sp->stroke_color);
-  d2d::context()->DrawGeometry(tg.get(), brush::d2d_brush(), sp->stroke_width, brush::d2d_stroke());
-  return {};
-}
-
-inline std::expected<void, error> draw_svgpath(float2 Pos, const svgpath& Path) {
-  if (!drawing::d2d_drawing()) return std::unexpected(error(errors::invalid_operation, "drawing not begun"));
-  const auto sp = svgpath::slot::get_as<svgpath>(Path.id());
-  if (!sp) return std::unexpected(error(errors::invalid_slotid));
-  comptr<ID2D1TransformedGeometry> tg;
-  D2D1_MATRIX_3X2_F matrix = D2D1::Matrix3x2F::Translation(Pos.x, Pos.y);
-  hresult_test(d2d::factory()->CreateTransformedGeometry, sp->geometry.get(), &matrix, &tg.get());
-  brush::color(sp->fill_color);
-  d2d::context()->FillGeometry(tg.get(), brush::d2d_brush());
-  brush::color(sp->stroke_color);
-  d2d::context()->DrawGeometry(tg.get(), brush::d2d_brush(), sp->stroke_width, brush::d2d_stroke());
   return {};
 }
 

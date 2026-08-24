@@ -355,9 +355,8 @@ void draw_game(ui::blank& canvas, const game_state& game, const input_state& inp
 
   if (!game.running) {
     text prompt(game.game_over ? L"Game over - Space to restart" : L"Space to launch", {.size = 27.0f});
-    prompt.color(color(0.92f, 0.96f, 1.0f));
     const auto p = origin + float2{(board_width - prompt.size().x) * 0.5f, board_height * 0.42f};
-    if (auto res = draw_text(p, prompt); !res) res.error().go_off();
+    if (auto res = draw_text(p, prompt, color(0.92f, 0.96f, 1.0f)); !res) res.error().go_off();
   }
 
   if (canvas.geometry()) d2d::pop_layer();

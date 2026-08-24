@@ -9,8 +9,13 @@ class checkbox : public control {
 public:
   struct slot : control::slot {
     yw::text text = yw::text(L"");
+    optional<color> text_color;
     yw::icon box;
     yw::icon check;
+    optional<color> box_fill_color;
+    optional<color> box_stroke_color;
+    optional<color> check_fill_color;
+    optional<color> check_stroke_color;
     float2 icon_size{common_size_value, common_size_value};
     float icon_gap = arbitrary_value;
     bool checked = false;
@@ -23,49 +28,80 @@ public:
     virtual bool is_focusable() const override { return enabled && visible; }
     virtual bool is_interactive() const override { return true; }
 
-    virtual std::expected<void, error> apply_color_theme(const yw::ui::color_theme& Theme, bool) override {
-      background_color = Theme.surface;
-      border_color = colors::transparent;
-      text.color(Theme.text);
-      apply_icon_color(box, colors::transparent, Theme.outline);
-      apply_icon_color(check, Theme.accent, Theme.accent);
-      make_dirty();
-      return {};
+    virtual color get_text_color(const interface::slot* Window) const noexcept {
+      if (text_color) return *text_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->text;
+      return colors::transparent;
     }
 
+    virtual color get_border_color(const interface::slot*) const noexcept override {
+      return border_color ? *border_color : colors::transparent;
+    }
 
+    virtual color get_box_fill_color(const interface::slot*) const noexcept {
+      return box_fill_color ? *box_fill_color : colors::transparent;
+    }
 
-    virtual std::expected<void, error> draw_backcontent() override {
+    virtual color get_box_stroke_color(const interface::slot* Window) const noexcept {
+      if (box_stroke_color) return *box_stroke_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->outline;
+      return colors::transparent;
+    }
+
+    virtual color get_check_fill_color(const interface::slot* Window) const noexcept {
+      if (check_fill_color) return *check_fill_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->accent;
+      return colors::transparent;
+    }
+
+    virtual color get_check_stroke_color(const interface::slot* Window) const noexcept {
+      if (check_stroke_color) return *check_stroke_color;
+      if (auto theme = get_color_theme(Window)) return (*theme)->accent;
+      return colors::transparent;
+    }
+
+    virtual std::expected<void, error> draw_backcontent(interface::slot* Window) override {
       const auto origin = float2(pos.x + padding.x, pos.y + (size.y - icon_size.y) * 0.5f);
       if (box.is_bitmap()) {
         if (auto res = draw_bitmap(origin, icon_size, box.get_bitmap()); !res) return res.error().relay();
       } else if (box.is_vector())
-        if (auto svg = box.get_vector(); svg.fill_color().a > 0.0f) {
-          brush::color(svg.fill_color());
-          if (auto res = fill_svgpath(origin, box.get_vector()); !res) return res.error().relay();
+        if (const auto fill = get_box_fill_color(Window); fill.a > 0.0f) {
+          const auto& vector = box.get_vector();
+          if (auto res = fill_svgpath(origin, vector.path, fill); !res) return res.error().relay();
         }
       return {};
     }
 
-    virtual std::expected<void, error> draw_forecontent() override {
+    virtual std::expected<void, error> draw_forecontent(interface::slot* Window) override {
       const auto origin = float2(pos.x + padding.x, pos.y + (size.y - icon_size.y) * 0.5f);
       if (box.is_vector())
-        if (auto svg = box.get_vector(); svg.stroke_color().a > 0.0f) {
-          brush::color(svg.stroke_color());
-          if (auto res = stroke_svgpath(origin, box.get_vector()); !res) return res.error().relay();
+        if (const auto stroke = get_box_stroke_color(Window); stroke.a > 0.0f) {
+          const auto& vector = box.get_vector();
+          if (auto res = stroke_svgpath(origin, vector.path, stroke, vector.stroke_width); !res)
+            return res.error().relay();
         }
-      if (checked)
-        if (auto res = draw_icon(origin, icon_size, check); !res) return res.error().relay();
+      if (checked) {
+        if (check.is_bitmap()) {
+          if (auto res = draw_bitmap(origin, icon_size, check.get_bitmap()); !res) return res.error().relay();
+        } else if (check.is_vector()) {
+          const auto& vector = check.get_vector();
+          if (const auto fill = get_check_fill_color(Window); fill.a > 0.0f)
+            if (auto res = fill_svgpath(origin, icon_size, vector.path, fill); !res) return res.error().relay();
+          if (const auto stroke = get_check_stroke_color(Window); stroke.a > 0.0f && vector.stroke_width > 0.0f)
+            if (auto res = stroke_svgpath(origin, icon_size, vector.path, stroke, vector.stroke_width); !res)
+              return res.error().relay();
+        }
+      }
       const auto text_origin = float2(pos.x + padding.x + icon_size.x + icon_gap, pos.y + padding.y);
       const auto text_area = pos + size - padding.zw() - text_origin;
       const auto text_pos = align_position(text_origin, text_area, text.size(), left);
-      if (auto res = draw_text(text_pos, text); !res) return res.error().relay();
+      if (auto res = draw_text(text_pos, text, get_text_color(Window)); !res) return res.error().relay();
       return {};
     }
 
-    virtual std::expected<void, error> draw_overlay() override {
-      const auto wsp = get_slot<window>(window_id);
-      if (!wsp) return std::unexpected(error(errors::invalid_slotid));
+    virtual std::expected<void, error> draw_overlay(interface::slot* Window) override {
+      const auto wsp = static_cast<window::slot*>(Window);
+      if (!wsp) return {};
       if (pressed && wsp->press_overlay_color.a > 0.0f) {
         brush::color(wsp->press_overlay_color);
         if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
@@ -133,26 +169,106 @@ public:
 
     //-- shared functions --//
 
-    static void apply_icon_color(yw::icon& Icon, const color& FillColor, const color& StrokeColor) noexcept {
-      if (auto vector = Icon.get_if_vector()) {
-        vector->fill_color(FillColor);
-        vector->stroke_color(StrokeColor);
-      }
-    }
-
-    std::expected<void, error> apply_current_icon_theme() {
-      if (auto theme = get_color_theme(); !theme) return theme.error().relay();
-      else {
-        apply_icon_color(box, colors::transparent, (*theme)->outline);
-        apply_icon_color(check, (*theme)->accent, (*theme)->accent);
-      }
-      return {};
-    }
-
     bool toggle() {
       checked = !checked;
       make_dirty();
       return change_event ? change_event(checked) : true;
+    }
+  };
+
+  class proxy : public control::proxy {
+    friend class checkbox;
+    using control::proxy::proxy;
+    checkbox::slot* _get_slot() const noexcept { return static_cast<checkbox::slot*>(_slot); }
+
+  public:
+    //-- getter --//
+
+    bool checked() const&& noexcept { return _get_slot()->checked; }
+    bool pressed() const&& noexcept { return _get_slot()->pressed; }
+    const auto& text() const&& noexcept { return _get_slot()->text; }
+    const auto& box() const&& noexcept { return _get_slot()->box; }
+    const auto& check() const&& noexcept { return _get_slot()->check; }
+    const auto& change_event() const&& noexcept { return _get_slot()->change_event; }
+    color text_color() const&& noexcept {
+      return _get_slot()->get_text_color(interface::slot::slots.get(_get_slot()->window_id));
+    }
+    float2 icon_size() const&& noexcept { return _get_slot()->icon_size; }
+    float icon_gap() const&& noexcept { return _get_slot()->icon_gap; }
+    const auto& string() const&& noexcept { return _get_slot()->text.string(); }
+    const auto& font() const&& noexcept { return _get_slot()->text.font(); }
+
+    //-- setter --//
+
+    auto checked(this auto&& Self, bool Checked) noexcept {
+      if (Self._get_slot()->checked == Checked) return std::move(Self);
+      Self._get_slot()->checked = Checked;
+      Self._dirty = true;
+      if (Self._get_slot()->change_event) Self._get_slot()->change_event(Self._get_slot()->checked);
+      return std::move(Self);
+    }
+
+    auto text(this auto&& Self, yw::text Text) noexcept {
+      Self._get_slot()->text = std::move(Text);
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto box(this auto&& Self, yw::icon Icon) noexcept {
+      Self._get_slot()->box = std::move(Icon);
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto check(this auto&& Self, yw::icon Icon) noexcept {
+      Self._get_slot()->check = std::move(Icon);
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto change_event(this auto&& Self, function<bool, bool> Event) noexcept {
+      Self._get_slot()->change_event = std::move(Event);
+      return std::move(Self);
+    }
+
+    auto string(this auto&& Self, yw::string<wchar_t> String) noexcept {
+      Self._get_slot()->text.string(std::move(String));
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto font(this auto&& Self, font_config Font) noexcept {
+      Self._get_slot()->text.font(std::move(Font));
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto text_color(this auto&& Self, const color& Color) noexcept {
+      Self._get_slot()->text_color = Color;
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto text_color(this auto&& Self, none) noexcept {
+      Self._get_slot()->text_color = none();
+      Self._dirty = true;
+      return std::move(Self);
+    }
+
+    auto icon_size(this auto&& Self, float2 Size) noexcept {
+      if (Size.x <= 0.0f || Size.y <= 0.0f) {
+        error(errors::invalid_argument, format("icon_size must be positive: ", Size)).fizzle_out();
+        return std::move(Self);
+      }
+      Self._get_slot()->icon_size = Size;
+      Self._messy = true;
+      return std::move(Self);
+    }
+
+    auto icon_gap(this auto&& Self, float1 Gap) noexcept {
+      Self._get_slot()->icon_gap = Gap.x;
+      Self._messy = true;
+      return std::move(Self);
     }
   };
 
@@ -165,231 +281,31 @@ public:
 
   static std::expected<checkbox, error> create(derived_from<interface> auto& Parent) {
     checkbox c;
-    const auto temp_id = make_slot<checkbox>();
-    const auto sp = get_slot<checkbox>(temp_id);
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    const auto psp = get_slot<control>(Parent.id());
-    if (!psp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = psp->attach(temp_id); !res) {
-      slot::slots.erase(temp_id);
-      return res.error().relay();
-    }
-    c._id = temp_id;
-    sp->id = temp_id;
-    sp->window_id = psp->get_window_id();
+    checkbox::slot* sp;
+    if (auto res = create_control<checkbox>(Parent)) sp = *res;
+    else return res.error().relay();
+    c._id = sp->id;
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
     constexpr float2 init_icon_size{16.0f, 16.0f};
     sp->icon_size = init_icon_size;
     sp->box = yw::icon(yw::svgpath(init_icon_size, "M1 1 L15 1 L15 15 L1 15 Z"));
     sp->check = yw::icon(yw::svgpath(init_icon_size, "M3 8 L7 12 L13 4 L7 10 Z"));
-    if (auto theme = sp->get_color_theme(); !theme) return theme.error().relay();
-    else if (auto res = sp->apply_color_theme(*(*theme), false); !res) return res.error().relay();
     return c;
   }
 
-  //-- getter --//
-
-  bool checked() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->checked;
+  yw_control_getter_setter(checked, bool);
+  yw_control_getter(pressed);
+  yw_control_getter_setter(text, yw::text);
+  yw_control_getter_setter(box, yw::icon);
+  yw_control_getter_setter(check, yw::icon);
+  yw_control_getter_setter(change_event, function<bool, bool>);
+  yw_control_getter_setter(text_color, color);
+  auto text_color(this auto& Self, none None) noexcept {
+    return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).text_color(None);
   }
-
-  bool pressed() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->pressed;
-  }
-
-  const auto& text() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->text;
-  }
-
-  const auto& box() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->box;
-  }
-
-  const auto& check() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->check;
-  }
-
-  const auto& change_event() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->change_event;
-  }
-
-  const auto& text_color() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->text.color();
-  }
-
-  float2 icon_size() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->icon_size;
-  }
-
-  float icon_gap() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return {};
-    }
-    return sp->icon_gap;
-  }
-
-  const auto& string() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->text.string();
-  }
-
-  const auto& font() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->text.font();
-  }
-
-  //-- setter --//
-
-  auto& checked(this auto& self, bool b) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (sp->checked == b) return self;
-    sp->checked = b;
-    sp->make_dirty();
-    if (sp->change_event) sp->change_event(sp->checked);
-    return self;
-  }
-
-  auto& text(this auto& self, yw::text Text) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->text = std::move(Text);
-    sp->make_messy();
-    return self;
-  }
-
-  auto& box(this auto& self, yw::icon Icon) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->box = std::move(Icon);
-    if (auto res = sp->apply_current_icon_theme(); !res) {
-      res.error().fizzle_out();
-      return self;
-    }
-    sp->make_messy();
-    return self;
-  }
-
-  auto& check(this auto& self, yw::icon Icon) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->check = std::move(Icon);
-    if (auto res = sp->apply_current_icon_theme(); !res) {
-      res.error().fizzle_out();
-      return self;
-    }
-    sp->make_messy();
-    return self;
-  }
-
-  auto& change_event(this auto& self, function<bool, bool> f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->change_event = std::move(f);
-    return self;
-  }
-
-  auto& string(this auto& self, yw::string<wchar_t> s) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->text.string(std::move(s));
-    sp->make_messy();
-    return self;
-  }
-
-  auto& font(this auto& self, font_config f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->text.font(std::move(f));
-    sp->make_messy();
-    return self;
-  }
-
-  auto& text_color(this auto& self, const color& c) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->text.color(c);
-    sp->make_dirty();
-    return self;
-  }
-
-  auto& icon_size(this auto& self, float2 v) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    if (v.x <= 0.0f || v.y <= 0.0f) {
-      error(errors::invalid_argument, format("icon_size must be positive: ", v)).fizzle_out();
-      return self;
-    }
-    sp->icon_size = v;
-    sp->make_messy();
-    return self;
-  }
-
-  auto& icon_gap(this auto& self, float1 f) noexcept {
-    const auto sp = get_slot(&self);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return self;
-    }
-    sp->icon_gap = f.x;
-    sp->make_messy();
-    return self;
-  }
+  yw_control_getter_setter(icon_size, float2);
+  yw_control_getter_setter(icon_gap, float1);
+  yw_control_getter_setter(string, yw::string<wchar_t>);
+  yw_control_getter_setter(font, font_config);
 };
 } // namespace yw::ui

@@ -115,9 +115,8 @@ void draw_game(ui::blank& canvas, const game_state& game) {
 
   if (!game.running) {
     text prompt(game.lives > 0 ? L"Space: start / restart" : L"Space: new game", {.size = 24.0f});
-    prompt.color(color(0.90f, 0.94f, 0.98f));
     const auto p = origin + (size - prompt.size()) * 0.5f;
-    if (auto res = draw_text(p, prompt); !res) res.error().go_off();
+    if (auto res = draw_text(p, prompt, color(0.90f, 0.94f, 0.98f)); !res) res.error().go_off();
   }
 }
 

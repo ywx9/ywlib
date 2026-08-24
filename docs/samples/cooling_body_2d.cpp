@@ -76,7 +76,7 @@ simulation_config parse_config(int argc, char** argv) {
                .description("requested fixed simulation seconds per frame")
                .default_value(default_fixed_spf);
 
-  argument::parse(argc, argv);
+  if (auto res = argument::parse(argc, argv); !res) res.error().go_off();
 
   return {
     .mesh_width = at_least(width.value(), 3),

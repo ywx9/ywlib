@@ -279,9 +279,9 @@ void draw_ball(float2 origin, const ball& b, int number) {
   if (number > 0) {
     ellipse(origin, b.body.position, b.body.radius * 0.45f, color(0.97f, 0.94f, 0.84f));
     text label(format<wchar_t>(number), {.size = 9.0f});
-    label.color(color(0.04f, 0.05f, 0.05f));
     const auto s = label.size();
-    if (auto res = draw_text(origin + b.body.position - s * 0.5f + float2{0.0f, -0.8f}, label); !res) res.error().go_off();
+    if (auto res = draw_text(origin + b.body.position - s * 0.5f + float2{0.0f, -0.8f}, label, color(0.04f, 0.05f, 0.05f)); !res)
+      res.error().go_off();
   }
 }
 
@@ -351,7 +351,7 @@ int main(int argc, char** argv) {
                      .alias("-b")
                      .default_value(16)
                      .description("Total ball count including the cue ball. Default: 16");
-  argument::parse(argc, argv);
+  if (auto res = argument::parse(argc, argv); !res) res.error().go_off();
 
   const auto cfg = make_config(scale_arg.value(), balls_arg.value());
 

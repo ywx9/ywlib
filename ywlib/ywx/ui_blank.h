@@ -7,7 +7,7 @@ class blank : public control {
 public:
   struct slot : control::slot {
     // virtual std::expected<float2, error> get_necessary_size() const override { return {}; }
-    virtual std::expected<void, error> redraw() override { return {}; }
+    virtual std::expected<void, error> redraw(interface::slot*) override { return {}; }
   };
 
   blank() noexcept = default;
@@ -19,18 +19,10 @@ public:
 
   static std::expected<blank, error> create(derived_from<interface> auto& Parent, const source_line& sl = here()) {
     blank b;
-    const auto temp_id = make_slot<blank>();
-    const auto sp = get_slot<blank>(temp_id);
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    const auto psp = get_slot<control>(Parent.id());
-    if (!psp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = psp->attach(temp_id); !res) {
-      slot::slots.erase(temp_id);
-      return res.error().relay();
-    }
-    b._id = temp_id;
-    sp->id = temp_id;
-    sp->window_id = psp->get_window_id();
+    blank::slot* sp;
+    if (auto res = create_control<blank>(Parent)) sp = *res;
+    else return res.error().relay();
+    b._id = sp->id;
     sp->margin = {};
     return b;
   }
