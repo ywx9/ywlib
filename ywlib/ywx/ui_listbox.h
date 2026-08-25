@@ -261,7 +261,8 @@ public:
     }
   };
 
-  using scrollbar<orientation::vertical>::operator bool;
+  using scrollbar<orientation::vertical>::attached;
+  using scrollbar<orientation::vertical>::initialized;
   class proxy : public control::proxy {
     friend class listbox;
     using control::proxy::proxy;
@@ -360,14 +361,21 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<listbox, error> create(derived_from<interface> auto& Parent) {
+  static std::expected<listbox, error> create() {
     listbox l;
     listbox::slot* sp;
-    if (auto res = create_control<listbox>(Parent)) sp = *res;
+    if (auto res = create_control<listbox>()) sp = *res;
     else return res.error().relay();
     l._id = sp->id;
     sp->policy = {ui::fit, ui::free};
     return l;
+  }
+
+  static std::expected<listbox, error> create(derived_from<interface> auto& Parent) {
+    auto res = create();
+    if (!res) return res.error().relay();
+    if (auto attached = res->attach(Parent); !attached) return attached.error().relay();
+    return res;
   }
 
   yw_control_getter(item_count);

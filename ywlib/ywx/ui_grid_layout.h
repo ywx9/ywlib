@@ -68,8 +68,13 @@ public:
         pending = std::nullopt;
         return std::unexpected(error(errors::invalid_slotid));
       }
+      if (csp->parent_id) {
+        pending = std::nullopt;
+        return std::unexpected(error(errors::invalid_operation, "control already attached"));
+      }
 
-      csp->window_id = window_id;
+      csp->parent_id = id;
+      csp->set_window_id(window_id);
       items.push_back({Child, *pending});
       mark_placement(*pending, items.size());
       pending = std::nullopt;
@@ -79,26 +84,45 @@ public:
 
     virtual void close_child_controls() override {
       for (const auto& it : items)
-        if (const auto csp = get_slot<control>(it.control_id)) {
-          csp->close_child_controls();
-          interface::slot::slots.erase(it.control_id);
-        }
+        if (const auto csp = get_slot<control>(it.control_id)) csp->clear_attachment();
       items.clear();
       std::ranges::fill(occupancy, empty_cell);
       pending = std::nullopt;
       pending_error = std::nullopt;
     }
 
+    virtual void set_window_id(slotid Window) noexcept override {
+      window_id = Window;
+      for (const auto& it : items)
+        if (const auto csp = get_slot<control>(it.control_id)) csp->set_window_id(Window);
+    }
+
     virtual std::expected<void, error> detach(slotid Child) override {
-      if (const auto csp = get_slot<control>(Child)) csp->clear_window_state();
       const auto old_size = items.size();
       items.erase(
         std::remove_if(items.begin(), items.end(), [&](const item& it) { return it.control_id == Child; }),
         items.end());
       if (old_size == items.size())
         return std::unexpected(error(errors::invalid_operation, "not attached to this control"));
-      interface::slot::slots.erase(Child);
+      if (const auto csp = get_slot<control>(Child)) csp->clear_attachment();
+      else return std::unexpected(error(errors::invalid_slotid));
       rebuild_occupancy();
+      make_messy();
+      return {};
+    }
+
+    std::expected<void, error> replace(slotid From, slotid To) {
+      if (From == To) return {};
+      const auto it = std::ranges::find_if(items, [&](const item& Item) { return Item.control_id == From; });
+      if (it == items.end()) return std::unexpected(error(errors::invalid_operation, "not attached to this control"));
+      const auto tsp = get_slot<control>(To);
+      if (!tsp) return std::unexpected(error(errors::invalid_slotid));
+      if (tsp->parent_id) return std::unexpected(error(errors::invalid_operation, "control already attached"));
+      if (const auto fsp = get_slot<control>(From)) fsp->clear_attachment();
+      else return std::unexpected(error(errors::invalid_slotid));
+      tsp->parent_id = id;
+      tsp->set_window_id(window_id);
+      it->control_id = To;
       make_messy();
       return {};
     }
@@ -374,10 +398,10 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<grid_layout, error> create(derived_from<interface> auto& Parent) {
+  static std::expected<grid_layout, error> create() {
     grid_layout g;
     grid_layout::slot* sp;
-    if (auto res = create_control<grid_layout>(Parent)) sp = *res;
+    if (auto res = create_control<grid_layout>()) sp = *res;
     else return res.error().relay();
     g._id = sp->id;
     sp->margin = {};
@@ -386,6 +410,20 @@ public:
     sp->background_color = colors::transparent;
     sp->border_color = colors::transparent;
     return g;
+  }
+
+  static std::expected<grid_layout, error> create(derived_from<interface> auto& Parent) {
+    auto res = create();
+    if (!res) return res.error().relay();
+    if (auto attached = res->attach(Parent); !attached) return attached.error().relay();
+    return res;
+  }
+
+  std::expected<void, error> replace(derived_from<control> auto& From, derived_from<control> auto& To) {
+    const auto sp = get_slot(this);
+    if (!sp) return std::unexpected(error(errors::not_initialized));
+    if (auto res = sp->replace(From.id(), To.id()); !res) return res.error().relay();
+    return {};
   }
 
   yw_control_getter_setter(column_gap, float);

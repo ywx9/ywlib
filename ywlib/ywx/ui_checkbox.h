@@ -279,10 +279,10 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<checkbox, error> create(derived_from<interface> auto& Parent) {
+  static std::expected<checkbox, error> create() {
     checkbox c;
     checkbox::slot* sp;
-    if (auto res = create_control<checkbox>(Parent)) sp = *res;
+    if (auto res = create_control<checkbox>()) sp = *res;
     else return res.error().relay();
     c._id = sp->id;
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
@@ -291,6 +291,13 @@ public:
     sp->box = yw::icon(yw::svgpath(init_icon_size, "M1 1 L15 1 L15 15 L1 15 Z"));
     sp->check = yw::icon(yw::svgpath(init_icon_size, "M3 8 L7 12 L13 4 L7 10 Z"));
     return c;
+  }
+
+  static std::expected<checkbox, error> create(derived_from<interface> auto& Parent) {
+    auto res = create();
+    if (!res) return res.error().relay();
+    if (auto attached = res->attach(Parent); !attached) return attached.error().relay();
+    return res;
   }
 
   yw_control_getter_setter(checked, bool);

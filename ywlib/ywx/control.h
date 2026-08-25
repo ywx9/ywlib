@@ -116,6 +116,7 @@ public:
     optional<color> border_color;
     float4 margin = float4::fill(arbitrary_value);
     float4 padding = float4::fill(arbitrary_value);
+    slotid parent_id;
     slotid window_id;
     comptr<ID2D1Geometry> geometry;
     float2 required_size;
@@ -135,10 +136,13 @@ public:
     //-- override functions --//
 
     virtual slotid get_window_id() const noexcept override { return window_id; }
+    virtual void detach_from_parent() noexcept override;
+    virtual void prepare_destroy() noexcept override;
 
     //-- vertual functions --//
 
     virtual void close_child_controls() {}
+    virtual void set_window_id(slotid Window) noexcept { window_id = Window; }
 
     virtual color get_background_color(const interface::slot* Window) const noexcept;
     virtual color get_border_color(const interface::slot* Window) const noexcept;
@@ -279,6 +283,7 @@ public:
     }
 
     void clear_window_state() noexcept; // defined in `window.h`
+    void clear_attachment() noexcept;
 
     template<ui::alignment Al> static std::expected<void, error> draw_arrow(float2 Pos, float2 Size, float Thickness) {
       const auto c = Pos + Size * 0.5f;
@@ -539,25 +544,57 @@ public:
 
 protected:
   template<derived_from<control> Handle>
-  static std::expected<typename Handle::slot*, error> create_control(derived_from<interface> auto& Parent) {
+  static std::expected<typename Handle::slot*, error> create_control() {
     const auto temp_id = make_slot<Handle>();
     const auto sp = get_slot<Handle>(temp_id);
     if (!sp) return std::unexpected(error(errors::slot_creation_failed));
+    sp->id = temp_id;
+    return sp;
+  }
+
+  template<derived_from<control> Handle>
+  static std::expected<typename Handle::slot*, error> create_control(derived_from<interface> auto& Parent) {
+    auto res_sp = create_control<Handle>();
+    if (!res_sp) return res_sp.error().relay();
+    const auto sp = *res_sp;
     const auto psp = get_slot<interface>(Parent.id());
-    if (!psp) return std::unexpected(error(errors::invalid_slotid));
-    if (auto res = psp->attach(temp_id); !res) {
-      slot::slots.erase(temp_id);
+    if (!psp) {
+      destroy_slot(sp->id);
+      return std::unexpected(error(errors::invalid_slotid));
+    }
+    if (auto res = psp->attach(sp->id); !res) {
+      destroy_slot(sp->id);
       return res.error().relay();
     }
-    sp->id = temp_id;
-    sp->window_id = psp->get_window_id();
     return sp;
   }
 
 public:
-  /// detaches this control from its parent and destroys it.
+  bool attached() const noexcept {
+    const auto sp = get_slot(this);
+    return sp && bool(sp->parent_id);
+  }
+
+  std::expected<void, error> attach(derived_from<interface> auto& Parent) noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) return std::unexpected(error(errors::not_initialized));
+    if (sp->parent_id) return std::unexpected(error(errors::invalid_operation, "control already attached"));
+    const auto psp = get_slot<interface>(Parent.id());
+    if (!psp) return std::unexpected(error(errors::invalid_slotid));
+    if (auto res = psp->attach(sp->id); !res) return res.error().relay();
+    return {};
+  }
+
+  std::expected<void, error> detach() noexcept {
+    const auto sp = get_slot(this);
+    if (!sp) return std::unexpected(error(errors::not_initialized));
+    if (!sp->parent_id) return {};
+    sp->detach_from_parent();
+    return {};
+  }
+
   std::expected<void, error> destroy() noexcept {
-    if (auto res = slot::slots.erase(_id); !res) return res.error().relay();
+    destroy_slot(_id);
     _id = {};
     return {};
   }

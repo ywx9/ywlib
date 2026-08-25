@@ -175,14 +175,21 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<button, error> create(derived_from<interface> auto& Parent) {
+  static std::expected<button, error> create() {
     button b;
     button::slot* sp;
-    if (auto res = create_control<button>(Parent)) sp = *res;
+    if (auto res = create_control<button>()) sp = *res;
     else return res.error().relay();
     b._id = sp->id;
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
     return b;
+  }
+
+  static std::expected<button, error> create(derived_from<interface> auto& Parent) {
+    auto res = create();
+    if (!res) return res.error().relay();
+    if (auto attached = res->attach(Parent); !attached) return attached.error().relay();
+    return res;
   }
 
   yw_control_getter_setter(text, yw::text);

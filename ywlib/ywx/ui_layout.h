@@ -16,7 +16,9 @@ public:
     virtual std::expected<void, error> attach(slotid Child) override {
       const auto csp = get_slot<control>(Child);
       if (!csp) return std::unexpected(error(errors::invalid_slotid));
-      csp->window_id = window_id;
+      if (csp->parent_id) return std::unexpected(error(errors::invalid_operation, "control already attached"));
+      csp->parent_id = id;
+      csp->set_window_id(window_id);
       controls.push_back(Child);
       make_messy();
       return {};
@@ -24,16 +26,39 @@ public:
 
     virtual void close_child_controls() override {
       for (const auto& cid : controls)
-        if (const auto csp = get_slot<control>(cid)) {
-          csp->close_child_controls();
-          interface::slot::slots.erase(cid);
-        }
+        if (const auto csp = get_slot<control>(cid)) csp->clear_attachment();
+      controls.clear();
+    }
+
+    virtual void set_window_id(slotid Window) noexcept override {
+      window_id = Window;
+      for (const auto& cid : controls)
+        if (const auto csp = get_slot<control>(cid)) csp->set_window_id(Window);
     }
 
     virtual std::expected<void, error> detach(slotid Child) override {
-      if (const auto csp = get_slot<control>(Child)) csp->clear_window_state();
+      const auto old_size = controls.size();
       controls.erase(std::remove(controls.begin(), controls.end(), Child), controls.end());
-      interface::slot::slots.erase(Child);
+      if (old_size == controls.size())
+        return std::unexpected(error(errors::invalid_operation, "not attached to this control"));
+      if (const auto csp = get_slot<control>(Child)) csp->clear_attachment();
+      else return std::unexpected(error(errors::invalid_slotid));
+      make_messy();
+      return {};
+    }
+
+    std::expected<void, error> replace(slotid From, slotid To) {
+      if (From == To) return {};
+      const auto it = std::ranges::find(controls, From);
+      if (it == controls.end()) return std::unexpected(error(errors::invalid_operation, "not attached to this control"));
+      const auto tsp = get_slot<control>(To);
+      if (!tsp) return std::unexpected(error(errors::invalid_slotid));
+      if (tsp->parent_id) return std::unexpected(error(errors::invalid_operation, "control already attached"));
+      if (const auto fsp = get_slot<control>(From)) fsp->clear_attachment();
+      else return std::unexpected(error(errors::invalid_slotid));
+      tsp->parent_id = id;
+      tsp->set_window_id(window_id);
+      *it = To;
       make_messy();
       return {};
     }
@@ -171,10 +196,10 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<layout, error> create(derived_from<interface> auto& Parent) {
+  static std::expected<layout, error> create() {
     layout l;
     layout::slot* sp;
-    if (auto res = create_control<layout>(Parent)) sp = *res;
+    if (auto res = create_control<layout>()) sp = *res;
     else return res.error().relay();
     l._id = sp->id;
     sp->margin = {};
@@ -183,6 +208,20 @@ public:
     sp->background_color = colors::transparent;
     sp->border_color = colors::transparent;
     return l;
+  }
+
+  static std::expected<layout, error> create(derived_from<interface> auto& Parent) {
+    auto res = create();
+    if (!res) return res.error().relay();
+    if (auto attached = res->attach(Parent); !attached) return attached.error().relay();
+    return res;
+  }
+
+  std::expected<void, error> replace(derived_from<control> auto& From, derived_from<control> auto& To) {
+    const auto sp = get_slot(this);
+    if (!sp) return std::unexpected(error(errors::not_initialized));
+    if (auto res = sp->replace(From.id(), To.id()); !res) return res.error().relay();
+    return {};
   }
 };
 

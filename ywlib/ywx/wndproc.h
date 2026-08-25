@@ -268,9 +268,9 @@ inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
       psp->subwindows.erase(std::remove(psp->subwindows.begin(), psp->subwindows.end(), wid), psp->subwindows.end());
     ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
     if (const auto csp = static_cast<control::slot*>(interface::slot::slots.get(wsp->control_id))) {
-      csp->close_child_controls();
-      interface::slot::slots.erase(wsp->control_id);
+      csp->clear_attachment();
     }
+    wsp->control_id = {};
     wsp->hwnd = 0;
     windows.erase(std::remove(windows.begin(), windows.end(), wid), windows.end());
     if (auto res = interface::slot::slots.erase(wid); !res) res.error().go_off();

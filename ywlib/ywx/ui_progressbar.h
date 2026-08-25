@@ -59,7 +59,8 @@ public:
     }
   };
 
-  using control::operator bool;
+  using control::attached;
+  using control::initialized;
   class proxy : public control::proxy {
     friend class progressbar;
     using control::proxy::proxy;
@@ -157,14 +158,21 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<progressbar, error> create(derived_from<interface> auto& Parent) {
+  static std::expected<progressbar, error> create() {
     progressbar p;
     progressbar::slot* sp;
-    if (auto res = create_control<progressbar>(Parent)) sp = *res;
+    if (auto res = create_control<progressbar>()) sp = *res;
     else return res.error().relay();
     p._id = sp->id;
     sp->policy[sp->orientation == ui::horizontal] = ui::size_policy::fit;
     return p;
+  }
+
+  static std::expected<progressbar, error> create(derived_from<interface> auto& Parent) {
+    auto res = create();
+    if (!res) return res.error().relay();
+    if (auto attached = res->attach(Parent); !attached) return attached.error().relay();
+    return res;
   }
 
   yw_control_getter_setter(value, double1);

@@ -229,7 +229,8 @@ public:
     double value_range() const noexcept { return maximum - minimum; }
   };
 
-  using control::operator bool;
+  using control::attached;
+  using control::initialized;
   class proxy : public control::proxy {
     friend class slider;
     using control::proxy::proxy;
@@ -369,14 +370,21 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<slider, error> create(derived_from<interface> auto& Parent) {
+  static std::expected<slider, error> create() {
     slider s;
     slider::slot* sp;
-    if (auto res = create_control<slider>(Parent)) sp = *res;
+    if (auto res = create_control<slider>()) sp = *res;
     else return res.error().relay();
     s._id = sp->id;
     sp->policy[sp->orientation == ui::horizontal] = ui::size_policy::fit;
     return s;
+  }
+
+  static std::expected<slider, error> create(derived_from<interface> auto& Parent) {
+    auto res = create();
+    if (!res) return res.error().relay();
+    if (auto attached = res->attach(Parent); !attached) return attached.error().relay();
+    return res;
   }
 
   yw_control_getter_setter(value, double1);

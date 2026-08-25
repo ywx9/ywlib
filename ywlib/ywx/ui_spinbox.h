@@ -283,7 +283,8 @@ public:
     }
   };
 
-  using edit::operator bool;
+  using edit::attached;
+  using edit::initialized;
   class proxy : public edit::proxy {
     friend class spinbox;
     using edit::proxy::proxy;
@@ -404,10 +405,10 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<spinbox, error> create(derived_from<interface> auto& Parent) {
+  static std::expected<spinbox, error> create() {
     spinbox s;
     spinbox::slot* sp;
-    if (auto res = create_control<spinbox>(Parent)) sp = *res;
+    if (auto res = create_control<spinbox>()) sp = *res;
     else return res.error().relay();
     s._id = sp->id;
     sp->policy = {ui::free, ui::fit};
@@ -421,6 +422,13 @@ public:
     };
     sp->sync_string();
     return s;
+  }
+
+  static std::expected<spinbox, error> create(derived_from<interface> auto& Parent) {
+    auto res = create();
+    if (!res) return res.error().relay();
+    if (auto attached = res->attach(Parent); !attached) return attached.error().relay();
+    return res;
   }
 
   yw_control_getter_setter(padding, float4);

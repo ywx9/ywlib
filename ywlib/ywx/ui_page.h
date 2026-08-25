@@ -140,10 +140,10 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<page, error> create(derived_from<interface> auto& Parent) {
+  static std::expected<page, error> create() {
     page p;
     page::slot* sp;
-    if (auto res = create_control<page>(Parent)) sp = *res;
+    if (auto res = create_control<page>()) sp = *res;
     else return res.error().relay();
     p._id = sp->id;
     sp->margin = {};
@@ -152,6 +152,13 @@ public:
     sp->background_color = colors::transparent;
     sp->border_color = colors::transparent;
     return p;
+  }
+
+  static std::expected<page, error> create(derived_from<interface> auto& Parent) {
+    auto res = create();
+    if (!res) return res.error().relay();
+    if (auto attached = res->attach(Parent); !attached) return attached.error().relay();
+    return res;
   }
 
   yw_control_getter_setter(active, size_t);

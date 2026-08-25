@@ -63,6 +63,8 @@ public:
     inline static slotset<slot> slots{};
     slotset<slot>::slotid id;
     virtual ~slot() noexcept = default;
+    virtual void detach_from_parent() noexcept {}
+    virtual void prepare_destroy() noexcept { detach_from_parent(); }
     virtual bool attachable() const { return false; }
     virtual std::expected<void, error> attach(slotset<slot>::slotid) {
       return std::unexpected(error(errors::invalid_operation, "Not attachable"));
@@ -81,6 +83,10 @@ public:
 protected:
   slotid _id{};
   explicit interface(slotid Id) : _id(Id) {}
+  static void destroy_slot(slotid Id) noexcept {
+    if (const auto sp = slot::slots.get(Id)) sp->prepare_destroy();
+    if (auto res = slot::slots.erase(Id); !res) res.error().fizzle_out();
+  }
   template<typename H> static slotid make_slot() { return slot::slots.add(std::make_unique<typename H::slot>()); }
   template<typename H> static typename H::slot* get_slot(const H* h) {
     return static_cast<typename H::slot*>(slot::slots.get(h->_id));
@@ -90,20 +96,20 @@ protected:
   }
 
 public:
-  virtual ~interface() noexcept { slot::slots.erase(_id); }
+  virtual ~interface() noexcept { destroy_slot(_id); }
   interface() noexcept = default;
   interface(const interface&) = delete;
   interface& operator=(const interface&) = delete;
   interface(interface&& Other) noexcept : _id(std::exchange(Other._id, {})) {}
   interface& operator=(interface&& Other) noexcept {
     if (this != &Other) {
-      slot::slots.erase(_id);
+      destroy_slot(_id);
       _id = std::exchange(Other._id, {});
     }
     return *this;
   }
   slotid id() const noexcept { return _id; }
-  explicit operator bool() const noexcept { return slot::slots.contains(_id); }
+  bool initialized() const noexcept { return slot::slots.contains(_id); }
 };
 
 /// MARK: wclass

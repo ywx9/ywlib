@@ -392,10 +392,10 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<radiobutton, error> create(derived_from<interface> auto& Parent) {
+  static std::expected<radiobutton, error> create() {
     radiobutton r;
     radiobutton::slot* sp;
-    if (auto res = create_control<radiobutton>(Parent)) sp = *res;
+    if (auto res = create_control<radiobutton>()) sp = *res;
     else return res.error().relay();
     r._id = sp->id;
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
@@ -410,6 +410,13 @@ public:
         init_icon_size,
         "M8 5 C6.343 5 5 6.343 5 8 C5 9.657 6.343 11 8 11 C9.657 11 11 9.657 11 8 C11 6.343 9.657 5 8 5 Z"));
     return r;
+  }
+
+  static std::expected<radiobutton, error> create(derived_from<interface> auto& Parent) {
+    auto res = create();
+    if (!res) return res.error().relay();
+    if (auto attached = res->attach(Parent); !attached) return attached.error().relay();
+    return res;
   }
 
   yw_control_getter_setter(checked_index, size_t);

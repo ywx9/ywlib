@@ -115,15 +115,20 @@ public:
       if (control_id) return std::unexpected(error(errors::invalid_operation, "already has a control"));
       const auto csp = get_slot<control>(Child);
       if (!csp) return std::unexpected(error(errors::invalid_slotid));
-      csp->window_id = id;
+      if (csp->parent_id) return std::unexpected(error(errors::invalid_operation, "control already attached"));
+      csp->parent_id = id;
+      csp->set_window_id(id);
       control_id = Child;
+      messy = true;
       return {};
     }
 
     virtual std::expected<void, error> detach(slotid Child) override {
       if (control_id != Child) return std::unexpected(error(errors::invalid_operation, "not attached to this control"));
-      if (auto res = slots.erase(Child); !res) return res.error().relay();
+      if (const auto csp = get_slot<control>(Child)) csp->clear_attachment();
+      else return std::unexpected(error(errors::invalid_slotid));
       control_id = {};
+      messy = true;
       return {};
     }
 
@@ -1241,6 +1246,25 @@ inline std::expected<void, error> control::slot::draw_overlay(interface::slot* W
     if (auto res = fill_geometry(geometry.get()); !res) return res.error().relay();
   }
   return {};
+}
+
+inline void control::slot::clear_attachment() noexcept {
+  clear_window_state();
+  parent_id = {};
+  set_window_id({});
+  reset_state();
+}
+
+inline void control::slot::detach_from_parent() noexcept {
+  if (!parent_id) return;
+  if (const auto psp = interface::slot::slots.get(parent_id)) {
+    if (auto res = psp->detach(id); !res) res.error().fizzle_out();
+  } else clear_attachment();
+}
+
+inline void control::slot::prepare_destroy() noexcept {
+  close_child_controls();
+  detach_from_parent();
 }
 
 inline void control::slot::clear_window_state() noexcept {

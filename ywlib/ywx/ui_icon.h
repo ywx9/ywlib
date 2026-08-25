@@ -99,14 +99,21 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<icon, error> create(derived_from<interface> auto& Parent) {
+  static std::expected<icon, error> create() {
     icon i;
     icon::slot* sp;
-    if (auto res = create_control<icon>(Parent)) sp = *res;
+    if (auto res = create_control<icon>()) sp = *res;
     else return res.error().relay();
     i._id = sp->id;
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
     return i;
+  }
+
+  static std::expected<icon, error> create(derived_from<interface> auto& Parent) {
+    auto res = create();
+    if (!res) return res.error().relay();
+    if (auto attached = res->attach(Parent); !attached) return attached.error().relay();
+    return res;
   }
 
   yw_control_getter_setter(content, yw::icon);

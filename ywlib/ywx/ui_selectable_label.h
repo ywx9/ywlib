@@ -391,14 +391,21 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<selectable_label, error> create(derived_from<interface> auto& Parent) {
+  static std::expected<selectable_label, error> create() {
     selectable_label l;
     selectable_label::slot* sp;
-    if (auto res = create_control<selectable_label>(Parent)) sp = *res;
+    if (auto res = create_control<selectable_label>()) sp = *res;
     else return res.error().relay();
     l._id = sp->id;
     sp->policy = {ui::size_policy::fit, ui::size_policy::fit};
     return l;
+  }
+
+  static std::expected<selectable_label, error> create(derived_from<interface> auto& Parent) {
+    auto res = create();
+    if (!res) return res.error().relay();
+    if (auto attached = res->attach(Parent); !attached) return attached.error().relay();
+    return res;
   }
 
   yw_control_getter_setter(selection_overlay_color, color);

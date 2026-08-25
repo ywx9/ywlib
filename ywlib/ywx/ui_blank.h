@@ -17,14 +17,21 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<blank, error> create(derived_from<interface> auto& Parent, const source_line& sl = here()) {
+  static std::expected<blank, error> create() {
     blank b;
     blank::slot* sp;
-    if (auto res = create_control<blank>(Parent)) sp = *res;
+    if (auto res = create_control<blank>()) sp = *res;
     else return res.error().relay();
     b._id = sp->id;
     sp->margin = {};
     return b;
+  }
+
+  static std::expected<blank, error> create(derived_from<interface> auto& Parent, const source_line& sl = here()) {
+    auto res = create();
+    if (!res) return res.error().relay();
+    if (auto attached = res->attach(Parent); !attached) return attached.error().relay();
+    return res;
   }
 
 private:

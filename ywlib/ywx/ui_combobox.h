@@ -122,20 +122,20 @@ public:
     std::expected<void, error> apply_dropdown_color_theme(const color_theme& Theme) {
       if (const auto wsp = get_slot<window>(dropdown_window.id())) {
         if (auto res = wsp->set_color_theme(Theme, false); !res) return res.error().relay();
-      } else if (dropdown_window) return std::unexpected(error(errors::invalid_slotid));
+      } else if (dropdown_window.initialized()) return std::unexpected(error(errors::invalid_slotid));
 
       if (const auto lbsp = get_slot<listbox>(dropdown_listbox.id())) {
         lbsp->background_color = Theme.surface_popup;
         lbsp->item_padding = item_padding;
         lbsp->make_messy();
-      } else if (dropdown_listbox) return std::unexpected(error(errors::invalid_slotid));
+      } else if (dropdown_listbox.initialized()) return std::unexpected(error(errors::invalid_slotid));
 
       if (const auto isp = get_slot<ui::icon>(dropdown_icon.id())) {
         isp->background_color = Theme.surface_popup;
         isp->fill_color = Theme.text_muted;
         isp->stroke_color = Theme.text_muted;
         isp->make_dirty();
-      } else if (dropdown_icon) return std::unexpected(error(errors::invalid_slotid));
+      } else if (dropdown_icon.initialized()) return std::unexpected(error(errors::invalid_slotid));
       return {};
     }
 
@@ -145,7 +145,8 @@ public:
     }
 
     std::expected<void, error> open_dropdown() {
-      if (!dropdown_window || !dropdown_listbox) return std::unexpected(error(errors::invalid_slotid));
+      if (!dropdown_window.initialized() || !dropdown_listbox.initialized())
+        return std::unexpected(error(errors::invalid_slotid));
       if (item_count() == 0 || dropdown_window.visible()) return {};
       const auto parent_wsp = get_slot<window>(window_id);
       if (!parent_wsp) return std::unexpected(error(errors::invalid_slotid));
@@ -174,7 +175,7 @@ public:
     }
 
     std::expected<void, error> resize_dropdown_by(float HeightDelta) {
-      if (HeightDelta == 0.0f || !dropdown_window) return {};
+      if (HeightDelta == 0.0f || !dropdown_window.initialized()) return {};
       const auto wsp = get_slot<window>(dropdown_window.id());
       if (!wsp) return std::unexpected(error(errors::invalid_slotid));
       auto next = wsp->size;
@@ -214,7 +215,8 @@ public:
     }
   };
 
-  using control::operator bool;
+  using control::attached;
+  using control::initialized;
   class proxy : public control::proxy {
     friend class combobox;
     using control::proxy::proxy;
@@ -349,10 +351,10 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<combobox, error> create(derived_from<interface> auto& Parent) {
+  static std::expected<combobox, error> create() {
     combobox c;
     combobox::slot* sp;
-    if (auto res = create_control<combobox>(Parent)) sp = *res;
+    if (auto res = create_control<combobox>()) sp = *res;
     else return res.error().relay();
     c._id = sp->id;
     sp->policy = {size_policy::fit, size_policy::fit};
@@ -411,6 +413,13 @@ public:
     };
 
     return c;
+  }
+
+  static std::expected<combobox, error> create(derived_from<interface> auto& Parent) {
+    auto res = create();
+    if (!res) return res.error().relay();
+    if (auto attached = res->attach(Parent); !attached) return attached.error().relay();
+    return res;
   }
 
   yw_control_getter(item_count);

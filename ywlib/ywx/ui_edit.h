@@ -337,15 +337,22 @@ public:
   using selectable_label::font;
   using selectable_label::text;
 
-  static std::expected<edit, error> create(derived_from<interface> auto& Parent) {
+  static std::expected<edit, error> create() {
     edit e;
     edit::slot* sp;
-    if (auto res = create_control<edit>(Parent)) sp = *res;
+    if (auto res = create_control<edit>()) sp = *res;
     else return res.error().relay();
     e._id = sp->id;
     sp->policy = {ui::free, ui::fit};
     sp->text_align = alignment::left;
     return e;
+  }
+
+  static std::expected<edit, error> create(derived_from<interface> auto& Parent) {
+    auto res = create();
+    if (!res) return res.error().relay();
+    if (auto attached = res->attach(Parent); !attached) return attached.error().relay();
+    return res;
   }
 
   yw_control_getter(placeholder_text);
