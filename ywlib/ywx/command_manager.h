@@ -95,7 +95,8 @@ public:
     _undo_stack.pop_back();
     _replaying = true;
     for (auto it = g.commands.rbegin(); it != g.commands.rend(); ++it)
-      if (it->undo) it->undo();
+      if (it->undo)
+        if (auto res = it->undo(); !res) res.error().fizzle_out();
     _replaying = false;
     _redo_stack.push_back(std::move(g));
     return true;
@@ -108,7 +109,8 @@ public:
     _redo_stack.pop_back();
     _replaying = true;
     for (auto& cmd : g.commands)
-      if (cmd.redo) cmd.redo();
+      if (cmd.redo)
+        if (auto res = cmd.redo(); !res) res.error().fizzle_out();
     _replaying = false;
     _undo_stack.push_back(std::move(g));
     trim_undo_stack();

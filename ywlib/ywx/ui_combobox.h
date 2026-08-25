@@ -199,7 +199,7 @@ public:
       text.string(lbsp->items[Index].string());
       make_messy();
       lbsp->make_dirty();
-      if (changed && Notify && change_event) change_event(Index);
+      if (changed && Notify && change_event) call_event(change_event, Index);
       return {};
     }
 
@@ -400,7 +400,7 @@ public:
           if (!lbsp) error(errors::invalid_slotid).go_off();
           sp->text.string(lbsp->items[Index].string());
           sp->make_messy();
-          if (sp->change_event) sp->change_event(Index);
+          if (sp->change_event) sp->call_event(sp->change_event, Index);
         }
         sp->close_dropdown();
       }

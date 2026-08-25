@@ -1,18 +1,16 @@
 #pragma once
-#include "yw/core.h"
+#include "yw/error.h"
 
 namespace yw {
 
 constexpr size_t function_sbo_size = 24;
 
-template<typename R, typename... As> class function {
+template<typename R, typename... As> requires(!specialization_of<remove_cvref<R>, std::expected>) ||
+                                             same_as<typename R::error_type, error> class function {
   static constexpr size_t _sbo_size = function_sbo_size;
   alignas(std::max_align_t) std::byte _storage[_sbo_size]{};
 
-  // function pointer route
   R (*fp)(As...) = nullptr;
-
-  // function object route (SBO only)
   R (*_invoke)(const void* src, As&&... args) = nullptr;
   void (*_destroy)(void* src) = nullptr;
   void (*_move)(void* dst, void* src) = nullptr;
@@ -30,6 +28,14 @@ template<typename R, typename... As> class function {
   }
 
 public:
+  using result_type = decltype([] {
+    using U = remove_cvref<R>;
+    if constexpr (specialization_of<U, std::expected>) return U();
+    else if constexpr (specialization_of<U, std::optional>) return std::expected<typename U::value_type, error>();
+    else if constexpr (specialization_of<U, yw::optional>) return std::expected<typename U::value_type, error>();
+    else return std::expected<R, error>();
+  }());
+
   constexpr function() noexcept = default;
 
   // assigns a function pointer
@@ -111,10 +117,26 @@ public:
 
   ~function() { _reset(); }
 
-  R operator()(As... args) const {
-    if (fp) return fp(std::forward<As>(args)...);
-    if (!_invoke) throw std::bad_function_call();
-    return _invoke(_storage, std::forward<As>(args)...);
+  result_type operator()(As... args) const {
+    if (!fp && !_invoke) return std::unexpected(error(errors::not_initialized, "empty function"));
+    using U = remove_cvref<R>;
+    if constexpr (specialization_of<U, std::expected>) {
+      if (fp) return fp(static_cast<As&&>(args)...);
+      else return _invoke(_storage, static_cast<As&&>(args)...);
+    } else if constexpr (specialization_of<U, std::optional> || specialization_of<U, yw::optional>) {
+      if (fp) {
+        if (auto res = fp(static_cast<As&&>(args)...)) return std::move(*res);
+        else return std::unexpected(error(errors::operation_failed, "function returned empty optional"));
+      } else if (auto res = _invoke(_storage, static_cast<As&&>(args)...)) return std::move(*res);
+      else return std::unexpected(error(errors::operation_failed, "function returned empty optional"));
+    } else if constexpr (is_void<R>) {
+      if (fp) fp(static_cast<As&&>(args)...);
+      else _invoke(_storage, static_cast<As&&>(args)...);
+      return {};
+    } else {
+      if (fp) return fp(static_cast<As&&>(args)...);
+      return _invoke(_storage, static_cast<As&&>(args)...);
+    }
   }
 
   explicit operator bool() const noexcept { return fp || _invoke; }

@@ -6,7 +6,7 @@ namespace {
 
 constexpr int2 board_cells = {28, 20};
 constexpr float cell = 24.0f;
-constexpr float2 board_size = float2(board_cells) * cell;
+constexpr float2 board_size = board_cells * cell;
 constexpr double step_seconds = 0.15;
 
 struct snake_part {

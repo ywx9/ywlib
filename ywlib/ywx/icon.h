@@ -60,7 +60,7 @@ public:
 
 /// MARK: draw_icon
 
-std::expected<void, error> draw_icon(float2 Pos, const icon& i) {
+inline std::expected<void, error> draw_icon(float2 Pos, const icon& i) {
   if (i.is_bitmap()) {
     if (auto res = draw_bitmap(Pos, i.get_bitmap())) return {};
     else return res.error().relay();
@@ -75,7 +75,7 @@ std::expected<void, error> draw_icon(float2 Pos, const icon& i) {
   } else return std::unexpected(error(errors::invalid_operation, "empty icon"));
 }
 
-std::expected<void, error> draw_icon(float2 Pos, float2 Size, const icon& i) {
+inline std::expected<void, error> draw_icon(float2 Pos, float2 Size, const icon& i) {
   if (i.is_bitmap()) {
     if (auto res = draw_bitmap(Pos, Size, i.get_bitmap())) return {};
     else return res.error().relay();

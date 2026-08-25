@@ -83,9 +83,9 @@ private:
   }
 
 public:
-  generator(uint64_t Seed = 5489ull) noexcept { seed(Seed); }
+  constexpr generator(uint64_t Seed = 5489ull) noexcept { seed(Seed); }
 
-  void seed(uint64_t Seed) noexcept {
+  constexpr void seed(uint64_t Seed) noexcept {
     state[0] = Seed;
     for (size_t i{1}; i < state_size; ++i)
       state[i] = 6364136223846793005ull * (state[i - 1] ^ (state[i - 1] >> 62)) + i;
@@ -128,7 +128,7 @@ public:
   }
 };
 
-inline generator default_generator{};
+constinit inline generator default_generator{};
 
 template<value_type T> T gen() noexcept { return default_generator.gen<T>(); }
 template<value_type T> T gen(T Max) noexcept { return default_generator.gen<T>(Max); }

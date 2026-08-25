@@ -176,27 +176,34 @@ public:
     virtual float2 get_minimum_size() const { return minimum_size; }
     virtual std::expected<float2, error> get_necessary_size() const { return calc_necessary_size_by_policy({}); }
 
-    virtual bool handle_button_event(yw::button_event e) {
-      if (button_event) return button_event(e);
+    template<typename... As>
+    static bool call_event(const function<bool, As...>& Event, std::type_identity_t<As>... args) {
+      if (!Event) return false;
+      if (auto res = Event(static_cast<As&&>(args)...)) return *res;
+      else res.error().fizzle_out();
       return false;
     }
+
+    virtual bool handle_button_event(yw::button_event e) { return call_event(button_event, e); }
     virtual bool handle_button_event(interface::slot*, yw::button_event e) { return handle_button_event(e); }
 
     virtual bool handle_char_event(wchar_t c) { return false; }
     virtual bool handle_click_event(yw::button_event e) { return false; }
     virtual bool handle_double_click_event(yw::button_event e) { return false; }
-    virtual bool handle_drag_event(yw::drag_event e) { return drag_event ? drag_event(e) : false; }
+    virtual bool handle_drag_event(yw::drag_event e) { return call_event(drag_event, e); }
     virtual bool handle_focus_event(yw::focus_event e) {
       make_dirty();
-      return focus_event ? focus_event(e) : false;
+      return call_event(focus_event, e);
     }
-    virtual bool handle_hover_event(yw::hover_event e) { return hover_event ? hover_event(e) : false; }
-    virtual bool handle_key_event(yw::key_event e) { return key_event ? key_event(e) : false; }
-    virtual bool handle_pointer_event(yw::pointer_event e) { return pointer_event ? pointer_event(e) : false; }
-    virtual bool handle_wheel_event(yw::wheel_event e) { return wheel_event ? wheel_event(e) : false; }
+    virtual bool handle_hover_event(yw::hover_event e) { return call_event(hover_event, e); }
+    virtual bool handle_key_event(yw::key_event e) { return call_event(key_event, e); }
+    virtual bool handle_pointer_event(yw::pointer_event e) { return call_event(pointer_event, e); }
+    virtual bool handle_wheel_event(yw::wheel_event e) { return call_event(wheel_event, e); }
     virtual bool handle_char_event(interface::slot*, wchar_t c) { return handle_char_event(c); }
     virtual bool handle_click_event(interface::slot*, yw::button_event e) { return handle_click_event(e); }
-    virtual bool handle_double_click_event(interface::slot*, yw::button_event e) { return handle_double_click_event(e); }
+    virtual bool handle_double_click_event(interface::slot*, yw::button_event e) {
+      return handle_double_click_event(e);
+    }
     virtual bool handle_drag_event(interface::slot*, yw::drag_event e) { return handle_drag_event(e); }
     virtual bool handle_focus_event(interface::slot*, yw::focus_event e) { return handle_focus_event(e); }
     virtual bool handle_hover_event(interface::slot*, yw::hover_event e) { return handle_hover_event(e); }
@@ -318,11 +325,11 @@ public:
     float2 get_bounds() const { return size + margin.xy() + margin.zw(); }
     std::expected<const ui::color_theme*, error> get_color_theme() const noexcept; // defined in `window.h`
     std::expected<const ui::color_theme*, error> get_color_theme(const interface::slot* Window) const noexcept;
-    std::expected<command_manager*, error> get_command_manager() const noexcept;   // defined in `window.h`
-    bool is_captured() const noexcept;                                             // defined in `window.h`
-    bool is_focused() const noexcept;                                              // defined in `window.h`
-    bool is_hovered() const noexcept;                                              // defined in `window.h`
-    void make_dirty() const noexcept;                                              // defined in `window.h`
+    std::expected<command_manager*, error> get_command_manager() const noexcept; // defined in `window.h`
+    bool is_captured() const noexcept;                                           // defined in `window.h`
+    bool is_focused() const noexcept;                                            // defined in `window.h`
+    bool is_hovered() const noexcept;                                            // defined in `window.h`
+    void make_dirty() const noexcept;                                            // defined in `window.h`
     void make_geometry_dirty() { geometry_dirty = true, make_dirty(); }
     void make_messy() const noexcept; // defined in `window.h`
     void sync_layout() noexcept;      // defined in `window.h`
@@ -384,8 +391,12 @@ public:
     bool visible() const&& noexcept { return _slot->visible; }
     bool focused() const&& noexcept { return _slot->is_focused(); }
     bool hovered() const&& noexcept { return _slot->is_hovered(); }
-    color background_color() const&& noexcept { return _slot->get_background_color(interface::slot::slots.get(_slot->window_id)); }
-    color border_color() const&& noexcept { return _slot->get_border_color(interface::slot::slots.get(_slot->window_id)); }
+    color background_color() const&& noexcept {
+      return _slot->get_background_color(interface::slot::slots.get(_slot->window_id));
+    }
+    color border_color() const&& noexcept {
+      return _slot->get_border_color(interface::slot::slots.get(_slot->window_id));
+    }
     float4 margin() const&& noexcept { return _slot->margin; }
     float4 padding() const&& noexcept { return _slot->padding; }
     float2 pos() const&& noexcept { return _slot->pos; }
@@ -401,6 +412,7 @@ public:
     const auto& key_event() const&& noexcept { return _slot->key_event; }
     const auto& pointer_event() const&& noexcept { return _slot->pointer_event; }
     const auto& wheel_event() const&& noexcept { return _slot->wheel_event; }
+    const auto& tooltip() const&& noexcept { return _slot->tooltip; }
     ui::alignment align() const&& noexcept { return _slot->align; }
     vector2<ui::size_policy> policy() const&& noexcept { return _slot->policy; }
     const auto& geometry() const&& noexcept { return _slot->geometry; }
@@ -529,6 +541,11 @@ public:
       return std::move(Self);
     }
 
+    auto tooltip(this auto&& Self, string<wchar_t> Tooltip) noexcept {
+      Self._slot->tooltip = std::move(Tooltip);
+      return std::move(Self);
+    }
+
     auto align(this auto&& Self, ui::alignment Align) noexcept {
       Self._slot->align = Align;
       Self._geometry_dirty = true;
@@ -543,8 +560,7 @@ public:
   };
 
 protected:
-  template<derived_from<control> Handle>
-  static std::expected<typename Handle::slot*, error> create_control() {
+  template<derived_from<control> Handle> static std::expected<typename Handle::slot*, error> create_control() {
     const auto temp_id = make_slot<Handle>();
     const auto sp = get_slot<Handle>(temp_id);
     if (!sp) return std::unexpected(error(errors::slot_creation_failed));
@@ -609,16 +625,16 @@ public:
     sp->sync_layout();
   }
 
-#define yw_control_getter(Prop)                                         \
-  decltype(auto) Prop(this const auto& Self) noexcept {                 \
+#define yw_control_getter(Prop)                                                  \
+  decltype(auto) Prop(this const auto& Self) noexcept {                          \
     return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).Prop(); \
   }
 
-#define yw_control_getter_setter(Prop, ...)                                                              \
-  decltype(auto) Prop(this const auto& Self) noexcept {                                                  \
+#define yw_control_getter_setter(Prop, ...)                                                                       \
+  decltype(auto) Prop(this const auto& Self) noexcept {                                                           \
     return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).Prop();                                  \
-  }                                                                                                      \
-  auto Prop(this auto& Self, __VA_ARGS__ Value) noexcept {                                               \
+  }                                                                                                               \
+  auto Prop(this auto& Self, __VA_ARGS__ Value) noexcept {                                                        \
     return typename remove_cvref<decltype(Self)>::proxy(get_slot(&Self)).Prop(static_cast<__VA_ARGS__&&>(Value)); \
   }
 
@@ -649,6 +665,7 @@ public:
   yw_control_getter_setter(key_event, function<bool, yw::key_event>);
   yw_control_getter_setter(pointer_event, function<bool, yw::pointer_event>);
   yw_control_getter_setter(wheel_event, function<bool, yw::wheel_event>);
+  yw_control_getter_setter(tooltip, string<wchar_t>);
   yw_control_getter_setter(align, ui::alignment);
   yw_control_getter_setter(policy, vector2<ui::size_policy>);
   yw_control_getter(geometry);

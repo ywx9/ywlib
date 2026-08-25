@@ -238,7 +238,7 @@ public:
       if (Index >= items.size() || checked_index == Index) return true;
       checked_index = Index;
       make_dirty();
-      return change_event ? change_event(checked_index) : true;
+      return change_event ? call_event(change_event, checked_index) : true;
     }
 
     void move_selection(bool Backward) {

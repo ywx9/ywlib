@@ -224,7 +224,7 @@ public:
       selected_index = Index;
       ensure_visible(Index);
       make_dirty();
-      return Notify && change_event ? change_event(selected_index) : true;
+      return Notify && change_event ? call_event(change_event, selected_index) : true;
     }
 
     float content_height() const noexcept {

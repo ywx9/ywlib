@@ -211,6 +211,14 @@ inline LRESULT __stdcall wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
   if (!wsp) return ::DefWindowProcW(hwnd, msg, wp, lp);
   switch (msg) {
 
+  case WM_NCHITTEST:
+    if (wsp->exstyle & WS_EX_TRANSPARENT) return HTTRANSPARENT;
+    return ::DefWindowProcW(hwnd, msg, wp, lp);
+
+  case WM_MOUSEACTIVATE:
+    if (wsp->exstyle & WS_EX_NOACTIVATE) return MA_NOACTIVATE;
+    return ::DefWindowProcW(hwnd, msg, wp, lp);
+
   case WM_MOUSEMOVE: return internal::handle_wm_pointer<WM_MOUSEMOVE>(wsp, wp, lp);
   case WM_MOUSELEAVE: return internal::handle_wm_pointer<WM_MOUSELEAVE>(wsp, wp, lp);
 

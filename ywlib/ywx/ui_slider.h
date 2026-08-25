@@ -178,7 +178,7 @@ public:
       if (value == next) return true;
       value = next;
       make_dirty();
-      return Notify && change_event ? change_event(value) : true;
+      return Notify && change_event ? call_event(change_event, value) : true;
     }
 
     bool step_by(int Direction, int Multiplier = 1) noexcept {

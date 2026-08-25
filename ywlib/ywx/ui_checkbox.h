@@ -172,7 +172,7 @@ public:
     bool toggle() {
       checked = !checked;
       make_dirty();
-      return change_event ? change_event(checked) : true;
+      return change_event ? call_event(change_event, checked) : true;
     }
   };
 
@@ -204,7 +204,8 @@ public:
       if (Self._get_slot()->checked == Checked) return std::move(Self);
       Self._get_slot()->checked = Checked;
       Self._dirty = true;
-      if (Self._get_slot()->change_event) Self._get_slot()->change_event(Self._get_slot()->checked);
+      if (Self._get_slot()->change_event)
+        Self._get_slot()->call_event(Self._get_slot()->change_event, Self._get_slot()->checked);
       return std::move(Self);
     }
 

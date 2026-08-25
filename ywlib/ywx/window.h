@@ -14,6 +14,18 @@ template<typename T> concept window_options_like = requires(T t) {
   { t.get_exstyle() } -> convertible_to<DWORD>;
 };
 
+struct custom_window_options {
+  string<wchar_t> title{};
+  optional<int2> pos{};
+  optional<int2> size{};
+  DWORD style = WS_OVERLAPPEDWINDOW;
+  DWORD exstyle = WS_EX_ACCEPTFILES;
+  bool topmost = false;
+  const string<wchar_t>& get_title() const noexcept { return title; }
+  DWORD get_style() const noexcept { return style; }
+  DWORD get_exstyle() const noexcept { return exstyle; }
+};
+
 class window : public interface {
 public:
   struct options {
@@ -53,15 +65,15 @@ public:
     color background_color = colors::white;
 
     color tooltip_background_color = color(0.99f, 0.98f, 0.96f, 0.8f);
-    color tooltip_border_color = colors::black;
     color tooltip_text_color = colors::black;
     float4 tooltip_padding = float4::fill(arbitrary_value);
-    float2 tooltip_radius = float2::fill(arbitrary_value);
     float2 tooltip_offset = float2::fill(arbitrary_value * 2);
     float tooltip_border_thickness = 0.5f;
     font_config tooltip_font = font_config{.size = 12.0f};
     double tooltip_delay = 0.5;
     text tooltip_text{};
+    slotid tooltip_window_id{};
+    ui::label tooltip_label{};
 
     slotid control_id{};
     slotid focused_control_id{};
@@ -140,7 +152,6 @@ public:
       color_theme = Theme;
       background_color = Theme.canvas;
       tooltip_background_color = color(Theme.surface_popup, 0.95f);
-      tooltip_border_color = Theme.outline;
       tooltip_text_color = Theme.text;
       focus_overlay_color = Theme.accent;
       hover_overlay_color = color(Theme.accent, ui::default_overlay_opacity.hover);
@@ -174,6 +185,11 @@ public:
     }
 
     void hide_tooltip() noexcept {
+      if (const auto twsp = get_slot<window>(tooltip_window_id); twsp && twsp->hwnd && twsp->visible) {
+        twsp->clear_window_state();
+        twsp->visible = false;
+        ::ShowWindow(twsp->hwnd, SW_HIDE);
+      }
       tooltip_control_id = {};
       tooltip_visible = false;
       tooltip_resolved = false;
@@ -232,6 +248,36 @@ public:
       track_mouse_event.hwndTrack = nullptr;
       hide_tooltip();
       update_ime_window();
+    }
+
+    std::expected<window::slot*, error> ensure_tooltip_window() {
+      if (const auto twsp = get_slot<window>(tooltip_window_id)) {
+        if (tooltip_label.initialized()) return twsp;
+        return std::unexpected(error(errors::invalid_slotid));
+      }
+
+      window::slot* twsp;
+      if (auto res = create(
+            custom_window_options{
+              .style = WS_POPUP,
+              .exstyle = WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
+              .topmost = true},
+            id))
+        twsp = *res;
+      else return res.error().relay();
+      tooltip_window_id = twsp->id;
+      twsp->background_color = colors::transparent;
+
+      if (auto res = ui::label::create()) tooltip_label = std::move(*res);
+      else return res.error().relay();
+      if (auto res = twsp->attach(tooltip_label.id()); !res) return res.error().relay();
+
+      const auto lsp = get_slot<ui::label>(tooltip_label.id());
+      if (!lsp) return std::unexpected(error(errors::invalid_slotid));
+      lsp->margin = {};
+      lsp->radius = {};
+      lsp->policy = {ui::free, ui::free};
+      return twsp;
     }
 
     void update_ime_window() noexcept {
@@ -305,29 +351,43 @@ public:
       tooltip_resolved = true;
       const auto csp = get_slot<control>(tooltip_control_id);
       if (!csp || csp->tooltip.empty()) return {};
-      if (auto res = text::create(csp->tooltip, tooltip_font)) tooltip_text = std::move(*res);
+
+      window::slot* twsp;
+      if (auto res = ensure_tooltip_window()) twsp = *res;
       else return res.error().relay();
+
+      const auto lsp = get_slot<ui::label>(tooltip_label.id());
+      if (!lsp) return std::unexpected(error(errors::invalid_slotid));
+      lsp->text.string(string<wchar_t>(csp->tooltip));
+      lsp->text.font(tooltip_font);
+      lsp->text_color = tooltip_text_color;
+      lsp->background_color = tooltip_background_color;
+      lsp->padding = tooltip_padding;
+      lsp->border_thickness = tooltip_border_thickness;
+      lsp->make_messy();
+
+      twsp->fit_to_necessary_size = true;
+      if (auto res = twsp->update_layout(); !res) return res.error().relay();
+
+      const auto desktop = desktop_client_size();
+      auto tooltip_pos = get_client_origin() + int2(
+                                               int(yw::round(tooltip_anchor_pos.x + tooltip_offset.x)),
+                                               int(yw::round(tooltip_anchor_pos.y + tooltip_offset.y)));
+      tooltip_pos.x = yw::max(0, yw::min(tooltip_pos.x, int(desktop.x) - int(twsp->size.x)));
+      tooltip_pos.y = yw::max(0, yw::min(tooltip_pos.y, int(desktop.y) - int(twsp->size.y)));
+      twsp->pos = tooltip_pos;
+      const auto bounds = twsp->get_bounds();
+      win32_bool_test(
+        ::SetWindowPos, twsp->hwnd, HWND_TOPMOST, tooltip_pos.x, tooltip_pos.y, bounds.x, bounds.y,
+        SWP_NOACTIVATE);
+      if (auto res = twsp->sync_redraw(); !res) return res.error().relay();
+      twsp->visible = true;
+      ::ShowWindow(twsp->hwnd, SW_SHOWNOACTIVATE);
       tooltip_visible = true;
       return {};
     }
 
     std::expected<void, error> draw_tooltip() const {
-      if (!tooltip_visible || !tooltip_text) return {};
-      auto pos = tooltip_anchor_pos + tooltip_offset;
-      const auto size = tooltip_text.size() + tooltip_padding.xy() + tooltip_padding.zw();
-      pos.x = yw::min(pos.x, float(this->size.x) - size.x);
-      pos.y = yw::min(pos.y, float(this->size.y) - size.y);
-      if (tooltip_background_color.a > 0.0f) {
-        brush::color(tooltip_background_color);
-        if (auto res = fill_round_rectangle(pos, size, tooltip_radius); !res) return res.error().relay();
-      }
-      if (auto res = draw_text(pos + tooltip_padding.xy(), tooltip_text, tooltip_text_color); !res)
-        return res.error().relay();
-      if (tooltip_border_color.a > 0.0f && tooltip_border_thickness > 0.0f) {
-        brush::color(tooltip_border_color);
-        if (auto res = stroke_round_rectangle(pos, size, tooltip_radius, tooltip_border_thickness); !res)
-          return res.error().relay();
-      }
       return {};
     }
 
@@ -343,7 +403,8 @@ public:
       else return res.error().relay();
       if (auto res = bitmap::create(size)) controllayer = std::move(*res);
       else return res.error().relay();
-      if (resize_event) resize_event(size);
+      if (resize_event)
+        if (auto res = resize_event(size); !res) return res.error().relay();
       return {};
     }
 
@@ -393,10 +454,9 @@ public:
       } else if (auto res = rendertarget.begin_draw(background_color)) d = std::move(*res);
       else return res.error().relay();
       if (auto rr = draw_bitmap({}, controllayer); !rr) return rr.error().relay();
-      if (auto tr = update_tooltip(Time); !tr) return tr.error().relay();
-      if (auto tt = draw_tooltip(); !tt) return tt.error().relay();
       if (auto res = d.close(); !res) return res.error().relay();
       hresult_test(swapchain->Present, 1, 0);
+      if (auto tr = update_tooltip(Time); !tr) return tr.error().relay();
       messy = false, dirty = false, drawn = false;
       for (const auto& subwin_id : subwindows)
         if (const auto swsp = get_slot<window>(subwin_id))
@@ -802,12 +862,6 @@ public:
     return sp->tooltip_background_color;
   }
 
-  const auto& tooltip_border_color() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->tooltip_border_color;
-  }
-
   const auto& tooltip_text_color() const noexcept {
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
@@ -818,12 +872,6 @@ public:
     const auto sp = get_slot(this);
     if (!sp) error(errors::invalid_slotid).go_off();
     return sp->tooltip_padding;
-  }
-
-  const auto& tooltip_radius() const noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->tooltip_radius;
   }
 
   const auto& tooltip_offset() const noexcept {
@@ -1017,16 +1065,6 @@ public:
     return *this;
   }
 
-  auto& tooltip_border_color(const color& c) noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return *this;
-    }
-    sp->tooltip_border_color = c;
-    return *this;
-  }
-
   auto& tooltip_text_color(const color& c) noexcept {
     const auto sp = get_slot(this);
     if (!sp) {
@@ -1044,16 +1082,6 @@ public:
       return *this;
     }
     sp->tooltip_padding = v;
-    return *this;
-  }
-
-  auto& tooltip_radius(float2 v) noexcept {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return *this;
-    }
-    sp->tooltip_radius = v;
     return *this;
   }
 
@@ -1349,15 +1377,4 @@ inline void control::slot::sync_layout() noexcept {
   if (auto res = wsp->update_layout(); !res) res.error().fizzle_out();
 }
 
-struct custom_window_options {
-  string<wchar_t> title{};
-  optional<int2> pos{};
-  optional<int2> size{};
-  DWORD style = WS_OVERLAPPEDWINDOW;
-  DWORD exstyle = WS_EX_ACCEPTFILES;
-  bool topmost = false;
-  const string<wchar_t>& get_title() const noexcept { return title; }
-  DWORD get_style() const noexcept { return style; }
-  DWORD get_exstyle() const noexcept { return exstyle; }
-};
 } // namespace yw

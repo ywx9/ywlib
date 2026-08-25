@@ -50,7 +50,7 @@ public:
 
     virtual bool handle_char_event(wchar_t c) override {
       if (!enabled || readonly || c < 0x20 || c == 0x7f || c == L'\r' || c == L'\n' || c == L'\t') return false;
-      if (filter && !filter(c)) return true;
+      if (filter && !call_event(filter, c)) return true;
       if (auto res = replace(selected_range(), string_view<wchar_t>(&c, 1), true); !res) res.error().go_off();
       return true;
     }
@@ -61,7 +61,7 @@ public:
       if (!e.down) return true;
       if (readonly) return selectable_label::slot::handle_key_event(e);
       if (e.key == keys::enter) {
-        return enter_event ? enter_event(e) : true;
+        return enter_event ? call_event(enter_event, e) : true;
       }
       if (e.mods.ctrl) {
         if (e.key == keys::backspace) {
@@ -121,7 +121,7 @@ public:
       yw::string<wchar_t> result;
       result.reserve(Value.size());
       for (const auto c : Value)
-        if (!filter || filter(c)) result.push_back(c);
+        if (!filter || call_event(filter, c)) result.push_back(c);
       const auto limited = limited_value(Range, result);
       if (limited.size() == result.size()) return result;
       return yw::string<wchar_t>(limited);
@@ -140,7 +140,7 @@ public:
       const auto next_pos = static_cast<uint32_t>(Range.x + insert_length);
       caret = anchor = PlaceCaretAfter ? next_pos : Range.x;
       make_messy();
-      if (!readonly && change_event) change_event(text.string());
+      if (!readonly && change_event) call_event(change_event, text.string());
       return {};
     }
 
@@ -316,7 +316,7 @@ public:
       Self._get_slot()->anchor = yw::clamp(Self._get_slot()->anchor, 0, Self._get_slot()->text.string().size());
       Self._messy = true;
       if (changed && !Self._get_slot()->readonly && Self._get_slot()->change_event)
-        Self._get_slot()->change_event(Self._get_slot()->text.string());
+        Self._get_slot()->call_event(Self._get_slot()->change_event, Self._get_slot()->text.string());
       return std::move(Self);
     }
 

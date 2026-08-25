@@ -101,7 +101,7 @@ public:
     //-- vertual functions --//
 
     virtual bool invoke(yw::button_event e) {
-      return click_event ? click_event(e) : true;
+      return click_event ? call_event(click_event, e) : true;
     }
   };
 

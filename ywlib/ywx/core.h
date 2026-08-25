@@ -47,7 +47,9 @@ inline class com_list_to_release {
 public:
   ~com_list_to_release() { release(); }
   void release() {
-    for (const auto& func : _functions | std::views::reverse) func();
+    for (const auto& func : _functions | std::views::reverse)
+      // if (auto res = func(); !res) res.error().fizzle_out();
+      func();
   }
   void clear() { _functions.clear(); }
   void push(function<void> func) { _functions.push_back(func); }
@@ -514,7 +516,7 @@ class wic {
   inline static void* ptr = nullptr;
 
 public:
-  struct slot : general_slot {
+  struct slot {
     ::IWICImagingFactory2* factory{};
 
     slot() {

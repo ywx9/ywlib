@@ -426,12 +426,12 @@ template<std::regular T> struct vector<T, 2> {
   constexpr T& operator[](integral auto i) noexcept {
     const auto ii = ((i % 2) + 2) % 2;
     if (!std::is_constant_evaluated()) return *(&x + ii);
-    return ii == 0 ? x : y;
+    else return ii == 0 ? x : y;
   }
-  const T& operator[](integral auto i) const noexcept {
+  constexpr const T& operator[](integral auto i) const noexcept {
     const auto ii = ((i % 2) + 2) % 2;
     if (!std::is_constant_evaluated()) return *(&x + ii);
-    return ii == 0 ? x : y;
+    else return ii == 0 ? x : y;
   }
 
   template<size_t I> requires(I < 2) constexpr T& get() & noexcept { return select<I>(x, y); }

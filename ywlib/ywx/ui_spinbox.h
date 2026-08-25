@@ -254,7 +254,7 @@ public:
       }
       value = next;
       sync_string();
-      return Notify && change_event ? change_event(value) : true;
+      return Notify && change_event ? call_event(change_event, value) : true;
     }
 
     T stepped_value(T Base, int Direction) const noexcept {
