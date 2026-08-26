@@ -8,6 +8,20 @@ template<typename T> struct circle {
   T radius{};
 };
 
+template<typename T> struct segment {
+  vector2<T> a{};
+  vector2<T> b{};
+
+  constexpr vector2<T> vector() const noexcept { return b - a; }
+  constexpr T squared_length() const noexcept { return vector().squared_length(); }
+  constexpr T length() const noexcept { return vector().length(); }
+};
+
+template<typename T> struct capsule {
+  segment<T> line{};
+  T radius{};
+};
+
 template<typename T> struct aabb {
   vector2<T> min{};
   vector2<T> max{};
@@ -49,6 +63,14 @@ template<typename T> constexpr vector2<T> closest_point(vector2<T> point, const 
   };
 }
 
+template<typename T> constexpr vector2<T> closest_point(vector2<T> point, const segment<T>& s) noexcept {
+  const auto ab = s.b - s.a;
+  const auto len2 = ab.squared_length();
+  if (len2 <= T(0)) return s.a;
+  const auto t = yw::clamp(dot(point - s.a, ab) / len2, T(0), T(1));
+  return s.a + ab * t;
+}
+
 template<typename T> constexpr bool overlaps(const circle<T>& a, const circle<T>& b) noexcept {
   const auto r = a.radius + b.radius;
   return (a.center - b.center).squared_length() <= r * r;
@@ -57,6 +79,12 @@ template<typename T> constexpr bool overlaps(const circle<T>& a, const circle<T>
 template<typename T> constexpr bool overlaps(const circle<T>& c, const aabb<T>& box) noexcept {
   const auto p = closest_point(c.center, box);
   return (c.center - p).squared_length() <= c.radius * c.radius;
+}
+
+template<typename T> constexpr bool overlaps(const circle<T>& c, const capsule<T>& cap) noexcept {
+  const auto p = closest_point(c.center, cap.line);
+  const auto r = c.radius + cap.radius;
+  return (c.center - p).squared_length() <= r * r;
 }
 
 template<typename T> constexpr vector2<T> integrate(vector2<T> position, vector2<T> velocity, T dt) noexcept {
@@ -72,6 +100,20 @@ template<typename T> constexpr contact2<T> circle_contact(const circle<T>& a, co
   const auto distance2 = delta.squared_length();
   const auto radius = a.radius + b.radius;
   if (distance2 <= T(0)) return {{T(1), T(0)}, radius};
+  const auto distance = yw::sqrt(distance2);
+  return {delta / distance, radius - distance};
+}
+
+template<typename T> constexpr contact2<T> circle_contact(const circle<T>& c, const capsule<T>& cap) noexcept {
+  const auto p = closest_point(c.center, cap.line);
+  const auto delta = c.center - p;
+  const auto distance2 = delta.squared_length();
+  const auto radius = c.radius + cap.radius;
+  if (distance2 <= T(0)) {
+    auto n = perp(cap.line.vector()).normalized();
+    if (n.squared_length() <= T(0)) n = {T(1), T(0)};
+    return {n, radius};
+  }
   const auto distance = yw::sqrt(distance2);
   return {delta / distance, radius - distance};
 }
@@ -96,6 +138,33 @@ template<typename T> constexpr void resolve_collision(circle_body<T>& a, circle_
   const auto impulse = contact.normal * (-(T(1) + restitution) * separating_speed / inv_mass_sum);
   a.velocity -= impulse * inv_mass_a;
   b.velocity += impulse * inv_mass_b;
+}
+
+template<typename T>
+constexpr void resolve_static_collision(
+  circle_body<T>& body, const contact2<T>& contact, vector2<T> surface_velocity = {}, T restitution = T(1)) noexcept {
+  if (contact.penetration <= T(0)) return;
+
+  body.position += contact.normal * contact.penetration;
+  const auto relative_velocity = body.velocity - surface_velocity;
+  const auto separating_speed = dot(relative_velocity, contact.normal);
+  if (separating_speed >= T(0)) return;
+
+  body.velocity += contact.normal * (-(T(1) + restitution) * separating_speed);
+}
+
+template<typename T>
+constexpr void resolve_collision(
+  circle_body<T>& body, const circle<T>& obstacle, vector2<T> surface_velocity = {}, T restitution = T(1)) noexcept {
+  const auto contact = circle_contact(obstacle, circle<T>{body.position, body.radius});
+  resolve_static_collision(body, contact, surface_velocity, restitution);
+}
+
+template<typename T>
+constexpr void resolve_collision(
+  circle_body<T>& body, const capsule<T>& obstacle, vector2<T> surface_velocity = {}, T restitution = T(1)) noexcept {
+  const auto contact = circle_contact(circle<T>{body.position, body.radius}, obstacle);
+  resolve_static_collision(body, contact, surface_velocity, restitution);
 }
 
 template<typename T> constexpr void resolve_bounds(circle_body<T>& body, const aabb<T>& bounds, T restitution = T(1)) noexcept {
