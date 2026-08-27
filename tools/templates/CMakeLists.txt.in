@@ -49,6 +49,7 @@ if("@LIBRARY@" STREQUAL "ywxlib")
   target_compile_definitions(${PROJECT_NAME} PRIVATE
     UNICODE
     _UNICODE
+    YW_DEFAULT_BACKEND=gpu
   )
 
   target_link_libraries(${PROJECT_NAME} PRIVATE

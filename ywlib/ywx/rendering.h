@@ -85,7 +85,9 @@ public:
       }(make_sequence<0, num_uav>());
       d3d::context()->OMSetRenderTargetsAndUnorderedAccessViews(
         uint32_t(num_rtv), rtv.data(), dsv, uint32_t(num_rtv), uint32_t(num_uav), buf.data(), nullptr);
-    } else d3d::context()->OMSetRenderTargets(uint32_t(num_rtv), rtv.data(), dsv);
+    } else
+      d3d::context()->OMSetRenderTargetsAndUnorderedAccessViews(
+        uint32_t(num_rtv), rtv.data(), dsv, num_rtv, 0, nullptr, nullptr);
     rendering r{};
     r._active = true;
     r._num_rtv = uint32_t(num_rtv);

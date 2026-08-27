@@ -171,41 +171,59 @@ template<typename T> constant_buffer(const T&) -> constant_buffer<T>;
 /// MARK: structured_buffer
 
 template<typename T, bool RW = false> class structured_buffer : public buffer<T> {
-  using resource_view_type = select_type<RW, ::ID3D11UnorderedAccessView, ::ID3D11ShaderResourceView>;
-
 public:
   struct slot : buffer<T>::slot {
-    comptr<resource_view_type> resource_view{};
+    comptr<::ID3D11ShaderResourceView> shader_resource_view{};
+    comptr<::ID3D11UnorderedAccessView> unordered_access_view{};
 
     std::expected<void, error> initialize(const T* Data, uint32_t Size) {
       this->size = Size;
       D3D11_BUFFER_DESC bd{UINT(sizeof(T)) * Size};
-      bd.BindFlags = RW ? D3D11_BIND_UNORDERED_ACCESS : D3D11_BIND_SHADER_RESOURCE;
+      bd.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+      if constexpr (RW) bd.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
       bd.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
       bd.StructureByteStride = sizeof(T);
       if (Data) {
         D3D11_SUBRESOURCE_DATA srd{Data, int(sizeof(T))};
         hresult_test(d3d::device()->CreateBuffer, &bd, &srd, &this->buffer.get());
       } else hresult_test(d3d::device()->CreateBuffer, &bd, nullptr, &this->buffer.get());
-      if constexpr (!RW) {
-        D3D11_BUFFER_SRV buffer_srv{.FirstElement = 0, .NumElements = Size};
-        D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{{}, D3D11_SRV_DIMENSION_BUFFER, buffer_srv};
-        hresult_test(d3d::device()->CreateShaderResourceView, this->buffer.get(), &srv_desc, &resource_view.get());
-      } else hresult_test(d3d::device()->CreateUnorderedAccessView, this->buffer.get(), nullptr, &resource_view.get());
+      D3D11_BUFFER_SRV buffer_srv{.FirstElement = 0, .NumElements = Size};
+      D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{{}, D3D11_SRV_DIMENSION_BUFFER, buffer_srv};
+      hresult_test(d3d::device()->CreateShaderResourceView, this->buffer.get(), &srv_desc, &shader_resource_view.get());
+      if constexpr (RW)
+        hresult_test(d3d::device()->CreateUnorderedAccessView, this->buffer.get(), nullptr, &unordered_access_view.get());
       return {};
     }
   };
 
   explicit operator bool() const noexcept {
     const auto sp = slot::template get_as<structured_buffer>(handle_base::id());
-    return sp && static_cast<bool>(sp->resource_view);
+    if (!sp || !sp->shader_resource_view) return false;
+    if constexpr (RW) return static_cast<bool>(sp->unordered_access_view);
+    else return true;
   }
 
-  explicit operator resource_view_type*() const noexcept { return structured_buffer<T, RW>::d3d_resource_view(); }
+  explicit operator ::ID3D11ShaderResourceView*() const noexcept { return d3d_shader_resource_view(); }
 
-  resource_view_type* d3d_resource_view() const noexcept {
-    if (const auto sp = slot::template get_as<structured_buffer>(handle_base::id())) return sp->resource_view.get();
+  explicit operator ::ID3D11UnorderedAccessView*() const noexcept requires(RW) {
+    return d3d_unordered_access_view();
+  }
+
+  ::ID3D11ShaderResourceView* d3d_shader_resource_view() const noexcept {
+    if (const auto sp = slot::template get_as<structured_buffer>(handle_base::id()))
+      return sp->shader_resource_view.get();
     else return nullptr;
+  }
+
+  ::ID3D11UnorderedAccessView* d3d_unordered_access_view() const noexcept requires(RW) {
+    if (const auto sp = slot::template get_as<structured_buffer>(handle_base::id()))
+      return sp->unordered_access_view.get();
+    else return nullptr;
+  }
+
+  auto* d3d_resource_view() const noexcept {
+    if constexpr (RW) return d3d_unordered_access_view();
+    else return d3d_shader_resource_view();
   }
 
   structured_buffer() noexcept = default;

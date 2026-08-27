@@ -196,6 +196,7 @@ public:
 
 namespace errors {
 inline constexpr error::kind unreachable{"unreachable"};
+inline constexpr error::kind allocation_failed{"allocation failed"};
 inline constexpr error::kind invalid_argument{"invalid argument"};
 inline constexpr error::kind invalid_file_format{"invalid file format"};
 inline constexpr error::kind invalid_operation{"invalid operation"};
