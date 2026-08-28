@@ -30,18 +30,22 @@ public:
       matrix_row(float4(this->_rigid[0]) * this->_scale), matrix_row(float4(this->_rigid[1]) * this->_scale),
       matrix_row(float4(this->_rigid[2]) * this->_scale), matrix_row{0, 0, 0, 1}};
   }
-  std::expected<void, error> update_gpu() noexcept { return update_world(); }
   const auto& world_buffer() const noexcept { return _world; }
   const auto& vertices() const noexcept { return _vertices; }
   const auto& triangles() const noexcept { return _triangles; }
-  uint32_t triangle_count() const noexcept { return _triangles.size(); }
+
+  /// \param RemeshConfigs (optional) Configuration parameters for remeshing
+  template<typename Self, typename... Ts> requires (sizeof...(Ts) == 0 || invocable<decltype(&Self::_make_mesh), Self, Ts...>)
+  std::expected<void, error> update_gpu(this Self& self, Ts&&... RemeshConfigs) noexcept {
+
+  }
 };
 
 /// MARK: circle::make_mesh
 
-template<> inline std::expected<void, error> circle<cpu>::make_mesh(circle<cpu>&, uint1) noexcept { return {}; }
+template<> inline std::expected<void, error> circle<cpu>::_make_mesh(uint1) noexcept { return {}; }
 
-template<> inline std::expected<void, error> circle<gpu>::make_mesh(circle<gpu>& self, uint1 SegmentCount) noexcept {
+template<> inline std::expected<void, error> circle<gpu>::_make_mesh(uint1 SegmentCount) noexcept {
   const uint32_t segment_count = SegmentCount.x;
   if (segment_count < 3) return std::unexpected(error(errors::invalid_argument, "segment count must be at least 3"));
   std::vector<float4> vertices(segment_count + 1);
@@ -52,9 +56,9 @@ template<> inline std::expected<void, error> circle<gpu>::make_mesh(circle<gpu>&
     vertices[i + 1] = {yw::cos(angle), yw::sin(angle), 0, 1};
     triangles[i] = {0, i + 1, (i + 1) % segment_count + 1, 0};
   }
-  if (auto res = decltype(self._vertices)::create(vertices)) self._vertices = std::move(*res);
+  if (auto res = decltype(_vertices)::create(vertices)) _vertices = std::move(*res);
   else return res.error().relay();
-  if (auto res = decltype(self._triangles)::create(triangles)) self._triangles = std::move(*res);
+  if (auto res = decltype(_triangles)::create(triangles)) _triangles = std::move(*res);
   else return res.error().relay();
   return {};
 }

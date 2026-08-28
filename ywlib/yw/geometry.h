@@ -77,10 +77,10 @@ public:
 /// circle centered at origin with radius 1 and normal along +Z direction
 template<backend Backend> class circle : public geometry_base<circle<Backend>, Backend> {
   friend class geometry_base<circle<Backend>, Backend>;
-  static std::expected<void, error> make_mesh(circle& self, uint1 SegmentCount) noexcept;
+  select_type<Backend == cpu, none, uint32_t> _segment_count{};
+  std::expected<void, error> _make_mesh(uint1 SegmentCount) noexcept;
 
 public:
-  std::expected<void, error> make_mesh(uint1 SegmentCount) noexcept { return circle::make_mesh(*this, SegmentCount); }
   /// gets center
   constexpr double4 center() const noexcept { return {this->_rigid[0][3], this->_rigid[1][3], this->_rigid[2][3], 1}; }
   /// gets normal vector
