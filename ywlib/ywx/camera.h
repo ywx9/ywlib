@@ -1,6 +1,7 @@
 #pragma once
 #include "ywx/buffer.h"
 #include "ywx/rendering.h"
+#include <yw/quaternion.h>
 
 namespace yw {
 
@@ -8,7 +9,7 @@ namespace yw {
 /// \note reverse-z, row-major
 
 class camera : public handle_base {
-  static constexpr float4x4 identity = {float4(1, 0, 0, 0), float4(0, 1, 0, 0), float4(0, 0, 1, 0), float4(0, 0, 0, 1)};
+  static constexpr matrix<float, 4, 4> identity = {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}};
   static constexpr float min_perspective_rad = float(pi) / 180.0f;
   static constexpr float max_perspective_rad = float(pi) * 179.0f / 180.0f;
 
@@ -18,16 +19,20 @@ class camera : public handle_base {
     return _finite(value.x) && _finite(value.y) && _finite(value.z) && _finite(value.w);
   }
 
+  static bool _finite(const quatf& value) noexcept {
+    return _finite(value.x) && _finite(value.y) && _finite(value.z) && _finite(value.w);
+  }
+
 public:
   static constexpr float far_by_near = 1024.0f * 1024.0f;
 
   struct constants {
-    float4x4 view;
-    float4x4 projection;
-    float4x4 view_projection;
-    float4x4 inverse_view;
-    float4x4 inverse_projection;
-    float4x4 inverse_view_projection;
+    matrix<float, 4, 4> view;
+    matrix<float, 4, 4> projection;
+    matrix<float, 4, 4> view_projection;
+    matrix<float, 4, 4> inverse_view;
+    matrix<float, 4, 4> inverse_projection;
+    matrix<float, 4, 4> inverse_view_projection;
     float4 camera_pos;
     float4 camera_dir;
     float4 viewport_size;
@@ -43,35 +48,35 @@ public:
     bool dirty{true};
     float4 offset;   // offset of lens from camera body
     float4 rotation; // radians
-    float4 orientation{0.0f, 0.0f, 0.0f, 1.0f};
+    quatf orientation{};
     float4 position; // position of camera body
   };
 
 private:
-  static float4 _euler_from_orientation(float4 Orientation) noexcept {
+  static float4 _euler_from_orientation(quatf Orientation) noexcept {
     const auto rotation = yw::euler_from_quaternion(Orientation);
     return float4(rotation.x, rotation.y, rotation.z, 0.0f);
   }
 
-  static float4 _orientation_from_euler(float4 Rotation) noexcept {
+  static quatf _orientation_from_euler(float4 Rotation) noexcept {
     return yw::quaternion_from_euler(float4(Rotation.x, Rotation.y, Rotation.z, 0.0f));
   }
 
-  static void _load_matrix(const float4x4& f, mm_matrix& m) noexcept {
-    m.x = _mm_loadu_ps(f.x.data());
-    m.y = _mm_loadu_ps(f.y.data());
-    m.z = _mm_loadu_ps(f.z.data());
-    m.w = _mm_loadu_ps(f.w.data());
+  static void _load_matrix(const matrix<float, 4, 4>& f, mm_matrix& m) noexcept {
+    m.x = _mm_loadu_ps(f[0].data());
+    m.y = _mm_loadu_ps(f[1].data());
+    m.z = _mm_loadu_ps(f[2].data());
+    m.w = _mm_loadu_ps(f[3].data());
   }
 
   static void _rotation_matrix(slot* sp, mm_matrix& m) {
-    float4x4 f;
+    matrix<float, 4, 4> f;
     yw::rotation_matrix_from_quaternion(sp->orientation, f);
     _load_matrix(f, m);
   }
 
   static void _inverse_rotation_matrix(slot* sp, mm_matrix& m) {
-    float4x4 f;
+    matrix<float, 4, 4> f;
     yw::inverse_rotation_matrix_from_quaternion(sp->orientation, f);
     _load_matrix(f, m);
   }
@@ -356,25 +361,25 @@ public:
 
   float4 right_direction() const noexcept {
     if (const auto sp = get_slot(this)) {
-      float4x4 m;
+      matrix<float, 4, 4> m;
       yw::rotation_matrix_from_quaternion(sp->orientation, m);
-      return float4(-m.x.x, -m.y.x, -m.z.x, 0.0f);
+      return float4(-m[0][0], -m[1][0], -m[2][0], 0.0f);
     } else return float4(-1, 0, 0, 0);
   }
 
   float4 up_direction() const noexcept {
     if (const auto sp = get_slot(this)) {
-      float4x4 m;
+      matrix<float, 4, 4> m;
       yw::rotation_matrix_from_quaternion(sp->orientation, m);
-      return float4(m.x.y, m.y.y, m.z.y, 0.0f);
+      return float4(m[0][1], m[1][1], m[2][1], 0.0f);
     } else return float4(0, 1, 0, 0);
   }
 
   float4 forward_direction() const noexcept {
     if (const auto sp = get_slot(this)) {
-      float4x4 m;
+      matrix<float, 4, 4> m;
       yw::rotation_matrix_from_quaternion(sp->orientation, m);
-      return float4(m.x.z, m.y.z, m.z.z, 0.0f);
+      return float4(m[0][2], m[1][2], m[2][2], 0.0f);
     } else return float4(0, 0, 1, 0);
   }
 
@@ -421,33 +426,33 @@ public:
       const float sx = 2.0f * sp->factor / sp->size.x;
       const float sy = 2.0f * sp->factor / sp->size.y;
       const float sz = 1.0f / sp->far_plane;
-      pm.x = float4(sx, 0, 0, 0);
-      pm.y = float4(0, sy, 0, 0);
-      pm.z = float4(0, 0, sz, 0);
-      pm.w = float4(0, 0, 0, 1);
-      ipm.x = float4(1.0f / sx, 0, 0, 0);
-      ipm.y = float4(0, 1.0f / sy, 0, 0);
-      ipm.z = float4(0, 0, 1.0f / sz, 0);
-      ipm.w = float4(0, 0, 0, 1);
+      pm[0] = matrix_row<float, 4>(sx, 0, 0, 0);
+      pm[1] = matrix_row<float, 4>(0, sy, 0, 0);
+      pm[2] = matrix_row<float, 4>(0, 0, sz, 0);
+      pm[3] = matrix_row<float, 4>(0, 0, 0, 1);
+      ipm[0] = matrix_row<float, 4>(1.0f / sx, 0, 0, 0);
+      ipm[1] = matrix_row<float, 4>(0, 1.0f / sy, 0, 0);
+      ipm[2] = matrix_row<float, 4>(0, 0, 1.0f / sz, 0);
+      ipm[3] = matrix_row<float, 4>(0, 0, 0, 1);
     } else {
       const float f = 1.0f / yw::tan(sp->factor * 0.5f);
       const float a = f * sp->size.y / sp->size.x;
       constexpr float b = -1.0f / (far_by_near - 1.0f);
       const float c = -sp->far_plane * b;
-      pm.x = float4(a, 0, 0, 0);
-      pm.y = float4(0, f, 0, 0);
-      pm.z = float4(0, 0, b, c);
-      pm.w = float4(0, 0, 1, 0);
-      ipm.x = float4(-1.0f / a, 0, 0, 0);
-      ipm.y = float4(0, 1.0f / f, 0, 0);
-      ipm.z = float4(0, 0, 0, 1);
-      ipm.w = float4(0, 0, 1.0f / c, -b / c);
+      pm[0] = matrix_row<float, 4>(a, 0, 0, 0);
+      pm[1] = matrix_row<float, 4>(0, f, 0, 0);
+      pm[2] = matrix_row<float, 4>(0, 0, b, c);
+      pm[3] = matrix_row<float, 4>(0, 0, 1, 0);
+      ipm[0] = matrix_row<float, 4>(-1.0f / a, 0, 0, 0);
+      ipm[1] = matrix_row<float, 4>(0, 1.0f / f, 0, 0);
+      ipm[2] = matrix_row<float, 4>(0, 0, 0, 1);
+      ipm[3] = matrix_row<float, 4>(0, 0, 1.0f / c, -b / c);
     }
     // matrix * vector convention: clip = projection * view * world.
     dot(pm, vm, vpm);
     dot(ivm, ipm, ivpm);
     sp->cb_value.camera_pos = sp->position;
-    sp->cb_value.camera_dir = float4(ivm.x.z, ivm.y.z, ivm.z.z, 0);
+    sp->cb_value.camera_dir = float4(ivm[0][2], ivm[1][2], ivm[2][2], 0);
     sp->cb_value.viewport_size = float4(float(sp->size.x), float(sp->size.y), 1.0f / sp->size.x, 1.0f / sp->size.y);
     if (auto res = sp->cb.copy_from(sp->cb_value); !res) return res.error().relay();
     sp->dirty = false;

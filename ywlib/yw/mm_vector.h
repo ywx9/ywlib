@@ -1,5 +1,5 @@
 #pragma once
-#include <yw/vector.h>
+#include <yw/matrix.h>
 
 namespace yw {
 
@@ -174,11 +174,11 @@ struct mm_matrix {
   mm_vector& operator[](size_t i) { return rows[i]; }
   const mm_vector& operator[](size_t i) const { return rows[i]; }
 
-  void store(vector4<float4>& Out) const noexcept {
-    _mm_storeu_ps(Out.x.data(), x);
-    _mm_storeu_ps(Out.y.data(), y);
-    _mm_storeu_ps(Out.z.data(), z);
-    _mm_storeu_ps(Out.w.data(), w);
+  void store(matrix<float, 4, 4>& Out) const noexcept {
+    _mm_storeu_ps(Out[0].data(), x);
+    _mm_storeu_ps(Out[1].data(), y);
+    _mm_storeu_ps(Out[2].data(), z);
+    _mm_storeu_ps(Out[3].data(), w);
   }
 
   void t(mm_matrix& Out) const {

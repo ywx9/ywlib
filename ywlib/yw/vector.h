@@ -3,6 +3,8 @@
 #include <yw/string.h>
 #include <yw/tuple.h>
 
+/// \note
+
 namespace yw {
 
 template<std::regular T, size_t N> struct vector {
@@ -23,8 +25,8 @@ template<std::regular T, size_t N> struct vector {
     (noexcept(static_cast<T>(std::declval<Us>())) && ...))
     : _vals{static_cast<T>(static_cast<Us&&>(as))...} {}
 
-  template<tuple_like Tp> requires(lt(extent<Tp>, N) && !castable_to<Tp, T> && !same_as<remove_cvref<Tp>, vector>)
-  constexpr vector(Tp&& tp) {
+  template<tuple_like Tp> requires(lt(extent<Tp>, N) && !castable_to<Tp, T> && !variation_of<Tp, vector<T, N>>)
+  explicit constexpr vector(Tp&& tp) {
     constexpr auto seq = make_sequence<0, extent<Tp>>{};
     [&]<size_t... Is>(sequence<Is...>) { ((_vals[Is] = T(yw::get<Is>(static_cast<Tp&&>(tp)))), ...); }(seq);
   }
@@ -106,16 +108,10 @@ template<std::regular T, size_t N> struct vector {
     if (len <= 0) return decltype(*this / len){};
     return *this / len;
   }
-
-  constexpr vector<vector<T, 1>, N> transpose() const {
-    vector<vector<T, 1>, N> result;
-    for (size_t i = 0; i < N; ++i) result[i][0] = operator[](i);
-    return result;
-  }
 };
 
 template<typename T, typename... Ts> vector(T&&, Ts&&...) -> vector<T, sizeof...(Ts) + 1>;
-template<tuple_like Tp> vector(Tp&&) -> vector<element_t<Tp, 0>, extent<Tp>>;
+template<tuple_like Tp> vector(Tp&&) -> vector<remove_cvref<element_t<Tp, 0>>, extent<Tp>>;
 
 template<std::regular T> using vector1 = vector<T, 1>;
 template<std::regular T> using vector2 = vector<T, 2>;
@@ -318,8 +314,8 @@ template<std::regular T> struct vector<T, 1> {
 
   template<castable_to<T> Xt> constexpr vector(Xt&& X) noexcept(nt_castable_to<Xt, T>) : x(T(static_cast<Xt&&>(X))) {}
 
-  template<tuple_like<1> Tp> requires(!castable_to<Tp, T> && !same_as<remove_cvref<Tp>, vector>)
-  constexpr vector(Tp&& tp) noexcept : x(T(yw::get<0>(static_cast<Tp&&>(tp)))) {}
+  template<tuple_like<1> Tp> requires(!castable_to<Tp, T> && !variation_of<Tp, vector<T, 1>>)
+  explicit constexpr vector(Tp&& tp) noexcept : x(T(yw::get<0>(static_cast<Tp&&>(tp)))) {}
 
   template<castable_to<T> U> constexpr vector(const vector<U, 1>& v) noexcept(nt_castable_to<U, T>) {
     x = static_cast<T>(v[0]);
@@ -397,11 +393,12 @@ template<std::regular T> struct vector<T, 2> {
   constexpr vector(Xt&& X, Yt&& Y) noexcept(nt_castable_to<Xt, T> && nt_castable_to<Yt, T>)
     : x(T(static_cast<Xt&&>(X))), y(T(static_cast<Yt&&>(Y))) {}
 
-  template<tuple_like<1> Tp> requires(!castable_to<Tp, T>)
-  constexpr vector(Tp&& tp) : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y() {}
+  template<tuple_like<1> Tp> requires(!castable_to<Tp, T> && !variation_of<Tp, vector<T, 2>>)
+  explicit constexpr vector(Tp&& tp) : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y() {}
 
-  template<tuple_like<2> Tp> requires(!castable_to<Tp, T> && !same_as<remove_cvref<Tp>, vector>)
-  constexpr vector(Tp&& tp) : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))) {}
+  template<tuple_like<2> Tp> requires(!castable_to<Tp, T> && !variation_of<Tp, vector<T, 2>>)
+  explicit constexpr vector(Tp&& tp)
+    : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))) {}
 
   template<castable_to<T> U> constexpr vector(const vector<U, 2>& v) noexcept(nt_castable_to<U, T>) {
     x = static_cast<T>(v[0]);
@@ -492,14 +489,15 @@ template<std::regular T> struct vector<T, 3> {
     nt_castable_to<Xt, T> && nt_castable_to<Yt, T> && nt_castable_to<Zt, T>)
     : x(T(static_cast<Xt&&>(X))), y(T(static_cast<Yt&&>(Y))), z(T(static_cast<Zt&&>(Z))) {}
 
-  template<tuple_like<1> Tp> requires(!castable_to<Tp, T>)
-  constexpr vector(Tp&& tp) : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(), z() {}
+  template<tuple_like<1> Tp> requires(!castable_to<Tp, T> && !variation_of<Tp, vector<T, 3>>)
+  explicit constexpr vector(Tp&& tp) : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(), z() {}
 
-  template<tuple_like<2> Tp> requires(!castable_to<Tp, T>)
-  constexpr vector(Tp&& tp) : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))), z() {}
+  template<tuple_like<2> Tp> requires(!castable_to<Tp, T> && !variation_of<Tp, vector<T, 3>>)
+  explicit constexpr vector(Tp&& tp)
+    : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))), z() {}
 
-  template<tuple_like<3> Tp> requires(!castable_to<Tp, T> && !same_as<remove_cvref<Tp>, vector>)
-  constexpr vector(Tp&& tp)
+  template<tuple_like<3> Tp> requires(!castable_to<Tp, T> && !variation_of<Tp, vector<T, 3>>)
+  explicit constexpr vector(Tp&& tp)
     : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))),
       z(T(yw::get<2>(static_cast<Tp&&>(tp)))) {}
 
@@ -604,23 +602,25 @@ template<std::regular T> struct vector<T, 4> {
     nt_castable_to<Xt, T> && nt_castable_to<Yt, T> && nt_castable_to<Zt, T> && nt_castable_to<Wt, T>)
     : x(T(static_cast<Xt&&>(X))), y(T(static_cast<Yt&&>(Y))), z(T(static_cast<Zt&&>(Z))), w(T(static_cast<Wt&&>(W))) {}
 
-  template<tuple_like<1> Tp> requires(!castable_to<Tp, T>)
-  constexpr vector(Tp&& tp) : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(), z(), w() {}
+  template<tuple_like<1> Tp> requires(!castable_to<Tp, T> && !variation_of<Tp, vector<T, 4>>)
+  explicit constexpr vector(Tp&& tp) : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(), z(), w() {}
 
-  template<tuple_like<2> Tp> requires(!castable_to<Tp, T>) constexpr vector(Tp&& tp)
+  template<tuple_like<2> Tp> requires(!castable_to<Tp, T> && !variation_of<Tp, vector<T, 4>>)
+  explicit constexpr vector(Tp&& tp)
     : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))), z(), w() {}
 
-  template<tuple_like<3> Tp> requires(!castable_to<Tp, T>) constexpr vector(Tp&& tp)
+  template<tuple_like<3> Tp> requires(!castable_to<Tp, T> && !variation_of<Tp, vector<T, 4>>)
+  explicit constexpr vector(Tp&& tp)
     : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))),
       z(T(yw::get<2>(static_cast<Tp&&>(tp)))), w() {}
 
-  template<tuple_like<4> Tp> requires(!castable_to<Tp, T> && !same_as<remove_cvref<Tp>, vector>)
-  constexpr vector(Tp&& tp)
+  template<tuple_like<4> Tp> requires(!castable_to<Tp, T> && !variation_of<Tp, vector<T, 4>>)
+  explicit constexpr vector(Tp&& tp)
     : x(T(yw::get<0>(static_cast<Tp&&>(tp)))), y(T(yw::get<1>(static_cast<Tp&&>(tp)))),
       z(T(yw::get<2>(static_cast<Tp&&>(tp)))), w(T(yw::get<3>(static_cast<Tp&&>(tp)))) {}
 
   template<tuple_like<2> Tp1, tuple_like<2> Tp2> requires(!castable_to<Tp1, T> && !castable_to<Tp2, T>)
-  constexpr vector(Tp1&& tp1, Tp2&& tp2)
+  explicit constexpr vector(Tp1&& tp1, Tp2&& tp2)
     : x(T(yw::get<0>(static_cast<Tp1&&>(tp1)))), y(T(yw::get<1>(static_cast<Tp1&&>(tp1)))),
       z(T(yw::get<0>(static_cast<Tp2&&>(tp2)))), w(T(yw::get<1>(static_cast<Tp2&&>(tp2)))) {}
 
@@ -629,6 +629,14 @@ template<std::regular T> struct vector<T, 4> {
     y = static_cast<T>(v[1]);
     z = static_cast<T>(v[2]);
     w = static_cast<T>(v[3]);
+  }
+
+  template<castable_to<T> U, castable_to<T> V>
+  constexpr vector(const vector<U, 3>& u, const V& v) noexcept(nt_castable_to<U, T> && nt_castable_to<V, T>) {
+    x = static_cast<T>(u[0]);
+    y = static_cast<T>(u[1]);
+    z = static_cast<T>(u[2]);
+    w = static_cast<T>(v);
   }
 
   static constexpr bool empty() noexcept { return false; }
