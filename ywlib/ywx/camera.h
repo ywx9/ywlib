@@ -428,11 +428,11 @@ public:
       const float sz = 1.0f / sp->far_plane;
       pm[0] = matrix_row<float, 4>(sx, 0, 0, 0);
       pm[1] = matrix_row<float, 4>(0, sy, 0, 0);
-      pm[2] = matrix_row<float, 4>(0, 0, sz, 0);
+      pm[2] = matrix_row<float, 4>(0, 0, -sz, 1);
       pm[3] = matrix_row<float, 4>(0, 0, 0, 1);
       ipm[0] = matrix_row<float, 4>(1.0f / sx, 0, 0, 0);
       ipm[1] = matrix_row<float, 4>(0, 1.0f / sy, 0, 0);
-      ipm[2] = matrix_row<float, 4>(0, 0, 1.0f / sz, 0);
+      ipm[2] = matrix_row<float, 4>(0, 0, -1.0f / sz, 1.0f / sz);
       ipm[3] = matrix_row<float, 4>(0, 0, 0, 1);
     } else {
       const float f = 1.0f / yw::tan(sp->factor * 0.5f);
