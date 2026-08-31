@@ -79,6 +79,11 @@ template<std::regular T, size_t Rows, size_t Cols> struct matrix {
     }
   }
 
+  template<castable_to<T> U> explicit constexpr matrix(const matrix<U, Rows, Cols>& m) noexcept(nt_castable_to<U, T>) {
+    for (size_t r = 0; r < Rows; ++r)
+      for (size_t c = 0; c < Cols; ++c) _rows[r][c] = static_cast<T>(m[r][c]);
+  }
+
   static constexpr matrix fill(const T& value) {
     matrix m;
     for (auto& row : m._rows) row = row_type::fill(value);
