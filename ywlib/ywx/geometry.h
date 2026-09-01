@@ -4,7 +4,7 @@
 
 namespace yw::geom {
 
-template<typename Geometry> class geometry_base<Geometry, gpu> : public geometry_base<Geometry, cpu> {
+template<template<backend> typename Geometry> class geometry_base<Geometry, gpu> : public geometry_base<Geometry, cpu> {
 protected:
   constant_buffer<matrix<float, 4, 4>> _cb_world;
   array1<float4, gpu> _gpu_vertices;
@@ -21,7 +21,7 @@ public:
 
   template<typename Self> std::expected<void, error> update_gpu(this Self& self) noexcept {
     if (self._messy || !self._mesh_ready) {
-      if (auto res = self._make_mesh_default(); !res) return res.error().relay();
+      if (auto res = self._triangulate(self._remeshing_option); !res) return res.error().relay();
       self._mesh_ready = true;
     }
     if (!self._cb_world) {
@@ -33,18 +33,29 @@ public:
     return {};
   }
 
-  template<typename Self> requires invocable_r<
-    decltype(&Self::_make_mesh), std::expected<void, error>, Self&, const typename Self::remeshing_option_t&>
-  std::expected<void, error> update_gpu(this Self& self, const typename Self::remeshing_option_t& ro) noexcept {
-    if (auto res = self._make_mesh(ro); !res) return res.error().relay();
-    self._mesh_ready = true;
-    if (!self._cb_world) {
-      if (auto res = decltype(self._cb_world)::create(self.world_matrix())) self._cb_world = std::move(*res);
-      else return res.error().relay();
-    } else if (self._dirty)
-      if (auto res = self._cb_world.copy_from(self.world_matrix()); !res) return res.error().relay();
-    self._dirty = false, self._messy = false;
-    return {};
-  }
+  // template<typename Self>
+  // std::expected<void, error> update_gpu(this Self& self, const geom::remeshing_option<Geometry>& ro) noexcept {
+  //   if (auto res = self._triangulate(ro); !res) return res.error().relay();
+  //   self._mesh_ready = true;
+  //   if (!self._cb_world) {
+  //     if (auto res = decltype(self._cb_world)::create(self.world_matrix())) self._cb_world = std::move(*res);
+  //     else return res.error().relay();
+  //   } else if (self._dirty)
+  //     if (auto res = self._cb_world.copy_from(self.world_matrix()); !res) return res.error().relay();
+  //   self._dirty = false, self._messy = false;
+  //   return {};
+  // }
+
+  // std::expected<void, error> update_gpu(geom::remeshing_option<Geometry> ro) noexcept {
+  //   if (auto res = static_cast<Geometry<gpu>&>(*this)._triangulate(ro); !res) return res.error().relay();
+  //   _mesh_ready = true;
+  //   if (!this->_cb_world) {
+  //     if (auto res = decltype(this->_cb_world)::create(this->world_matrix())) this->_cb_world = std::move(*res);
+  //     else return res.error().relay();
+  //   } else if (this->_dirty)
+  //     if (auto res = this->_cb_world.copy_from(this->world_matrix()); !res) return res.error().relay();
+  //   this->_dirty = false, this->_messy = false;
+  //   return {};
+  // }
 };
 } // namespace yw::geom

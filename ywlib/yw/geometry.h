@@ -6,29 +6,26 @@
 
 namespace yw::geom {
 
+template<template<backend> typename Geometry> struct remeshing_option {};
+
 /// MARK: geom::geometry_base
 
-template<typename Geometry, backend Backend = default_backend> class geometry_base;
+template<template<backend> typename Geometry, backend Backend> class geometry_base;
 
-template<typename Geometry> class geometry_base<Geometry, cpu> {
+template<template<backend> typename Geometry> class geometry_base<Geometry, cpu> {
 protected:
-  template<typename OtherG, backend OtherB> friend class geometry_base;
+  template<template<backend> typename G, backend B> friend class geometry_base;
   matrix<double, 3, 4> _rigid = {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}};
   double4 _scale = {1, 1, 1, 1};
   bool _dirty = false; // need to update world matrix
   bool _messy = false; // need to update mesh
+  geom::remeshing_option<Geometry> _remeshing_option{};
 
   constexpr void _translation(double x, double y, double z) noexcept {
-    _rigid[0][3] = x;
-    _rigid[1][3] = y;
-    _rigid[2][3] = z;
-    _dirty = true;
+    _rigid[0][3] = x, _rigid[1][3] = y, _rigid[2][3] = z, _dirty = true;
   }
   constexpr void _translate(double x, double y, double z) noexcept {
-    _rigid[0][3] += x;
-    _rigid[1][3] += y;
-    _rigid[2][3] += z;
-    _dirty = true;
+    _rigid[0][3] += x, _rigid[1][3] += y, _rigid[2][3] += z, _dirty = true;
   }
   template<typename T> constexpr void _rotation(const T& radians) noexcept {
     const auto c = vapply_r<T>(yw::cos, radians);
@@ -106,13 +103,16 @@ protected:
     _scale.z *= z;
     _dirty = true;
   }
-  /// applies full transformation (scale, rotation, translation) to given vector
-  // constexpr double4 transform(const double4& v) const noexcept {
-  //   const auto sv = _scale * v;
-  //   return {dot(double4(_rigid[0]), sv), dot(double4(_rigid[1]), sv), dot(double4(_rigid[2]), sv), v.w};
-  // }
 
 public:
+  static constexpr bool is_bounded_surface = false;
+  const geom::remeshing_option<Geometry>& remeshing_option() const noexcept { return _remeshing_option; }
+  geom::remeshing_option<Geometry>& remeshing_option() noexcept { return _remeshing_option; }
+  void remeshing_option(const geom::remeshing_option<Geometry>& option) noexcept { _remeshing_option = option; }
+  template<is_base_of<geom::remeshing_option<Geometry>> T> void remeshing_option(const T& option) noexcept {
+    static_cast<T&>(_remeshing_option) = option;
+  }
+
   /// gets the translation component.
   constexpr double4 translation() const noexcept { return {_rigid[0][3], _rigid[1][3], _rigid[2][3], 0}; }
   /// sets the translation component.
@@ -121,6 +121,7 @@ public:
   /// adds to the translation component.
   constexpr void translate(const double3& t) noexcept { _translate(t.x, t.y, t.z); }
   constexpr void translate(const double4& t) noexcept { _translate(t.x, t.y, t.z); }
+
   /// gets the rotation component as XYZ Euler angles.
   constexpr double4 rotation() const noexcept {
     double4 result;
@@ -140,6 +141,7 @@ public:
   /// rotates the entire transformation about the origin.
   constexpr void revolve(const double3& radians) noexcept { _revolve(radians.x, radians.y, radians.z); }
   constexpr void revolve(const double4& radians) noexcept { _revolve(radians.x, radians.y, radians.z); }
+
   /// gets the scale component.
   constexpr double4 scale() const noexcept { return _scale; }
   /// sets the scale component.
@@ -148,6 +150,7 @@ public:
   /// multiplies the scale component.
   constexpr void rescale(const double3& s) noexcept { _rescale(s.x, s.y, s.z); }
   constexpr void rescale(const double4& s) noexcept { _rescale(s.x, s.y, s.z); }
+
   /// gets the 3D transformation matrix.
   constexpr matrix<double, 3, 4> transformation3() const noexcept {
     return {
@@ -161,11 +164,9 @@ public:
       matrix_row(double4(_rigid[2]) * _scale), matrix_row{0, 0, 0, 1}};
   }
   /// copies the transformation from another geometry object.
-  template<typename OtherG, backend OtherB>
-  constexpr void copy_transformation_from(const geometry_base<OtherG, OtherB>& From) noexcept {
-    _rigid = From._rigid;
-    _scale = From._scale;
-    _dirty = From._dirty;
+  template<template<backend B> typename G, backend B>
+  constexpr void copy_transformation_from(const geometry_base<G, B>& From) noexcept {
+    _rigid = From._rigid, _scale = From._scale, _dirty = From._dirty;
   }
 };
 } // namespace yw::geom

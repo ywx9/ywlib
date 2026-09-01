@@ -106,6 +106,7 @@ template<typename T, typename... Ts> concept nt_castable_to =
   castable_to<T, Ts...> && noexcept((static_cast<Ts>(std::declval<T>()), ...));
 template<typename T, typename... Ts> concept nt_convertible_to = convertible_to<T, Ts...> && nt_castable_to<T, Ts...>;
 template<typename T, typename... Ts> concept derived_from = (std::derived_from<T, Ts> && ...);
+template<typename T, typename... Ts> concept is_base_of = (derived_from<Ts, T> && ...);
 
 template<typename T> concept is_void = same_as<remove_cv<T>, void>;
 template<typename T> concept is_bool = same_as<remove_cv<T>, bool>;
