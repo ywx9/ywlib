@@ -8,6 +8,72 @@ namespace yw::geom {
 
 template<template<backend> typename Geometry> struct remeshing_option {};
 
+/// MARK: geom::vertex
+
+template<backend Backend> struct vertex;
+
+template<> struct vertex<cpu> {
+  double4 position = {0, 0, 0, 1};
+};
+
+template<> struct vertex<gpu> {
+  /// packs a vector4 into a 32-bit unsigned integer (for normals and tangents)
+  static constexpr uint32_t pack(double4 v) noexcept {
+    return std::bit_cast<uint32_t>(
+      (static_cast<int32_t>(v.x * 1023) & 0x3FF) | ((static_cast<int32_t>(v.y * 1023) & 0x3FF) << 10) |
+      ((static_cast<int32_t>(v.z * 1023) & 0x3FF) << 20) | (int32_t(v.w < 0) << 30));
+  }
+  /// packs a vector4 into a 32-bit unsigned integer (for normals and tangents)
+  static constexpr uint32_t pack(float4 v) noexcept {
+    return std::bit_cast<uint32_t>(
+      (static_cast<int32_t>(v.x * 1023) & 0x3FF) | ((static_cast<int32_t>(v.y * 1023) & 0x3FF) << 10) |
+      ((static_cast<int32_t>(v.z * 1023) & 0x3FF) << 20) | (int32_t(v.w < 0) << 30));
+  }
+  static constexpr uint32_t normal_z = pack(float4{0, 0, 1, 0});
+  static constexpr uint32_t tangent_x = pack(float4{1, 0, 0, 0});
+  float4 position = {0, 0, 0, 1};
+  float2 uv = {0, 0};
+  uint32_t normal = normal_z;   // encoded normal {x:10, y:10, z:10, w:2 (unused)}
+  uint32_t tangent = tangent_x; // encoded tangent {x:10, y:10, z:10, w:2 (bitangent sign)}
+};
+
+#define yw_hlsl_vertex \
+  struct Vertex {      \
+    float4 position;   \
+    float2 uv;         \
+    uint normal;       \
+    uint tangent;      \
+  };
+
+#define yw_hlsl_tangent_basis \
+  struct TangentBasis {       \
+    float3 normal;            \
+    float3 tangent;           \
+    float3 bitangent;         \
+  };
+
+#define yw_hlsl_make_tangent_basis_from_vertex                \
+  float _yw_unpack_snorm10(uint bits) {                       \
+    int v = bits & 0x3FF;                                     \
+    if (v & 0x200) v |= ~0x3FF;                               \
+    return float(v) / 1023.0;                                 \
+  }                                                           \
+  TangentBasis make_tangent_basis_from_vertex(Vertex v) {     \
+    TangentBasis tb;                                          \
+    tb.normal.x = _yw_unpack_snorm10(v.normal & 0x3FF);       \
+    tb.normal.y = _yw_unpack_snorm10(v.normal >> 10 & 0x3FF); \
+    tb.normal.z = _yw_unpack_snorm10(v.normal >> 20 & 0x3FF); \
+    float3 tangent;                                           \
+    tangent.x = _yw_unpack_snorm10(v.tangent);                \
+    tangent.y = _yw_unpack_snorm10(v.tangent >> 10);          \
+    tangent.z = _yw_unpack_snorm10(v.tangent >> 20);          \
+    tangent = tangent - tb.normal * dot(tb.normal, tangent);  \
+    tb.tangent = normalize(tangent);                          \
+    float sign = ((v.tangent >> 30) & 1) != 0 ? -1.0 : 1.0;   \
+    tb.bitangent = cross(tb.normal, tb.tangent) * sign;       \
+    return tb;                                                \
+  }
+
 /// MARK: geom::geometry_base
 
 template<template<backend> typename Geometry, backend Backend> class geometry_base;

@@ -11,10 +11,10 @@ inline std::expected<void, error> segment<cpu>::_triangulate(const geom::remeshi
 }
 template<>
 inline std::expected<void, error> segment<gpu>::_triangulate(const geom::remeshing_option<segment>& ro) noexcept {
-  array1<float4, cpu> vertices(2);
+  array1<vertex<gpu>, cpu> vertices(2);
   array1<uint2, cpu> edges(1);
-  vertices[0] = {0, 0, 0, 1};
-  vertices[1] = {1, 0, 0, 1};
+  vertices[0] = {.position ={0, 0, 0, 1}, .normal = {0, 0, 1, 0}, .tangent = {1, 0, 0, 1}};
+  vertices[1] = {.position ={1, 0, 0, 1}, .normal = {0, 0, 1, 0}, .tangent = {1, 0, 0, 1}};
   edges[0] = {0, 1};
   if (auto res = decltype(this->_gpu_vertices)::create(vertices)) this->_gpu_vertices = std::move(*res);
   else return res.error().relay();
