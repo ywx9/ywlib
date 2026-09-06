@@ -616,3 +616,5 @@ public:
   }
 };
 } // namespace yw
+
+#define yw_hlsl_row_major_pragma "#pragma pack_matrix(row_major)\n"

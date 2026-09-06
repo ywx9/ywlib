@@ -33,10 +33,12 @@ public:
   constexpr double signed_length() const noexcept { return this->_scale.x; }
   /// gets the absolute length of the segment.
   constexpr double length() const noexcept { return yw::abs(this->_scale.x); }
+  /// gets the local-coordinate bounding box.
+  constexpr bbox<cpu> local_bbox() const noexcept { return {{0, 0, 0, 1}, {1, 0, 0, 1}}; }
 
 protected:
   friend class geometry_base<segment, Backend>;
-  std::expected<void, error> _triangulate(const geom::remeshing_option<segment>& ro) noexcept;
+  std::expected<void, error> _triangulate() noexcept;
 
   constexpr void _set(double sx, double sy, double ex, double ey) noexcept {
     const auto dx = ex - sx, dy = ey - sy;
@@ -94,7 +96,7 @@ public:
 
 protected:
   friend class geometry_base<ray, Backend>;
-  std::expected<void, error> _triangulate(const geom::remeshing_option<ray>& ro) noexcept;
+  std::expected<void, error> _triangulate() noexcept;
 };
 
 /// MARK: geom::line
@@ -139,7 +141,7 @@ public:
 
 protected:
   friend class geometry_base<line, Backend>;
-  std::expected<void, error> _triangulate(const geom::remeshing_option<line>& ro) noexcept;
+  std::expected<void, error> _triangulate() noexcept;
 };
 
 /// MARK: geom::arc
@@ -183,12 +185,17 @@ public:
     const auto a = _start_angle + _sweep_angle * t;
     return {yw::cos(a), yw::sin(a), 0, 1};
   }
+  /// gets a unit tangent vector on the arc for t in [0, 1].
+  constexpr double4 tangent(double t) const noexcept {
+    const auto a = _start_angle + _sweep_angle * t;
+    return (double4{-yw::sin(a), yw::cos(a), 0, 0} * _sweep_angle).normalized();
+  }
 
 protected:
   friend class geometry_base<arc, Backend>;
   double _start_angle = 0;
   double _sweep_angle = yw::pi * 0.5;
-  std::expected<void, error> _triangulate(const geom::remeshing_option<arc>& ro) noexcept;
+  std::expected<void, error> _triangulate() noexcept;
 };
 
 /// MARK: geom::quadratic_bezier
@@ -256,11 +263,15 @@ public:
     const auto u = 1.0 - t;
     return _p0 * (u * u) + _p1 * (2.0 * u * t) + _p2 * (t * t);
   }
+  /// gets a unit tangent vector on the curve for t in [0, 1].
+  constexpr double4 tangent(double t) const noexcept {
+    return ((_p1 - _p0) * (2.0 * (1.0 - t)) + (_p2 - _p1) * (2.0 * t)).normalized();
+  }
 
 protected:
   friend class geometry_base<quadratic_bezier, Backend>;
   double4 _p0 = {-1, 0, 0, 1}, _p1 = {0, 1, 0, 1}, _p2 = {1, 0, 0, 1};
-  std::expected<void, error> _triangulate(const geom::remeshing_option<quadratic_bezier>& ro) noexcept;
+  std::expected<void, error> _triangulate() noexcept;
 };
 
 /// MARK: geom::cubic_bezier
@@ -346,11 +357,17 @@ public:
     const auto u = 1.0 - t;
     return _p0 * (u * u * u) + _p1 * (3.0 * u * u * t) + _p2 * (3.0 * u * t * t) + _p3 * (t * t * t);
   }
+  /// gets a unit tangent vector on the curve for t in [0, 1].
+  constexpr double4 tangent(double t) const noexcept {
+    const auto u = 1.0 - t;
+    return ((_p1 - _p0) * (3.0 * u * u) + (_p2 - _p1) * (6.0 * u * t) + (_p3 - _p2) * (3.0 * t * t))
+      .normalized();
+  }
 
 protected:
   friend class geometry_base<cubic_bezier, Backend>;
   double4 _p0 = {-1, 0, 0, 1}, _p1 = {-0.5, 1, 0, 1}, _p2 = {0.5, -1, 0, 1}, _p3 = {1, 0, 0, 1};
-  std::expected<void, error> _triangulate(const geom::remeshing_option<cubic_bezier>& ro) noexcept;
+  std::expected<void, error> _triangulate() noexcept;
 };
 
 /// MARK: geom::plane
@@ -369,10 +386,15 @@ public:
   constexpr double4 center() const noexcept { return {this->_rigid[0][3], this->_rigid[1][3], 0, 1}; }
   /// gets the normal vector.
   constexpr double4 normal() const noexcept { return {this->_rigid[0][2], this->_rigid[1][2], this->_rigid[2][2], 0}; }
+  /// gets the finite local-coordinate bounding box used for remeshing.
+  constexpr bbox<cpu> local_bbox() const noexcept {
+    const auto h = double(this->_remeshing_option.half_extent.x);
+    return {{-h, -h, 0, 1}, {h, h, 0, 1}};
+  }
 
 protected:
   friend class geometry_base<plane, Backend>;
-  std::expected<void, error> _triangulate(const geom::remeshing_option<plane>& ro) noexcept;
+  std::expected<void, error> _triangulate() noexcept;
 };
 
 /// MARK: geom::square
@@ -389,10 +411,12 @@ public:
   constexpr double4 normal() const noexcept { return {this->_rigid[0][2], this->_rigid[1][2], this->_rigid[2][2], 0}; }
   /// gets the signed area.
   constexpr double area() const noexcept { return 4.0 * this->_scale.x * this->_scale.y; }
+  /// gets the local-coordinate bounding box.
+  constexpr bbox<cpu> local_bbox() const noexcept { return {{-1, -1, 0, 1}, {1, 1, 0, 1}}; }
 
 protected:
   friend class geometry_base<square, Backend>;
-  std::expected<void, error> _triangulate(const geom::remeshing_option<square>& ro) noexcept;
+  std::expected<void, error> _triangulate() noexcept;
 };
 
 /// MARK: geom::circle
@@ -414,10 +438,12 @@ public:
   constexpr double4 normal() const noexcept { return {this->_rigid[0][2], this->_rigid[1][2], this->_rigid[2][2], 0}; }
   /// gets the signed area.
   constexpr double area() const noexcept { return yw::pi * this->_scale.x * this->_scale.y; }
+  /// gets the local-coordinate bounding box.
+  constexpr bbox<cpu> local_bbox() const noexcept { return {{-1, -1, 0, 1}, {1, 1, 0, 1}}; }
 
 protected:
   friend class geometry_base<circle, Backend>;
-  std::expected<void, error> _triangulate(const geom::remeshing_option<circle>& ro) noexcept;
+  std::expected<void, error> _triangulate() noexcept;
 };
 
 /// MARK: geom::polygon
@@ -436,6 +462,19 @@ public:
   constexpr bool empty() const noexcept { return _points.empty(); }
   /// gets a polygon point.
   constexpr const double4& operator[](size_t index) const noexcept { return _points[index]; }
+  /// gets the local-coordinate bounding box.
+  constexpr std::expected<bbox<cpu>, error> local_bbox() const noexcept {
+    if (_points.empty()) return std::unexpected(error(errors::invalid_operation, "polygon has no points"));
+    bbox<cpu> result{{_points[0].x, _points[0].y, 0, 1}, {_points[0].x, _points[0].y, 0, 1}};
+    for (size_t i = 1; i < _points.size(); ++i) {
+      const auto& p = _points[i];
+      result.min.x = yw::min(result.min.x, p.x);
+      result.min.y = yw::min(result.min.y, p.y);
+      result.max.x = yw::max(result.max.x, p.x);
+      result.max.y = yw::max(result.max.y, p.y);
+    }
+    return result;
+  }
 
   /// resizes the polygon point list.
   std::expected<void, error> resize(size_t size) noexcept {
@@ -491,6 +530,6 @@ public:
 protected:
   friend class geometry_base<polygon, Backend>;
   array1<double4, cpu> _points;
-  std::expected<void, error> _triangulate(const geom::remeshing_option<polygon>& ro) noexcept;
+  std::expected<void, error> _triangulate() noexcept;
 };
 } // namespace yw::geom

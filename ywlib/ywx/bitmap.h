@@ -73,6 +73,11 @@ public:
     return sp && static_cast<bool>(sp->bitmap);
   }
 
+  explicit operator ID2D1Bitmap1*() const noexcept {
+    const auto sp = slot::get_as<bitmap>(id());
+    return sp ? sp->bitmap.get() : nullptr;
+  }
+
   auto d2d_bitmap(this auto&& self) noexcept -> ID2D1Bitmap1* {
     if (const auto sp = slot::get_as<bitmap>(self.id())) return sp->bitmap.get();
     else return nullptr;
@@ -237,8 +242,8 @@ public:
 
     comptr<ID2D1Bitmap1> cpu_bmp;
     D2D1_BITMAP_PROPERTIES1 props{
-      pixelformat, 96.0f, 96.0f,
-      D2D1_BITMAP_OPTIONS(D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW), nullptr};
+      pixelformat, 96.0f, 96.0f, D2D1_BITMAP_OPTIONS(D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW),
+      nullptr};
     hresult_test(d2d::context()->CreateBitmap, D2D1_SIZE_U{width, height}, nullptr, 0, &props, &cpu_bmp.get());
     hresult_test(cpu_bmp->CopyFromBitmap, nullptr, sp->bitmap.get(), nullptr);
 
@@ -259,37 +264,6 @@ public:
       return {};
     }
     return pixels;
-  }
-
-  std::expected<void, error> save_as(null_terminated<wchar_t> Path, const GUID& Format) const {
-    const auto sp = slot::get_as<bitmap>(id());
-    if (!sp) return std::unexpected(error(errors::invalid_slotid));
-    comptr<IWICStream> stream;
-    hresult_test(wic::factory()->CreateStream, &stream.get());
-    hresult_test(stream->InitializeFromFilename, Path.data(), GENERIC_WRITE);
-    comptr<IWICBitmapEncoder> encoder;
-    hresult_test(wic::factory()->CreateEncoder, Format, nullptr, &encoder.get());
-    hresult_test(encoder->Initialize, stream.get(), WICBitmapEncoderNoCache);
-    comptr<IWICBitmapFrameEncode> frame;
-    hresult_test(encoder->CreateNewFrame, &frame.get(), nullptr);
-    hresult_test(frame->Initialize, nullptr);
-    comptr<IWICImageEncoder> image_encoder;
-    hresult_test(wic::factory()->CreateImageEncoder, d2d::device(), &image_encoder.get());
-    hresult_test(image_encoder->WriteFrame, sp->bitmap.get(), frame.get(), nullptr);
-    hresult_test(frame->Commit);
-    hresult_test(encoder->Commit);
-    hresult_test(stream->Commit, STGC_DEFAULT);
-    return {};
-  }
-
-  std::expected<void, error> save_as_png(null_terminated<wchar_t> Path) const {
-    if (auto res = save_as(std::move(Path), GUID_ContainerFormatPng)) return {};
-    else return res.error().relay();
-  }
-
-  std::expected<void, error> save_as_jpeg(null_terminated<wchar_t> Path) const {
-    if (auto res = save_as(std::move(Path), GUID_ContainerFormatJpeg)) return {};
-    else return res.error().relay();
   }
 
   //-- getter --//
@@ -342,4 +316,39 @@ inline std::expected<void, error> draw_bitmap(float2 Pos, const bitmap& b) {
   } else return std::unexpected(error(errors::invalid_argument, "invalid bitmap"));
   return {};
 }
+
+template<castable_to<ID2D1Bitmap*> Bitmap>
+std::expected<void, error> save_bitmap(Bitmap&& bitmap, null_terminated<wchar_t> Path, const GUID& Format) {
+  const auto b = static_cast<ID2D1Bitmap*>(bitmap);
+  if (!b) return std::unexpected(error(errors::invalid_slotid));
+  comptr<IWICStream> stream;
+  hresult_test(wic::factory()->CreateStream, &stream.get());
+  hresult_test(stream->InitializeFromFilename, Path.data(), GENERIC_WRITE);
+  comptr<IWICBitmapEncoder> encoder;
+  hresult_test(wic::factory()->CreateEncoder, Format, nullptr, &encoder.get());
+  hresult_test(encoder->Initialize, stream.get(), WICBitmapEncoderNoCache);
+  comptr<IWICBitmapFrameEncode> frame;
+  hresult_test(encoder->CreateNewFrame, &frame.get(), nullptr);
+  hresult_test(frame->Initialize, nullptr);
+  comptr<IWICImageEncoder> image_encoder;
+  hresult_test(wic::factory()->CreateImageEncoder, d2d::device(), &image_encoder.get());
+  hresult_test(image_encoder->WriteFrame, b, frame.get(), nullptr);
+  hresult_test(frame->Commit);
+  hresult_test(encoder->Commit);
+  hresult_test(stream->Commit, STGC_DEFAULT);
+  return {};
+}
+
+template<castable_to<ID2D1Bitmap*> Bitmap>
+std::expected<void, error> save_bitmap_png(Bitmap&& bitmap, null_terminated<wchar_t> Path) {
+  if (auto res = save_bitmap(std::forward<Bitmap>(bitmap), std::move(Path), GUID_ContainerFormatPng)) return {};
+  else return res.error().relay();
+}
+
+template<castable_to<ID2D1Bitmap*> Bitmap>
+std::expected<void, error> save_bitmap_jpeg(Bitmap&& bitmap, null_terminated<wchar_t> Path) {
+  if (auto res = save_bitmap(std::forward<Bitmap>(bitmap), std::move(Path), GUID_ContainerFormatJpeg)) return {};
+  else return res.error().relay();
+}
+
 } // namespace yw

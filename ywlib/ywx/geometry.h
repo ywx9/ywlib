@@ -21,7 +21,7 @@ public:
 
   template<typename Self> std::expected<void, error> update_gpu(this Self& self) noexcept {
     if (self._messy || !self._mesh_ready) {
-      if (auto res = self._triangulate(self._remeshing_option); !res) return res.error().relay();
+      if (auto res = self._triangulate(); !res) return res.error().relay();
       self._mesh_ready = true;
     }
     if (!self._cb_world) {

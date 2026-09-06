@@ -1,6 +1,4 @@
 #pragma once
-#include <unordered_map>
-#include <vector>
 #include <yw/geometry_2d.h>
 
 namespace yw::geom {
@@ -31,88 +29,106 @@ public:
     this->remeshing_option(face.remeshing_option());
     if constexpr (same_as<Face<cpu>, polygon<cpu>>) _points = face.points();
   }
+  /// gets the local-coordinate bounding box.
+  constexpr std::expected<bbox<cpu>, error> local_bbox() const noexcept {
+    bbox<cpu> face_bbox;
+    if constexpr (same_as<Face<cpu>, circle<cpu>> || same_as<Face<cpu>, square<cpu>>) {
+      face_bbox = {{-1, -1, 0, 1}, {1, 1, 0, 1}};
+    } else if constexpr (same_as<Face<cpu>, polygon<cpu>>) {
+      if (_points.empty()) return std::unexpected(error(errors::invalid_operation, "prism face polygon has no points"));
+      face_bbox = {{_points[0].x, _points[0].y, 0, 1}, {_points[0].x, _points[0].y, 0, 1}};
+      for (size_t i = 1; i < _points.size(); ++i) {
+        const auto& p = _points[i];
+        face_bbox.min.x = yw::min(face_bbox.min.x, p.x);
+        face_bbox.min.y = yw::min(face_bbox.min.y, p.y);
+        face_bbox.max.x = yw::max(face_bbox.max.x, p.x);
+        face_bbox.max.y = yw::max(face_bbox.max.y, p.y);
+      }
+    } else return std::unexpected(error(errors::invalid_argument, "unsupported prism face"));
+    const auto z0 = yw::min(0.0, _height);
+    const auto z1 = yw::max(0.0, _height);
+    face_bbox.min.z = z0;
+    face_bbox.max.z = z1;
+    return face_bbox;
+  }
 
 protected:
   friend class geometry_base<remove_backend<prism, Face>::template type, Backend>;
   select_type<same_as<Face<cpu>, polygon<cpu>>, array1<double4, cpu>, none> _points;
-  double _height = 1.0;
-  std::expected<void, error> _triangulate(
-    const geom::remeshing_option<remove_backend<prism, Face>::template type>& ro) noexcept;
-  template<floating T> constexpr std::expected<array1<vector4<T>, cpu>, error> _make_vertices() noexcept;
-  constexpr std::expected<array1<uint3>, error> _make_triangles() noexcept;
-  constexpr std::expected<array1<uint2>, error> _make_edges() noexcept { return {}; }
+  double _height = 2.0;
+  std::expected<void, error> _triangulate() noexcept;
 };
 
-template<template<backend> typename Face, backend Backend> requires Face<Backend>::has_bounded_surface
-template<floating T>
-constexpr std::expected<array1<vector4<T>, cpu>, error> prism<Face, Backend>::_make_vertices() noexcept {
-  size_t n = 0;
-  if constexpr (same_as<Face<cpu>, circle<cpu>>) n = this->_remeshing_option.subdivisions.x;
-  else if constexpr (same_as<Face<cpu>, square<cpu>>) n = 4;
-  else if constexpr (same_as<Face<cpu>, polygon<cpu>>) n = _points.size();
-  else return std::unexpected(error(errors::invalid_argument, "unsupported prism face"));
+// template<template<backend> typename Face, backend Backend> requires Face<Backend>::has_bounded_surface
+// template<backend B>
+// constexpr std::expected<array1<vertex<B>, cpu>, error> prism<Face, Backend>::_make_vertices() noexcept {
+//   size_t n = 0;
+//   if constexpr (same_as<Face<cpu>, circle<cpu>>) n = this->_remeshing_option.subdivisions.x;
+//   else if constexpr (same_as<Face<cpu>, square<cpu>>) n = 4;
+//   else if constexpr (same_as<Face<cpu>, polygon<cpu>>) n = _points.size();
+//   else return std::unexpected(error(errors::invalid_argument, "unsupported prism face"));
 
-  if (n < 3) return std::unexpected(error(errors::invalid_argument, "prism vertex count must be at least 3"));
-  if (n > (std::numeric_limits<uint32_t>::max() - 2) / 2)
-    return std::unexpected(error(errors::invalid_argument, "prism vertex count is too large"));
+//   if (n < 3) return std::unexpected(error(errors::invalid_argument, "prism vertex count must be at least 3"));
+//   if (n > (std::numeric_limits<uint32_t>::max() - 2) / 2)
+//     return std::unexpected(error(errors::invalid_argument, "prism vertex count is too large"));
 
-  array1<vector4<T>, cpu> vertices;
-  if (auto res = vertices.resize(n * 2 + 2); !res) return res.error().relay();
+//   array1<vector4<T>, cpu> vertices;
+//   if (auto res = vertices.resize(n * 2 + 2); !res) return res.error().relay();
 
-  const auto h = T(_height);
-  vertices[0] = {0, 0, 0, 1};
-  vertices[n + 1] = {0, 0, h, 1};
-  if constexpr (same_as<Face<cpu>, circle<cpu>>) {
-    for (size_t i = 0; i < n; ++i) {
-      const auto angle = yw::pi2 * double(i) / double(n);
-      const auto x = T(yw::cos(angle));
-      const auto y = T(yw::sin(angle));
-      vertices[i + 1] = {x, y, 0, 1};
-      vertices[n + i + 2] = {x, y, h, 1};
-    }
-  } else if constexpr (same_as<Face<cpu>, square<cpu>>) {
-    constexpr vector4<T> points[] = {{-1, -1, 0, 1}, {1, -1, 0, 1}, {1, 1, 0, 1}, {-1, 1, 0, 1}};
-    for (size_t i = 0; i < n; ++i) {
-      vertices[i + 1] = points[i];
-      vertices[n + i + 2] = {points[i].x, points[i].y, h, 1};
-    }
-  } else if constexpr (same_as<Face<cpu>, polygon<cpu>>) {
-    for (size_t i = 0; i < n; ++i) {
-      vertices[i + 1] = vector4<T>(_points[i]);
-      vertices[n + i + 2] = {T(_points[i].x), T(_points[i].y), h, 1};
-    }
-  }
-  return vertices;
-}
+//   const auto h = T(_height);
+//   vertices[0] = {0, 0, 0, 1};
+//   vertices[n + 1] = {0, 0, h, 1};
+//   if constexpr (same_as<Face<cpu>, circle<cpu>>) {
+//     for (size_t i = 0; i < n; ++i) {
+//       const auto angle = yw::pi2 * double(i) / double(n);
+//       const auto x = T(yw::cos(angle));
+//       const auto y = T(yw::sin(angle));
+//       vertices[i + 1] = {x, y, 0, 1};
+//       vertices[n + i + 2] = {x, y, h, 1};
+//     }
+//   } else if constexpr (same_as<Face<cpu>, square<cpu>>) {
+//     constexpr vector4<T> points[] = {{-1, -1, 0, 1}, {1, -1, 0, 1}, {1, 1, 0, 1}, {-1, 1, 0, 1}};
+//     for (size_t i = 0; i < n; ++i) {
+//       vertices[i + 1] = points[i];
+//       vertices[n + i + 2] = {points[i].x, points[i].y, h, 1};
+//     }
+//   } else if constexpr (same_as<Face<cpu>, polygon<cpu>>) {
+//     for (size_t i = 0; i < n; ++i) {
+//       vertices[i + 1] = vector4<T>(_points[i]);
+//       vertices[n + i + 2] = {T(_points[i].x), T(_points[i].y), h, 1};
+//     }
+//   }
+//   return vertices;
+// }
 
-template<template<backend> typename Face, backend Backend> requires Face<Backend>::has_bounded_surface
-constexpr std::expected<array1<uint3>, error> prism<Face, Backend>::_make_triangles() noexcept {
-  size_t n = 0;
-  if constexpr (same_as<Face<cpu>, circle<cpu>>) n = this->_remeshing_option.subdivisions.x;
-  else if constexpr (same_as<Face<cpu>, square<cpu>>) n = 4;
-  else if constexpr (same_as<Face<cpu>, polygon<cpu>>) n = _points.size();
-  else return std::unexpected(error(errors::invalid_argument, "unsupported prism face"));
+// template<template<backend> typename Face, backend Backend> requires Face<Backend>::has_bounded_surface
+// constexpr std::expected<array1<uint3>, error> prism<Face, Backend>::_make_triangles() noexcept {
+//   size_t n = 0;
+//   if constexpr (same_as<Face<cpu>, circle<cpu>>) n = this->_remeshing_option.subdivisions.x;
+//   else if constexpr (same_as<Face<cpu>, square<cpu>>) n = 4;
+//   else if constexpr (same_as<Face<cpu>, polygon<cpu>>) n = _points.size();
+//   else return std::unexpected(error(errors::invalid_argument, "unsupported prism face"));
 
-  if (n < 3) return std::unexpected(error(errors::invalid_argument, "prism vertex count must be at least 3"));
-  if (n > (std::numeric_limits<uint32_t>::max() - 2) / 2)
-    return std::unexpected(error(errors::invalid_argument, "prism vertex count is too large"));
+//   if (n < 3) return std::unexpected(error(errors::invalid_argument, "prism vertex count must be at least 3"));
+//   if (n > (std::numeric_limits<uint32_t>::max() - 2) / 2)
+//     return std::unexpected(error(errors::invalid_argument, "prism vertex count is too large"));
 
-  array1<uint3> triangles;
-  if (auto res = triangles.resize(n * 4); !res) return res.error().relay();
+//   array1<uint3> triangles;
+//   if (auto res = triangles.resize(n * 4); !res) return res.error().relay();
 
-  const auto top_center = uint32_t(n + 1);
-  for (size_t i = 0; i < n; ++i) {
-    const auto current = uint32_t(i + 1);
-    const auto next = uint32_t((i + 1) % n + 1);
-    const auto top_current = uint32_t(n + i + 2);
-    const auto top_next = uint32_t(n + (i + 1) % n + 2);
-    triangles[i] = {0, next, current};
-    triangles[n + i] = {top_center, top_current, top_next};
-    triangles[n * 2 + i] = {current, next, top_current};
-    triangles[n * 3 + i] = {next, top_next, top_current};
-  }
-  return triangles;
-}
+//   const auto top_center = uint32_t(n + 1);
+//   for (size_t i = 0; i < n; ++i) {
+//     const auto current = uint32_t(i + 1);
+//     const auto next = uint32_t((i + 1) % n + 1);
+//     const auto top_current = uint32_t(n + i + 2);
+//     const auto top_next = uint32_t(n + (i + 1) % n + 2);
+//     triangles[i] = {0, next, current};
+//     triangles[n + i] = {top_center, top_current, top_next};
+//     triangles[n * 2 + i] = {current, next, top_current};
+//     triangles[n * 3 + i] = {next, top_next, top_current};
+//   }
+//   return triangles;
+// }
 
 /// MARK: geom::pyramid
 
@@ -125,151 +141,129 @@ public:
     this->remeshing_option(face.remeshing_option());
     if constexpr (same_as<Face<cpu>, polygon<cpu>>) _points = face.points();
   }
+  /// gets the local-coordinate bounding box.
+  constexpr std::expected<bbox<cpu>, error> local_bbox() const noexcept {
+    bbox<cpu> face_bbox;
+    if constexpr (same_as<Face<cpu>, circle<cpu>> || same_as<Face<cpu>, square<cpu>>) {
+      face_bbox = {{-1, -1, 0, 1}, {1, 1, 0, 1}};
+    } else if constexpr (same_as<Face<cpu>, polygon<cpu>>) {
+      if (_points.empty()) return std::unexpected(error(errors::invalid_operation, "pyramid face polygon has no points"));
+      face_bbox = {{_points[0].x, _points[0].y, 0, 1}, {_points[0].x, _points[0].y, 0, 1}};
+      for (size_t i = 1; i < _points.size(); ++i) {
+        const auto& p = _points[i];
+        face_bbox.min.x = yw::min(face_bbox.min.x, p.x);
+        face_bbox.min.y = yw::min(face_bbox.min.y, p.y);
+        face_bbox.max.x = yw::max(face_bbox.max.x, p.x);
+        face_bbox.max.y = yw::max(face_bbox.max.y, p.y);
+      }
+    } else return std::unexpected(error(errors::invalid_argument, "unsupported pyramid face"));
+    face_bbox.min.x = yw::min(face_bbox.min.x, 0.0);
+    face_bbox.min.y = yw::min(face_bbox.min.y, 0.0);
+    face_bbox.max.x = yw::max(face_bbox.max.x, 0.0);
+    face_bbox.max.y = yw::max(face_bbox.max.y, 0.0);
+    const auto z0 = yw::min(0.0, _height);
+    const auto z1 = yw::max(0.0, _height);
+    face_bbox.min.z = z0;
+    face_bbox.max.z = z1;
+    return face_bbox;
+  }
 
 protected:
   friend class geometry_base<remove_backend<pyramid, Face>::template type, Backend>;
   select_type<same_as<Face<cpu>, polygon<cpu>>, array1<double4, cpu>, none> _points;
-  double _height = 1.0;
-  std::expected<void, error> _triangulate(
-    const geom::remeshing_option<remove_backend<pyramid, Face>::template type>& ro) noexcept;
-  template<floating T> constexpr std::expected<array1<vector4<T>, cpu>, error> _make_vertices() noexcept;
-  constexpr std::expected<array1<uint3>, error> _make_triangles() noexcept;
-  constexpr std::expected<array1<uint2>, error> _make_edges() noexcept { return {}; }
+  double _height = 2.0;
+  std::expected<void, error> _triangulate() noexcept;
 };
 
-template<template<backend> typename Face, backend Backend> requires Face<Backend>::has_bounded_surface
-template<floating T>
-constexpr std::expected<array1<vector4<T>, cpu>, error> pyramid<Face, Backend>::_make_vertices() noexcept {
-  size_t n = 0;
-  if constexpr (same_as<Face<cpu>, circle<cpu>>) n = this->_remeshing_option.subdivisions.x;
-  else if constexpr (same_as<Face<cpu>, square<cpu>>) n = 4;
-  else if constexpr (same_as<Face<cpu>, polygon<cpu>>) n = _points.size();
-  else return std::unexpected(error(errors::invalid_argument, "unsupported pyramid face"));
+// template<template<backend> typename Face, backend Backend> requires Face<Backend>::has_bounded_surface
+// template<backend B>
+// constexpr std::expected<array1<vertex<B>, cpu>, error> pyramid<Face, Backend>::_make_vertices() noexcept {
+//   size_t n = 0;
+//   if constexpr (same_as<Face<cpu>, circle<cpu>>) n = this->_remeshing_option.subdivisions.x;
+//   else if constexpr (same_as<Face<cpu>, square<cpu>>) n = 4;
+//   else if constexpr (same_as<Face<cpu>, polygon<cpu>>) n = _points.size();
+//   else return std::unexpected(error(errors::invalid_argument, "unsupported pyramid face"));
 
-  if (n < 3) return std::unexpected(error(errors::invalid_argument, "pyramid vertex count must be at least 3"));
-  if (n > std::numeric_limits<uint32_t>::max() - 2)
-    return std::unexpected(error(errors::invalid_argument, "pyramid vertex count is too large"));
+//   if (n < 3) return std::unexpected(error(errors::invalid_argument, "pyramid vertex count must be at least 3"));
+//   if (n > std::numeric_limits<uint32_t>::max() - 2)
+//     return std::unexpected(error(errors::invalid_argument, "pyramid vertex count is too large"));
 
-  array1<vector4<T>, cpu> vertices;
-  if (auto res = vertices.resize(n + 2); !res) return res.error().relay();
+//   array1<vector4<T>, cpu> vertices;
+//   if (auto res = vertices.resize(n + 2); !res) return res.error().relay();
 
-  const auto h = T(_height);
-  vertices[0] = {0, 0, 0, 1};
-  vertices[n + 1] = {0, 0, h, 1};
-  if constexpr (same_as<Face<cpu>, circle<cpu>>) {
-    for (size_t i = 0; i < n; ++i) {
-      const auto angle = yw::pi2 * double(i) / double(n);
-      vertices[i + 1] = {T(yw::cos(angle)), T(yw::sin(angle)), 0, 1};
-    }
-  } else if constexpr (same_as<Face<cpu>, square<cpu>>) {
-    constexpr vector4<T> points[] = {{-1, -1, 0, 1}, {1, -1, 0, 1}, {1, 1, 0, 1}, {-1, 1, 0, 1}};
-    for (size_t i = 0; i < n; ++i) vertices[i + 1] = points[i];
-  } else if constexpr (same_as<Face<cpu>, polygon<cpu>>) {
-    for (size_t i = 0; i < n; ++i) vertices[i + 1] = vector4<T>(_points[i]);
-  }
-  return vertices;
-}
-
-template<template<backend> typename Face, backend Backend> requires Face<Backend>::has_bounded_surface
-constexpr std::expected<array1<uint3>, error> pyramid<Face, Backend>::_make_triangles() noexcept {
-  size_t n = 0;
-  if constexpr (same_as<Face<cpu>, circle<cpu>>) n = this->_remeshing_option.subdivisions.x;
-  else if constexpr (same_as<Face<cpu>, square<cpu>>) n = 4;
-  else if constexpr (same_as<Face<cpu>, polygon<cpu>>) n = _points.size();
-  else return std::unexpected(error(errors::invalid_argument, "unsupported pyramid face"));
-
-  if (n < 3) return std::unexpected(error(errors::invalid_argument, "pyramid vertex count must be at least 3"));
-  if (n > std::numeric_limits<uint32_t>::max() - 2)
-    return std::unexpected(error(errors::invalid_argument, "pyramid vertex count is too large"));
-
-  array1<uint3> triangles;
-  if (auto res = triangles.resize(n * 2); !res) return res.error().relay();
-
-  const auto apex = uint32_t(n + 1);
-  for (size_t i = 0; i < n; ++i) {
-    const auto current = uint32_t(i + 1);
-    const auto next = uint32_t((i + 1) % n + 1);
-    triangles[i] = {0, next, current};
-    triangles[n + i] = {current, next, apex};
-  }
-  return triangles;
-}
-
-// /// MARK: geom::sphere
-
-// template<backend> class sphere : public geometry3_base<sphere<Backend>, Backend> {
-// public:
-//   struct remeshing_option_t {
-//     uint1 subdivisions = 2;
-//   };
-
-// protected:
-//   friend class geometry_base<sphere<Backend>, Backend>;
-//   double _radius = 1.0;
-//   remeshing_option_t _remeshing_option{};
-//   std::expected<void, error> _triangulate(const remeshing_option_t& ro) noexcept;
-//   std::expected<void, error> _triangulate_default() noexcept { return _triangulate(_remeshing_option); }
-
-// public:
-//   constexpr sphere() noexcept = default;
-//   constexpr explicit sphere(double radius) noexcept : _radius(radius) {}
-//   constexpr double radius() const noexcept { return _radius; }
-//   constexpr void radius(double r) noexcept {
-//     _radius = r;
-//     this->_messy = true;
-//   }
-//   constexpr double4 center() const noexcept { return {this->_rigid[0][3], this->_rigid[1][3], this->_rigid[2][3], 1};
-//   }
-
-//   std::expected<mesh<cpu>, error> to_mesh(const remeshing_option_t& ro = {}) const noexcept {
-//     if (_radius <= 0) return std::unexpected(error(errors::invalid_argument, "sphere radius must be positive"));
-//     constexpr double x = 0.525731112119133606;
-//     constexpr double z = 0.850650808352039932;
-//     std::vector<double3> vertices{
-//       {-x, 0, z}, {x, 0, z}, {-x, 0, -z}, {x, 0, -z}, {0, z, x}, {0, z, -x}, {0, -z, x}, {0, -z, -x}, {z, x, 0},
-//       {-z, x, 0}, {z, -x, 0}, {-z, -x, 0}};
-//     std::vector<uint3> triangles{
-//       {0, 4, 1}, {0, 9, 4}, {9, 5, 4}, {4, 5, 8}, {4, 8, 1}, {8, 10, 1}, {8, 3, 10}, {5, 3, 8}, {5, 2, 3}, {2, 7, 3},
-//       {7, 10, 3}, {7, 6, 10}, {7, 11, 6}, {11, 0, 6}, {0, 1, 6}, {6, 1, 10}, {9, 0, 11}, {9, 11, 2}, {9, 2, 5},
-//       {7, 2, 11}};
-//     for (uint32_t s = 0; s < ro.subdivisions.x; ++s) {
-//       std::unordered_map<uint64_t, uint32_t> midpoints;
-//       auto midpoint = [&](uint32_t a, uint32_t b) -> std::expected<uint32_t, error> {
-//         if (b < a) std::swap(a, b);
-//         const auto key = (uint64_t(a) << 32) | b;
-//         if (const auto it = midpoints.find(key); it != midpoints.end()) return it->second;
-//         if (vertices.size() >= std::numeric_limits<uint32_t>::max())
-//           return std::unexpected(error(errors::invalid_argument, "sphere mesh vertex count is too large"));
-//         const auto m = ((vertices[a] + vertices[b]) * 0.5).normalized();
-//         const auto index = uint32_t(vertices.size());
-//         vertices.push_back(m);
-//         midpoints.emplace(key, index);
-//         return index;
-//       };
-//       std::vector<uint3> next;
-//       next.reserve(triangles.size() * 4);
-//       for (const auto& t : triangles) {
-//         auto ab = midpoint(t.x, t.y);
-//         if (!ab) return ab.error().relay();
-//         auto bc = midpoint(t.y, t.z);
-//         if (!bc) return bc.error().relay();
-//         auto ca = midpoint(t.z, t.x);
-//         if (!ca) return ca.error().relay();
-//         next.push_back({t.x, *ab, *ca});
-//         next.push_back({t.y, *bc, *ab});
-//         next.push_back({t.z, *ca, *bc});
-//         next.push_back({*ab, *bc, *ca});
-//       }
-//       triangles = std::move(next);
+//   const auto h = T(_height);
+//   vertices[0] = {0, 0, 0, 1};
+//   vertices[n + 1] = {0, 0, h, 1};
+//   if constexpr (same_as<Face<cpu>, circle<cpu>>) {
+//     for (size_t i = 0; i < n; ++i) {
+//       const auto angle = yw::pi2 * double(i) / double(n);
+//       vertices[i + 1] = {T(yw::cos(angle)), T(yw::sin(angle)), 0, 1};
 //     }
-//     mesh<cpu> out;
-//     for (const auto& v : vertices)
-//       if (auto res = out.add_vertex(v * _radius); !res) return res.error().relay();
-//     if (auto res = out.assign_triangles(triangles); !res) return res.error().relay();
-//     if (auto res = out.rebuild_edges(); !res) return res.error().relay();
-//     return out;
+//   } else if constexpr (same_as<Face<cpu>, square<cpu>>) {
+//     constexpr vector4<T> points[] = {{-1, -1, 0, 1}, {1, -1, 0, 1}, {1, 1, 0, 1}, {-1, 1, 0, 1}};
+//     for (size_t i = 0; i < n; ++i) vertices[i + 1] = points[i];
+//   } else if constexpr (same_as<Face<cpu>, polygon<cpu>>) {
+//     for (size_t i = 0; i < n; ++i) vertices[i + 1] = vector4<T>(_points[i]);
 //   }
-// };
+//   return vertices;
+// }
+
+// template<template<backend> typename Face, backend Backend> requires Face<Backend>::has_bounded_surface
+// constexpr std::expected<array1<uint3>, error> pyramid<Face, Backend>::_make_triangles() noexcept {
+//   size_t n = 0;
+//   if constexpr (same_as<Face<cpu>, circle<cpu>>) n = this->_remeshing_option.subdivisions.x;
+//   else if constexpr (same_as<Face<cpu>, square<cpu>>) n = 4;
+//   else if constexpr (same_as<Face<cpu>, polygon<cpu>>) n = _points.size();
+//   else return std::unexpected(error(errors::invalid_argument, "unsupported pyramid face"));
+
+//   if (n < 3) return std::unexpected(error(errors::invalid_argument, "pyramid vertex count must be at least 3"));
+//   if (n > std::numeric_limits<uint32_t>::max() - 2)
+//     return std::unexpected(error(errors::invalid_argument, "pyramid vertex count is too large"));
+
+//   array1<uint3> triangles;
+//   if (auto res = triangles.resize(n * 2); !res) return res.error().relay();
+
+//   const auto apex = uint32_t(n + 1);
+//   for (size_t i = 0; i < n; ++i) {
+//     const auto current = uint32_t(i + 1);
+//     const auto next = uint32_t((i + 1) % n + 1);
+//     triangles[i] = {0, next, current};
+//     triangles[n + i] = {current, next, apex};
+//   }
+//   return triangles;
+// }
+
+/// MARK: geom::sphere
+
+template<backend Backend> class sphere;
+template<> struct remeshing_option<sphere> {
+  uint1 subdivisions = 2; // recursive subdivision level; each edge has 2^level segments
+};
+
+/// represents a unit sphere centered at the origin; use scale() to change its radii.
+template<backend Backend> class sphere : public geometry_base<sphere, Backend> {
+public:
+  constexpr sphere() noexcept = default;
+  constexpr double4 center() const noexcept {
+    return {this->_rigid[0][3], this->_rigid[1][3], this->_rigid[2][3], 1};
+  }
+  constexpr std::expected<bbox<cpu>, error> local_bbox() const noexcept {
+    return bbox<cpu>{{-1, -1, -1, 1}, {1, 1, 1, 1}};
+  }
+  const geom::remeshing_option<sphere>& remeshing_option() const noexcept { return this->_remeshing_option; }
+  geom::remeshing_option<sphere>& remeshing_option() noexcept {
+    this->_messy = true;
+    return this->_remeshing_option;
+  }
+  void remeshing_option(const geom::remeshing_option<sphere>& option) noexcept {
+    this->_remeshing_option = option;
+    this->_messy = true;
+  }
+
+protected:
+  friend class geometry_base<sphere, Backend>;
+  std::expected<void, error> _triangulate() noexcept;
+};
 
 // /// MARK: geom::polyline
 
