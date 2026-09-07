@@ -3,10 +3,17 @@
 #include <yw/backend.h>
 #include <yw/math.h>
 #include <yw/matrix.h>
+#include <yw/solver.h>
 
 namespace yw::geom {
 
 template<template<backend> typename Geometry> struct remeshing_option {};
+
+enum class point_relation {
+  outside,
+  boundary,
+  inside,
+};
 
 /// MARK: geom::bbox
 
@@ -280,6 +287,30 @@ public:
       matrix_row(double4(_rigid[0]) * _scale), matrix_row(double4(_rigid[1]) * _scale),
       matrix_row(double4(_rigid[2]) * _scale), matrix_row{0, 0, 0, 1}};
   }
+  /// Converts a world coordinate into this object's local coordinates.
+  constexpr double4 local_scaled_point(const double4& world) const noexcept {
+    const auto p = world - double4{_rigid[0][3], _rigid[1][3], _rigid[2][3], 0};
+    return {
+      p.x * _rigid[0][0] + p.y * _rigid[1][0] + p.z * _rigid[2][0],
+      p.x * _rigid[0][1] + p.y * _rigid[1][1] + p.z * _rigid[2][1],
+      p.x * _rigid[0][2] + p.y * _rigid[1][2] + p.z * _rigid[2][2], world.w};
+  }
+  constexpr double4 local_scaled_point(const double3& world) const noexcept {
+    return local_scaled_point(double4(world, 1));
+  }
+  constexpr double4 local_scaled_point(const double2& world) const noexcept {
+    return local_scaled_point(double4(world.x, world.y, 0, 1));
+  }
+  /// Converts a world coordinate into this object's local coordinates.
+  constexpr double4 local_point(const double4& world) const noexcept {
+    const auto p = local_scaled_point(world);
+    return {p.x / _scale.x, p.y / _scale.y, p.z / _scale.z, p.w};
+  }
+  constexpr double4 local_point(const double3& world) const noexcept { return local_point(double4(world, 1)); }
+  constexpr double4 local_point(const double2& world) const noexcept {
+    return local_point(double4(world.x, world.y, 0, 1));
+  }
+
   /// Coordinates returned by unprefixed shape getters are local coordinates.
   /// world_ getters apply this object's transformation, independently of GPU updates.
   template<typename Self> requires requires(const Self& s) { s.center(); }
@@ -303,8 +334,7 @@ public:
   }
 
   /// Gets a point in world coordinates (including parameterized curve points).
-  template<typename Self, typename... Args>
-    requires requires(const Self& s, Args... args) { s.point(args...); }
+  template<typename Self, typename... Args> requires requires(const Self& s, Args... args) { s.point(args...); }
   constexpr double4 world_point(this const Self& self, Args... args) noexcept {
     return transform(self.transformation4(), self.point(args...));
   }

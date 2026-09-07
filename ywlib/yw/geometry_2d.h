@@ -3,6 +3,50 @@
 
 namespace yw::geom {
 
+namespace detail {
+constexpr double positive_tolerance(double tolerance) noexcept { return yw::max(tolerance < 0 ? -tolerance : tolerance, 1e-12); }
+
+constexpr double local_tolerance(const double4& scale, double tolerance) noexcept {
+  static_cast<void>(scale);
+  return positive_tolerance(tolerance);
+}
+
+constexpr double point_segment_distance(double2 p, double2 a, double2 b) noexcept {
+  const auto ab = b - a;
+  const auto len2 = ab.squared_length();
+  if (len2 <= 0) return (p - a).length();
+  const auto t = yw::clamp(dot(p - a, ab) / len2, 0.0, 1.0);
+  return (p - (a + ab * t)).length();
+}
+
+constexpr bool point_on_segment(double2 p, double2 a, double2 b, double tolerance) noexcept {
+  return point_segment_distance(p, a, b) <= positive_tolerance(tolerance);
+}
+
+constexpr double cross_xy(double2 a, double2 b) noexcept { return a.x * b.y - a.y * b.x; }
+
+constexpr bool angle_in_sweep(double angle, double start, double sweep, double tolerance) noexcept {
+  if (sweep == 0) return yw::abs(yw::atan2(yw::sin(angle - start), yw::cos(angle - start))) <= tolerance;
+  const auto two_pi = yw::pi2;
+  auto delta = yw::fmod(angle - start, two_pi);
+  if (delta < 0) delta += two_pi;
+  if (sweep > 0) return delta <= sweep + tolerance || delta >= two_pi - tolerance;
+  auto neg_delta = delta == 0 ? 0.0 : delta - two_pi;
+  return neg_delta >= sweep - tolerance || neg_delta <= -two_pi + tolerance;
+}
+
+template<typename Curve> constexpr bool point_on_curve(double2 p, const Curve& curve, double tolerance) noexcept {
+  constexpr uint32_t n = 64;
+  auto prev = curve.point(0.0).xy();
+  for (uint32_t i = 1; i <= n; ++i) {
+    const auto next = curve.point(double(i) / double(n)).xy();
+    if (point_on_segment(p, prev, next, tolerance)) return true;
+    prev = next;
+  }
+  return false;
+}
+} // namespace detail
+
 /// MARK: geom::segment
 
 /// represents a 2D line segment as a transformed unit segment from (0, 0) to (1, 0).
@@ -35,6 +79,18 @@ public:
   constexpr double world_length() const noexcept { return yw::abs(this->_scale.x); }
   /// gets the local-coordinate bounding box.
   constexpr geom::bbox<cpu> bbox() const noexcept { return {{0, 0, 0, 1}, {1, 0, 0, 1}}; }
+  /// classifies a world coordinate against this segment.
+  constexpr point_relation contains(const double4& world, double tolerance = 0) const noexcept {
+    const auto p = this->local_point(world).xy();
+    const auto t = detail::local_tolerance(this->_scale, tolerance);
+    return detail::point_on_segment(p, {0, 0}, {1, 0}, t) ? point_relation::boundary : point_relation::outside;
+  }
+  constexpr point_relation contains(const double3& world, double tolerance = 0) const noexcept {
+    return contains(double4(world, 1), tolerance);
+  }
+  constexpr point_relation contains(const double2& world, double tolerance = 0) const noexcept {
+    return contains(double4(world.x, world.y, 0, 1), tolerance);
+  }
 
 protected:
   friend class geometry_base<segment, Backend>;
@@ -93,6 +149,18 @@ public:
   constexpr void direction(const double4& direction) noexcept {
     this->_rotation(double3(0, 0, yw::atan2(direction.y, direction.x)));
   }
+  /// classifies a world coordinate against this ray.
+  constexpr point_relation contains(const double4& world, double tolerance = 0) const noexcept {
+    const auto p = this->local_point(world).xy();
+    const auto t = detail::local_tolerance(this->_scale, tolerance);
+    return yw::abs(p.y) <= t && p.x >= -t ? point_relation::boundary : point_relation::outside;
+  }
+  constexpr point_relation contains(const double3& world, double tolerance = 0) const noexcept {
+    return contains(double4(world, 1), tolerance);
+  }
+  constexpr point_relation contains(const double2& world, double tolerance = 0) const noexcept {
+    return contains(double4(world.x, world.y, 0, 1), tolerance);
+  }
 
 protected:
   friend class geometry_base<ray, Backend>;
@@ -137,6 +205,18 @@ public:
   }
   constexpr void direction(const double4& direction) noexcept {
     this->_rotation(double3(0, 0, yw::atan2(direction.y, direction.x)));
+  }
+  /// classifies a world coordinate against this line.
+  constexpr point_relation contains(const double4& world, double tolerance = 0) const noexcept {
+    const auto p = this->local_point(world).xy();
+    const auto t = detail::local_tolerance(this->_scale, tolerance);
+    return yw::abs(p.y) <= t ? point_relation::boundary : point_relation::outside;
+  }
+  constexpr point_relation contains(const double3& world, double tolerance = 0) const noexcept {
+    return contains(double4(world, 1), tolerance);
+  }
+  constexpr point_relation contains(const double2& world, double tolerance = 0) const noexcept {
+    return contains(double4(world.x, world.y, 0, 1), tolerance);
   }
 
 protected:
@@ -189,6 +269,22 @@ public:
   constexpr double4 tangent(double t) const noexcept {
     const auto a = _start_angle + _sweep_angle * t;
     return (double4{-yw::sin(a), yw::cos(a), 0, 0} * _sweep_angle).normalized();
+  }
+  /// classifies a world coordinate against this arc.
+  constexpr point_relation contains(const double4& world, double tolerance = 0) const noexcept {
+    const auto p = this->local_point(world).xy();
+    const auto t = detail::local_tolerance(this->_scale, tolerance);
+    const auto r = p.length();
+    const auto a = yw::atan2(p.y, p.x);
+    return yw::abs(r - 1.0) <= t && detail::angle_in_sweep(a, _start_angle, _sweep_angle, t)
+           ? point_relation::boundary
+           : point_relation::outside;
+  }
+  constexpr point_relation contains(const double3& world, double tolerance = 0) const noexcept {
+    return contains(double4(world, 1), tolerance);
+  }
+  constexpr point_relation contains(const double2& world, double tolerance = 0) const noexcept {
+    return contains(double4(world.x, world.y, 0, 1), tolerance);
   }
 
 protected:
@@ -272,6 +368,18 @@ public:
   /// gets a local unit tangent vector on the curve for t in [0, 1].
   constexpr double4 tangent(double t) const noexcept {
     return ((_p1 - _p0) * (2.0 * (1.0 - t)) + (_p2 - _p1) * (2.0 * t)).normalized();
+  }
+  /// classifies a world coordinate against this curve.
+  constexpr point_relation contains(const double4& world, double tolerance = 0) const noexcept {
+    const auto p = this->local_point(world).xy();
+    const auto t = detail::local_tolerance(this->_scale, tolerance);
+    return detail::point_on_curve(p, *this, t) ? point_relation::boundary : point_relation::outside;
+  }
+  constexpr point_relation contains(const double3& world, double tolerance = 0) const noexcept {
+    return contains(double4(world, 1), tolerance);
+  }
+  constexpr point_relation contains(const double2& world, double tolerance = 0) const noexcept {
+    return contains(double4(world.x, world.y, 0, 1), tolerance);
   }
 
 protected:
@@ -377,6 +485,18 @@ public:
     return ((_p1 - _p0) * (3.0 * u * u) + (_p2 - _p1) * (6.0 * u * t) + (_p3 - _p2) * (3.0 * t * t))
       .normalized();
   }
+  /// classifies a world coordinate against this curve.
+  constexpr point_relation contains(const double4& world, double tolerance = 0) const noexcept {
+    const auto p = this->local_point(world).xy();
+    const auto t = detail::local_tolerance(this->_scale, tolerance);
+    return detail::point_on_curve(p, *this, t) ? point_relation::boundary : point_relation::outside;
+  }
+  constexpr point_relation contains(const double3& world, double tolerance = 0) const noexcept {
+    return contains(double4(world, 1), tolerance);
+  }
+  constexpr point_relation contains(const double2& world, double tolerance = 0) const noexcept {
+    return contains(double4(world.x, world.y, 0, 1), tolerance);
+  }
 
 protected:
   friend class geometry_base<cubic_bezier, Backend>;
@@ -407,6 +527,18 @@ public:
     const auto h = double(this->_remeshing_option.half_extent.x);
     return {{-h, -h, 0, 1}, {h, h, 0, 1}};
   }
+  /// classifies a world coordinate against this plane.
+  constexpr point_relation contains(const double4& world, double tolerance = 0) const noexcept {
+    const auto p = this->local_point(world);
+    const auto t = detail::local_tolerance(this->_scale, tolerance);
+    return yw::abs(p.z) <= t ? point_relation::inside : point_relation::outside;
+  }
+  constexpr point_relation contains(const double3& world, double tolerance = 0) const noexcept {
+    return contains(double4(world, 1), tolerance);
+  }
+  constexpr point_relation contains(const double2& world, double tolerance = 0) const noexcept {
+    return contains(double4(world.x, world.y, 0, 1), tolerance);
+  }
 
 protected:
   friend class geometry_base<plane, Backend>;
@@ -433,6 +565,30 @@ public:
   constexpr double world_area() const noexcept { return area() * this->_scale.x * this->_scale.y; }
   /// gets the local-coordinate bounding box.
   constexpr geom::bbox<cpu> bbox() const noexcept { return {{-1, -1, 0, 1}, {1, 1, 0, 1}}; }
+  /// classifies a world coordinate against this square.
+  constexpr point_relation contains(const double4& world, double tolerance = 0) const noexcept {
+    const auto t = detail::local_tolerance(this->_scale, tolerance);
+    if (this->_scale.x == 0 || this->_scale.y == 0) {
+      const auto sp = this->local_scaled_point(world).xy();
+      const auto x = this->_scale.x == 0 ? 0.0 : sp.x / this->_scale.x;
+      const auto y = this->_scale.y == 0 ? 0.0 : sp.y / this->_scale.y;
+      if (this->_scale.x == 0 && this->_scale.y == 0)
+        return sp.length() <= t ? point_relation::boundary : point_relation::outside;
+      if (this->_scale.x == 0)
+        return yw::abs(sp.x) <= t && y >= -1.0 - t && y <= 1.0 + t ? point_relation::boundary : point_relation::outside;
+      return yw::abs(sp.y) <= t && x >= -1.0 - t && x <= 1.0 + t ? point_relation::boundary : point_relation::outside;
+    }
+    const auto p = this->local_point(world).xy();
+    if (p.x < -1.0 - t || p.x > 1.0 + t || p.y < -1.0 - t || p.y > 1.0 + t) return point_relation::outside;
+    if (yw::abs(yw::abs(p.x) - 1.0) <= t || yw::abs(yw::abs(p.y) - 1.0) <= t) return point_relation::boundary;
+    return point_relation::inside;
+  }
+  constexpr point_relation contains(const double3& world, double tolerance = 0) const noexcept {
+    return contains(double4(world, 1), tolerance);
+  }
+  constexpr point_relation contains(const double2& world, double tolerance = 0) const noexcept {
+    return contains(double4(world.x, world.y, 0, 1), tolerance);
+  }
 
 protected:
   friend class geometry_base<square, Backend>;
@@ -464,6 +620,31 @@ public:
   constexpr double world_area() const noexcept { return area() * this->_scale.x * this->_scale.y; }
   /// gets the local-coordinate bounding box.
   constexpr geom::bbox<cpu> bbox() const noexcept { return {{-1, -1, 0, 1}, {1, 1, 0, 1}}; }
+  /// classifies a world coordinate against this circle.
+  constexpr point_relation contains(const double4& world, double tolerance = 0) const noexcept {
+    const auto t = detail::local_tolerance(this->_scale, tolerance);
+    if (this->_scale.x == 0 || this->_scale.y == 0) {
+      const auto sp = this->local_scaled_point(world).xy();
+      const auto x = this->_scale.x == 0 ? 0.0 : sp.x / this->_scale.x;
+      const auto y = this->_scale.y == 0 ? 0.0 : sp.y / this->_scale.y;
+      if (this->_scale.x == 0 && this->_scale.y == 0)
+        return sp.length() <= t ? point_relation::boundary : point_relation::outside;
+      if (this->_scale.x == 0)
+        return yw::abs(sp.x) <= t && yw::abs(y) <= 1.0 + t ? point_relation::boundary : point_relation::outside;
+      return yw::abs(sp.y) <= t && yw::abs(x) <= 1.0 + t ? point_relation::boundary : point_relation::outside;
+    }
+    const auto p = this->local_point(world).xy();
+    const auto r = p.length();
+    if (r > 1.0 + t) return point_relation::outside;
+    if (yw::abs(r - 1.0) <= t) return point_relation::boundary;
+    return point_relation::inside;
+  }
+  constexpr point_relation contains(const double3& world, double tolerance = 0) const noexcept {
+    return contains(double4(world, 1), tolerance);
+  }
+  constexpr point_relation contains(const double2& world, double tolerance = 0) const noexcept {
+    return contains(double4(world.x, world.y, 0, 1), tolerance);
+  }
 
 protected:
   friend class geometry_base<circle, Backend>;
@@ -549,6 +730,30 @@ public:
   constexpr void clear() noexcept {
     _points.clear();
     this->_messy = true;
+  }
+  /// classifies a world coordinate against this polygon.
+  constexpr point_relation contains(const double4& world, double tolerance = 0) const noexcept {
+    const auto p = this->local_point(world).xy();
+    const auto t = detail::local_tolerance(this->_scale, tolerance);
+    if (_points.empty()) return point_relation::outside;
+    if (_points.size() == 1) return (p - _points[0].xy()).length() <= t ? point_relation::boundary : point_relation::outside;
+    bool inside = false;
+    for (size_t i = 0, j = _points.size() - 1; i < _points.size(); j = i++) {
+      const auto a = _points[j].xy();
+      const auto b = _points[i].xy();
+      if (detail::point_on_segment(p, a, b, t)) return point_relation::boundary;
+      if ((a.y > p.y) != (b.y > p.y)) {
+        const auto x = (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x;
+        if (p.x < x) inside = !inside;
+      }
+    }
+    return inside ? point_relation::inside : point_relation::outside;
+  }
+  constexpr point_relation contains(const double3& world, double tolerance = 0) const noexcept {
+    return contains(double4(world, 1), tolerance);
+  }
+  constexpr point_relation contains(const double2& world, double tolerance = 0) const noexcept {
+    return contains(double4(world.x, world.y, 0, 1), tolerance);
   }
 
 protected:
