@@ -7,7 +7,7 @@ namespace detail {
 inline constexpr uint32_t pack_tangent_xy(double x, double y) noexcept {
   const auto len = yw::sqrt(x * x + y * y);
   if (len <= 0) return tangent_x;
-  return pack_vector4_to_uint32(float4{float(x / len), float(y / len), 0, 1});
+  return pack_vector_to_uint(float4{float(x / len), float(y / len), 0, 1});
 }
 
 inline constexpr uint32_t pack_tangent_xy(const double4& tangent) noexcept {

@@ -52,27 +52,29 @@ template<backend Backend> struct vertex;
 
 template<> struct vertex<cpu> {
   double4 position = {0, 0, 0, 1};
+  constexpr bool operator==(const vertex&) const noexcept = default;
 };
 
-constexpr uint32_t pack_vector4_to_uint32(double4 v) noexcept {
+constexpr uint32_t pack_vector_to_uint(double4 v) noexcept {
   return std::bit_cast<uint32_t>(
     (static_cast<int32_t>(v.x * 1023) & 0x3FF) | ((static_cast<int32_t>(v.y * 1023) & 0x3FF) << 10) |
     ((static_cast<int32_t>(v.z * 1023) & 0x3FF) << 20) | (int32_t(v.w < 0) << 30));
 }
-constexpr uint32_t pack_vector4_to_uint32(float4 v) noexcept {
+constexpr uint32_t pack_vector_to_uint(float4 v) noexcept {
   return std::bit_cast<uint32_t>(
     (static_cast<int32_t>(v.x * 1023) & 0x3FF) | ((static_cast<int32_t>(v.y * 1023) & 0x3FF) << 10) |
     ((static_cast<int32_t>(v.z * 1023) & 0x3FF) << 20) | (int32_t(v.w < 0) << 30));
 }
 
-inline constexpr uint32_t normal_z = pack_vector4_to_uint32(float4{0, 0, 1, 0});
-inline constexpr uint32_t tangent_x = pack_vector4_to_uint32(float4{1, 0, 0, 0});
+inline constexpr uint32_t normal_z = pack_vector_to_uint(float4{0, 0, 1, 0});
+inline constexpr uint32_t tangent_x = pack_vector_to_uint(float4{1, 0, 0, 0});
 
 template<> struct vertex<gpu> {
   float4 position = {0, 0, 0, 1};
   float2 uv = {0, 0};
   uint32_t normal = normal_z;   // encoded normal {x:10, y:10, z:10, w:2 (unused)}
   uint32_t tangent = tangent_x; // encoded tangent {x:10, y:10, z:10, w:2 (bitangent sign)}
+  constexpr bool operator==(const vertex&) const noexcept = default;
 };
 
 #define yw_hlsl_vertex \

@@ -162,7 +162,7 @@ namespace detail {
 inline constexpr uint32_t pack_vector3(float x, float y, float z) noexcept {
   const auto len = yw::sqrt(x * x + y * y + z * z);
   if (len <= 0) return normal_z;
-  return pack_vector4_to_uint32(float4{x / len, y / len, z / len, 1});
+  return pack_vector_to_uint(float4{x / len, y / len, z / len, 1});
 }
 
 inline constexpr uint32_t pack_vector3(float3 v) noexcept { return pack_vector3(v.x, v.y, v.z); }
@@ -170,7 +170,7 @@ inline constexpr uint32_t pack_vector3(float3 v) noexcept { return pack_vector3(
 inline constexpr uint32_t pack_tangent3(float3 v) noexcept {
   const auto len = yw::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
   if (len <= 0) return tangent_x;
-  return pack_vector4_to_uint32(float4{v.x / len, v.y / len, v.z / len, 1});
+  return pack_vector_to_uint(float4{v.x / len, v.y / len, v.z / len, 1});
 }
 
 inline constexpr float2 atlas_uv(float2 uv, float y0, float y1) noexcept { return {uv.x, y0 + uv.y * (y1 - y0)}; }
@@ -535,7 +535,7 @@ inline std::expected<void, error> make_sphere_mesh(
     v.normal = detail::pack_vector3(normal);
     const auto tangent = (tangents[i] - normal * dot(normal, tangents[i])).normalized();
     // V points down in all three islands, hence negative tangent handedness.
-    v.tangent = pack_vector4_to_uint32(float4{tangent.x, tangent.y, tangent.z, -1});
+    v.tangent = pack_vector_to_uint(float4{tangent.x, tangent.y, tangent.z, -1});
   }
   return {};
 }
@@ -546,7 +546,7 @@ template<backend Backend> inline std::expected<void, error> sphere<Backend>::_tr
   else {
     array1<vertex<gpu>, cpu> vertices;
     array1<uint3, cpu> triangles;
-    if (auto res = internal::make_sphere_mesh(this->_remeshing_option.subdivisions.x, vertices, triangles); !res)
+    if (auto res = internal::make_sphere_mesh(this->_remeshing_option.level.x, vertices, triangles); !res)
       return res.error().relay();
     auto gpu_vertices = decltype(this->_gpu_vertices)::create(vertices);
     if (!gpu_vertices) return gpu_vertices.error().relay();
@@ -554,6 +554,48 @@ template<backend Backend> inline std::expected<void, error> sphere<Backend>::_tr
     if (!gpu_triangles) return gpu_triangles.error().relay();
     this->_gpu_vertices = std::move(*gpu_vertices);
     this->_gpu_triangles = std::move(*gpu_triangles);
+    return {};
+  }
+}
+
+/// MARK: geom::polyline
+
+template<backend Backend> inline std::expected<void, error> polyline<Backend>::_triangulate() noexcept {
+  if constexpr (Backend == cpu) return {};
+  else {
+    if (_points.size() > std::numeric_limits<uint32_t>::max())
+      return std::unexpected(error(errors::invalid_argument, "polyline vertex count is too large"));
+    array1<vertex<gpu>, cpu> vertices;
+    array1<uint2, cpu> edges;
+    if (auto res = vertices.resize(_points.size()); !res) return res.error().relay();
+    if (_points.size() > 1)
+      if (auto res = edges.resize(_points.size() - 1); !res) return res.error().relay();
+
+    for (size_t i = 0; i < _points.size(); ++i)
+      vertices[i] = {.position = float4(_points[i]), .uv = {0, 0}, .normal = normal_z, .tangent = tangent_x};
+    for (uint32_t i = 0; i + 1 < _points.size(); ++i) edges[i] = {i, i + 1};
+
+    auto gpu_vertices = decltype(this->_gpu_vertices)::create(vertices);
+    if (!gpu_vertices) return gpu_vertices.error().relay();
+    auto gpu_edges = decltype(this->_gpu_edges)::create(edges);
+    if (!gpu_edges) return gpu_edges.error().relay();
+    this->_gpu_vertices = std::move(*gpu_vertices);
+    this->_gpu_edges = std::move(*gpu_edges);
+    return {};
+  }
+}
+
+/// MARK: geom::mesh
+
+template<backend Backend> inline std::expected<void, error> mesh<Backend>::_triangulate() noexcept {
+  if constexpr (Backend == cpu) return {};
+  else {
+    auto vertices = decltype(this->_gpu_vertices)::create(_vertices);
+    if (!vertices) return vertices.error().relay();
+    auto triangles = decltype(this->_gpu_triangles)::create(_triangles);
+    if (!triangles) return triangles.error().relay();
+    this->_gpu_vertices = std::move(*vertices);
+    this->_gpu_triangles = std::move(*triangles);
     return {};
   }
 }
