@@ -30,8 +30,8 @@ public:
     if constexpr (same_as<Face<cpu>, polygon<cpu>>) _points = face.points();
   }
   /// gets the local-coordinate bounding box.
-  constexpr std::expected<bbox<cpu>, error> local_bbox() const noexcept {
-    bbox<cpu> face_bbox;
+  constexpr std::expected<geom::bbox<cpu>, error> bbox() const noexcept {
+    geom::bbox<cpu> face_bbox;
     if constexpr (same_as<Face<cpu>, circle<cpu>> || same_as<Face<cpu>, square<cpu>>) {
       face_bbox = {{-1, -1, 0, 1}, {1, 1, 0, 1}};
     } else if constexpr (same_as<Face<cpu>, polygon<cpu>>) {
@@ -71,8 +71,8 @@ public:
     if constexpr (same_as<Face<cpu>, polygon<cpu>>) _points = face.points();
   }
   /// gets the local-coordinate bounding box.
-  constexpr std::expected<bbox<cpu>, error> local_bbox() const noexcept {
-    bbox<cpu> face_bbox;
+  constexpr std::expected<geom::bbox<cpu>, error> bbox() const noexcept {
+    geom::bbox<cpu> face_bbox;
     if constexpr (same_as<Face<cpu>, circle<cpu>> || same_as<Face<cpu>, square<cpu>>) {
       face_bbox = {{-1, -1, 0, 1}, {1, 1, 0, 1}};
     } else if constexpr (same_as<Face<cpu>, polygon<cpu>>) {
@@ -115,20 +115,10 @@ template<> struct remeshing_option<sphere> {
 template<backend Backend> class sphere : public geometry_base<sphere, Backend> {
 public:
   constexpr sphere() noexcept = default;
-  constexpr double4 center() const noexcept {
-    return {this->_rigid[0][3], this->_rigid[1][3], this->_rigid[2][3], 1};
-  }
-  constexpr std::expected<bbox<cpu>, error> local_bbox() const noexcept {
-    return bbox<cpu>{{-1, -1, -1, 1}, {1, 1, 1, 1}};
-  }
-  const geom::remeshing_option<sphere>& remeshing_option() const noexcept { return this->_remeshing_option; }
-  geom::remeshing_option<sphere>& remeshing_option() noexcept {
-    this->_messy = true;
-    return this->_remeshing_option;
-  }
-  void remeshing_option(const geom::remeshing_option<sphere>& option) noexcept {
-    this->_remeshing_option = option;
-    this->_messy = true;
+  /// gets the center in local coordinates.
+  constexpr double4 center() const noexcept { return {0, 0, 0, 1}; }
+  constexpr std::expected<geom::bbox<cpu>, error> bbox() const noexcept {
+    return geom::bbox<cpu>{{-1, -1, -1, 1}, {1, 1, 1, 1}};
   }
 
 protected:
@@ -175,9 +165,8 @@ template<backend Backend> class polyline : public geometry_base<polyline, Backen
     const Curve& curve, uint32_t subdivisions, double merge_threshold, string_view<char> name) noexcept {
     if (subdivisions < 1)
       return std::unexpected(error(errors::invalid_argument, format(name, " subdivisions must be at least 1")));
-    const auto transformation = curve.transformation4();
     return _append_samples(size_t(subdivisions) + 1,
-      [&](size_t i) noexcept { return transform(transformation, curve.point(double(i) / double(subdivisions))); },
+      [&](size_t i) noexcept { return curve.world_point(double(i) / double(subdivisions)); },
       merge_threshold);
   }
 
@@ -195,9 +184,9 @@ public:
   constexpr const double4& operator[](size_t index) const noexcept { return _points[index]; }
 
   /// gets the local-coordinate bounding box.
-  constexpr std::expected<bbox<cpu>, error> local_bbox() const noexcept {
+  constexpr std::expected<geom::bbox<cpu>, error> bbox() const noexcept {
     if (_points.empty()) return std::unexpected(error(errors::invalid_operation, "polyline has no points"));
-    bbox<cpu> result{_points[0], _points[0]};
+    geom::bbox<cpu> result{_points[0], _points[0]};
     for (size_t i = 1; i < _points.size(); ++i) {
       const auto& p = _points[i];
       result.min.x = yw::min(result.min.x, p.x), result.min.y = yw::min(result.min.y, p.y),
@@ -211,9 +200,8 @@ public:
   /// appends a transformed finite segment.
   template<backend ElementBackend>
   std::expected<void, error> push_back(const segment<ElementBackend>& element, double merge_threshold = 1e-10) noexcept {
-    const auto transformation = element.transformation4();
     return _append_samples(2,
-      [&](size_t i) noexcept { return transform(transformation, double4{double(i), 0, 0, 1}); }, merge_threshold);
+      [&](size_t i) noexcept { return i == 0 ? element.world_begin() : element.world_end(); }, merge_threshold);
   }
 
   /// samples and appends a transformed circular arc.

@@ -116,7 +116,7 @@ struct texture_template_constants {
 template<typename Geometry>
 std::expected<bitmap_texture, error> make_texture_template(Geometry& geom, int2 TextureSize) noexcept {
   if (auto res = geom.update_gpu(); !res) return res.error().relay();
-  auto bbox = geom.local_bbox();
+  std::expected<yw::geom::bbox<cpu>, error> bbox = geom.bbox();
   if (!bbox) return bbox.error().relay();
   auto rt_res = bitmap_texture::create(TextureSize);
   if (!rt_res) return rt_res.error().relay();
@@ -179,14 +179,14 @@ inline constexpr float2 unit_disk_uv(float x, float y, float y0, float y1) noexc
   return atlas_uv({x * 0.5f + 0.5f, y * 0.5f + 0.5f}, y0, y1);
 }
 
-inline constexpr float2 bbox_uv(float x, float y, const bbox<cpu>& b, float y0, float y1) noexcept {
+inline constexpr float2 bbox_uv(float x, float y, const geom::bbox<cpu>& b, float y0, float y1) noexcept {
   const auto s = b.size();
   const float u = s.x > 0 ? float((double(x) - b.min.x) / s.x) : 0.5f;
   const float v = s.y > 0 ? float((double(y) - b.min.y) / s.y) : 0.5f;
   return atlas_uv({u, v}, y0, y1);
 }
 
-inline constexpr float2 bbox_unit_xy(float x, float y, const bbox<cpu>& b) noexcept {
+inline constexpr float2 bbox_unit_xy(float x, float y, const geom::bbox<cpu>& b) noexcept {
   const auto s = b.size();
   const float u = s.x > 0 ? float((double(x) - b.min.x) / s.x) * 2.0f - 1.0f : 0.0f;
   const float v = s.y > 0 ? float((double(y) - b.min.y) / s.y) * 2.0f - 1.0f : 0.0f;
@@ -229,9 +229,9 @@ inline std::expected<void, error> prism<Face, Backend>::_triangulate() noexcept 
     const auto zsign = h < 0 ? -1.0f : 1.0f;
     const auto bottom_normal = detail::pack_vector3(0, 0, -zsign);
     const auto top_normal = detail::pack_vector3(0, 0, zsign);
-    bbox<cpu> face_bbox{{-1, -1, 0, 1}, {1, 1, 0, 1}};
+    geom::bbox<cpu> face_bbox{{-1, -1, 0, 1}, {1, 1, 0, 1}};
     if constexpr (same_as<Face<cpu>, polygon<cpu>>) {
-      auto lb = local_bbox();
+      auto lb = this->bbox();
       if (!lb) return lb.error().relay();
       face_bbox = *lb;
     }
@@ -315,6 +315,8 @@ inline std::expected<void, error> prism<Face, Backend>::_triangulate() noexcept 
       triangles[n * 2 + i] = {base + 0, base + 1, base + 2};
       triangles[n * 3 + i] = {base + 1, base + 3, base + 2};
     }
+    if (h < 0)
+      for (auto& triangle : triangles) std::swap(triangle.y, triangle.z);
 
     if (auto res = decltype(this->_gpu_vertices)::create(vertices)) this->_gpu_vertices = std::move(*res);
     else return res.error().relay();
@@ -403,6 +405,8 @@ inline std::expected<void, error> pyramid<Face, Backend>::_triangulate() noexcep
       const auto base = uint32_t(side_base + i * 3);
       triangles[n + i] = {base, base + 1, base + 2};
     }
+    if (h < 0)
+      for (auto& triangle : triangles) std::swap(triangle.y, triangle.z);
 
     if (auto res = decltype(this->_gpu_vertices)::create(vertices)) this->_gpu_vertices = std::move(*res);
     else return res.error().relay();

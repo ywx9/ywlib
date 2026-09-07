@@ -8,33 +8,33 @@ namespace yw::geom {
 /// represents a 2D line segment as a transformed unit segment from (0, 0) to (1, 0).
 template<backend Backend> class segment : public geometry_base<segment, Backend> {
 public:
-    /// constructs a 2D line segment as a transformed unit segment from (0, 0) to (1, 0).
+  /// constructs a 2D line segment as a transformed unit segment from (0, 0) to (1, 0).
   constexpr segment() noexcept = default;
-  /// constructs a segment from the given endpoints.
+  /// configures the unit segment transformation from XY endpoints; input z/w are ignored.
   constexpr segment(const double2& start, const double2& end) noexcept { _set(start.x, start.y, end.x, end.y); }
   constexpr segment(const double3& start, const double3& end) noexcept { _set(start.x, start.y, end.x, end.y); }
   constexpr segment(const double4& start, const double4& end) noexcept { _set(start.x, start.y, end.x, end.y); }
 
-  /// sets the endpoints of the segment.
+  /// replaces the unit segment transformation from XY endpoints; input z/w are ignored.
   constexpr void set(const double2& start, const double2& end) noexcept { _set(start.x, start.y, end.x, end.y); }
   constexpr void set(const double3& start, const double3& end) noexcept { _set(start.x, start.y, end.x, end.y); }
   constexpr void set(const double4& start, const double4& end) noexcept { _set(start.x, start.y, end.x, end.y); }
 
-  /// gets the start point of the segment.
-  constexpr double4 begin() const noexcept { return {this->_rigid[0][3], this->_rigid[1][3], 0, 1}; }
-  /// gets the end point of the segment.
-  constexpr double4 end() const noexcept {
-    return {
-      this->_rigid[0][3] + this->_rigid[0][0] * this->_scale.x,
-      this->_rigid[1][3] + this->_rigid[1][0] * this->_scale.x, 0, 1};
-  }
+  /// gets the start point of the unit segment in local coordinates.
+  constexpr double4 begin() const noexcept { return {0, 0, 0, 1}; }
+  /// gets the end point of the unit segment in local coordinates.
+  constexpr double4 end() const noexcept { return {1, 0, 0, 1}; }
 
-  /// gets the signed length of the segment.
-  constexpr double signed_length() const noexcept { return this->_scale.x; }
-  /// gets the absolute length of the segment.
-  constexpr double length() const noexcept { return yw::abs(this->_scale.x); }
+  /// gets the local signed length of the unit segment.
+  constexpr double signed_length() const noexcept { return 1; }
+  /// gets the local length of the unit segment.
+  constexpr double length() const noexcept { return 1; }
+  /// gets the signed length after scaling.
+  constexpr double world_signed_length() const noexcept { return this->_scale.x; }
+  /// gets the absolute length in world coordinates.
+  constexpr double world_length() const noexcept { return yw::abs(this->_scale.x); }
   /// gets the local-coordinate bounding box.
-  constexpr bbox<cpu> local_bbox() const noexcept { return {{0, 0, 0, 1}, {1, 0, 0, 1}}; }
+  constexpr geom::bbox<cpu> bbox() const noexcept { return {{0, 0, 0, 1}, {1, 0, 0, 1}}; }
 
 protected:
   friend class geometry_base<segment, Backend>;
@@ -66,7 +66,7 @@ template<backend Backend> class ray : public geometry_base<ray, Backend> {
 public:
   /// constructs a 2D ray from the origin toward +X.
   constexpr ray() noexcept = default;
-  /// constructs a ray from the given origin and direction.
+  /// configures the unit ray transformation from an XY origin and direction.
   constexpr ray(const double2& origin, const double2& direction) noexcept {
     this->_translation(origin.x, origin.y, 0);
     this->_rotation(double3(0, 0, yw::atan2(direction.y, direction.x)));
@@ -74,16 +74,16 @@ public:
   constexpr ray(const double3& origin, const double3& direction) noexcept : ray(origin.xy(), direction.xy()) {}
   constexpr ray(const double4& origin, const double4& direction) noexcept : ray(origin.xy(), direction.xy()) {}
 
-  /// gets the origin point.
-  constexpr double4 origin() const noexcept { return {this->_rigid[0][3], this->_rigid[1][3], 0, 1}; }
-  /// sets the origin point.
+  /// gets the origin point in local coordinates.
+  constexpr double4 origin() const noexcept { return {0, 0, 0, 1}; }
+  /// sets the XY translation component; the local origin remains zero and input z/w are ignored.
   constexpr void origin(const double2& origin) noexcept { this->_translation(origin.x, origin.y, 0); }
-  constexpr void origin(const double3& origin) noexcept { this->_translation(origin.x, origin.y, origin.z); }
-  constexpr void origin(const double4& origin) noexcept { this->_translation(origin.x, origin.y, origin.z); }
+  constexpr void origin(const double3& origin) noexcept { this->_translation(origin.x, origin.y, 0); }
+  constexpr void origin(const double4& origin) noexcept { this->_translation(origin.x, origin.y, 0); }
 
-  /// gets the direction vector.
-  constexpr double4 direction() const noexcept { return {this->_rigid[0][0], this->_rigid[1][0], 0, 0}; }
-  /// sets the direction vector.
+  /// gets the unit direction in local coordinates.
+  constexpr double4 direction() const noexcept { return {1, 0, 0, 0}; }
+  /// sets the Z rotation from an XY direction; the local direction remains +X.
   constexpr void direction(const double2& direction) noexcept {
     this->_rotation(double3(0, 0, yw::atan2(direction.y, direction.x)));
   }
@@ -111,7 +111,7 @@ template<backend Backend> class line : public geometry_base<line, Backend> {
 public:
   /// constructs a 2D line through the origin along the X axis.
   constexpr line() noexcept = default;
-  /// constructs a line from the given point and direction.
+  /// configures the unit line transformation from an XY point and direction.
   constexpr line(const double2& point, const double2& direction) noexcept {
     this->_translation(point.x, point.y, 0);
     this->_rotation(double3(0, 0, yw::atan2(direction.y, direction.x)));
@@ -119,16 +119,16 @@ public:
   constexpr line(const double3& point, const double3& direction) noexcept : line(point.xy(), direction.xy()) {}
   constexpr line(const double4& point, const double4& direction) noexcept : line(point.xy(), direction.xy()) {}
 
-  /// gets a point on the line.
-  constexpr double4 point() const noexcept { return {this->_rigid[0][3], this->_rigid[1][3], 0, 1}; }
-  /// sets a point on the line.
+  /// gets a point on the line in local coordinates.
+  constexpr double4 point() const noexcept { return {0, 0, 0, 1}; }
+  /// sets the XY translation component; the local point remains zero and input z/w are ignored.
   constexpr void point(const double2& point) noexcept { this->_translation(point.x, point.y, 0); }
-  constexpr void point(const double3& point) noexcept { this->_translation(point.x, point.y, point.z); }
-  constexpr void point(const double4& point) noexcept { this->_translation(point.x, point.y, point.z); }
+  constexpr void point(const double3& point) noexcept { this->_translation(point.x, point.y, 0); }
+  constexpr void point(const double4& point) noexcept { this->_translation(point.x, point.y, 0); }
 
-  /// gets the direction vector.
-  constexpr double4 direction() const noexcept { return {this->_rigid[0][0], this->_rigid[1][0], 0, 0}; }
-  /// sets the direction vector.
+  /// gets the unit direction in local coordinates.
+  constexpr double4 direction() const noexcept { return {1, 0, 0, 0}; }
+  /// sets the Z rotation from an XY direction; the local direction remains +X.
   constexpr void direction(const double2& direction) noexcept {
     this->_rotation(double3(0, 0, yw::atan2(direction.y, direction.x)));
   }
@@ -180,12 +180,12 @@ public:
     this->_messy = true;
   }
 
-  /// gets a point on the arc for t in [0, 1].
+  /// gets a local point on the arc for t in [0, 1].
   constexpr double4 point(double t) const noexcept {
     const auto a = _start_angle + _sweep_angle * t;
     return {yw::cos(a), yw::sin(a), 0, 1};
   }
-  /// gets a unit tangent vector on the arc for t in [0, 1].
+  /// gets a local unit tangent vector on the arc for t in [0, 1].
   constexpr double4 tangent(double t) const noexcept {
     const auto a = _start_angle + _sweep_angle * t;
     return (double4{-yw::sin(a), yw::cos(a), 0, 0} * _sweep_angle).normalized();
@@ -217,6 +217,8 @@ public:
 
   /// gets the first control point.
   constexpr const double4& p0() const noexcept { return _p0; }
+  /// gets the control point in world coordinates.
+  constexpr double4 world_p0() const noexcept { return transform(this->transformation4(), p0()); }
   /// sets the first control point.
   constexpr void p0(const double2& p) noexcept { p0({p.x, p.y, 0, 1}); }
   constexpr void p0(const double3& p) noexcept { p0({p.x, p.y, 0, 1}); }
@@ -227,6 +229,8 @@ public:
 
   /// gets the second control point.
   constexpr const double4& p1() const noexcept { return _p1; }
+  /// gets the control point in world coordinates.
+  constexpr double4 world_p1() const noexcept { return transform(this->transformation4(), p1()); }
   /// sets the second control point.
   constexpr void p1(const double2& p) noexcept { p1({p.x, p.y, 0, 1}); }
   constexpr void p1(const double3& p) noexcept { p1({p.x, p.y, 0, 1}); }
@@ -237,6 +241,8 @@ public:
 
   /// gets the third control point.
   constexpr const double4& p2() const noexcept { return _p2; }
+  /// gets the control point in world coordinates.
+  constexpr double4 world_p2() const noexcept { return transform(this->transformation4(), p2()); }
   /// sets the third control point.
   constexpr void p2(const double2& p) noexcept { p2({p.x, p.y, 0, 1}); }
   constexpr void p2(const double3& p) noexcept { p2({p.x, p.y, 0, 1}); }
@@ -258,12 +264,12 @@ public:
     _p2 = {p2.x, p2.y, 0, 1};
     this->_messy = true;
   }
-  /// gets a point on the curve for t in [0, 1].
+  /// gets a local point on the curve for t in [0, 1].
   constexpr double4 point(double t) const noexcept {
     const auto u = 1.0 - t;
     return _p0 * (u * u) + _p1 * (2.0 * u * t) + _p2 * (t * t);
   }
-  /// gets a unit tangent vector on the curve for t in [0, 1].
+  /// gets a local unit tangent vector on the curve for t in [0, 1].
   constexpr double4 tangent(double t) const noexcept {
     return ((_p1 - _p0) * (2.0 * (1.0 - t)) + (_p2 - _p1) * (2.0 * t)).normalized();
   }
@@ -299,6 +305,8 @@ public:
 
   /// gets the first control point.
   constexpr const double4& p0() const noexcept { return _p0; }
+  /// gets the control point in world coordinates.
+  constexpr double4 world_p0() const noexcept { return transform(this->transformation4(), p0()); }
   /// sets the first control point.
   constexpr void p0(const double2& p) noexcept { p0({p.x, p.y, 0, 1}); }
   constexpr void p0(const double3& p) noexcept { p0({p.x, p.y, 0, 1}); }
@@ -309,6 +317,8 @@ public:
 
   /// gets the second control point.
   constexpr const double4& p1() const noexcept { return _p1; }
+  /// gets the control point in world coordinates.
+  constexpr double4 world_p1() const noexcept { return transform(this->transformation4(), p1()); }
   /// sets the second control point.
   constexpr void p1(const double2& p) noexcept { p1({p.x, p.y, 0, 1}); }
   constexpr void p1(const double3& p) noexcept { p1({p.x, p.y, 0, 1}); }
@@ -319,6 +329,8 @@ public:
 
   /// gets the third control point.
   constexpr const double4& p2() const noexcept { return _p2; }
+  /// gets the control point in world coordinates.
+  constexpr double4 world_p2() const noexcept { return transform(this->transformation4(), p2()); }
   /// sets the third control point.
   constexpr void p2(const double2& p) noexcept { p2({p.x, p.y, 0, 1}); }
   constexpr void p2(const double3& p) noexcept { p2({p.x, p.y, 0, 1}); }
@@ -329,6 +341,8 @@ public:
 
   /// gets the fourth control point.
   constexpr const double4& p3() const noexcept { return _p3; }
+  /// gets the control point in world coordinates.
+  constexpr double4 world_p3() const noexcept { return transform(this->transformation4(), p3()); }
   /// sets the fourth control point.
   constexpr void p3(const double2& p) noexcept { p3({p.x, p.y, 0, 1}); }
   constexpr void p3(const double3& p) noexcept { p3({p.x, p.y, 0, 1}); }
@@ -352,12 +366,12 @@ public:
     this->_messy = true;
   }
 
-  /// gets a point on the curve for t in [0, 1].
+  /// gets a local point on the curve for t in [0, 1].
   constexpr double4 point(double t) const noexcept {
     const auto u = 1.0 - t;
     return _p0 * (u * u * u) + _p1 * (3.0 * u * u * t) + _p2 * (3.0 * u * t * t) + _p3 * (t * t * t);
   }
-  /// gets a unit tangent vector on the curve for t in [0, 1].
+  /// gets a local unit tangent vector on the curve for t in [0, 1].
   constexpr double4 tangent(double t) const noexcept {
     const auto u = 1.0 - t;
     return ((_p1 - _p0) * (3.0 * u * u) + (_p2 - _p1) * (6.0 * u * t) + (_p3 - _p2) * (3.0 * t * t))
@@ -382,12 +396,14 @@ template<backend Backend> class plane : public geometry_base<plane, Backend> {
 public:
   /// constructs a finite mesh representation of the XY plane.
   constexpr plane() noexcept = default;
-  /// gets the center point.
-  constexpr double4 center() const noexcept { return {this->_rigid[0][3], this->_rigid[1][3], 0, 1}; }
-  /// gets the normal vector.
-  constexpr double4 normal() const noexcept { return {this->_rigid[0][2], this->_rigid[1][2], this->_rigid[2][2], 0}; }
+  /// gets the center point in local coordinates.
+  constexpr double4 center() const noexcept { return {0, 0, 0, 1}; }
+  /// gets the local unit normal of the XY plane.
+  constexpr double4 normal() const noexcept { return {0, 0, 1, 0}; }
+  /// gets the unit plane normal after rotation.
+  constexpr double4 world_normal() const noexcept { return {this->_rigid[0][2], this->_rigid[1][2], this->_rigid[2][2], 0}; }
   /// gets the finite local-coordinate bounding box used for remeshing.
-  constexpr bbox<cpu> local_bbox() const noexcept {
+  constexpr geom::bbox<cpu> bbox() const noexcept {
     const auto h = double(this->_remeshing_option.half_extent.x);
     return {{-h, -h, 0, 1}, {h, h, 0, 1}};
   }
@@ -405,14 +421,18 @@ public:
   static constexpr bool has_bounded_surface = true;
   /// constructs a square centered at the origin with corners at (+/-1, +/-1).
   constexpr square() noexcept = default;
-  /// gets the center point.
-  constexpr double4 center() const noexcept { return {this->_rigid[0][3], this->_rigid[1][3], 0, 1}; }
-  /// gets the normal vector.
-  constexpr double4 normal() const noexcept { return {this->_rigid[0][2], this->_rigid[1][2], this->_rigid[2][2], 0}; }
-  /// gets the signed area.
-  constexpr double area() const noexcept { return 4.0 * this->_scale.x * this->_scale.y; }
+  /// gets the center point in local coordinates.
+  constexpr double4 center() const noexcept { return {0, 0, 0, 1}; }
+  /// gets the local unit normal of the XY plane.
+  constexpr double4 normal() const noexcept { return {0, 0, 1, 0}; }
+  /// gets the unit plane normal after rotation.
+  constexpr double4 world_normal() const noexcept { return {this->_rigid[0][2], this->_rigid[1][2], this->_rigid[2][2], 0}; }
+  /// gets the local area of the unit square.
+  constexpr double area() const noexcept { return 4.0; }
+  /// gets the signed area after scaling.
+  constexpr double world_area() const noexcept { return area() * this->_scale.x * this->_scale.y; }
   /// gets the local-coordinate bounding box.
-  constexpr bbox<cpu> local_bbox() const noexcept { return {{-1, -1, 0, 1}, {1, 1, 0, 1}}; }
+  constexpr geom::bbox<cpu> bbox() const noexcept { return {{-1, -1, 0, 1}, {1, 1, 0, 1}}; }
 
 protected:
   friend class geometry_base<square, Backend>;
@@ -432,14 +452,18 @@ public:
   static constexpr bool has_bounded_surface = true;
   /// constructs a circle centered at the origin with radius 1.
   constexpr circle() noexcept = default;
-  /// gets the center point.
-  constexpr double4 center() const noexcept { return {this->_rigid[0][3], this->_rigid[1][3], 0, 1}; }
-  /// gets the normal vector.
-  constexpr double4 normal() const noexcept { return {this->_rigid[0][2], this->_rigid[1][2], this->_rigid[2][2], 0}; }
-  /// gets the signed area.
-  constexpr double area() const noexcept { return yw::pi * this->_scale.x * this->_scale.y; }
+  /// gets the center point in local coordinates.
+  constexpr double4 center() const noexcept { return {0, 0, 0, 1}; }
+  /// gets the local unit normal of the XY plane.
+  constexpr double4 normal() const noexcept { return {0, 0, 1, 0}; }
+  /// gets the unit plane normal after rotation.
+  constexpr double4 world_normal() const noexcept { return {this->_rigid[0][2], this->_rigid[1][2], this->_rigid[2][2], 0}; }
+  /// gets the local area of the unit disk.
+  constexpr double area() const noexcept { return yw::pi; }
+  /// gets the signed area after scaling.
+  constexpr double world_area() const noexcept { return area() * this->_scale.x * this->_scale.y; }
   /// gets the local-coordinate bounding box.
-  constexpr bbox<cpu> local_bbox() const noexcept { return {{-1, -1, 0, 1}, {1, 1, 0, 1}}; }
+  constexpr geom::bbox<cpu> bbox() const noexcept { return {{-1, -1, 0, 1}, {1, 1, 0, 1}}; }
 
 protected:
   friend class geometry_base<circle, Backend>;
@@ -463,9 +487,9 @@ public:
   /// gets a polygon point.
   constexpr const double4& operator[](size_t index) const noexcept { return _points[index]; }
   /// gets the local-coordinate bounding box.
-  constexpr std::expected<bbox<cpu>, error> local_bbox() const noexcept {
+  constexpr std::expected<geom::bbox<cpu>, error> bbox() const noexcept {
     if (_points.empty()) return std::unexpected(error(errors::invalid_operation, "polygon has no points"));
-    bbox<cpu> result{{_points[0].x, _points[0].y, 0, 1}, {_points[0].x, _points[0].y, 0, 1}};
+    geom::bbox<cpu> result{{_points[0].x, _points[0].y, 0, 1}, {_points[0].x, _points[0].y, 0, 1}};
     for (size_t i = 1; i < _points.size(); ++i) {
       const auto& p = _points[i];
       result.min.x = yw::min(result.min.x, p.x);

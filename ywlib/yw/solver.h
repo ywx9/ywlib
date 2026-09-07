@@ -4,6 +4,56 @@
 
 namespace yw {
 
+/// Solves f(x) = 0 using x <- x - f(x) / derivative(x).
+/// Converges when abs(f(x)) <= tolerance (absolute residual tolerance).
+/// max_iterations limits Newton updates; an initial root needs no updates.
+template<floating T, typename F, typename Derivative>
+  requires requires(F& f, Derivative& derivative, T x) {
+    { f(x) } -> convertible_to<T>;
+    { derivative(x) } -> convertible_to<T>;
+  }
+std::expected<T, error> solve_newton(
+  F&& f, Derivative&& derivative, T x0, T tolerance = T(1e-10), size_t max_iterations = 100) {
+  if (!std::isfinite(x0) || !std::isfinite(tolerance) || tolerance <= T(0)) {
+    auto err = error(errors::invalid_argument, "Newton initial value must be finite and tolerance finite and positive");
+    return err.relay();
+  }
+
+  T x = x0;
+  T value = f(x);
+  if (!std::isfinite(value)) {
+    auto err = error(errors::operation_failed, "Newton function value is not finite");
+    return err.relay();
+  }
+  if (yw::abs(value) <= tolerance) return x;
+
+  for (size_t iteration = 0; iteration < max_iterations; ++iteration) {
+    const T slope = derivative(x);
+    if (!std::isfinite(slope) || slope == T(0)) {
+      auto err = error(errors::operation_failed, "Newton derivative is zero or not finite");
+      return err.relay();
+    }
+    const T next = x - value / slope;
+    if (!std::isfinite(next)) {
+      auto err = error(errors::operation_failed, "Newton iterate is not finite");
+      return err.relay();
+    }
+    if (next == x) {
+      auto err = error(errors::operation_failed, "Newton iteration stagnated");
+      return err.relay();
+    }
+    x = next;
+    value = f(x);
+    if (!std::isfinite(value)) {
+      auto err = error(errors::operation_failed, "Newton function value is not finite");
+      return err.relay();
+    }
+    if (yw::abs(value) <= tolerance) return x;
+  }
+  auto err = error(errors::operation_failed, "Newton method did not converge");
+  return err.relay();
+}
+
 /// MARK: sparse matrix
 
 /// square sparse matrix in compressed row storage (CRS) format.

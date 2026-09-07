@@ -16,7 +16,7 @@ inline constexpr uint32_t pack_tangent_xy(const double4& tangent) noexcept {
 
 inline constexpr float2 uv_from_unit_xy(float x, float y) noexcept { return {x * 0.5f + 0.5f, y * 0.5f + 0.5f}; }
 
-inline constexpr float2 uv_from_bbox_xy(float x, float y, const bbox<cpu>& bbox) noexcept {
+inline constexpr float2 uv_from_bbox_xy(float x, float y, const geom::bbox<cpu>& bbox) noexcept {
   const auto size = bbox.size();
   return {
     size.x > 0 ? float((double(x) - bbox.min.x) / size.x) : 0.5f,
@@ -243,8 +243,8 @@ template<> inline std::expected<void, error> polygon<gpu>::_triangulate() noexce
   const auto vertex_count = _points.size();
   const auto triangle_count = vertex_count < 3 ? size_t(0) : vertex_count;
   const auto edge_count = vertex_count < 2 ? size_t(0) : vertex_count;
-  auto bbox = local_bbox();
-  if (!bbox && vertex_count != 0) return bbox.error().relay();
+  auto bounds = this->bbox();
+  if (!bounds && vertex_count != 0) return bounds.error().relay();
   array1<vertex<gpu>, cpu> vertices(vertex_count + 1);
   array1<uint3, cpu> triangles(triangle_count);
   array1<uint2, cpu> edges(edge_count);
@@ -252,7 +252,7 @@ template<> inline std::expected<void, error> polygon<gpu>::_triangulate() noexce
   for (size_t i = 0; i < vertex_count; ++i) {
     const auto p = float4(_points[i]);
     vertices[i + 1] = {
-      .position = p, .uv = detail::uv_from_bbox_xy(p.x, p.y, *bbox), .normal = normal_z, .tangent = tangent_x};
+      .position = p, .uv = detail::uv_from_bbox_xy(p.x, p.y, *bounds), .normal = normal_z, .tangent = tangent_x};
   }
   for (size_t i = 0; i < triangle_count; ++i) triangles[i] = {0, uint32_t(i + 1), uint32_t((i + 1) % vertex_count + 1)};
   for (size_t i = 0; i < edge_count; ++i) edges[i] = {uint32_t(i + 1), uint32_t((i + 1) % vertex_count + 1)};

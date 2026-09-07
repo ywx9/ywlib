@@ -3,6 +3,7 @@
     "ywlib": "cpp",
     "ywxlib": "cpp"
   },
+  "files.eol": "\n",
   "cmake.configureOnOpen": false,
   "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json"
 }

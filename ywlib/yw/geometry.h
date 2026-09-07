@@ -57,13 +57,13 @@ template<> struct vertex<cpu> {
 
 constexpr uint32_t pack_vector_to_uint(double4 v) noexcept {
   return std::bit_cast<uint32_t>(
-    (static_cast<int32_t>(v.x * 1023) & 0x3FF) | ((static_cast<int32_t>(v.y * 1023) & 0x3FF) << 10) |
-    ((static_cast<int32_t>(v.z * 1023) & 0x3FF) << 20) | (int32_t(v.w < 0) << 30));
+    (static_cast<int32_t>(v.x * 511) & 0x3FF) | ((static_cast<int32_t>(v.y * 511) & 0x3FF) << 10) |
+    ((static_cast<int32_t>(v.z * 511) & 0x3FF) << 20) | (int32_t(v.w < 0) << 30));
 }
 constexpr uint32_t pack_vector_to_uint(float4 v) noexcept {
   return std::bit_cast<uint32_t>(
-    (static_cast<int32_t>(v.x * 1023) & 0x3FF) | ((static_cast<int32_t>(v.y * 1023) & 0x3FF) << 10) |
-    ((static_cast<int32_t>(v.z * 1023) & 0x3FF) << 20) | (int32_t(v.w < 0) << 30));
+    (static_cast<int32_t>(v.x * 511) & 0x3FF) | ((static_cast<int32_t>(v.y * 511) & 0x3FF) << 10) |
+    ((static_cast<int32_t>(v.z * 511) & 0x3FF) << 20) | (int32_t(v.w < 0) << 30));
 }
 
 inline constexpr uint32_t normal_z = pack_vector_to_uint(float4{0, 0, 1, 0});
@@ -98,13 +98,14 @@ template<> struct vertex<gpu> {
   R"(float _yw_unpack_snorm10(uint bits) {                  \
   int v = bits & 0x3FF;                                     \
   if (v & 0x200) v |= ~0x3FF;                               \
-  return float(v) / 1023.0;                                 \
+  return max(float(v) / 511.0, -1.0);                        \
 }                                                           \
 TangentBasis make_tangent_basis_from_vertex(Vertex v) {     \
   TangentBasis tb;                                          \
   tb.normal.x = _yw_unpack_snorm10(v.normal & 0x3FF);       \
   tb.normal.y = _yw_unpack_snorm10(v.normal >> 10 & 0x3FF); \
   tb.normal.z = _yw_unpack_snorm10(v.normal >> 20 & 0x3FF); \
+  tb.normal = normalize(tb.normal);                         \
   float3 tangent;                                           \
   tangent.x = _yw_unpack_snorm10(v.tangent);                \
   tangent.y = _yw_unpack_snorm10(v.tangent >> 10);          \
@@ -214,12 +215,19 @@ protected:
   }
 
 public:
-  static constexpr bool is_bounded_surface = false;
+  static constexpr bool has_bounded_surface = false;
   const geom::remeshing_option<Geometry>& remeshing_option() const noexcept { return _remeshing_option; }
-  geom::remeshing_option<Geometry>& remeshing_option() noexcept { return _remeshing_option; }
-  void remeshing_option(const geom::remeshing_option<Geometry>& option) noexcept { _remeshing_option = option; }
+  geom::remeshing_option<Geometry>& remeshing_option() noexcept {
+    _messy = true;
+    return _remeshing_option;
+  }
+  void remeshing_option(const geom::remeshing_option<Geometry>& option) noexcept {
+    _remeshing_option = option;
+    _messy = true;
+  }
   template<is_base_of<geom::remeshing_option<Geometry>> T> void remeshing_option(const T& option) noexcept {
     static_cast<T&>(_remeshing_option) = option;
+    _messy = true;
   }
 
   /// gets the translation component.
@@ -272,10 +280,65 @@ public:
       matrix_row(double4(_rigid[0]) * _scale), matrix_row(double4(_rigid[1]) * _scale),
       matrix_row(double4(_rigid[2]) * _scale), matrix_row{0, 0, 0, 1}};
   }
+  /// Coordinates returned by unprefixed shape getters are local coordinates.
+  /// world_ getters apply this object's transformation, independently of GPU updates.
+  template<typename Self> requires requires(const Self& s) { s.center(); }
+  constexpr double4 world_center(this const Self& self) noexcept {
+    return transform(self.transformation4(), self.center());
+  }
+
+  template<typename Self> requires requires(const Self& s) { s.begin(); }
+  constexpr double4 world_begin(this const Self& self) noexcept {
+    return transform(self.transformation4(), self.begin());
+  }
+
+  template<typename Self> requires requires(const Self& s) { s.end(); }
+  constexpr double4 world_end(this const Self& self) noexcept {
+    return transform(self.transformation4(), self.end());
+  }
+
+  template<typename Self> requires requires(const Self& s) { s.origin(); }
+  constexpr double4 world_origin(this const Self& self) noexcept {
+    return transform(self.transformation4(), self.origin());
+  }
+
+  /// Gets a point in world coordinates (including parameterized curve points).
+  template<typename Self, typename... Args>
+    requires requires(const Self& s, Args... args) { s.point(args...); }
+  constexpr double4 world_point(this const Self& self, Args... args) noexcept {
+    return transform(self.transformation4(), self.point(args...));
+  }
+
+  /// Gets a unit world direction, including the sign of scale; zero if collapsed.
+  template<typename Self> requires requires(const Self& s) { s.direction(); }
+  constexpr double4 world_direction(this const Self& self) noexcept {
+    return transform(self.transformation4(), self.direction()).normalized();
+  }
+
+  /// Gets a unit world tangent; zero if the transformed tangent is zero.
+  template<typename Self> requires requires(const Self& s) { s.tangent(0.0); }
+  constexpr double4 world_tangent(this const Self& self, double t) noexcept {
+    return transform(self.transformation4(), self.tangent(t)).normalized();
+  }
+
+  /// Gets a world-axis-aligned enclosure of the transformed local bounding box.
+  /// Its eight corners are transformed and bounded again; this need not be tight
+  /// for the geometry itself. Finite drawing bounds remain finite drawing bounds.
+  template<typename Self> requires requires(const Self& s) { s.bbox(); }
+  constexpr auto world_bbox(this const Self& self) noexcept -> decltype(self.bbox()) {
+    auto bounds = self.bbox();
+    if constexpr (same_as<decltype(bounds), geom::bbox<cpu>>) {
+      return bounds.transformed(self.transformation4());
+    } else {
+      if (!bounds) return bounds.error().relay();
+      return bounds->transformed(self.transformation4());
+    }
+  }
+
   /// copies the transformation from another geometry object.
   template<template<backend B> typename G, backend B>
   constexpr void copy_transformation_from(const geometry_base<G, B>& From) noexcept {
-    _rigid = From._rigid, _scale = From._scale, _dirty = From._dirty;
+    _rigid = From._rigid, _scale = From._scale, _dirty = true;
   }
 };
 } // namespace yw::geom
