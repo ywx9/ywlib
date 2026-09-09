@@ -1,6 +1,7 @@
 #pragma once
-#include "yw/error.h"
-#include "yw/tuple.h"
+#include <yw/array.h>
+#include <yw/error.h>
+#include <yw/tuple.h>
 
 namespace yw::errors {
 inline constexpr error::kind invalid_slotid{"invalid slotid"};
@@ -92,7 +93,7 @@ public:
   static_assert(sizeof(slotid) == 2 * sizeof(uint32_t));
 
 private:
-  std::vector<_slot> _slots;
+  array1<_slot> _slots;
   uint32_t _free_head = uint32_t(-1);
 
 public:

@@ -223,7 +223,96 @@ public:
 template<stringable S> string(S&&) -> string<iter_value_t<S>>;
 template<char_type C> string(size_t, C) -> string<C>;
 
-template<char_type C> inline const string<C> empty_string{};
+/// MARK: immutable_string
+
+template<char_type C> class immutable_string {
+  static_assert(same_as<C, remove_cv<C>>);
+  static constexpr C _empty[1] = {C()};
+
+  size_t _size = 0;
+  C* _ptr = nullptr;
+
+  constexpr immutable_string(is_none auto, size_t Size) // constructing in uninitialized state
+    : _size(Size), _ptr(new C[_size + 1]) {}
+
+public:
+  constexpr ~immutable_string() noexcept { delete[] _ptr; }
+  constexpr immutable_string() noexcept = default;
+
+  constexpr immutable_string(immutable_string&& Other) noexcept
+    : _ptr(std::exchange(Other._ptr, nullptr)), _size(std::exchange(Other._size, 0)) {}
+
+  constexpr immutable_string& operator=(immutable_string&& Other) noexcept {
+    if (this == &Other) return *this;
+    delete[] _ptr;
+    _ptr = std::exchange(Other._ptr, nullptr);
+    _size = std::exchange(Other._size, 0);
+    return *this;
+  }
+
+  constexpr immutable_string(const immutable_string& Other) : immutable_string(string_view<C>(Other)) {}
+  constexpr immutable_string& operator=(const immutable_string& Other) = delete;
+
+  template<stringable<C> S> requires same_as<remove_cvref<S>, string_view<C>>
+  constexpr immutable_string(S&& View) : immutable_string(none{}, View.size()) {
+    for (size_t i = 0; i < _size; ++i) _ptr[i] = View[i];
+    _ptr[_size] = C();
+  }
+
+  template<stringable<C> S>
+  requires different_from<remove_cvref<S>, immutable_string> && different_from<remove_cvref<S>, string_view<C>>
+  constexpr immutable_string(S&& Other) : immutable_string(string_view<C>(Other)) {}
+
+  constexpr operator string_view<C>() const noexcept { return {_ptr, _size}; }
+  constexpr auto view() const noexcept { return string_view<C>(_ptr, _size); }
+
+  constexpr bool empty() const noexcept { return _size == 0; }
+  constexpr size_t size() const noexcept { return _size; }
+
+  constexpr const C* data() const noexcept { return _ptr; }
+  constexpr const C* c_str() const noexcept { return _ptr ? _ptr : _empty; }
+  constexpr const C* begin() const noexcept { return _ptr; }
+  constexpr const C* end() const noexcept { return _ptr + _size; }
+
+  constexpr const C& front() const { return _ptr[0]; }
+  constexpr const C& back() const { return _ptr[_size - 1]; }
+
+  constexpr const C& operator[](size_t Index) const { return _ptr[Index]; }
+
+  constexpr void swap(immutable_string& Other) noexcept {
+    std::swap(_ptr, Other._ptr);
+    std::swap(_size, Other._size);
+  }
+
+  friend constexpr bool operator==(const immutable_string& a, const immutable_string& b) noexcept {
+    return string_view<C>(a) == string_view<C>(b);
+  }
+
+  template<stringable<C> S> requires different_from<remove_cvref<S>, immutable_string>
+  friend constexpr bool operator==(const immutable_string& a, S&& b) noexcept {
+    return string_view<C>(a) == string_view<C>(b);
+  }
+
+  template<stringable<C> S> requires different_from<remove_cvref<S>, immutable_string>
+  friend constexpr bool operator==(S&& a, const immutable_string& b) noexcept {
+    return string_view<C>(a) == string_view<C>(b);
+  }
+
+  friend constexpr auto operator<=>(const immutable_string& a, const immutable_string& b) noexcept {
+    return string_view<C>(a) <=> string_view<C>(b);
+  }
+
+  template<stringable<C> S> requires different_from<remove_cvref<S>, immutable_string>
+  friend constexpr auto operator<=>(const immutable_string& a, S&& b) noexcept {
+    return string_view<C>(a) <=> string_view<C>(b);
+  }
+
+  template<stringable<C> S> requires different_from<remove_cvref<S>, immutable_string>
+  friend constexpr auto operator<=>(S&& a, const immutable_string& b) noexcept {
+    return string_view<C>(a) <=> string_view<C>(b);
+  }
+};
+static_assert(sizeof(immutable_string<char>) == 16);
 
 /// MARK: bool_to_string
 
