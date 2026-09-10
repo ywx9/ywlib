@@ -231,7 +231,7 @@ public:
       set_cursor_lock(false);
       if (const auto csp = get_slot<control>(focused_control_id)) csp->handle_focus_event(this, {false});
       focused_control_id = {};
-      caret_pos = std::nullopt;
+      caret_pos = none();
 
       if (const auto csp = get_slot<control>(hovered_control_id)) {
         csp->handle_hover_event(this, yw::hover_event::create::leave(get_local_pointer_pos()));
@@ -305,7 +305,7 @@ public:
 
     std::expected<void, error> update_caret_pos() {
       if (const auto csp = get_slot<control>(focused_control_id)) caret_pos = csp->get_caret_pos(this);
-      else caret_pos = std::nullopt;
+      else caret_pos = none();
       update_ime_window();
       return {};
     }
@@ -1301,7 +1301,7 @@ inline void control::slot::clear_window_state() noexcept {
   if (wsp->focused_control_id == id) {
     handle_focus_event(wsp, {false});
     wsp->focused_control_id = {};
-    wsp->caret_pos = std::nullopt;
+    wsp->caret_pos = none();
   }
   if (wsp->hovered_control_id == id) wsp->hovered_control_id = {};
   if (wsp->mouse_capture_control_id == id) {

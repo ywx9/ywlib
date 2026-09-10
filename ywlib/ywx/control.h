@@ -171,8 +171,8 @@ public:
       return find_next_tabstop(Focused, Backward, Found);
     }
 
-    virtual std::optional<float3> get_caret_pos() const { return std::nullopt; }
-    virtual std::optional<float3> get_caret_pos(interface::slot*) const { return get_caret_pos(); }
+    virtual optional<float3> get_caret_pos() const { return none(); }
+    virtual optional<float3> get_caret_pos(interface::slot*) const { return get_caret_pos(); }
     virtual float2 get_minimum_size() const { return minimum_size; }
     virtual std::expected<float2, error> get_necessary_size() const { return calc_necessary_size_by_policy({}); }
 

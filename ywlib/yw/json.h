@@ -270,7 +270,7 @@ public:
   constexpr data(none) noexcept {}
   constexpr data(std::nullptr_t) noexcept {}
   constexpr data(bool value) noexcept : _value(value) {}
-  constexpr data(floating auto value) noexcept : _value(static_cast<double>(value)) {}
+  constexpr data(float_type auto value) noexcept : _value(static_cast<double>(value)) {}
   constexpr data(integral auto value) noexcept requires(!is_bool<decltype(value)> && !char_type<decltype(value)>)
     : _value(static_cast<double>(value)) {}
   template<stringable<char> S> constexpr data(S&& value) : _value(string_type(static_cast<S&&>(value))) {}

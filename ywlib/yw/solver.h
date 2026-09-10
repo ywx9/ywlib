@@ -7,7 +7,7 @@ namespace yw {
 /// Solves f(x) = 0 using x <- x - f(x) / derivative(x).
 /// Converges when abs(f(x)) <= tolerance (absolute residual tolerance).
 /// max_iterations limits Newton updates; an initial root needs no updates.
-template<floating T, typename F, typename Derivative>
+template<float_type T, typename F, typename Derivative>
   requires requires(F& f, Derivative& derivative, T x) {
     { f(x) } -> convertible_to<T>;
     { derivative(x) } -> convertible_to<T>;
@@ -57,7 +57,7 @@ std::expected<T, error> solve_newton(
 /// MARK: sparse matrix
 
 /// square sparse matrix in compressed row storage (CRS) format.
-template<floating T, uint_type SizeType = size_t> class sparse_matrix {
+template<float_type T, uint_type SizeType = size_t> class sparse_matrix {
   std::vector<T> _values;
   std::vector<SizeType> _column_indices;
   std::vector<SizeType> _row_offsets;
@@ -178,7 +178,7 @@ public:
   }
 };
 
-template<floating T, uint_type SizeType, contiguous_range<T> In>
+template<float_type T, uint_type SizeType, contiguous_range<T> In>
 constexpr std::vector<T> transform(const sparse_matrix<T, SizeType>& m, const In& x) {
   const auto n = m.size();
   if (yw::size(x) != n) error(errors::invalid_argument, "input vector size mismatch").go_off();
@@ -194,7 +194,7 @@ constexpr std::vector<T> transform(const sparse_matrix<T, SizeType>& m, const In
   return y;
 }
 
-template<floating T, uint_type SizeType, contiguous_range<T> In, contiguous_output_range<T> Out>
+template<float_type T, uint_type SizeType, contiguous_range<T> In, contiguous_output_range<T> Out>
 constexpr void transform(const sparse_matrix<T, SizeType>& m, const In& x, Out& y) {
   const auto n = m.size();
   if (yw::size(x) != n) error(errors::invalid_argument, "input vector size mismatch").go_off();
@@ -212,7 +212,7 @@ constexpr void transform(const sparse_matrix<T, SizeType>& m, const In& x, Out& 
   }
 }
 
-template<floating T, contiguous_range<T> A, contiguous_range<T> B> constexpr T dot(const A& a, const B& b) {
+template<float_type T, contiguous_range<T> A, contiguous_range<T> B> constexpr T dot(const A& a, const B& b) {
   if (yw::size(a) != yw::size(b)) error(errors::invalid_argument, "vector size mismatch").go_off();
   T result = 0;
   const auto* pa = yw::data(a);
@@ -221,18 +221,18 @@ template<floating T, contiguous_range<T> A, contiguous_range<T> B> constexpr T d
   return result;
 }
 
-template<floating T> struct dof_constraint {
+template<float_type T> struct dof_constraint {
   size_t dof{};
   T value{};
 };
 
-template<floating T> struct node_dof_constraint {
+template<float_type T> struct node_dof_constraint {
   size_t node{};
   size_t dof{};
   T value{};
 };
 
-template<floating T, uint_type SizeType, contiguous_range<T> B>
+template<float_type T, uint_type SizeType, contiguous_range<T> B>
 std::expected<std::vector<T>, error> solve_cg(
   const sparse_matrix<T, SizeType>& a,
   const B& b,
@@ -275,7 +275,7 @@ std::expected<std::vector<T>, error> solve_cg(
   return std::unexpected(error(errors::operation_failed, "conjugate gradient did not converge"));
 }
 
-template<floating T, uint_type SizeType, contiguous_output_range<T> B>
+template<float_type T, uint_type SizeType, contiguous_output_range<T> B>
 std::expected<void, error> constrain(sparse_matrix<T, SizeType>& a, B& b, size_t Dof, T Value = T(0)) {
   const auto n = a.size();
   if (yw::size(b) != n) return std::unexpected(error(errors::invalid_argument, "right hand side size mismatch"));
@@ -305,14 +305,14 @@ std::expected<void, error> constrain(sparse_matrix<T, SizeType>& a, B& b, size_t
   return {};
 }
 
-template<floating T, uint_type SizeType, contiguous_output_range<T> B, contiguous_range<dof_constraint<T>> Constraints>
+template<float_type T, uint_type SizeType, contiguous_output_range<T> B, contiguous_range<dof_constraint<T>> Constraints>
 std::expected<void, error> constrain(sparse_matrix<T, SizeType>& a, B& b, const Constraints& constraints) {
   for (const auto& c : constraints)
     if (auto res = constrain(a, b, c.dof, c.value); !res) return res.error().relay();
   return {};
 }
 
-template<floating T, uint_type SizeType, contiguous_output_range<T> B>
+template<float_type T, uint_type SizeType, contiguous_output_range<T> B>
 std::expected<void, error> constrain(
   sparse_matrix<T, SizeType>& a,
   B& b,
@@ -324,14 +324,14 @@ std::expected<void, error> constrain(
   return constrain(a, b, a.dof_index(Node, Dof), Value);
 }
 
-template<floating T, uint_type SizeType, contiguous_output_range<T> B, contiguous_range<node_dof_constraint<T>> Constraints>
+template<float_type T, uint_type SizeType, contiguous_output_range<T> B, contiguous_range<node_dof_constraint<T>> Constraints>
 std::expected<void, error> constrain(sparse_matrix<T, SizeType>& a, B& b, const Constraints& constraints) {
   for (const auto& c : constraints)
     if (auto res = constrain(a, b, c.node, c.dof, c.value); !res) return res.error().relay();
   return {};
 }
 
-template<size_t NodeCount, size_t DofPerNode, floating T, uint_type SizeType>
+template<size_t NodeCount, size_t DofPerNode, float_type T, uint_type SizeType>
 std::expected<void, error> add_element_matrix(
   sparse_matrix<T, SizeType>& a,
   const vector<uint32_t, NodeCount>& nodes,
@@ -358,7 +358,7 @@ std::expected<void, error> add_element_matrix(
 }
 
 /// \note The diagonal elements of L are assumed to be 1.
-template<floating T, size_t N> requires(N > 0) struct lu_decompose {
+template<float_type T, size_t N> requires(N > 0) struct lu_decompose {
   matrix<T, N, N> lu;
   vector<size_t, N> pivots;
   bool success = false;
@@ -515,5 +515,5 @@ inline constexpr auto integrate_rk4_inplace = //
 };
 
 template<size_t Dim> requires(0 < Dim && Dim < 4) inline constexpr auto explicit_euler_stable_dt =
-  [](double1 dx, floating auto alpha, double1 safety = 0.9) { return safety.x * dx.x * dx.x / (2 * Dim * alpha); };
+  [](double1 dx, float_type auto alpha, double1 safety = 0.9) { return safety.x * dx.x * dx.x / (2 * Dim * alpha); };
 } // namespace yw

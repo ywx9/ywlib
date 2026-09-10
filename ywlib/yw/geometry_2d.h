@@ -1,4 +1,5 @@
 #pragma once
+#include <yw/array1.h>
 #include <yw/geometry.h>
 
 namespace yw::geom {

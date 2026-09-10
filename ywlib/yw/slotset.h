@@ -93,7 +93,7 @@ public:
   static_assert(sizeof(slotid) == 2 * sizeof(uint32_t));
 
 private:
-  array1<_slot> _slots;
+  std::vector<_slot> _slots;
   uint32_t _free_head = uint32_t(-1);
 
 public:

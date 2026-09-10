@@ -1,4 +1,5 @@
 #pragma once
+#include <yw/array.h>
 #include <yw/file_handle.h>
 
 /*
@@ -75,208 +76,189 @@ struct header {
 };
 static_assert(sizeof(header) == 16);
 
-class handle : public handle_base {
-public:
-  struct slot : handle_base::slot {
-    file::handle file_handle;
-    std::vector<entry> entries;
-    file::open_mode mode = file::open_mode::unknown;
-    uint64_t entry_offset = 0;
-    uint64_t footer_offset = 0;
+class handle {
+  file::handle _file_handle;
+  uint64_t _entry_offset = 0;
+  uint64_t _footer_offset = 0;
 
-    std::expected<void, error> initialize(stringable auto&& Path, file::open_mode Mode) {
-      const auto fh_mode = Mode == file::open_mode::append ? file::open_mode::update_or_create : Mode;
-      if (auto fh = file::handle::create(static_cast<decltype(Path)&&>(Path), fh_mode)) file_handle = std::move(*fh);
-      else return fh.error().relay();
-      mode = Mode;
-      if (fh_mode == file::open_mode::create_always || fh_mode == file::open_mode::create_new) return {};
-      if (auto res = file_handle.seek(0, file::seek_whence::end); !res) return res.error().relay();
-      const auto fsize = static_cast<uint64_t>(file_handle.tell());
-      if (fsize == 0) {
-        if (fh_mode == file::open_mode::update_or_create) return {};
-        else return std::unexpected(error(errors::invalid_file_format, "non-archive file"));
-      }
-      if (auto res = file_handle.seek(-8, file::seek_whence::end); !res) return res.error().relay();
-      if (auto res = file_handle.read_trivial<uint64_t>(footer_offset); !res) return res.error().relay();
-      if (footer_offset + sizeof(footer) + sizeof(uint64_t) > fsize)
-        return std::unexpected(error(errors::invalid_file_format, "invalid footer offset"));
-      footer f{};
-      if (auto res = file_handle.seek(static_cast<int64_t>(footer_offset)); !res) return res.error().relay();
-      if (auto res = file_handle.read_trivial(f); !res) return res.error().relay();
-      if (f.magic != footer_magic) return std::unexpected(error(errors::invalid_file_format, "invalid footer magic"));
-      const auto entry_count = f.entry_count;
-      const auto footer_size =
-        sizeof(footer) + static_cast<uint64_t>(entry_count) * sizeof(uint64_t) + sizeof(uint64_t);
-      if (footer_offset + footer_size != fsize)
-        return std::unexpected(error(errors::invalid_file_format, "invalid entry count"));
-      if (entry_count == 0) {
-        entry_offset = footer_offset;
-        return {};
-      }
-      std::vector<uint64_t> offsets(entry_count);
-      if (auto res = file_handle.read_exact(offsets.data(), offsets.size() * sizeof(uint64_t)); !res)
-        return res.error().relay();
-      entries.resize(entry_count);
-      entry_offset = offsets.front();
-      for (uint32_t i = 0; i < entry_count; ++i) {
-        const auto off = offsets[i];
-        if (off >= footer_offset) return std::unexpected(error(errors::invalid_file_format, "invalid entry offset"));
-        if (auto res = file_handle.seek(static_cast<int64_t>(off)); !res) return res.error().relay();
-        header h{};
-        if (auto res = file_handle.read_trivial(h); !res) return res.error().relay();
-        if (h.magic != entry_magic) return std::unexpected(error(errors::invalid_file_format, "invalid entry magic"));
-        const auto name_length = h.name_length;
-        if (name_length == 0 || name_length > max_name_size)
-          return std::unexpected(error(errors::invalid_file_format, "invalid name length"));
-        if (off + sizeof(header) + name_length > footer_offset)
-          return std::unexpected(error(errors::invalid_file_format, "invalid entry size"));
-        const auto data_length = h.data_length;
-        const auto data_offset = off + sizeof(header) + name_length;
-        const auto crc_offset = data_offset + data_length;
-        auto& e = entries[i];
-        e.name.resize(name_length);
-        e.entry_offset = off;
-        e.data_offset = data_offset;
-        e.data_length = data_length;
-        if (auto res = file_handle.read_exact(e.name.data(), name_length); !res) return res.error().relay();
-        if (auto res = file_handle.seek(static_cast<int64_t>(data_length), file::seek_whence::current); !res)
-          return res.error().relay();
-        if (auto res = file_handle.read_trivial<uint32_t>(e.crc32); !res) return res.error().relay();
-        const bool is_last = i + 1 == entry_count;
-        const auto next = is_last ? footer_offset : offsets[i + 1];
-        if (crc_offset + sizeof(uint32_t) != next)
-          return std::unexpected(error(errors::invalid_file_format, "invalid entry size"));
-      }
+  std::expected<void, error> initialize(stringable auto&& Path, file::open_mode Mode) {
+    const auto fh_mode = Mode == file::open_mode::append ? file::open_mode::update_or_create : Mode;
+    if (auto fh = file::handle::create(static_cast<decltype(Path)&&>(Path), fh_mode)) _file_handle = move(*fh);
+    else return fh.error().relay();
+    mode = Mode;
+    if (fh_mode == file::open_mode::create_always || fh_mode == file::open_mode::create_new) return {};
+    if (auto res = _file_handle.seek(0, file::seek_whence::end); !res) return res.error().relay();
+    const auto fsize = static_cast<uint64_t>(_file_handle.tell());
+    if (fsize == 0) {
+      if (fh_mode == file::open_mode::update_or_create) return {};
+      else return std::unexpected(error(errors::invalid_file_format, "non-archive file"));
+    }
+    if (auto res = _file_handle.seek(-8, file::seek_whence::end); !res) return res.error().relay();
+    if (auto res = _file_handle.read_trivial<uint64_t>(_footer_offset); !res) return res.error().relay();
+    if (_footer_offset + sizeof(footer) + sizeof(uint64_t) > fsize)
+      return std::unexpected(error(errors::invalid_file_format, "invalid footer offset"));
+    footer f{};
+    if (auto res = _file_handle.seek(static_cast<int64_t>(_footer_offset)); !res) return res.error().relay();
+    if (auto res = _file_handle.read_trivial(f); !res) return res.error().relay();
+    if (f.magic != footer_magic) return std::unexpected(error(errors::invalid_file_format, "invalid footer magic"));
+    const auto entry_count = f.entry_count;
+    const auto footer_size =
+      sizeof(footer) + static_cast<uint64_t>(entry_count) * sizeof(uint64_t) + sizeof(uint64_t);
+    if (_footer_offset + footer_size != fsize)
+      return std::unexpected(error(errors::invalid_file_format, "invalid entry count"));
+    if (entry_count == 0) {
+      _entry_offset = _footer_offset;
       return {};
     }
-  };
-
-  explicit operator bool() const noexcept {
-    const auto sp = get_slot(this);
-    return sp && static_cast<bool>(sp->file_handle);
+    array<uint64_t> offsets(entry_count);
+    if (auto res = _file_handle.read_exact(offsets.data(), offsets.size() * sizeof(uint64_t)); !res)
+      return res.error().relay();
+    entries.value.resize(entry_count);
+    _entry_offset = offsets.front();
+    for (uint32_t i = 0; i < entry_count; ++i) {
+      const auto off = offsets[i];
+      if (off >= _footer_offset) return std::unexpected(error(errors::invalid_file_format, "invalid entry offset"));
+      if (auto res = _file_handle.seek(static_cast<int64_t>(off)); !res) return res.error().relay();
+      header h{};
+      if (auto res = _file_handle.read_trivial(h); !res) return res.error().relay();
+      if (h.magic != entry_magic) return std::unexpected(error(errors::invalid_file_format, "invalid entry magic"));
+      const auto name_length = h.name_length;
+      if (name_length == 0 || name_length > max_name_size)
+        return std::unexpected(error(errors::invalid_file_format, "invalid name length"));
+      if (off + sizeof(header) + name_length > _footer_offset)
+        return std::unexpected(error(errors::invalid_file_format, "invalid entry size"));
+      const auto data_length = h.data_length;
+      const auto data_offset = off + sizeof(header) + name_length;
+      const auto crc_offset = data_offset + data_length;
+      auto& e = entries.value[i];
+      e.name.resize(name_length);
+      e.entry_offset = off;
+      e.data_offset = data_offset;
+      e.data_length = data_length;
+      if (auto res = _file_handle.read_exact(e.name.data(), name_length); !res) return res.error().relay();
+      if (auto res = _file_handle.seek(static_cast<int64_t>(data_length), file::seek_whence::current); !res)
+        return res.error().relay();
+      if (auto res = _file_handle.read_trivial<uint32_t>(e.crc32); !res) return res.error().relay();
+      const bool is_last = i + 1 == entry_count;
+      const auto next = is_last ? _footer_offset : offsets[i + 1];
+      if (crc_offset + sizeof(uint32_t) != next)
+        return std::unexpected(error(errors::invalid_file_format, "invalid entry size"));
+    }
+    return {};
   }
 
+public:
+  const_property<array<entry>, handle> entries;
+  const_property<file::open_mode, handle> mode = file::open_mode::unknown;
+
+  explicit operator bool() const noexcept { return static_cast<bool>(_file_handle); }
+
   handle() noexcept = default;
+  handle(const handle&) = delete;
+  handle& operator=(const handle&) = delete;
+
+  handle(handle&& Other) noexcept
+    : _file_handle(move(Other._file_handle)), _entry_offset(Other._entry_offset),
+      _footer_offset(Other._footer_offset), entries(move(Other.entries())), mode(Other.mode()) {
+    Other._entry_offset = 0;
+    Other._footer_offset = 0;
+    Other.entries = array<entry>{};
+    Other.mode = file::open_mode::unknown;
+  }
+
+  handle& operator=(handle&& Other) noexcept {
+    if (this == &Other) return *this;
+    close();
+    _file_handle = move(Other._file_handle);
+    _entry_offset = Other._entry_offset;
+    _footer_offset = Other._footer_offset;
+    entries = move(Other.entries());
+    mode = Other.mode();
+    Other._entry_offset = 0;
+    Other._footer_offset = 0;
+    Other.entries = array<entry>{};
+    Other.mode = file::open_mode::unknown;
+    return *this;
+  }
 
   static std::expected<handle, error> create(stringable auto&& Path, file::open_mode m) {
-    const auto sp = make_slot<handle>();
-    if (!sp) return std::unexpected(error(errors::slot_creation_failed));
-    if (auto res = sp->initialize(static_cast<decltype(Path)&&>(Path), m); !res) {
-      erase_slot(sp->id);
-      return res.error().relay();
-    } else return make_handle<handle>(sp->id);
+    handle h;
+    if (auto res = h.initialize(static_cast<decltype(Path)&&>(Path), m); !res) return res.error().relay();
+    else return h;
   }
 
   /// creates handle of archive file
   handle(stringable auto&& Path, file::open_mode m, const source_line& sl = here()) {
-    if (auto res = create(static_cast<decltype(Path)&&>(Path), m)) *this = std::move(*res);
+    if (auto res = create(static_cast<decltype(Path)&&>(Path), m)) *this = move(*res);
     else res.error().go_off(sl);
   }
 
-  bool is_open() const noexcept {
-    const auto sp = get_slot(this);
-    return sp && sp->file_handle.is_open();
-  }
+  bool is_open() const noexcept { return _file_handle.is_open(); }
 
-  const string<file::path_char>& path() const {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->file_handle.path();
-  }
+  const string<file::path_char>& path() const { return _file_handle.path(); }
 
-  file::open_mode mode() const {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out();
-      return file::open_mode::unknown;
-    } else return sp->mode;
-  }
-
-  const std::vector<entry>& entries() const {
-    const auto sp = get_slot(this);
-    if (!sp) error(errors::invalid_slotid).go_off();
-    return sp->entries;
-  }
+  const array<entry>& entry_list() const noexcept { return entries(); }
 
   std::expected<void, error> close() {
-    const auto sp = get_slot(this);
-    if (!sp) return std::unexpected(error(errors::invalid_slotid));
-    if (!sp->file_handle.is_open()) return std::unexpected(error(errors::not_initialized));
-    if (_is_write_mode(sp->mode))
+    if (!_file_handle.is_open()) return {};
+    if (_is_write_mode(mode()))
       if (auto res = flush(); !res) return res.error().relay();
-    if (auto res = sp->file_handle.close(); !res) return res.error().relay();
-    sp->entries.clear();
+    if (auto res = _file_handle.close(); !res) return res.error().relay();
+    entries.value.clear();
     return {};
   }
 
   std::expected<void*, error> read(size_t Index, void* Out) {
-    const auto sp = get_slot(this);
-    if (!sp) return std::unexpected(error(errors::invalid_slotid));
-    if (Index >= sp->entries.size()) return std::unexpected(error(errors::invalid_argument, "index out of range"));
-    const auto& e = sp->entries[Index];
-    auto& fh = sp->file_handle;
+    if (Index >= entries->size()) return std::unexpected(error(errors::invalid_argument, "index out of range"));
+    const auto& e = entries()[Index];
+    auto& fh = _file_handle;
     if (auto res = fh.seek(static_cast<int64_t>(e.data_offset)); !res) return res.error().relay();
     if (auto res = fh.read_exact(Out, static_cast<size_t>(e.data_length)); !res) return res.error().relay();
     else return static_cast<void*>(reinterpret_cast<std::byte*>(Out) + e.data_length);
   }
 
-  std::vector<std::byte> read(size_t index) {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out(); // warning
-      return {};
-    }
-    if (index >= sp->entries.size()) {
+  array<std::byte> read(size_t index) {
+    if (index >= entries->size()) {
       error(errors::invalid_argument, "index out of range").fizzle_out(); // warning
       return {};
     }
-    const auto& e = sp->entries[index];
-    if (auto res = sp->file_handle.seek(static_cast<int64_t>(e.data_offset)); !res) {
+    const auto& e = entries()[index];
+    if (auto res = _file_handle.seek(static_cast<int64_t>(e.data_offset)); !res) {
       res.error().add_footprint().fizzle_out(); // warning
       return {};
     }
-    std::vector<std::byte> data(static_cast<size_t>(e.data_length));
-    if (auto res = sp->file_handle.read_exact(data.data(), data.size()); !res) {
+    array<std::byte> data(static_cast<size_t>(e.data_length));
+    if (auto res = _file_handle.read_exact(data.data(), data.size()); !res) {
       res.error().add_footprint().fizzle_out(); // warning
       return {};
     }
     return data;
   }
 
-  std::vector<std::byte> read(stringable<char> auto&& name) {
+  array<std::byte> read(stringable<char> auto&& name) {
     const auto sv = string_view<char>(name);
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out(); // warning
-      return {};
-    }
-    for (size_t i = 0; i < sp->entries.size(); ++i)
-      if (sp->entries[i].name.view() == sv) return read(i);
+    for (size_t i = 0; i < entries->size(); ++i)
+      if (entries()[i].name.view() == sv) return read(i);
     error(errors::invalid_argument, "entry not found").fizzle_out(); // warning
     return {};
   }
 
   bool verify(size_t index) {
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out(); // warning
-      return false;
-    }
-    if (index >= sp->entries.size()) {
+    if (index >= entries->size()) {
       error(errors::invalid_argument, "index out of range").fizzle_out(); // warning
       return false;
     }
-    const auto& e = sp->entries[index];
-    if (auto res = sp->file_handle.seek(static_cast<int64_t>(e.data_offset)); !res) {
+    const auto& e = entries()[index];
+    if (auto res = _file_handle.seek(static_cast<int64_t>(e.data_offset)); !res) {
       res.error().add_footprint().fizzle_out(); // warning
       return false;
     }
     uint32_t crc = 0xFFFFFFFF;
     constexpr size_t buffer_size = 4096;
-    std::vector<std::byte> buffer(buffer_size);
+    array<std::byte> buffer(buffer_size);
     for (uint64_t remaining = e.data_length; remaining > 0;) {
       const auto to_read = yw::min(static_cast<uint64_t>(buffer_size), remaining);
-      if (auto res = sp->file_handle.read_exact(buffer.data(), static_cast<size_t>(to_read)); !res) {
+      if (auto res = _file_handle.read_exact(buffer.data(), static_cast<size_t>(to_read)); !res) {
         res.error().add_footprint().fizzle_out(); // warning
         return false;
       }
@@ -288,84 +270,73 @@ public:
 
   bool verify(stringable<char> auto&& name) {
     const auto sv = string_view<char>(name);
-    const auto sp = get_slot(this);
-    if (!sp) {
-      error(errors::invalid_slotid).fizzle_out(); // warning
-      return false;
-    }
-    for (size_t i = 0; i < sp->entries.size(); ++i)
-      if (sp->entries[i].name.view() == sv) return verify(i);
+    for (size_t i = 0; i < entries->size(); ++i)
+      if (entries()[i].name.view() == sv) return verify(i);
     error(errors::invalid_argument, "entry not found").fizzle_out(); // warning
     return false;
   }
 
   std::expected<void, error> flush() {
-    const auto sp = get_slot(this);
-    if (!sp) return std::unexpected(error(errors::invalid_slotid));
-    if (!_is_write_mode(sp->mode))
+    if (!_is_write_mode(mode()))
       return std::unexpected(error(errors::invalid_operation, "archive not opened in write mode"));
-    if (auto res = sp->file_handle.seek(static_cast<int64_t>(sp->footer_offset)); !res) return res.error().relay();
-    const footer f{footer_magic, static_cast<uint32_t>(sp->entries.size())};
-    if (auto res = sp->file_handle.write_exact(&f, sizeof(f)); !res) return res.error().relay();
-    std::vector<uint64_t> offsets(sp->entries.size() + 1);
-    for (size_t i = 0; i < sp->entries.size(); ++i) offsets[i] = sp->entries[i].entry_offset;
-    offsets.back() = sp->footer_offset;
-    if (auto res = sp->file_handle.write_exact(offsets.data(), offsets.size() * sizeof(uint64_t)); !res)
+    if (auto res = _file_handle.seek(static_cast<int64_t>(_footer_offset)); !res) return res.error().relay();
+    const footer f{footer_magic, static_cast<uint32_t>(entries->size())};
+    if (auto res = _file_handle.write_exact(&f, sizeof(f)); !res) return res.error().relay();
+    array<uint64_t> offsets(entries->size() + 1);
+    for (size_t i = 0; i < entries->size(); ++i) offsets[i] = entries()[i].entry_offset;
+    offsets.back() = _footer_offset;
+    if (auto res = _file_handle.write_exact(offsets.data(), offsets.size() * sizeof(uint64_t)); !res)
       return res.error().relay();
-    if (auto res = sp->file_handle.truncate_to_current(); !res) return res.error().relay();
+    if (auto res = _file_handle.truncate_to_current(); !res) return res.error().relay();
     return {};
   }
 
   std::expected<void, error> remove(size_t n = npos) {
-    const auto sp = get_slot(this);
-    if (!sp) return std::unexpected(error(errors::invalid_slotid));
-    if (!_is_write_mode(sp->mode))
+    if (!_is_write_mode(mode()))
       return std::unexpected(error(errors::invalid_operation, "archive not opened in write mode"));
-    if (n == npos) n = sp->entries.size();
-    else if (n > sp->entries.size()) return std::unexpected(error(errors::invalid_argument, "n exceeds entry count"));
+    if (n == npos) n = entries->size();
+    else if (n > entries->size()) return std::unexpected(error(errors::invalid_argument, "n exceeds entry count"));
     if (n == 0) {
-      sp->footer_offset = sp->entry_offset;
-      sp->entries.clear();
+      _footer_offset = _entry_offset;
+      entries.value.clear();
       return {};
     }
-    sp->footer_offset = sp->entries[sp->entries.size() - n].entry_offset;
-    sp->entries.resize(sp->entries.size() - n);
+    _footer_offset = entries()[entries->size() - n].entry_offset;
+    entries.value.resize(entries->size() - n);
     return {};
   }
 
   std::expected<void, error> append(stringable<char> auto&& name, const void* data, size_t data_length) {
-    const auto sp = get_slot(this);
-    if (!sp) return std::unexpected(error(errors::invalid_slotid));
     if (!data && data_length) return std::unexpected(error(errors::invalid_argument, "null data pointer"));
     const auto sv = string_view<char>(name);
     if (sv.empty() || sv.size() > max_name_size)
       return std::unexpected(error(errors::invalid_argument, "archive: invalid entry name length"));
-    if (!_is_write_mode(sp->mode))
+    if (!_is_write_mode(mode()))
       return std::unexpected(error(errors::invalid_operation, "archive not opened in write mode"));
-    if (auto res = sp->file_handle.seek(static_cast<int64_t>(sp->footer_offset)); !res) return res.error().relay();
+    if (auto res = _file_handle.seek(static_cast<int64_t>(_footer_offset)); !res) return res.error().relay();
 
     const header h{entry_magic, static_cast<uint32_t>(sv.size()), static_cast<uint64_t>(data_length)};
-    if (auto res = sp->file_handle.write_exact(&h, sizeof(h)); !res) return res.error().relay();
-    if (auto res = sp->file_handle.write_exact(sv.data(), sv.size()); !res) return res.error().relay();
+    if (auto res = _file_handle.write_exact(&h, sizeof(h)); !res) return res.error().relay();
+    if (auto res = _file_handle.write_exact(sv.data(), sv.size()); !res) return res.error().relay();
     if (data_length > 0)
-      if (auto res = sp->file_handle.write_exact(data, data_length); !res) return res.error().relay();
+      if (auto res = _file_handle.write_exact(data, data_length); !res) return res.error().relay();
 
     uint32_t crc = 0xFFFFFFFF;
     if (data_length > 0) crc = _crc32_update(crc, static_cast<const std::byte*>(data), data_length);
     crc ^= 0xFFFFFFFF;
-    if (auto res = sp->file_handle.write_exact(&crc, sizeof(crc)); !res) return res.error().relay();
+    if (auto res = _file_handle.write_exact(&crc, sizeof(crc)); !res) return res.error().relay();
 
-    const auto new_entry_offset = sp->footer_offset;
+    const auto new_entry_offset = _footer_offset;
     const auto data_offset = new_entry_offset + sizeof(header) + sv.size();
-    if (sp->entries.empty()) sp->entry_offset = new_entry_offset;
-    sp->entries.push_back(entry{string<char>(sv), new_entry_offset, data_offset, data_length, crc});
-    sp->footer_offset = data_offset + data_length + sizeof(uint32_t);
+    if (entries->empty()) _entry_offset = new_entry_offset;
+    entries.value.push_back(entry{string<char>(sv), new_entry_offset, data_offset, data_length, crc});
+    _footer_offset = data_offset + data_length + sizeof(uint32_t);
     return {};
   }
 };
 
 inline handle open(stringable auto&& path, file::open_mode mode, const source_line& sl = here()) {
-  if (auto res = handle::create(static_cast<decltype(path)&&>(path), mode)) return std::move(*res);
+  if (auto res = handle::create(static_cast<decltype(path)&&>(path), mode)) return move(*res);
   else res.error().fizzle_out(sl);
   return {};
 }
@@ -384,7 +355,7 @@ inline std::expected<void, error> pack(
     if (auto res = fh->seek(0, file::seek_whence::end); !res) return res.error().relay();
     const auto file_size = static_cast<uint64_t>(fh->tell());
     if (auto res = fh->seek(0, file::seek_whence::begin); !res) return res.error().relay();
-    std::vector<std::byte> data(static_cast<size_t>(file_size));
+    array<std::byte> data(static_cast<size_t>(file_size));
     if (auto res = fh->read_exact(data.data(), data.size()); !res) return res.error().relay();
     const auto filename = unicode<char>(file::relative(item, src));
     if (auto res = archive->append(filename, data.data(), data.size()); !res) return res.error().relay();

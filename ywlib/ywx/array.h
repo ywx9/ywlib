@@ -1,4 +1,7 @@
 #pragma once
+#include <yw/array1.h>
+#include <yw/array2.h>
+#include <yw/array3.h>
 #include <ywx/buffer.h>
 
 namespace yw {

@@ -2,16 +2,26 @@
 #include <yw/datetime.h>
 #include <yw/error.h>
 #include <yw/null_terminated.h>
+#include <yw/array.h>
 
-namespace yw::file {
+namespace yw {
 
 #ifdef _WIN32
 using path_char = wchar_t;
 using path_string = string<wchar_t>;
+using path_string_view = string_view<wchar_t>;
 #else
 using path_char = char;
 using path_string = string<char>;
+using path_string_view = string_view<char>;
 #endif
+}
+
+namespace yw::file {
+
+using yw::path_char;
+using yw::path_string;
+using yw::path_string_view;
 
 enum class kind {
   unknown,
@@ -488,7 +498,7 @@ template<char_type C> string<C> child_path(string_view<C> directory, string_view
 
 #ifdef _WIN32
 inline std::expected<void, error> list_files(
-  const wchar_t* directory, bool recursive, std::vector<string<path_char>>& result) {
+  const wchar_t* directory, bool recursive, array<string<path_char>>& result) {
   const string_view<wchar_t> dir(directory);
   auto pattern = child_path<wchar_t>(dir, L"*");
   WIN32_FIND_DATAW data;
@@ -518,7 +528,7 @@ inline std::expected<void, error> list_files(
 }
 #else
 inline std::expected<void, error> list_files(
-  const char* directory, bool recursive, std::vector<string<path_char>>& result) {
+  const char* directory, bool recursive, array<string<path_char>>& result) {
   const string_view<char> dirpath(directory);
   auto dir = ::opendir(directory);
   if (!dir) return std::unexpected(error(errors::operation_failed, "opendir failed", errno));
@@ -548,9 +558,9 @@ inline std::expected<void, error> list_files(
 #endif
 } // namespace internal
 
-inline std::vector<string<path_char>> list_files(
+inline array<string<path_char>> list_files(
   null_terminated<path_char> Directory, bool recursive = false, const source_line& sl = here()) {
-  std::vector<string<path_char>> result;
+  array<string<path_char>> result;
   if (auto res = internal::list_files(Directory.data(), recursive, result); !res)
     res.error().add_footprint().fizzle_out(sl);
   return result;

@@ -217,9 +217,9 @@ public:
 
     static bool is_number_char(wchar_t c) noexcept {
       if (L'0' <= c && c <= L'9') return true;
-      if constexpr (signed_integral<T> || floating<T>)
+      if constexpr (signed_integral<T> || float_type<T>)
         if (c == L'+' || c == L'-') return true;
-      if constexpr (floating<T>)
+      if constexpr (float_type<T>)
         if (c == L'.' || c == L'e' || c == L'E') return true;
       return false;
     }
@@ -227,7 +227,7 @@ public:
     T normalize_value(T v) const noexcept {
       if (v <= minimum) return minimum;
       if (v >= maximum) return maximum;
-      if constexpr (floating<T>) {
+      if constexpr (float_type<T>) {
         if (step > T{} && maximum > minimum) {
           const auto n = std::round(static_cast<long double>(v) / static_cast<long double>(step));
           const auto w = yw::clamp(static_cast<T>(n * static_cast<long double>(step)), minimum, maximum);

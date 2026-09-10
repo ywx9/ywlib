@@ -60,22 +60,7 @@ template<typename... Ts> inline constexpr bool always_false = false;
 template<bool... Bs> inline constexpr size_t count = (Bs + ...);
 template<bool... Bs> inline constexpr size_t inspect = false;
 template<bool B, bool... Bs> inline constexpr size_t inspect<B, Bs...> = B ? 0 : 1 + inspect<Bs...>;
-template<typename T, size_t N> constexpr size_t arraysize(const T (&)[N]) noexcept { return N; }
-
-using pass = std::identity;
-using equal = std::ranges::equal_to;
-using not_equal = std::ranges::not_equal_to;
-using less = std::ranges::less;
-using greater = std::ranges::greater;
-using less_equal = std::ranges::less_equal;
-using greater_equal = std::ranges::greater_equal;
-
-inline constexpr equal eq{};
-inline constexpr not_equal ne{};
-inline constexpr less lt{};
-inline constexpr greater gt{};
-inline constexpr less_equal le{};
-inline constexpr greater_equal ge{};
+inline constexpr auto array_size = []<typename T, size_t N>(const T (&)[N]) noexcept { return N; };
 
 template<typename T> using remove_const = std::remove_const_t<T>;
 template<typename T> using remove_volatile = std::remove_volatile_t<T>;
@@ -84,6 +69,15 @@ template<typename T> using remove_ref = std::remove_reference_t<T>;
 template<typename T> using remove_cvref = remove_cv<remove_ref<T>>;
 template<typename T> using remove_pointer = std::remove_pointer_t<T>;
 template<typename T> using remove_extent = std::remove_extent_t<T>;
+
+namespace internal {
+template<typename T> T _declval();
+}
+
+inline constexpr auto move = [](auto&& t) noexcept -> auto&& { return static_cast<remove_ref<decltype(t)>&&>(t); };
+template<typename T> inline constexpr auto forward = [](auto&& t) noexcept -> T&& { return static_cast<T&&>(t); };
+template<typename T> inline constexpr auto declval = [] noexcept -> decltype(auto) { return internal::_declval<T>(); };
+template<typename T> inline constexpr auto bitcast = [](const auto& u) noexcept { return std::bit_cast<T>(u); };
 
 template<typename T> concept is_const = std::is_const_v<T>;
 template<typename T> concept is_volatile = std::is_volatile_v<T>;
@@ -97,13 +91,12 @@ template<typename T> concept is_unbounded_array = std::is_unbounded_array_v<T>;
 template<typename T> concept is_array = is_bounded_array<T> || is_unbounded_array<T>;
 template<typename T> concept is_function = !is_const<const T> && !is_reference<T>;
 
+template<typename T, typename... Ts> concept any_of = (std::same_as<T, Ts> || ...);
 template<typename T, typename... Ts> concept same_as = (std::same_as<T, Ts> && ...);
 template<typename T, typename... Ts> concept different_from = ((!std::same_as<T, Ts>) && ...);
-template<typename T, typename... Ts> concept included_in = (std::same_as<T, Ts> || ...);
-template<typename T, typename... Ts> concept castable_to = ((requires { static_cast<Ts>(std::declval<T>()); }) && ...);
+template<typename T, typename... Ts> concept castable_to = ((requires { static_cast<Ts>(declval<T>()); }) && ...);
 template<typename T, typename... Ts> concept convertible_to = (std::convertible_to<T, Ts> && ...);
-template<typename T, typename... Ts> concept nt_castable_to =
-  castable_to<T, Ts...> && noexcept((static_cast<Ts>(std::declval<T>()), ...));
+template<typename T, typename... Ts> concept nt_castable_to = noexcept((static_cast<Ts>(declval<T>()), ...));
 template<typename T, typename... Ts> concept nt_convertible_to = convertible_to<T, Ts...> && nt_castable_to<T, Ts...>;
 template<typename T, typename... Ts> concept derived_from = (std::derived_from<T, Ts> && ...);
 template<typename T, typename... Ts> concept is_base_of = (derived_from<Ts, T> && ...);
@@ -111,68 +104,147 @@ template<typename T, typename... Ts> concept is_base_of = (derived_from<Ts, T> &
 template<typename T> concept is_void = same_as<remove_cv<T>, void>;
 template<typename T> concept is_bool = same_as<remove_cv<T>, bool>;
 template<typename T> concept is_nullptr = same_as<remove_cv<T>, decltype(nullptr)>;
-template<typename T> concept char_type = included_in<remove_cv<T>, char, wchar_t, char8_t, char16_t, char32_t>;
-template<typename T> concept int_type = included_in<remove_cv<T>, signed char, short, int, long, long long>;
-template<typename T> concept uint_type =
-  included_in<remove_cv<T>, uint8_t, uint16_t, uint32_t, unsigned long, uint64_t>;
-template<typename T> concept float_type = included_in<remove_cv<T>, float, double, long double>;
+template<typename T> concept char_type = any_of<remove_cv<T>, char, wchar_t, char8_t, char16_t, char32_t>;
+template<typename T> concept int_type = any_of<remove_cv<T>, int8_t, int16_t, int, long, int64_t>;
+template<typename T> concept uint_type = any_of<remove_cv<T>, uint8_t, uint16_t, uint32_t, unsigned long, uint64_t>;
+template<typename T> concept float_type = any_of<remove_cv<T>, float, double, long double>;
 template<typename T> concept integral = is_bool<T> || char_type<T> || int_type<T> || uint_type<T>;
 template<typename T> concept signed_integral = integral<T> && requires { requires T(-1) < T(0); };
 template<typename T> concept unsigned_integral = integral<T> && !signed_integral<T>;
-template<typename T> concept floating = float_type<T>;
 template<typename T> concept arithmetic = integral<T> || float_type<T>;
 template<typename T> concept trivial = __is_trivially_copyable(T);
 template<typename T> concept is_enum = std::is_enum_v<T>;
 template<typename T> concept is_class = std::is_class_v<T>;
 template<typename T> concept is_union = std::is_union_v<T>;
 template<typename T> concept is_object = std::is_object_v<T>;
+template<typename T> concept movable = std::movable<T>;
+template<typename T> concept copyable = std::copyable<T>;
+template<typename T> concept semiregular = std::semiregular<T>;
+template<typename T> concept regular = std::regular<T>;
 
-namespace _ { // clang-format off
+template<typename T, typename U = T> concept equality_comparable = std::equality_comparable_with<T, U>;
+template<typename T, typename U = T> concept totally_ordered = std::totally_ordered_with<T, U>;
+
+struct noop {
+  template<typename... As> constexpr void operator()(As&&...) const noexcept {}
+};
+
+struct pass {
+  template<typename T> constexpr T&& operator()(T&& t) const noexcept { return static_cast<T&&>(t); }
+};
+
+struct equal {
+  template<typename T, equality_comparable<T> U> constexpr bool operator()(T&& t, U&& u) const
+    noexcept(noexcept(declval<T>() == declval<U>())) {
+    return static_cast<T&&>(t) == static_cast<U&&>(u);
+  }
+};
+
+struct not_equal {
+  template<typename T, equality_comparable<T> U> constexpr bool operator()(T&& t, U&& u) const
+    noexcept(noexcept(declval<T>() != declval<U>())) {
+    return static_cast<T&&>(t) != static_cast<U&&>(u);
+  }
+};
+
+struct less {
+  template<typename T, totally_ordered<T> U> constexpr bool operator()(T&& t, U&& u) const
+    noexcept(noexcept(declval<T>() < declval<U>())) {
+    return static_cast<T&&>(t) < static_cast<U&&>(u);
+  }
+};
+
+struct greater {
+  template<typename T, totally_ordered<T> U> constexpr bool operator()(T&& t, U&& u) const
+    noexcept(noexcept(declval<T>() > declval<U>())) {
+    return static_cast<T&&>(t) > static_cast<U&&>(u);
+  }
+};
+
+struct less_equal {
+  template<typename T, totally_ordered<T> U> constexpr bool operator()(T&& t, U&& u) const
+    noexcept(noexcept(declval<T>() <= declval<U>())) {
+    return static_cast<T&&>(t) <= static_cast<U&&>(u);
+  }
+};
+
+struct greater_equal {
+  template<typename T, totally_ordered<T> U> constexpr bool operator()(T&& t, U&& u) const
+    noexcept(noexcept(declval<T>() >= declval<U>())) {
+    return static_cast<T&&>(t) >= static_cast<U&&>(u);
+  }
+};
+
+inline constexpr equal eq;
+inline constexpr not_equal ne;
+inline constexpr less lt;
+inline constexpr greater gt;
+inline constexpr less_equal le;
+inline constexpr greater_equal ge;
+
+inline constexpr auto int_cast = []<typename T>(T value) noexcept requires arithmetic<T> || is_enum<T> {
+  if constexpr (sizeof(T) == 1) return bitcast<int8_t>(value);
+  else if constexpr (sizeof(T) == 2) return bitcast<int16_t>(value);
+  else if constexpr (sizeof(T) == 4) return bitcast<int32_t>(value);
+  else if constexpr (sizeof(T) == 8) return bitcast<int64_t>(value);
+  else static_assert(always_false<T>, "unsupported type for int_cast");
+};
+
+inline constexpr auto uint_cast = []<typename T>(T value) noexcept requires arithmetic<T> || is_enum<T> {
+  if constexpr (sizeof(T) == 1) return bitcast<uint8_t>(value);
+  else if constexpr (sizeof(T) == 2) return bitcast<uint16_t>(value);
+  else if constexpr (sizeof(T) == 4) return bitcast<uint32_t>(value);
+  else if constexpr (sizeof(T) == 8) return bitcast<uint64_t>(value);
+  else static_assert(always_false<T>, "unsupported type for uint_cast");
+};
+
+namespace internal { // clang-format off
 template<typename T> struct _member_traits { using class_type = void; using member_type = void; };
 template<typename C, typename M> struct _member_traits<M C::*> { using class_type = C; using member_type = M; };
-} // clang-format on
+} // namespace internal
+// clang-format on
 
-template<typename T> using member_type = _::_member_traits<remove_cvref<T>>::member_type;
-template<typename T> using class_type = _::_member_traits<remove_cvref<T>>::class_type;
+template<typename T> using member_type = internal::_member_traits<remove_cvref<T>>::member_type;
+template<typename T> using class_type = internal::_member_traits<remove_cvref<T>>::class_type;
 template<typename T> concept is_member_object_pointer = std::is_member_object_pointer_v<T>;
 template<typename T> concept is_member_function_pointer = std::is_member_function_pointer_v<T>;
 template<typename T> concept is_member_pointer = is_member_object_pointer<T> || is_member_function_pointer<T>;
 
-//////////////////////////////////////// MARK: narrow_cast
-
-inline constexpr auto uint_cast = []<typename T>(T value) noexcept requires arithmetic<T> || is_enum<T> {
-  if constexpr (sizeof(T) == 1) return std::bit_cast<uint8_t>(value);
-  else if constexpr (sizeof(T) == 2) return std::bit_cast<uint16_t>(value);
-  else if constexpr (sizeof(T) == 4) return std::bit_cast<uint32_t>(value);
-  else if constexpr (sizeof(T) == 8) return std::bit_cast<uint64_t>(value);
-  else static_assert(always_false<T>, "unsupported type for uint_cast");
-};
-
-inline constexpr auto int_cast = []<typename T>(T value) noexcept requires arithmetic<T> || is_enum<T> {
-  if constexpr (sizeof(T) == 1) return std::bit_cast<int8_t>(value);
-  else if constexpr (sizeof(T) == 2) return std::bit_cast<int16_t>(value);
-  else if constexpr (sizeof(T) == 4) return std::bit_cast<int32_t>(value);
-  else if constexpr (sizeof(T) == 8) return std::bit_cast<int64_t>(value);
-  else static_assert(always_false<T>, "unsupported type for int_cast");
-};
-
-//////////////////////////////////////// MARK: construct
+/// MARK: construct
 
 template<typename T, typename... As> concept constructible = std::is_constructible_v<T, As...>;
-template<typename T, typename... As> concept nt_constructible =
-  constructible<T, As...> && std::is_nothrow_constructible_v<T, As...>;
-template<typename T>
-inline constexpr auto construct = []<typename... As>(As&&... as) noexcept(nt_constructible<T, As...>) -> T
-  requires constructible<T, As...> { return T{static_cast<As&&>(as)...}; };
+template<typename T, typename... As> concept nt_constructible = std::is_nothrow_constructible_v<T, As...>;
+template<typename T> inline constexpr auto construct = []<typename... As>(As&&... as) //
+  noexcept(nt_constructible<T, As...>) requires constructible<T, As...> { return T{static_cast<As&&>(as)...}; };
 
-//////////////////////////////////////// MARK: assign
+/// MARK: assign
 
 template<typename T, typename U> concept assignable = std::is_assignable_v<T, U>;
 template<typename T, typename U> concept nt_assignable = assignable<T, U> && std::is_nothrow_assignable_v<T, U>;
-inline constexpr auto assign = []<typename T, typename U>(T&& t, U&& u) noexcept(nt_assignable<T, U>) -> void
-  requires assignable<T, U> { static_cast<T&&>(t) = static_cast<U&&>(u); };
+inline constexpr auto assign = []<typename T, typename U>(T&& t, U&& u) //
+  noexcept(nt_assignable<T, U>) requires assignable<T, U> { static_cast<T&&>(t) = static_cast<U&&>(u); };
 
-//////////////////////////////////////// MARK: specialization and variation
+/// MARK: exchange
+
+template<typename T, typename U = T> concept exchangeable =
+  constructible<remove_ref<T>, remove_ref<T>&&> && assignable<T&, remove_ref<U>&&>;
+template<typename T, typename U = T> concept nt_exchangeable =
+  nt_constructible<remove_ref<T>, remove_ref<T>&&> && nt_assignable<T&, remove_ref<U>&&>;
+inline constexpr auto exchange = []<typename T, typename U = T>(T&& t, U&& u) noexcept(nt_exchangeable<T, U>)
+                                   requires exchangeable<T, U> {
+                                     auto tmp = move(t);
+                                     static_cast<T&&>(t) = move(u);
+                                     return tmp;
+                                   };
+
+/// MARK: swap
+
+template<typename T, typename U = T> concept swappable = std::swappable_with<T, U>;
+template<typename T, typename U = T> concept nt_swappable = std::is_nothrow_swappable_with_v<T, U>;
+inline constexpr auto swap = []<typename T, typename U = T>(T&& t, U&& u) noexcept(nt_swappable<T, U>) //
+  requires swappable<T, U> { std::ranges::swap(static_cast<T&&>(t), static_cast<U&&>(u)); };
+
+/// MARK: specialization and variation
 namespace _ {
 template<typename T, template<typename...> typename Tm> inline constexpr bool _specialization_of{0};
 template<template<typename...> typename Tm, typename... Ts> inline constexpr bool _specialization_of<Tm<Ts...>, Tm>{1};
@@ -315,7 +387,7 @@ template<bool Max, arithmetic T, arithmetic U> constexpr auto _max(T a, U b) noe
   if constexpr (same_as<T, U>) {
     if constexpr (Max) return a < b ? b : a;
     else return a < b ? a : b;
-  } else if constexpr (using V = decltype(a + b); floating<V> || signed_integral<V>) return _max<Max>(V(a), V(b));
+  } else if constexpr (using V = decltype(a + b); float_type<V> || signed_integral<V>) return _max<Max>(V(a), V(b));
   else if constexpr (unsigned_integral<T> && unsigned_integral<U>) return _max<Max>(V(a), V(b));
   else return _max<Max>(int_cast(a), int_cast(b));
 }
@@ -426,8 +498,8 @@ template<size_t I, typename T> inline constexpr int get_strategy = []() -> int {
 }();
 } // namespace sys
 
-template<size_t I> inline constexpr auto get =                      //
-  []<typename T>(T&& a) noexcept(bool(sys::get_strategy<I, T> & 4)) //
+template<size_t I> inline constexpr auto get =                     //
+  []<typename T>(T&& a) noexcept(bool(sys::get_strategy<I, T>& 4)) //
   -> decltype(auto) requires(sys::get_strategy<I, T> != 0) {
   using std::get;
   if constexpr ((sys::get_strategy<I, T> & 3) == 1) return a[I];

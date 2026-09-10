@@ -24,7 +24,7 @@ template<std::destructible T> requires same_as<T, remove_cvref<T>> && (!is_none<
 
 public:
   constexpr optional() noexcept = default;
-  constexpr optional(none) noexcept {}
+  constexpr optional(is_none auto) noexcept {}
 
   constexpr optional(const optional& Other) requires constructible<T, const T&> {
     if (Other) _construct(Other._data._value);
@@ -45,7 +45,7 @@ public:
 
   constexpr ~optional() noexcept { reset(); }
 
-  constexpr optional& operator=(none) noexcept {
+  constexpr optional& operator=(is_none auto) noexcept {
     reset();
     return *this;
   }

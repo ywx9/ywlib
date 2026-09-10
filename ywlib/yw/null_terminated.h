@@ -4,6 +4,8 @@
 
 namespace yw {
 
+template<char_type C> inline constexpr const C empty_string[] = { C(0) };
+
 template<char_type C> class null_terminated {
   static_assert(same_as<C, remove_cv<C>>);
   template<typename S> static constexpr bool _is_array = is_bounded_array<remove_ref<S>> && same_as<iter_value_t<S>, C>;
@@ -52,7 +54,7 @@ public:
     switch (_data.index()) {
     case 0: return _data.template get<0>().data();
     case 1: return _data.template get<1>().data();
-    default: return empty_string<C>.data();
+    default: return empty_string<C>;
     }
   }
 
@@ -60,7 +62,7 @@ public:
     switch (_data.index()) {
     case 0: return _data.template get<0>().data();
     case 1: return _data.template get<1>().data();
-    default: return empty_string<C>.data();
+    default: return empty_string<C>;
     }
   }
 
@@ -70,7 +72,7 @@ public:
     switch (_data.index()) {
     case 0: return _data.template get<0>().data() + _data.template get<0>().size();
     case 1: return _data.template get<1>().data() + _data.template get<1>().size();
-    default: return empty_string<C>.data();
+    default: return empty_string<C>;
     }
   }
 

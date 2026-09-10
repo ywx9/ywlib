@@ -1,5 +1,6 @@
 #pragma once
 #include <yw/core.h>
+#include <yw/property.h>
 
 namespace yw {
 
@@ -37,32 +38,32 @@ template<char_type C> class string {
   static_assert(same_as<C, remove_cv<C>>);
   static constexpr C _empty[1] = {C()};
 
-  size_t _size = 0;
-  size_t _capacity = 0;
-  C* _ptr = nullptr;
-
   constexpr size_t _get_preferred_capacity(size_t Size) const noexcept {
     return yw::max(Size + 1, 2 * std::bit_ceil(Size), size_t(256));
   }
 
   constexpr string(is_none auto, size_t Size) // constructing in uninitialized state
-    : _size(Size), _capacity(_get_preferred_capacity(Size)), _ptr(new C[_capacity]) {}
+    : data(new C[_get_preferred_capacity(Size)]), size(Size), capacity(_get_preferred_capacity(Size)) {}
 
 public:
-  constexpr ~string() noexcept { delete[] _ptr; }
+  const_property<C*, string> data = nullptr;
+  const_property<size_t, string> size = 0;
+  const_property<size_t, string> capacity = 0;
+
+  constexpr ~string() noexcept { delete[] data(); }
 
   constexpr string() noexcept = default;
 
   constexpr string(string&& Other) noexcept
-    : _ptr(std::exchange(Other._ptr, nullptr)), _size(std::exchange(Other._size, 0)),
-      _capacity(std::exchange(Other._capacity, 0)) {}
+    : data(std::exchange(Other.data.value, nullptr)), size(std::exchange(Other.size.value, 0)),
+      capacity(std::exchange(Other.capacity.value, 0)) {}
 
   constexpr string& operator=(string&& Other) noexcept {
     if (this == &Other) return *this;
-    delete[] _ptr;
-    _ptr = std::exchange(Other._ptr, nullptr);
-    _size = std::exchange(Other._size, 0);
-    _capacity = std::exchange(Other._capacity, 0);
+    delete[] data();
+    data = std::exchange(Other.data.value, nullptr);
+    size = std::exchange(Other.size.value, 0);
+    capacity = std::exchange(Other.capacity.value, 0);
     return *this;
   }
 
@@ -70,88 +71,84 @@ public:
 
   constexpr string& operator=(const string& Other) {
     if (this == &Other) return *this;
-    delete[] _ptr;
-    _size = Other._size;
-    _capacity = _get_preferred_capacity(_size);
-    _ptr = new C[_capacity];
-    for (size_t i = 0; i < _size; ++i) _ptr[i] = Other._ptr[i];
-    _ptr[_size] = C();
+    delete[] data();
+    size = Other.size();
+    capacity = _get_preferred_capacity(size());
+    data = new C[capacity()];
+    for (size_t i = 0; i < size(); ++i) data()[i] = Other.data()[i];
+    data()[size()] = C();
     return *this;
   }
 
   constexpr string(size_t Size) : string(Size, C()) {}
 
   constexpr string(size_t Size, same_as<C> auto FillChar) : string(none{}, Size) {
-    for (size_t i = 0; i < _size; ++i) _ptr[i] = FillChar;
-    _ptr[_size] = C();
+    for (size_t i = 0; i < size(); ++i) data()[i] = FillChar;
+    data()[size()] = C();
   }
 
   template<stringable<C> S> requires same_as<remove_cvref<S>, string_view<C>>
   constexpr string(S&& View) : string(none{}, View.size()) {
-    for (size_t i = 0; i < _size; ++i) _ptr[i] = View[i];
-    _ptr[_size] = C();
+    for (size_t i = 0; i < size(); ++i) data()[i] = View[i];
+    data()[size()] = C();
   }
 
   template<stringable<C> S>
   requires different_from<remove_cvref<S>, string> && different_from<remove_cvref<S>, string_view<C>>
   constexpr string(S&& Other) : string(string_view<C>(Other)) {}
 
-  constexpr operator string_view<C>() const noexcept { return {_ptr, _size}; }
-  constexpr auto view() const noexcept { return string_view<C>(_ptr, _size); }
+  constexpr operator string_view<C>() const noexcept { return {data(), size()}; }
+  constexpr auto view() const noexcept { return string_view<C>(data(), size()); }
 
-  constexpr bool empty() const noexcept { return _size == 0; }
-  constexpr size_t size() const noexcept { return _size; }
-  constexpr size_t capacity() const noexcept { return _capacity; }
+  constexpr bool empty() const noexcept { return size() == 0; }
+  constexpr const C* c_str() const noexcept { return data() ? data() : _empty; }
+  constexpr C* begin() noexcept { return data(); }
+  constexpr const C* begin() const noexcept { return data(); }
+  constexpr C* end() noexcept { return data() + size(); }
+  constexpr const C* end() const noexcept { return data() + size(); }
 
-  constexpr C* data() noexcept { return _ptr; }
-  constexpr const C* data() const noexcept { return _ptr; }
-  constexpr const C* c_str() const noexcept { return _ptr ? _ptr : _empty; }
-  constexpr C* begin() noexcept { return _ptr; }
-  constexpr const C* begin() const noexcept { return _ptr; }
-  constexpr C* end() noexcept { return _ptr + _size; }
-  constexpr const C* end() const noexcept { return _ptr + _size; }
+  constexpr C& front() { return data()[0]; }
+  constexpr const C& front() const { return data()[0]; }
+  constexpr C& back() { return data()[size() - 1]; }
+  constexpr const C& back() const { return data()[size() - 1]; }
 
-  constexpr C& front() { return _ptr[0]; }
-  constexpr const C& front() const { return _ptr[0]; }
-  constexpr C& back() { return _ptr[_size - 1]; }
-  constexpr const C& back() const { return _ptr[_size - 1]; }
-
-  constexpr C& operator[](size_t Index) { return _ptr[Index]; }
-  constexpr const C& operator[](size_t Index) const { return _ptr[Index]; }
+  constexpr C& operator[](size_t Index) { return data()[Index]; }
+  constexpr const C& operator[](size_t Index) const { return data()[Index]; }
 
   constexpr void clear() noexcept {
-    _size = 0;
-    if (_ptr) _ptr[0] = C();
+    size = 0;
+    if (data()) data()[0] = C();
   }
 
   constexpr void reserve(size_t Size) {
-    if (_capacity > Size) return;
+    if (capacity() > Size) return;
     const auto new_capacity = _get_preferred_capacity(Size);
     auto* new_ptr = new C[new_capacity];
-    for (size_t i = 0; i < _size; ++i) new_ptr[i] = _ptr[i];
-    new_ptr[_size] = C();
-    delete[] _ptr;
-    _ptr = new_ptr;
-    _capacity = new_capacity;
+    for (size_t i = 0; i < size(); ++i) new_ptr[i] = data()[i];
+    new_ptr[size()] = C();
+    delete[] data();
+    data = new_ptr;
+    capacity = new_capacity;
   }
 
   constexpr void resize(size_t Size, C FillChar = C()) {
     reserve(Size);
-    for (size_t i = _size; i < Size; ++i) _ptr[i] = FillChar;
-    _size = Size;
-    _ptr[_size] = C();
+    for (size_t i = size(); i < Size; ++i) data()[i] = FillChar;
+    size = Size;
+    data()[size()] = C();
   }
 
   constexpr string& pop_back() {
-    if (_size > 0) --_size;
-    if (_ptr) _ptr[_size] = C();
+    if (size() > 0) size = size() - 1;
+    if (data()) data()[size()] = C();
     return *this;
   }
 
   constexpr string& push_back(C Char) {
-    reserve(_size + 1);
-    _ptr[_size++] = Char;
-    _ptr[_size] = C();
+    reserve(size() + 1);
+    data()[size()] = Char;
+    size = size() + 1;
+    data()[size()] = C();
     return *this;
   }
 
@@ -159,36 +156,37 @@ public:
     auto sv = static_cast<string_view<C>>(View);
     if (sv.empty()) return *this;
     const auto append_size = sv.size();
-    const auto old_size = _size;
+    const auto old_size = size();
     const auto* src = sv.data();
-    const bool overlaps = _ptr && src < _ptr + _size && _ptr < src + append_size;
-    const auto offset = overlaps ? size_t(src - _ptr) : size_t(0);
-    reserve(_size + append_size);
-    if (overlaps) src = _ptr + offset;
-    for (size_t i = 0; i < append_size; ++i) _ptr[old_size + i] = src[i];
-    _size += append_size;
-    _ptr[_size] = C();
+    const bool overlaps = data() && src < data() + size() && data() < src + append_size;
+    const auto offset = overlaps ? size_t(src - data()) : size_t(0);
+    reserve(size() + append_size);
+    if (overlaps) src = data() + offset;
+    for (size_t i = 0; i < append_size; ++i) data()[old_size + i] = src[i];
+    size = size() + append_size;
+    data()[size()] = C();
     return *this;
   }
 
   template<stringable<C> S> constexpr string& operator+=(S&& Other) { return append(static_cast<S&&>(Other)); }
 
   constexpr string& operator+=(C Char) {
-    reserve(_size + 1);
-    _ptr[_size++] = Char;
-    _ptr[_size] = C();
+    reserve(size() + 1);
+    data()[size()] = Char;
+    size = size() + 1;
+    data()[size()] = C();
     return *this;
   }
 
   constexpr string substr(size_t Pos = 0, size_t Count = npos) const {
-    if (Pos >= _size) return {};
-    return string(string_view<C>(_ptr + Pos, yw::min(Count, _size - Pos)));
+    if (Pos >= size()) return {};
+    return string(string_view<C>(data() + Pos, yw::min(Count, size() - Pos)));
   }
 
   constexpr void swap(string& Other) noexcept {
-    std::swap(_ptr, Other._ptr);
-    std::swap(_size, Other._size);
-    std::swap(_capacity, Other._capacity);
+    std::swap(data.value, Other.data.value);
+    std::swap(size.value, Other.size.value);
+    std::swap(capacity.value, Other.capacity.value);
   }
 
   friend constexpr bool operator==(const string& a, const string& b) noexcept {
@@ -421,13 +419,13 @@ template<char_type C> constexpr C* float_to_string(long double Value, C* Out) {
   return Out;
 }
 
-template<char_type C> constexpr string<C> float_to_string(floating auto Value) {
+template<char_type C> constexpr string<C> float_to_string(float_type auto Value) {
   string<C> result(27);
   result.resize(float_to_string<C>(Value, result.data()) - result.data());
   return result;
 }
 
-constexpr string<char> float_to_string(floating auto value) { return float_to_string<char>(value); }
+constexpr string<char> float_to_string(float_type auto value) { return float_to_string<char>(value); }
 
 /// MARK: vtos
 

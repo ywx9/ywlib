@@ -64,12 +64,12 @@ public:
       return {};
     }
 
-    virtual std::optional<float3> get_caret_pos() const override {
-      if (!enabled || !visible) return std::nullopt;
-      if (auto res = caret_pos()) return std::optional<float3>(*res);
+    virtual optional<float3> get_caret_pos() const override {
+      if (!enabled || !visible) return none();
+      if (auto res = caret_pos()) return optional<float3>(*res);
       else {
         res.error().fizzle_out();
-        return std::nullopt;
+        return none();
       }
     }
 
