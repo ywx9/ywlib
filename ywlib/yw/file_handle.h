@@ -12,7 +12,7 @@ enum class seek_whence { begin = SEEK_SET, current = SEEK_CUR, end = SEEK_END };
 #ifdef _WIN32
 #include <io.h>
 namespace yw::file::internal {
-inline std::expected<FILE*, error> _open(const wchar_t* p, open_mode m) {
+inline result<FILE*> _open(const wchar_t* p, open_mode m) {
   const auto generic_read_write = GENERIC_READ | GENERIC_WRITE;
   DWORD desired = 0, disp = 0, share = FILE_SHARE_READ;
   const char* fdopen_mode = nullptr;
@@ -36,44 +36,44 @@ inline std::expected<FILE*, error> _open(const wchar_t* p, open_mode m) {
   case open_mode::update_or_create:
     desired = generic_read_write, disp = OPEN_ALWAYS, fdopen_mode = "r+b", osf_flags = _O_RDWR;
     break;
-  default: return std::unexpected(error(errors::invalid_argument, "invalid file open mode"));
+  default: return fail<FILE*>(errors::invalid_argument, "invalid file open mode");
   }
   const auto h = ::CreateFileW(p, desired, share, nullptr, disp, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (h != INVALID_HANDLE_VALUE) {
     if (const int fd = ::_open_osfhandle(reinterpret_cast<intptr_t>(h), osf_flags); fd == -1) {
       ::CloseHandle(h);
-      return std::unexpected(error(errors::operation_failed, "_open_osfhandle failed", errno));
+      return fail<FILE*>(errors::operation_failed, "_open_osfhandle failed", errno);
     } else if (std::FILE* f = ::_fdopen(fd, fdopen_mode); !f) {
       ::_close(fd);
-      return std::unexpected(error(errors::operation_failed, "_fdopen failed", errno));
+      return fail<FILE*>(errors::operation_failed, "_fdopen failed", errno);
     } else return f;
   } else
-    return std::unexpected(error(
+    return fail<FILE*>(
       errors::operation_failed, format("CreateFileW failed: ", *p ? string_view<wchar_t>(p) : L"<empty>"sv),
-      int32_t(::GetLastError())));
+      int32_t(::GetLastError()));
 }
-inline std::expected<void, error> _seek(FILE* f, int64_t off, seek_whence w) {
+inline result<void> _seek(FILE* f, int64_t off, seek_whence w) {
   if (::_fseeki64(f, static_cast<__int64>(off), static_cast<int>(w)) != 0)
-    return std::unexpected(error(errors::operation_failed, "failed to seek", errno));
+    return fail<void>(errors::operation_failed, "failed to seek", errno);
   else return {};
 }
-inline std::expected<int64_t, error> _tell(FILE* f) {
+inline result<int64_t> _tell(FILE* f) {
   if (auto pos = ::_ftelli64(f); pos < 0)
-    return std::unexpected(error(errors::operation_failed, "failed to tell position", errno));
+    return fail<int64_t>(errors::operation_failed, "failed to tell position", errno);
   else return static_cast<int64_t>(pos);
 }
-inline std::expected<void, error> _truncate(FILE* f) {
+inline result<void> _truncate(FILE* f) {
   if (const auto pos = ::_ftelli64(f); pos < 0)
-    return std::unexpected(error(errors::operation_failed, "failed to tell position for truncation", errno));
+    return fail<void>(errors::operation_failed, "failed to tell position for truncation", errno);
   else if (const auto ec = ::_chsize_s(::_fileno(f), pos); ec != 0)
-    return std::unexpected(error(errors::operation_failed, "failed to truncate file", static_cast<int32_t>(ec)));
+    return fail<void>(errors::operation_failed, "failed to truncate file", static_cast<int32_t>(ec));
   return {};
 }
 } // namespace yw::file::internal
 #else
 #include <unistd.h>
 namespace yw::file::internal {
-inline std::expected<FILE*, error> _open(const char* p, open_mode m) {
+inline result<FILE*> _open(const char* p, open_mode m) {
   int flags = 0;
   const char* fdopen_mode = nullptr;
   switch (m) {
@@ -83,33 +83,33 @@ inline std::expected<FILE*, error> _open(const char* p, open_mode m) {
   case open_mode::create_new: flags = O_RDWR | O_CREAT | O_EXCL, fdopen_mode = "r+b"; break;
   case open_mode::append: flags = O_WRONLY | O_CREAT | O_APPEND, fdopen_mode = "ab"; break;
   case open_mode::update_or_create: flags = O_RDWR | O_CREAT, fdopen_mode = "r+b"; break;
-  default: return std::unexpected(error(errors::invalid_argument, "invalid file open mode"));
+  default: return fail<FILE*>(errors::invalid_argument, "invalid file open mode");
   }
   const mode_t perms = 0666;
   if (int fd = ::open(p, flags, perms); fd == -1) {
-    return std::unexpected(
-      error(errors::operation_failed, format("open failed: ", *p ? string_view<char>(p) : "<empty>"sv), errno));
+    return fail<FILE*>(
+      errors::operation_failed, format("open failed: ", *p ? string_view<char>(p) : "<empty>"sv), errno);
   } else if (std::FILE* f = ::fdopen(fd, fdopen_mode); !f) {
     ::close(fd);
-    return std::unexpected(error(errors::operation_failed, "fdopen failed", errno));
+    return fail<FILE*>(errors::operation_failed, "fdopen failed", errno);
   } else return f;
 }
-inline std::expected<void, error> _seek(FILE* f, int64_t off, seek_whence w) {
+inline result<void> _seek(FILE* f, int64_t off, seek_whence w) {
   if (::fseeko(f, static_cast<off_t>(off), static_cast<int>(w)) != 0)
-    return std::unexpected(error(errors::operation_failed, "failed to seek", errno));
+    return fail<void>(errors::operation_failed, "failed to seek", errno);
   else return {};
 }
-inline std::expected<int64_t, error> _tell(FILE* f) {
+inline result<int64_t> _tell(FILE* f) {
   if (auto pos = ::ftello(f); pos < 0)
-    return std::unexpected(error(errors::operation_failed, "failed to tell position", errno));
+    return fail<int64_t>(errors::operation_failed, "failed to tell position", errno);
   else return static_cast<int64_t>(pos);
 }
-inline std::expected<void, error> _truncate(FILE* f) {
-  if (fflush(f) != 0) return std::unexpected(error(errors::operation_failed, "failed to flush file", errno));
+inline result<void> _truncate(FILE* f) {
+  if (fflush(f) != 0) return fail<void>(errors::operation_failed, "failed to flush file", errno);
   if (auto pos = ::ftello(f); pos < 0)
-    return std::unexpected(error(errors::operation_failed, "failed to tell position for truncation", errno));
+    return fail<void>(errors::operation_failed, "failed to tell position for truncation", errno);
   else if (::ftruncate(fileno(f), static_cast<off_t>(pos)) != 0)
-    return std::unexpected(error(errors::operation_failed, "failed to truncate file", errno));
+    return fail<void>(errors::operation_failed, "failed to truncate file", errno);
   else return {};
 }
 } // namespace yw::file::internal
@@ -152,10 +152,10 @@ public:
     else res.error().add_footprint().go_off(sl);
   }
 
-  static std::expected<handle, error> create(stringable auto&& Path, open_mode m) {
+  static result<handle> create(stringable auto&& Path, open_mode m) {
     auto p = unicode<path_char>(static_cast<decltype(Path)&&>(Path));
     auto f = internal::_open(p.c_str(), m);
-    if (!f) return f.error().relay();
+    if (!f) return f.relay();
     handle h;
     h._file = *f;
     h.path = move(p);
@@ -167,10 +167,10 @@ public:
 
   explicit operator bool() const noexcept { return is_open(); }
 
-  std::expected<void, error> close() {
+  result<void> close() {
     if (!_file) return {};
     if (std::fclose(exchange(_file, nullptr)) != 0)
-      return std::unexpected(error(errors::operation_failed, "failed to close file", errno));
+      return fail<void>(errors::operation_failed, "failed to close file", errno);
     return {};
   }
 
@@ -184,10 +184,10 @@ public:
     return 0;
   }
 
-  std::expected<void, error> seek(integral auto off, seek_whence w = seek_whence::begin) {
+  result<void> seek(integral auto off, seek_whence w = seek_whence::begin) {
     if (!_file) return std::unexpected(error(errors::not_initialized));
     if (auto res = internal::_seek(_file, static_cast<int64_t>(off), w)) return {};
-    else return res.error().relay();
+    else return res.relay();
   }
 
   int64_t rest() const {
@@ -204,33 +204,33 @@ public:
     return 0;
   }
 
-  std::expected<size_t, error> read(void* dst, size_t bytes) {
-    if (!_file) return std::unexpected(error(errors::not_initialized));
+  result<size_t> read(void* dst, size_t bytes) {
+    if (!_file) return fail<size_t>(errors::not_initialized);
     if (bytes == 0) return 0;
-    if (!dst) return std::unexpected(error(errors::invalid_argument, "null destination buffer"));
+    if (!dst) return fail<size_t>(errors::invalid_argument, "null destination buffer");
     if (const auto n = std::fread(dst, 1, bytes, _file); n != 0) return n;
-    if (std::ferror(_file)) return std::unexpected(error(errors::operation_failed, "read error", errno));
+    if (std::ferror(_file)) return fail<size_t>(errors::operation_failed, "read error", errno);
     return 0;
   }
 
-  std::expected<void, error> read_exact(void* dst, size_t bytes) {
+  result<void> read_exact(void* dst, size_t bytes) {
     for (size_t total = 0; total < bytes;) {
-      if (auto res = read(static_cast<std::byte*>(dst) + total, bytes - total); !res) return res.error().relay();
-      else if (*res == 0) return std::unexpected(error(errors::operation_failed, "unexpected end of file"));
+      if (auto res = read(static_cast<std::byte*>(dst) + total, bytes - total); !res) return res.relay_error<void>();
+      else if (*res == 0) return fail<void>(errors::operation_failed, "unexpected end of file");
       else total += *res;
     }
     return {};
   }
 
-  template<trivial T> std::expected<T, error> read_trivial() {
+  template<trivial T> result<T> read_trivial() {
     T v{};
     if (auto res = read_exact(&v, sizeof(T))) return v;
-    else return res.error().relay();
+    else return res.relay();
   }
 
-  template<trivial T> std::expected<void, error> read_trivial(T& v) {
+  template<trivial T> result<void> read_trivial(T& v) {
     if (auto res = read_exact(&v, sizeof(T))) return {};
-    else return res.error().relay();
+    else return res.relay();
   }
 
   string<char> read_as_string(size_t Max = npos) {
@@ -242,71 +242,71 @@ public:
     return {};
   }
 
-  std::expected<size_t, error> write(const void* src, size_t bytes) {
-    if (!_file) return std::unexpected(error(errors::not_initialized));
+  result<size_t> write(const void* src, size_t bytes) {
+    if (!_file) return fail<size_t>(errors::not_initialized);
     if (bytes == 0) return 0;
-    if (!src) return std::unexpected(error(errors::invalid_argument, "null source buffer"));
+    if (!src) return fail<size_t>(errors::invalid_argument, "null source buffer");
     if (const auto n = std::fwrite(src, 1, bytes, _file); n != 0) return n;
-    if (std::ferror(_file)) return std::unexpected(error(errors::operation_failed, "write error", errno));
+    if (std::ferror(_file)) return fail<size_t>(errors::operation_failed, "write error", errno);
     return 0;
   }
 
   template<contiguous_iterator It, sized_sentinel_for<It> Se> requires trivial<iter_value_t<It>>
-  std::expected<size_t, error> write(It first, Se last) {
+  result<size_t> write(It first, Se last) {
     if (const auto n = std::ranges::distance(first, last); n == 0) return 0;
-    else if (n < 0) return std::unexpected(error(errors::invalid_argument, "invalid iterator range"));
+    else if (n < 0) return fail<size_t>(errors::invalid_argument, "invalid iterator range");
     else return write(std::to_address(first), static_cast<size_t>(n) * sizeof(iter_value_t<It>));
   }
 
-  template<contiguous_range R> requires trivial<iter_value_t<R>> std::expected<size_t, error> write(R&& range) {
+  template<contiguous_range R> requires trivial<iter_value_t<R>> result<size_t> write(R&& range) {
     return write(std::ranges::data(range), std::ranges::size(range) * sizeof(iter_value_t<R>));
   }
 
-  std::expected<void, error> write_exact(const void* src, size_t bytes) {
+  result<void> write_exact(const void* src, size_t bytes) {
     const auto p = static_cast<const std::byte*>(src);
     for (size_t total = 0; total < bytes;) {
-      if (auto res = write(p + total, bytes - total); !res) return res.error().relay();
-      else if (*res == 0) return std::unexpected(error(errors::operation_failed, "incomplete write"));
+      if (auto res = write(p + total, bytes - total); !res) return res.relay_error<void>();
+      else if (*res == 0) return fail<void>(errors::operation_failed, "incomplete write");
       else total += *res;
     }
     return {};
   }
 
   template<contiguous_iterator It, sized_sentinel_for<It> Se> requires trivial<iter_value_t<It>>
-  std::expected<void, error> write_exact(It first, Se last) {
-    if (first >= last) return std::unexpected(error(errors::invalid_argument, "invalid iterator range"));
+  result<void> write_exact(It first, Se last) {
+    if (first >= last) return fail<void>(errors::invalid_argument, "invalid iterator range");
     return write_exact(std::to_address(first), std::ranges::distance(first, last) * sizeof(iter_value_t<It>));
   }
 
-  template<contiguous_range R> requires trivial<iter_value_t<R>> std::expected<void, error> write_exact(R&& range) {
+  template<contiguous_range R> requires trivial<iter_value_t<R>> result<void> write_exact(R&& range) {
     return write_exact(std::ranges::data(range), std::ranges::size(range) * sizeof(iter_value_t<R>));
   }
 
-  template<trivial T> std::expected<void, error> write_trivial(const T& v) {
+  template<trivial T> result<void> write_trivial(const T& v) {
     if (auto res = write_exact(&v, sizeof(T))) return {};
-    else return res.error().relay();
+    else return res.relay();
   }
 
   template<typename T> requires is_bounded_array<T> && same_as<iter_value_t<T>, char>
-  std::expected<void, error> write_literal(const T& arr) {
+  result<void> write_literal(const T& arr) {
     return write_exact(arr, (arraysize(arr) - 1) * sizeof(char));
   }
 
-  std::expected<void, error> flush() {
-    if (!_file) return std::unexpected(error(errors::not_initialized));
-    if (std::fflush(_file) != 0) return std::unexpected(error(errors::operation_failed, "flush error", errno));
+  result<void> flush() {
+    if (!_file) return fail<void>(errors::not_initialized);
+    if (std::fflush(_file) != 0) return fail<void>(errors::operation_failed, "flush error", errno);
     return {};
   }
 
-  std::expected<void, error> truncate_to_current() {
-    if (!_file) return std::unexpected(error(errors::not_initialized));
+  result<void> truncate_to_current() {
+    if (!_file) return fail<void>(errors::not_initialized);
     if (auto res = internal::_truncate(_file)) return {};
-    else return res.error().relay();
+    else return res.relay();
   }
 
-  std::expected<void, error> close_at_current() {
-    if (auto res = truncate_to_current(); !res) return res.error().relay();
-    if (auto res = close(); !res) return res.error().relay();
+  result<void> close_at_current() {
+    if (auto res = truncate_to_current(); !res) return res.relay();
+    if (auto res = close(); !res) return res.relay();
     return {};
   }
 };

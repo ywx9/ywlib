@@ -1,6 +1,7 @@
 #pragma once
 #include <yw/array.h>
 #include <yw/file_handle.h>
+#include <yw/result.h>
 
 /*
 # .ywa file
@@ -81,29 +82,28 @@ class handle {
   uint64_t _entry_offset = 0;
   uint64_t _footer_offset = 0;
 
-  std::expected<void, error> initialize(stringable auto&& Path, file::open_mode Mode) {
+  result<void> initialize(stringable auto&& Path, file::open_mode Mode) {
     const auto fh_mode = Mode == file::open_mode::append ? file::open_mode::update_or_create : Mode;
     if (auto fh = file::handle::create(static_cast<decltype(Path)&&>(Path), fh_mode)) _file_handle = move(*fh);
-    else return fh.error().relay();
+    else return fh.relay<void>();
     mode = Mode;
     if (fh_mode == file::open_mode::create_always || fh_mode == file::open_mode::create_new) return {};
-    if (auto res = _file_handle.seek(0, file::seek_whence::end); !res) return res.error().relay();
+    if (auto res = _file_handle.seek(0, file::seek_whence::end); !res) return res.relay();
     const auto fsize = static_cast<uint64_t>(_file_handle.tell());
     if (fsize == 0) {
       if (fh_mode == file::open_mode::update_or_create) return {};
       else return std::unexpected(error(errors::invalid_file_format, "non-archive file"));
     }
-    if (auto res = _file_handle.seek(-8, file::seek_whence::end); !res) return res.error().relay();
-    if (auto res = _file_handle.read_trivial<uint64_t>(_footer_offset); !res) return res.error().relay();
+    if (auto res = _file_handle.seek(-8, file::seek_whence::end); !res) return res.relay();
+    if (auto res = _file_handle.read_trivial<uint64_t>(_footer_offset); !res) return res.relay();
     if (_footer_offset + sizeof(footer) + sizeof(uint64_t) > fsize)
       return std::unexpected(error(errors::invalid_file_format, "invalid footer offset"));
     footer f{};
-    if (auto res = _file_handle.seek(static_cast<int64_t>(_footer_offset)); !res) return res.error().relay();
-    if (auto res = _file_handle.read_trivial(f); !res) return res.error().relay();
+    if (auto res = _file_handle.seek(static_cast<int64_t>(_footer_offset)); !res) return res.relay();
+    if (auto res = _file_handle.read_trivial(f); !res) return res.relay();
     if (f.magic != footer_magic) return std::unexpected(error(errors::invalid_file_format, "invalid footer magic"));
     const auto entry_count = f.entry_count;
-    const auto footer_size =
-      sizeof(footer) + static_cast<uint64_t>(entry_count) * sizeof(uint64_t) + sizeof(uint64_t);
+    const auto footer_size = sizeof(footer) + static_cast<uint64_t>(entry_count) * sizeof(uint64_t) + sizeof(uint64_t);
     if (_footer_offset + footer_size != fsize)
       return std::unexpected(error(errors::invalid_file_format, "invalid entry count"));
     if (entry_count == 0) {
@@ -111,16 +111,15 @@ class handle {
       return {};
     }
     array<uint64_t> offsets(entry_count);
-    if (auto res = _file_handle.read_exact(offsets.data(), offsets.size() * sizeof(uint64_t)); !res)
-      return res.error().relay();
+    if (auto res = _file_handle.read_exact(offsets.data(), offsets.size() * sizeof(uint64_t)); !res) return res.relay();
     entries.value.resize(entry_count);
     _entry_offset = offsets.front();
     for (uint32_t i = 0; i < entry_count; ++i) {
       const auto off = offsets[i];
       if (off >= _footer_offset) return std::unexpected(error(errors::invalid_file_format, "invalid entry offset"));
-      if (auto res = _file_handle.seek(static_cast<int64_t>(off)); !res) return res.error().relay();
+      if (auto res = _file_handle.seek(static_cast<int64_t>(off)); !res) return res.relay();
       header h{};
-      if (auto res = _file_handle.read_trivial(h); !res) return res.error().relay();
+      if (auto res = _file_handle.read_trivial(h); !res) return res.relay();
       if (h.magic != entry_magic) return std::unexpected(error(errors::invalid_file_format, "invalid entry magic"));
       const auto name_length = h.name_length;
       if (name_length == 0 || name_length > max_name_size)
@@ -135,10 +134,10 @@ class handle {
       e.entry_offset = off;
       e.data_offset = data_offset;
       e.data_length = data_length;
-      if (auto res = _file_handle.read_exact(e.name.data(), name_length); !res) return res.error().relay();
+      if (auto res = _file_handle.read_exact(e.name.data(), name_length); !res) return res.relay();
       if (auto res = _file_handle.seek(static_cast<int64_t>(data_length), file::seek_whence::current); !res)
-        return res.error().relay();
-      if (auto res = _file_handle.read_trivial<uint32_t>(e.crc32); !res) return res.error().relay();
+        return res.relay();
+      if (auto res = _file_handle.read_trivial<uint32_t>(e.crc32); !res) return res.relay();
       const bool is_last = i + 1 == entry_count;
       const auto next = is_last ? _footer_offset : offsets[i + 1];
       if (crc_offset + sizeof(uint32_t) != next)
@@ -158,8 +157,8 @@ public:
   handle& operator=(const handle&) = delete;
 
   handle(handle&& Other) noexcept
-    : _file_handle(move(Other._file_handle)), _entry_offset(Other._entry_offset),
-      _footer_offset(Other._footer_offset), entries(move(Other.entries())), mode(Other.mode()) {
+    : _file_handle(move(Other._file_handle)), _entry_offset(Other._entry_offset), _footer_offset(Other._footer_offset),
+      entries(move(Other.entries())), mode(Other.mode()) {
     Other._entry_offset = 0;
     Other._footer_offset = 0;
     Other.entries = array<entry>{};
@@ -181,9 +180,9 @@ public:
     return *this;
   }
 
-  static std::expected<handle, error> create(stringable auto&& Path, file::open_mode m) {
+  static result<handle> create(stringable auto&& Path, file::open_mode m) {
     handle h;
-    if (auto res = h.initialize(static_cast<decltype(Path)&&>(Path), m); !res) return res.error().relay();
+    if (auto res = h.initialize(static_cast<decltype(Path)&&>(Path), m); !res) return res.relay();
     else return h;
   }
 
@@ -199,21 +198,21 @@ public:
 
   const array<entry>& entry_list() const noexcept { return entries(); }
 
-  std::expected<void, error> close() {
+  result<void> close() {
     if (!_file_handle.is_open()) return {};
     if (_is_write_mode(mode()))
-      if (auto res = flush(); !res) return res.error().relay();
-    if (auto res = _file_handle.close(); !res) return res.error().relay();
+      if (auto res = flush(); !res) return res.relay();
+    if (auto res = _file_handle.close(); !res) return res.relay();
     entries.value.clear();
     return {};
   }
 
-  std::expected<void*, error> read(size_t Index, void* Out) {
-    if (Index >= entries->size()) return std::unexpected(error(errors::invalid_argument, "index out of range"));
+  result<void*> read(size_t Index, void* Out) {
+    if (Index >= entries->size()) return fail<void*>(errors::invalid_argument, "index out of range");
     const auto& e = entries()[Index];
     auto& fh = _file_handle;
-    if (auto res = fh.seek(static_cast<int64_t>(e.data_offset)); !res) return res.error().relay();
-    if (auto res = fh.read_exact(Out, static_cast<size_t>(e.data_length)); !res) return res.error().relay();
+    if (auto res = fh.seek(static_cast<int64_t>(e.data_offset)); !res) return res.relay<void*>();
+    if (auto res = fh.read_exact(Out, static_cast<size_t>(e.data_length)); !res) return res.relay<void*>();
     else return static_cast<void*>(reinterpret_cast<std::byte*>(Out) + e.data_length);
   }
 
@@ -276,26 +275,26 @@ public:
     return false;
   }
 
-  std::expected<void, error> flush() {
+  result<void> flush() {
     if (!_is_write_mode(mode()))
-      return std::unexpected(error(errors::invalid_operation, "archive not opened in write mode"));
-    if (auto res = _file_handle.seek(static_cast<int64_t>(_footer_offset)); !res) return res.error().relay();
+      return fail<void>(errors::invalid_operation, "archive not opened in write mode");
+    if (auto res = _file_handle.seek(static_cast<int64_t>(_footer_offset)); !res) return res.relay();
     const footer f{footer_magic, static_cast<uint32_t>(entries->size())};
-    if (auto res = _file_handle.write_exact(&f, sizeof(f)); !res) return res.error().relay();
+    if (auto res = _file_handle.write_exact(&f, sizeof(f)); !res) return res.relay();
     array<uint64_t> offsets(entries->size() + 1);
     for (size_t i = 0; i < entries->size(); ++i) offsets[i] = entries()[i].entry_offset;
     offsets.back() = _footer_offset;
     if (auto res = _file_handle.write_exact(offsets.data(), offsets.size() * sizeof(uint64_t)); !res)
-      return res.error().relay();
-    if (auto res = _file_handle.truncate_to_current(); !res) return res.error().relay();
+      return res.relay();
+    if (auto res = _file_handle.truncate_to_current(); !res) return res.relay();
     return {};
   }
 
-  std::expected<void, error> remove(size_t n = npos) {
+  result<void> remove(size_t n = npos) {
     if (!_is_write_mode(mode()))
-      return std::unexpected(error(errors::invalid_operation, "archive not opened in write mode"));
+      return fail<void>(errors::invalid_operation, "archive not opened in write mode");
     if (n == npos) n = entries->size();
-    else if (n > entries->size()) return std::unexpected(error(errors::invalid_argument, "n exceeds entry count"));
+    else if (n > entries->size()) return fail<void>(errors::invalid_argument, "n exceeds entry count");
     if (n == 0) {
       _footer_offset = _entry_offset;
       entries.value.clear();
@@ -306,25 +305,25 @@ public:
     return {};
   }
 
-  std::expected<void, error> append(stringable<char> auto&& name, const void* data, size_t data_length) {
-    if (!data && data_length) return std::unexpected(error(errors::invalid_argument, "null data pointer"));
+  result<void> append(stringable<char> auto&& name, const void* data, size_t data_length) {
+    if (!data && data_length) return fail<void>(errors::invalid_argument, "null data pointer");
     const auto sv = string_view<char>(name);
     if (sv.empty() || sv.size() > max_name_size)
-      return std::unexpected(error(errors::invalid_argument, "archive: invalid entry name length"));
+      return fail<void>(errors::invalid_argument, "archive: invalid entry name length");
     if (!_is_write_mode(mode()))
-      return std::unexpected(error(errors::invalid_operation, "archive not opened in write mode"));
-    if (auto res = _file_handle.seek(static_cast<int64_t>(_footer_offset)); !res) return res.error().relay();
+      return fail<void>(errors::invalid_operation, "archive not opened in write mode");
+    if (auto res = _file_handle.seek(static_cast<int64_t>(_footer_offset)); !res) return res.relay();
 
     const header h{entry_magic, static_cast<uint32_t>(sv.size()), static_cast<uint64_t>(data_length)};
-    if (auto res = _file_handle.write_exact(&h, sizeof(h)); !res) return res.error().relay();
-    if (auto res = _file_handle.write_exact(sv.data(), sv.size()); !res) return res.error().relay();
+    if (auto res = _file_handle.write_exact(&h, sizeof(h)); !res) return res.relay();
+    if (auto res = _file_handle.write_exact(sv.data(), sv.size()); !res) return res.relay();
     if (data_length > 0)
-      if (auto res = _file_handle.write_exact(data, data_length); !res) return res.error().relay();
+      if (auto res = _file_handle.write_exact(data, data_length); !res) return res.relay();
 
     uint32_t crc = 0xFFFFFFFF;
     if (data_length > 0) crc = _crc32_update(crc, static_cast<const std::byte*>(data), data_length);
     crc ^= 0xFFFFFFFF;
-    if (auto res = _file_handle.write_exact(&crc, sizeof(crc)); !res) return res.error().relay();
+    if (auto res = _file_handle.write_exact(&crc, sizeof(crc)); !res) return res.relay();
 
     const auto new_entry_offset = _footer_offset;
     const auto data_offset = new_entry_offset + sizeof(header) + sv.size();
@@ -341,45 +340,45 @@ inline handle open(stringable auto&& path, file::open_mode mode, const source_li
   return {};
 }
 
-inline std::expected<void, error> pack(
+inline result<void> pack(
   stringable auto&& src_path, stringable auto&& dst_path, file::open_mode mode = file::open_mode::create_always) {
   auto src = unicode<file::path_char>(static_cast<decltype(src_path)&&>(src_path));
   if (!file::is_directory(src))
-    return std::unexpected(error(yw::errors::invalid_argument, "source path is not a directory"));
+    return fail<void>(errors::invalid_argument, "source path is not a directory");
   auto archive = handle::create(static_cast<decltype(dst_path)&&>(dst_path), mode);
-  if (!archive) return std::unexpected(error(yw::errors::operation_failed, "failed to open archive file"));
+  if (!archive) return fail<void>(errors::operation_failed, "failed to open archive file");
   for (const auto& item : file::list_files(src, true)) {
     if (!file::is_file(item)) continue;
     auto fh = file::handle::create(static_cast<decltype(item)&&>(item), file::open_mode::read_existing);
-    if (!fh) return std::unexpected(error(yw::errors::operation_failed, "failed to open source file"));
-    if (auto res = fh->seek(0, file::seek_whence::end); !res) return res.error().relay();
+    if (!fh) return fail<void>(errors::operation_failed, "failed to open source file");
+    if (auto res = fh->seek(0, file::seek_whence::end); !res) return res.relay<void>();
     const auto file_size = static_cast<uint64_t>(fh->tell());
-    if (auto res = fh->seek(0, file::seek_whence::begin); !res) return res.error().relay();
+    if (auto res = fh->seek(0, file::seek_whence::begin); !res) return res.relay<void>();
     array<std::byte> data(static_cast<size_t>(file_size));
-    if (auto res = fh->read_exact(data.data(), data.size()); !res) return res.error().relay();
+    if (auto res = fh->read_exact(data.data(), data.size()); !res) return res.relay<void>();
     const auto filename = unicode<char>(file::relative(item, src));
-    if (auto res = archive->append(filename, data.data(), data.size()); !res) return res.error().relay();
+    if (auto res = archive->append(filename, data.data(), data.size()); !res) return res.relay<void>();
   }
-  if (auto res = archive->close(); !res) return res.error().relay();
+  if (auto res = archive->close(); !res) return res.relay<void>();
   return {};
 }
 
-inline std::expected<void, error> extract(stringable auto&& src_path, stringable auto&& dst_path) {
+inline result<void> extract(stringable auto&& src_path, stringable auto&& dst_path) {
   auto archive = handle::create(static_cast<decltype(src_path)&&>(src_path), file::open_mode::read_existing);
-  if (!archive) return std::unexpected(error(yw::errors::operation_failed, "failed to open archive file"));
+  if (!archive) return fail<void>(errors::operation_failed, "failed to open archive file");
   for (const auto& e : archive->entries()) {
     auto data = archive->read(e.name);
     if (data.size() != e.data_length)
-      return std::unexpected(error(yw::errors::operation_failed, "failed to read entry"));
+      return fail<void>(errors::operation_failed, "failed to read entry");
     const auto out_path = format<file::path_char>(dst_path, file::path_char('/'), e.name);
     const auto parent = file::parent(out_path);
     file::create_directories(parent);
     auto fh = file::handle::create(out_path, file::open_mode::create_always);
-    if (!fh) return std::unexpected(error(yw::errors::operation_failed, "failed to open output file"));
-    if (auto res = fh->write_exact(data.data(), data.size()); !res) return res.error().relay();
-    if (auto res = fh->close(); !res) return res.error().relay();
+    if (!fh) return fail<void>(errors::operation_failed, "failed to open output file");
+    if (auto res = fh->write_exact(data.data(), data.size()); !res) return res.relay<void>();
+    if (auto res = fh->close(); !res) return res.relay<void>();
   }
-  if (auto res = archive->close(); !res) return res.error().relay();
+  if (auto res = archive->close(); !res) return res.relay<void>();
   return {};
 }
 } // namespace yw::archive

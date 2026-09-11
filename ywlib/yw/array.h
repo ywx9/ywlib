@@ -1,6 +1,7 @@
 #pragma once
 #include <yw/backend.h>
 #include <yw/property.h>
+#include <yw/result.h>
 
 namespace yw {
 
@@ -22,13 +23,12 @@ protected:
     return yw::min(yw::max(preferred, Required), _max_capacity);
   }
 
-  constexpr std::expected<T*, error> _allocate(size_t Capacity) {
+  constexpr result<T*> _allocate(size_t Capacity) {
     if (Capacity == 0) return nullptr;
-    if (Capacity > _max_capacity)
-      return std::unexpected(error(errors::invalid_argument, "array capacity is too large"));
+    if (Capacity > _max_capacity) return fail<T*>(errors::invalid_argument, "array capacity is too large");
     try {
       return alloc_traits::allocate(_alloc, Capacity);
-    } catch (...) { return std::unexpected(error(errors::allocation_failed, "array allocation failed")); }
+    } catch (...) { return fail<T*>(errors::allocation_failed, "array allocation failed"); }
   }
 
 public:
@@ -99,10 +99,10 @@ public:
     size = 0;
   }
 
-  constexpr std::expected<void, error> reserve(size_t Capacity) {
+  constexpr result<void> reserve(size_t Capacity) {
     if (Capacity <= capacity()) return {};
     auto new_data = _allocate(Capacity);
-    if (!new_data) return new_data.error().relay();
+    if (!new_data) return new_data.relay();
     if (data()) {
       for (size_t i = 0; i < size(); ++i) alloc_traits::construct(_alloc, *new_data + i, move(data()[i]));
       for (size_t i = 0; i < size(); ++i) alloc_traits::destroy(_alloc, data() + i);
@@ -113,7 +113,7 @@ public:
     return {};
   }
 
-  constexpr std::expected<void, error> resize(size_t Count) requires std::default_initializable<T> {
+  constexpr result<void> resize(size_t Count) requires std::default_initializable<T> {
     if (Count <= capacity()) {
       if (Count > size())
         for (size_t i = size(); i < Count; ++i) alloc_traits::construct(_alloc, data() + i);
@@ -122,13 +122,13 @@ public:
       size = Count;
       return {};
     }
-    if (auto res = reserve(_preferred_capacity(Count)); !res) return res.error().relay();
+    if (auto res = reserve(_preferred_capacity(Count)); !res) return res.relay();
     for (size_t i = size(); i < Count; ++i) alloc_traits::construct(_alloc, data() + i);
     size = Count;
     return {};
   }
 
-  constexpr std::expected<void, error> resize(size_t Count, const T& Value) {
+  constexpr result<void> resize(size_t Count, const T& Value) {
     if (Count <= capacity()) {
       if (Count > size())
         for (size_t i = size(); i < Count; ++i) alloc_traits::construct(_alloc, data() + i, Value);
@@ -137,30 +137,37 @@ public:
       size = Count;
       return {};
     }
-    if (auto res = reserve(_preferred_capacity(Count)); !res) return res.error().relay();
+    if (auto res = reserve(_preferred_capacity(Count)); !res) return res.relay<void>();
     for (size_t i = size(); i < Count; ++i) alloc_traits::construct(_alloc, data() + i, Value);
     size = Count;
     return {};
   }
 
-  constexpr std::expected<void, error> push_back(const T& Value) {
+  constexpr result<void> push_back(const T& Value) {
     if (size() == capacity())
-      if (auto res = reserve(_preferred_capacity(size() + 1)); !res) return res.error().relay();
+      if (auto res = reserve(_preferred_capacity(size() + 1)); !res) return res.relay<void>();
     alloc_traits::construct(_alloc, data() + size(), Value);
     size = size() + 1;
     return {};
   }
 
-  constexpr std::expected<void, error> append(const T* Data, size_t Count) {
+  template<typename... As> requires constructible<T, As...> constexpr result<void> emplace_back(As&&... args) {
+    if (size() == capacity())
+      if (auto res = reserve(_preferred_capacity(size() + 1)); !res) return res.relay<void>();
+    alloc_traits::construct(_alloc, data() + size(), static_cast<As&&>(args)...);
+    size = size() + 1;
+    return {};
+  }
+
+  constexpr result<void> append(const T* Data, size_t Count) {
     if (!Data && Count > 0) return std::unexpected(error(errors::invalid_argument, "null array data"));
     if (Count == 0) return {};
-    if (Count > _max_capacity - size())
-      return std::unexpected(error(errors::invalid_argument, "array size is too large"));
+    if (Count > _max_capacity - size()) return fail<void>(errors::invalid_argument, "array size is too large");
     const auto old_count = size();
     const auto new_size = size() + Count;
     const auto data_offset = Data == data() ? size_t(0) : npos;
     if (new_size > capacity())
-      if (auto res = reserve(_preferred_capacity(new_size)); !res) return res.error().relay();
+      if (auto res = reserve(_preferred_capacity(new_size)); !res) return res.relay<void>();
     if (data_offset != npos) Data = data() + data_offset;
     for (size_t i = old_count; i < new_size; ++i) alloc_traits::construct(_alloc, data() + i, Data[i - old_count]);
     size = new_size;
@@ -168,29 +175,28 @@ public:
   }
 
   template<std::ranges::input_range Rg> requires std::convertible_to<std::ranges::range_reference_t<Rg>, T>
-  constexpr std::expected<void, error> append(Rg&& r) {
+  constexpr result<void> append(Rg&& r) {
     if constexpr (std::ranges::contiguous_range<Rg> && std::ranges::sized_range<Rg>) {
       return append(std::ranges::data(r), std::ranges::size(r));
     } else {
       if constexpr (std::ranges::sized_range<Rg>) {
         const auto Count = std::ranges::size(r);
         if (Count == 0) return {};
-        if (Count > _max_capacity - size())
-          return std::unexpected(error(errors::invalid_argument, "array size is too large"));
-        if (auto res = reserve(_preferred_capacity(size() + Count)); !res) return res.error().relay();
+        if (Count > _max_capacity - size()) return fail<void>(errors::invalid_argument, "array size is too large");
+        if (auto res = reserve(_preferred_capacity(size() + Count)); !res) return res.relay<void>();
       }
       for (auto&& value : r)
-        if (auto res = push_back(static_cast<T>(value)); !res) return res.error().relay();
+        if (auto res = push_back(static_cast<T>(value)); !res) return res.relay<void>();
       return {};
     }
   }
 
-  constexpr std::expected<void, error> assign(const T* Data, size_t Count) {
-    if (!Data && Count > 0) return std::unexpected(error(errors::invalid_argument, "null array data"));
-    if (Count > _max_capacity) return std::unexpected(error(errors::invalid_argument, "array size is too large"));
+  constexpr result<void> assign(const T* Data, size_t Count) {
+    if (!Data && Count > 0) return fail<void>(errors::invalid_argument, "null array data");
+    if (Count > _max_capacity) return fail<void>(errors::invalid_argument, "array size is too large");
     const auto old_count = size();
     if (Count > capacity())
-      if (auto res = reserve(_preferred_capacity(Count)); !res) return res.error().relay();
+      if (auto res = reserve(_preferred_capacity(Count)); !res) return res.relay<void>();
     const auto assigned = yw::min(old_count, Count);
     for (size_t i = 0; i < assigned; ++i) data()[i] = Data[i];
     for (size_t i = assigned; i < Count; ++i) alloc_traits::construct(_alloc, data() + i, Data[i]);
@@ -200,7 +206,7 @@ public:
   }
 
   template<std::ranges::input_range Rg> requires std::convertible_to<std::ranges::range_reference_t<Rg>, T>
-  constexpr std::expected<void, error> assign(Rg&& r) {
+  constexpr result<void> assign(Rg&& r) {
     if constexpr (std::ranges::contiguous_range<Rg> && std::ranges::sized_range<Rg>) {
       return assign(std::ranges::data(r), std::ranges::size(r));
     } else {

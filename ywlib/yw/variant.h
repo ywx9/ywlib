@@ -1,40 +1,9 @@
 #pragma once
 #include <yw/error.h>
 #include <yw/tuple.h>
+#include <yw/result.h>
 
 namespace yw {
-
-template<typename... Ts> union variant_base {
-  select_type<0, Ts...> _member;
-  using _rest_type = typepack<Ts...>::template back<sizeof...(Ts) - 1>::template expand<variant_base>;
-  _rest_type _rest_member;
-
-  constexpr ~variant_base() {}
-
-  template<size_t I, typename... As> requires(I == 0)
-  constexpr variant_base(index<I>, As&&... Args) : _member(static_cast<As&&>(Args)...) {}
-
-  template<size_t I, typename... As> requires(I != 0)
-  constexpr variant_base(index<I>, As&&... Args) : _rest_member(index<I - 1>(), static_cast<As&&>(Args)...) {}
-
-  template<size_t I, typename Self> constexpr copy_cvref<Self&&, select_type<I, Ts...>> get(this Self&& self) noexcept {
-    if constexpr (I == 0) return static_cast<Self&&>(self)._member;
-    else return static_cast<Self&&>(self)._rest_member.template get<I - 1>();
-  }
-};
-
-template<typename T> union variant_base<T> {
-  T _member;
-
-  constexpr ~variant_base() {}
-
-  template<size_t I, typename... As> constexpr variant_base(index<I>, As&&... Args)
-    : _member(static_cast<As&&>(Args)...) {}
-
-  template<size_t I, typename Self> constexpr copy_cvref<Self&&, T> get(this Self&& self) noexcept {
-    return static_cast<Self&&>(self)._member;
-  }
-};
 
 template<is_object... Ts> requires((same_as<Ts, remove_cvref<Ts>> && ...)) class variant {
   variant_base<none, Ts...> _data = variant_base<none, Ts...>(yw::index<0>());

@@ -21,7 +21,7 @@ Windows / MinGW / CMake support is important.
 ## Style
 
 - Public APIs should avoid exceptions where possible.
-- Prefer std::expected<T, error>.
+- Prefer yw::result<T>.
 
 ## Notes
 

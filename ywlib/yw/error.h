@@ -182,10 +182,10 @@ public:
   }
 
   /// returns std::unexpected<error> while adding footprint to error stack
-  constexpr std::unexpected<error> relay(const source_line& Source = here()) & {
-    add_footprint(Source);
-    return std::unexpected(std::move(*this));
-  }
+  // constexpr std::unexpected<error> relay(const source_line& Source = here()) & {
+  //   add_footprint(Source);
+  //   return std::unexpected(std::move(*this));
+  // }
 
   /// adds footprint to error stack
   constexpr error& add_footprint(const source_line& Source = here()) & {
@@ -205,30 +205,6 @@ inline constexpr error::kind not_initialized{"not initialized"};
 inline constexpr error::kind already_initialized{"already initialized"};
 inline constexpr error::kind warning{"warning"};
 } // namespace errors
-
-/// MARK: assume
-
-/// Unwraps a value whose success is assumed.
-/// @return The unwrapped value.
-/// @warning This function terminates the program when the assumption is violated.
-template<typename T> requires is_rvref<T&&> constexpr auto assume(T&& t, const source_line& sl = here()) {
-  using U = remove_cvref<T>;
-  if constexpr (specialization_of<U, std::expected>) {
-    static_assert(same_as<typename U::error_type, error>);
-    if (!t) t.error().go_off(sl);
-    if constexpr (is_void<typename U::value_type>) return none();
-    else return std::move(*t);
-  } else if constexpr (specialization_of<U, std::optional>) {
-    if (!t) error(errors::invalid_operation, "assume() called on empty optional").go_off(sl);
-    return std::move(*t);
-  } else if constexpr (specialization_of<U, yw::optional>) {
-    if (!t) error(errors::invalid_operation, "assume() called on empty optional").go_off(sl);
-    return std::move(*t);
-  } else if constexpr (is_pointer<U>) {
-    if (!t) error(errors::invalid_operation, "assume() called on null pointer").go_off(sl);
-    return std::move(*t);
-  } else return std::move(t);
-}
 } // namespace yw
 
 /// MARK: std::formatter

@@ -1,7 +1,9 @@
 #pragma once
 
+#include <yw/array.h>
 #include <yw/file.h>
 #include <yw/handle_base.h>
+#include <yw/result.h>
 #include <yw/slotset.h>
 #include <yw/tuple.h>
 
@@ -28,48 +30,46 @@ inline string<char> epilog;
 /// MARK: converter
 
 template<typename T> struct converter {
-  static std::expected<T, error> operator()(string_view<char>) {
-    return std::unexpected(error(errors::invalid_command_line_argument));
-  }
+  static result<T> operator()(string_view<char>) { return fail<T>(errors::invalid_command_line_argument); }
 };
 
 template<> struct converter<string<char>> {
-  static std::expected<string<char>, error> operator()(stringable<char> auto&& value) { return string<char>(value); }
+  static result<string<char>> operator()(stringable<char> auto&& value) { return string<char>(value); }
 };
 
 template<> struct converter<bool> {
-  static std::expected<bool, error> operator()(string_view<char> value) {
+  static result<bool> operator()(string_view<char> value) {
     if (value == "1" || value == "true" || value == "on" || value == "yes") return true;
     if (value == "0" || value == "false" || value == "off" || value == "no") return false;
-    return std::unexpected(error(errors::invalid_command_line_argument, format("Invalid bool: ", value)));
+    return fail<bool>(errors::invalid_command_line_argument, format("Invalid bool: ", value));
   }
-  static std::expected<string<char>, error> operator()(bool value) { return vtos(value); }
+  static result<string<char>> operator()(bool value) { return vtos(value); }
 };
 
 template<typename T> requires(integral<T> && !is_bool<T>) struct converter<T> {
-  static std::expected<T, error> operator()(string_view<char> value) {
+  static result<T> operator()(string_view<char> value) {
     T out{};
     const auto* b = value.data();
     const auto* e = b + value.size();
     const auto r = std::from_chars(b, e, out);
     if (r.ec != std::errc() || r.ptr != e)
-      return std::unexpected(error(errors::invalid_command_line_argument, format("Invalid integer: ", value)));
+      return fail<T>(errors::invalid_command_line_argument, format("Invalid integer: ", value));
     return out;
   }
-  static std::expected<string<char>, error> operator()(T value) { return vtos(value); }
+  static result<string<char>> operator()(T value) { return vtos(value); }
 };
 
 template<typename T> requires(float_type<T>) struct converter<T> {
-  static std::expected<T, error> operator()(string_view<char> value) {
+  static result<T> operator()(string_view<char> value) {
     string<char> s(value);
     char* end = nullptr;
     errno = 0;
     const auto v = std::strtold(s.c_str(), &end);
     if (errno != 0 || end != s.c_str() + s.size())
-      return std::unexpected(error(errors::invalid_command_line_argument, format("Invalid number: ", value)));
+      return fail<T>(errors::invalid_command_line_argument, format("Invalid number: ", value));
     return static_cast<T>(v);
   }
-  static std::expected<string<char>, error> operator()(T value) { return vtos(value); }
+  static result<string<char>> operator()(T value) { return vtos(value); }
 };
 
 /// MARK: handle
@@ -78,8 +78,8 @@ class handle : public handle_base {
 protected:
   using name_entry = std::pair<string<char>, slotid>;
 
-  inline static std::vector<name_entry> name_map;
-  inline static std::vector<slotid> positionals;
+  inline static array<name_entry> name_map;
+  inline static array<slotid> positionals;
 
   template<typename Handle> static typename Handle::slot* create_slot(const source_line& sl) {
     const auto sp = make_slot<Handle>();
@@ -91,9 +91,7 @@ protected:
     return std::ranges::find_if(name_map, [&](const auto& entry) { return entry.first == Key; });
   }
 
-  static bool contains_name(string_view<char> Key) {
-    return find_name(Key) != name_map.end();
-  }
+  static bool contains_name(string_view<char> Key) { return find_name(Key) != name_map.end(); }
 
 public:
   enum class type : uint8_t { flag, option, positional };
@@ -108,8 +106,8 @@ public:
     string<char> description;          // flag, option, positional
     string<char> value_string;         // option, positional
     string<char> default_value_string; // option, positional
-    std::vector<string<char>> aliases; // flag, option
-    std::expected<void, error> (*update_value_fn)(handle::slot&) = nullptr;
+    array<string<char>> aliases;       // flag, option
+    result<void> (*update_value_fn)(handle::slot&) = nullptr;
     handle::type type;
     bool required = false;
     bool multiple = false;
@@ -131,22 +129,20 @@ public:
     std::optional<T> value;
     std::optional<T> default_value;
 
-    std::expected<void, error> init(string<char>&& Metavar) {
+    result<void> init(string<char>&& Metavar) {
       key = uint_to_string(positionals.size());
       metavar = std::move(Metavar);
       type = handle::type::positional;
-      update_value_fn = [](handle::slot& s) -> std::expected<void, error> {
-        return static_cast<slot&>(s).update_value();
-      };
+      update_value_fn = [](handle::slot& s) -> result<void> { return static_cast<slot&>(s).update_value(); };
       positionals.push_back(id);
       return {};
     }
 
-    std::expected<void, error> update_value() {
+    result<void> update_value() {
       if (value.has_value()) return {};
       if (!specified) {
         if (default_value.has_value()) value = *default_value;
-        else return std::unexpected(error(errors::missing_required_argument));
+        else return fail<void>(errors::missing_required_argument);
       } else if (auto res = converter<T>()(value_string); !res) {
         auto& e = res.error();
         e.message(format(e.message(), " at #", key));
@@ -218,10 +214,10 @@ template<typename T> handle::positional<T> positional(string<char> Metavar, cons
 template<typename T> class handle::option : public handle {
 public:
   struct slot : handle::slot {
-    std::optional<std::vector<T>> values;
+    std::optional<array<T>> values;
     std::optional<T> default_value;
 
-    std::expected<void, error> init(string<char> Key) {
+    result<void> init(string<char> Key) {
       if (contains_name(Key)) return std::unexpected(error(errors::operation_failed, format("Duplicate key: ", Key)));
       name_map.emplace_back(Key, id);
       key = std::move(Key);
@@ -232,20 +228,20 @@ public:
       return {};
     }
 
-    std::expected<void, error> update_value() {
+    result<void> update_value() {
       if (values.has_value()) return {};
       if (!specified) {
-        if (default_value.has_value()) values = std::vector<T>{*default_value};
+        if (default_value.has_value()) values = array<T>{*default_value};
         else return std::unexpected(error(errors::missing_required_argument));
         return {};
       }
       const auto x1f_count = std::ranges::count(value_string, '\x1f');
-      values = std::vector<T>();
+      values = array<T>();
       values->reserve(x1f_count);
       for (auto it = value_string.begin(), se = value_string.end(); it < se;) {
         auto fr = std::ranges::find(it, se, '\x1f');
         if (fr == se) break;
-        if (auto res = converter<T>{}(string_view<char>(it, fr)); !res) return res.error().relay();
+        if (auto res = converter<T>{}(string_view<char>(it, fr)); !res) return res.relay();
         else values->push_back(std::move(*res));
         it = fr + 1;
       }
@@ -295,7 +291,7 @@ public:
 
   template<typename Self> auto&& alias(this Self&& self, string<char> Alias) requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off(); // fatal
+    if (!sp) error(errors::invalid_slotid).go_off();                                                          // fatal
     if (contains_name(Alias)) error(errors::operation_failed, format("Duplicate key: ", Alias)).fizzle_out(); // warning
     else if (const auto sp = self.get_slot(&self); sp) {
       name_map.emplace_back(Alias, self.id());
@@ -342,8 +338,8 @@ template<typename T> handle::option<T> option(string<char> Name, const source_li
 class handle::flag : public handle {
 public:
   struct slot : handle::slot {
-    std::expected<void, error> init(string<char>&& Key) {
-      if (contains_name(Key)) return std::unexpected(error(errors::operation_failed, format("Duplicate key: ", Key)));
+    result<void> init(string<char>&& Key) {
+      if (contains_name(Key)) return fail<void>(errors::operation_failed, format("Duplicate key: ", Key));
       name_map.emplace_back(Key, id);
       key = std::move(Key);
       type = handle::type::flag;
@@ -367,7 +363,7 @@ public:
 
   template<typename Self> auto&& alias(this Self&& self, string<char> Alias) requires(!is_const<remove_ref<Self>>) {
     const auto sp = self.get_slot(&self);
-    if (!sp) error(errors::invalid_slotid).go_off(); // fatal
+    if (!sp) error(errors::invalid_slotid).go_off();                                                          // fatal
     if (contains_name(Alias)) error(errors::operation_failed, format("Duplicate key: ", Alias)).fizzle_out(); // warning
     else {
       name_map.emplace_back(Alias, self.id());
@@ -408,12 +404,12 @@ struct handle_access : handle {
 
 inline void print_help() { argument::print_help(); }
 
-inline std::expected<std::vector<string<char>>, error> collect_argv(int argc, char** argv, string<char>& name) {
-  std::vector<string<char>> args;
+inline result<array<string<char>>> collect_argv(int argc, char** argv, string<char>& name) {
+  array<string<char>> args;
 #if defined(_WIN32) || defined(_WIN64)
   int c = 0;
   auto v = ::CommandLineToArgvW(::GetCommandLineW(), &c);
-  if (!v) return std::unexpected(error(errors::operation_failed, "CommandLineToArgvW failed", ::GetLastError()));
+  if (!v) return fail<array<string<char>>>(errors::operation_failed, "CommandLineToArgvW failed", ::GetLastError());
   args.reserve(static_cast<size_t>(c));
   for (int i = 0; i < c; ++i) args.emplace_back(unicode<char>(std::wstring_view(v[i])));
   ::LocalFree(v);
@@ -450,18 +446,18 @@ inline void append_option_value(handle::slot& slot, string_view<char> value) {
   slot.value_string.push_back('\x1f');
 }
 
-inline std::unexpected<error> argument_error(ministr<char> msg) {
+inline result<void> argument_error(ministr<char> msg) {
   print_help();
-  return std::unexpected(error(errors::invalid_command_line_argument, string<char>(msg)));
+  return fail<void>(errors::invalid_command_line_argument, string<char>(msg));
 }
 } // namespace internal
 
 /// MARK: parse
 
-inline std::expected<void, error> parse(int argc, char** argv) {
-  if (internal::parsed) return std::unexpected(error(errors::invalid_operation, "Arguments have already been parsed"));
+inline result<void> parse(int argc, char** argv) {
+  if (internal::parsed) return fail<void>(errors::invalid_operation, "Arguments have already been parsed");
   auto argv_result = internal::collect_argv(argc, argv, argument::program_name);
-  if (!argv_result) return argv_result.error().relay();
+  if (!argv_result) return argv_result.relay<void>();
   auto args = std::move(*argv_result);
   bool after_double_dash = false;
   size_t positional_index = 0;
@@ -514,7 +510,7 @@ inline std::expected<void, error> parse(int argc, char** argv) {
 
   bool missing = false;
   string<char> missing_message = "Missing required options";
-  std::vector<handle::slotid> checked;
+  array<handle::slotid> checked;
   checked.reserve(internal::handle_access::name_map.size() + internal::handle_access::positionals.size());
 
   auto check_required = [&](handle::slotid id) {
@@ -535,13 +531,13 @@ inline std::expected<void, error> parse(int argc, char** argv) {
 
   if (missing) {
     internal::print_help();
-    return std::unexpected(error(errors::missing_required_argument, missing_message));
+    return fail<void>(errors::missing_required_argument, missing_message);
   }
 
   for (const auto id : checked) {
     auto* sp = internal::get_argument_slot(id);
     if (!sp || !sp->specified || !sp->update_value_fn) continue;
-    if (auto res = sp->update_value_fn(*sp); !res) return res.error().relay();
+    if (auto res = sp->update_value_fn(*sp); !res) return res.relay<void>();
   }
   internal::parsed = true;
   return {};
@@ -590,7 +586,7 @@ inline void print_help() {
     else print("  ", pad_right(lhs, 24), " ", rhs);
   };
 
-  std::vector<handle::slotid> option_ids;
+  array<handle::slotid> option_ids;
   option_ids.reserve(internal::handle_access::name_map.size());
   for (const auto& [name, id] : internal::handle_access::name_map) {
     const auto sp = internal::get_argument_slot(id);
