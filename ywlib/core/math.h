@@ -1,9 +1,5 @@
 #pragma once
-#include "yw/core.h"
-
-#include <cmath>
-#include <limits>
-#include <type_traits>
+#include <core/core.h>
 
 namespace yw {
 
@@ -13,8 +9,7 @@ inline constexpr auto abs = [](arithmetic auto x) noexcept {
   return x < 0 ? result_type(-x) : result_type(x);
 };
 
-template<typename... Ts> using math_type =
-    select_type<(std::integral<Ts> && ...), double, std::common_type_t<Ts...>>;
+template<typename... Ts> using math_type = select_type<(std::integral<Ts> && ...), double, std::common_type_t<Ts...>>;
 
 inline constexpr auto round = [](arithmetic auto x) noexcept {
   using result_type = math_type<decltype(x)>;
@@ -63,8 +58,7 @@ inline constexpr auto ceil = [](arithmetic auto x) noexcept {
 inline constexpr auto fmod = [](arithmetic auto x, arithmetic auto y) noexcept {
   using result_type = math_type<decltype(x), decltype(y)>;
   if (!std::is_constant_evaluated()) return std::fmod(x, y);
-  if (x != x || y != y || y == 0 || x == inf || x == -inf)
-    return std::numeric_limits<result_type>::quiet_NaN();
+  if (x != x || y != y || y == 0 || x == inf || x == -inf) return std::numeric_limits<result_type>::quiet_NaN();
   if (y == inf || y == -inf) return result_type(x);
   if (x == 0) return result_type(x);
   const double ax = abs(double(x)), ay = abs(double(y));
