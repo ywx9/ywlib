@@ -2,8 +2,6 @@
 
 !.gitattributes
 !.gitignore
-!LICENSE
-!AGENTS.md
 !docs/
 !docs/**
 !tools/

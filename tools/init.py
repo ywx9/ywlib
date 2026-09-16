@@ -16,6 +16,14 @@ SETTINGS_PATH = VSCODE_DIR / "settings.json"
 YWLIB_DIR = ROOT_DIR / "ywlib"
 UMBRELLA_HEADER_PATH = YWLIB_DIR / "ywlib"
 HEADER_SUFFIXES = {".h", ".hh", ".hpp", ".hxx"}
+DEFAULT_PROJECT_CONFIG: dict[str, object] = {
+    "project_name": "test",
+    "sources": ["source.cpp"],
+    "include_dirs": ["ywlib"],
+    "target_type": "exe",
+    "cflags": ["-fcontracts", "-freflection"],
+    "show_console": True,
+}
 
 
 def strip_jsonc(text: str) -> str:
@@ -37,7 +45,12 @@ def as_list(value: object, name: str) -> list[str]:
 
 def load_project_config() -> dict[str, object]:
     if not PROJECT_CONFIG_PATH.exists():
-        raise FileNotFoundError(f"missing config file: {PROJECT_CONFIG_PATH}")
+        PROJECT_CONFIG_PATH.write_text(
+            json.dumps(DEFAULT_PROJECT_CONFIG, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        print(f"created {PROJECT_CONFIG_PATH.relative_to(ROOT_DIR)}")
 
     config = json.loads(PROJECT_CONFIG_PATH.read_text(encoding="utf-8"))
     if not isinstance(config, dict):
