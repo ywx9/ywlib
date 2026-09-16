@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <cmath>
 #include <compare>
 #include <concepts>
 #include <contracts>
@@ -18,11 +19,17 @@
 #include <type_traits>
 #include <utility>
 
+#ifdef assert
+#undef assert
+#define assert(condition) contract_assert(condition)
+#endif
+
 namespace yw {
 
 static_assert(std::endian::native == std::endian::little, "YWLIB requires a little-endian architecture.");
 
 #ifdef __cpp_lib_text_encoding
+#pragma message("Checking text encoding...")
 static_assert(
   std::text_encoding::literal() == std::text_encoding::id::UTF8, "YWLIB requires a UTF-8 execution character set.");
 #endif
@@ -338,20 +345,29 @@ template<auto V, typename T = decltype(V)> requires convertible_to<decltype(V), 
 
 template<size_t I> using index = constant<I, size_t>;
 
-/// selects I-th argument from given arguments.
-/// \note If I is a bool value, the first argument is selected when I is true.
+/// selects `I`-th argument.
+/// \note If `I` is a bool value, the first argument is selected when `I` is true.
 template<convertible_to<size_t> auto I, typename... Ts>
 requires((is_bool<decltype(I)> && sizeof...(Ts) == 2) || (!is_bool<decltype(I)> && I < sizeof...(Ts)))
 constexpr decltype(auto) select(Ts&&... as) noexcept {
-  if constexpr (is_bool<decltype(I)>) return static_cast<Ts...[!I]&&>(as...[!I]);
-  else return static_cast<Ts...[I]&&>(as...[I]);
+  constexpr size_t index = is_bool<decltype(I)> ? !I : I;
+  return static_cast<Ts...[index]&&>(as...[index]);
 }
 
-/// selects I-th type.
-/// \note If I is a bool value, the first type is selected when I is true.
+/// selects `I`-th type.
+/// \note If `I` is a bool value, the first type is selected when `I` is true.
 template<convertible_to<size_t> auto I, typename... Ts>
 requires((is_bool<decltype(I)> && sizeof...(Ts) == 2) || (!is_bool<decltype(I)> && I < sizeof...(Ts)))
 using select_type = Ts...[is_bool<decltype(I)> ? !I : I];
+
+inline constexpr auto clamp_negative = []<arithmetic T>(T v) noexcept {
+  if constexpr (unsigned_integral<T>) return v;
+  else return v < T(0) ? T(0) : v;
+};
+inline constexpr auto clamp_positive = []<arithmetic T>(T v) noexcept {
+  if constexpr (unsigned_integral<T>) return 0;
+  else return v > T(0) ? T(0) : v;
+};
 
 namespace internal {
 template<bool Max, arithmetic T, arithmetic U> constexpr auto _max(T a, U b) noexcept {
@@ -360,25 +376,28 @@ template<bool Max, arithmetic T, arithmetic U> constexpr auto _max(T a, U b) noe
     else return a < b ? a : b;
   } else if constexpr (using V = decltype(a + b); float_type<V> || signed_integral<V>) return _max<Max>(V(a), V(b));
   else if constexpr (unsigned_integral<T> && unsigned_integral<U>) return _max<Max>(V(a), V(b));
-  else return _max<Max>(int_cast(a), int_cast(b));
+  else if constexpr (Max) return _max<Max>(uint_cast(clamp_negative(a)), uint_cast(clamp_negative(b)));
+  else return _max<Max>(int_cast(clamp_positive(a)), int_cast(clamp_positive(b)));
 }
 } // namespace internal
 
+/// \note `max(T, U)`, whose size is equal to `max(sizeof(T), sizeof(U))`, is signed only if it can be negative.
 inline constexpr struct {
   static constexpr none operator()() noexcept { return {}; }
   static constexpr auto operator()(arithmetic auto a) noexcept { return a; }
   static constexpr auto operator()(arithmetic auto a, arithmetic auto b, arithmetic auto... cs) noexcept {
     if constexpr (sizeof...(cs) > 0) return operator()(operator()(a, b), cs...);
-    else return internal::_max<1>(a, b);
+    else return internal::_max<true>(a, b);
   }
 } max;
 
+/// \note `min(T, U)`, whose size is equal to `max(sizeof(T), sizeof(U))`, is unsigned only if it cannot be negative.
 inline constexpr struct {
   static constexpr none operator()() noexcept { return {}; }
   static constexpr auto operator()(arithmetic auto a) noexcept { return a; }
   static constexpr auto operator()(arithmetic auto a, arithmetic auto b, arithmetic auto... cs) noexcept {
     if constexpr (sizeof...(cs) > 0) return operator()(operator()(a, b), cs...);
-    else return internal::_max<0>(a, b);
+    else return internal::_max<false>(a, b);
   }
 } min;
 
@@ -411,7 +430,7 @@ inline constexpr auto invoke = []<typename F, typename... As>(F&& f, As&&... as)
 };
 
 template<typename F, typename... As> requires invocable<F, As...>
-using invoke_result = decltype(invoke(std::declval<F>(), std::declval<As>()...));
+using invoke_result = decltype(invoke(declval<F>(), declval<As>()...));
 
 template<typename F, typename R, typename... As> concept invocable_r =
   invocable<F, As...> && convertible_to<std::invoke_result_t<F, As...>, R>;
@@ -421,6 +440,67 @@ template<typename F, typename R, typename... As> concept nt_invocable_r =
 template<typename R> inline constexpr auto invoke_r = []<typename F, typename... As>(F&& f, As&&... as) //
   noexcept(nt_invocable_r<F, R, As...>) requires invocable_r<F, R, As...>
 { return std::invoke_r<R>(static_cast<F&&>(f), static_cast<As&&>(as)...); };
+
+/// MARK: Range
+
+template<std::ranges::range R> using iterator_t = std::ranges::iterator_t<R>;
+template<std::ranges::range R> using sentinel_t = std::ranges::sentinel_t<R>;
+
+inline constexpr auto begin = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::begin(r)))
+                                requires requires { std::ranges::begin(r); } { return std::ranges::begin(r); };
+inline constexpr auto end = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::end(r)))
+                              requires requires { std::ranges::end(r); } { return std::ranges::end(r); };
+inline constexpr auto size = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::size(r)))
+                               requires requires { std::ranges::size(r); } { return std::ranges::size(r); };
+inline constexpr auto data = []<std::ranges::range R>(R&& r) noexcept(noexcept(std::ranges::data(r)))
+                               requires requires { std::ranges::data(r); } { return std::ranges::data(r); };
+
+namespace internal { // clang-format off
+template<typename T, template<typename> typename> struct iter_type : std::type_identity<void> {};
+template<std::input_iterator I, template<typename> typename Tm> struct iter_type<I, Tm> : std::type_identity<Tm<I>> {};
+template<std::ranges::input_range R, template<typename> typename Tm>
+struct iter_type<R, Tm> : std::type_identity<Tm<iterator_t<R>>> {};
+} // clang-format on
+
+template<typename T> using iter_value_t = internal::iter_type<remove_cvref<T>, std::iter_value_t>::type;
+template<typename T> using iter_difference_t = internal::iter_type<remove_cvref<T>, std::iter_difference_t>::type;
+template<typename T> using iter_reference_t = internal::iter_type<remove_cvref<T>, std::iter_reference_t>::type;
+
+template<typename I, typename T = iter_value_t<I>> concept input_iterator =
+  std::input_iterator<I> && same_as<T, iter_value_t<I>>;
+template<typename I, typename T = iter_value_t<I>> concept forward_iterator =
+  std::forward_iterator<I> && same_as<T, iter_value_t<I>>;
+template<typename I, typename T = iter_value_t<I>> concept bidirectional_iterator =
+  std::bidirectional_iterator<I> && same_as<T, iter_value_t<I>>;
+template<typename I, typename T = iter_value_t<I>> concept random_access_iterator =
+  std::random_access_iterator<I> && same_as<T, iter_value_t<I>>;
+
+template<typename R, typename T = iter_value_t<R>> concept sized_range =
+  std::ranges::sized_range<R> && same_as<T, iter_value_t<R>>;
+template<typename R, typename T = iter_value_t<R>> concept input_range =
+  std::ranges::input_range<R> && same_as<T, iter_value_t<R>>;
+template<typename R, typename T = iter_value_t<R>> concept forward_range =
+  std::ranges::forward_range<R> && same_as<T, iter_value_t<R>>;
+template<typename R, typename T = iter_value_t<R>> concept bidirectional_range =
+  std::ranges::bidirectional_range<R> && same_as<T, iter_value_t<R>>;
+template<typename R, typename T = iter_value_t<R>> concept random_access_range =
+  std::ranges::random_access_range<R> && same_as<T, iter_value_t<R>>;
+
+template<typename I, typename T = iter_value_t<I>> concept contiguous_iterator =
+  std::contiguous_iterator<I> && same_as<T, iter_value_t<I>>;
+template<typename R, typename T = iter_value_t<R>> concept contiguous_range =
+  std::ranges::contiguous_range<R> && sized_range<R> && same_as<T, iter_value_t<R>>;
+
+template<typename I, typename T = iter_value_t<I>> concept output_iterator = std::output_iterator<I, T>;
+template<typename R, typename T = iter_value_t<R>> concept output_range = std::ranges::output_range<R, T>;
+/// mutable contiguous range.
+template<typename R, typename T = iter_value_t<R>> concept contiguous_output_range =
+  contiguous_range<R, T> && output_range<R, T>;
+
+template<typename S, typename I> concept sentinel_for = std::sentinel_for<S, I>;
+template<typename S, typename I> concept sized_sentinel_for = std::sized_sentinel_for<S, I>;
+
+/// MARK: Tuple-like
 
 template<typename T> inline constexpr size_t extent = select_type<requires {
   std::tuple_size<remove_cvref<T>>::value;
@@ -450,9 +530,9 @@ template<size_t I> inline constexpr auto get = []<typename T>(T&& a)           /
   noexcept(noexcept(internal::_get<I>(static_cast<T&&>(a)))) -> decltype(auto) //
   requires requires { internal::_get<I>(static_cast<T&&>(a)); } { return internal::_get<I>(static_cast<T&&>(a)); };
 
-template<typename T, size_t I> concept gettable = requires { yw::get<I>(std::declval<T>()); };
-template<typename T, size_t I> concept nt_gettable = gettable<T, I> && noexcept(yw::get<I>(std::declval<T>()));
-template<typename T, size_t I> requires gettable<T, I> using element_t = decltype(yw::get<I>(std::declval<T>()));
+template<typename T, size_t I> concept gettable = requires { yw::get<I>(declval<T>()); };
+template<typename T, size_t I> concept nt_gettable = gettable<T, I> && noexcept(yw::get<I>(declval<T>()));
+template<typename T, size_t I> requires gettable<T, I> using element_t = decltype(yw::get<I>(declval<T>()));
 } // namespace yw
 
 namespace std {
@@ -463,4 +543,4 @@ template<typename C> struct formatter<yw::none, C> {
   constexpr auto parse(auto& ctx) { return fmt.parse(ctx); }
   auto format(const yw::none n, auto& ctx) const { fmt.format(n.to_string<C>(), ctx); }
 };
-}
+} // namespace std

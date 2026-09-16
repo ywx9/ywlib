@@ -1,22 +1,16 @@
-**
+*
 
-!.clang-format
+!.gitattributes
 !.gitignore
 !LICENSE
-!AGENTS.MD
-!README.MD
+!AGENTS.md
 !docs/
 !docs/**
 !tools/
 !tools/**
 !ywlib/
-!ywlib/yw/
-!ywlib/yw/**
-!ywlib/ywx/
-!ywlib/ywx/**
+!ywlib/**
 
-!ywlib/core/
-!ywlib/core/**
-
-__pycache__/
-*.py[cod]
+ywlib/ywlib
+tools/__pycache__
+tools/__pycache__/**

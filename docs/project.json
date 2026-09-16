@@ -1,0 +1,15 @@
+{
+  "project_name": "test",
+  "sources": [
+    "source.cpp"
+  ],
+  "include_dirs": [
+    "ywlib"
+  ],
+  "target_type": "exe",
+  "cflags": [
+    "-fcontracts",
+    "-freflection"
+  ],
+  "show_console": true
+}

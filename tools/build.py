@@ -1,72 +1,80 @@
 from __future__ import annotations
 
-import argparse
+import json
 import subprocess
 import sys
-
-from _common import (
-    cmake_configure,
-    ensure_file_from_template,
-    project_root,
-    run,
-    templates_dir,
-)
-from _project import load_project_config, project_template_values
+from pathlib import Path
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="configure and build with Debug settings",
-    )
-    return parser.parse_args()
+ROOT_DIR = Path(__file__).resolve().parents[1]
+CONFIG_PATH = ROOT_DIR / "project.json"
+
+
+def as_list(value: object, name: str) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return value
+    raise ValueError(f"{name} must be a string or a list of strings")
+
+
+def load_config() -> dict[str, object]:
+    if not CONFIG_PATH.exists():
+        raise FileNotFoundError(f"missing config file: {CONFIG_PATH}")
+    with CONFIG_PATH.open("r", encoding="utf-8") as file:
+        config = json.load(file)
+    if not isinstance(config, dict):
+        raise ValueError("project.json must contain a JSON object")
+    return config
+
+
+def output_name(project_name: str, target_type: str) -> str:
+    if target_type == "exe" and sys.platform == "win32":
+        return f"{project_name}.exe"
+    return project_name
 
 
 def main() -> int:
-    args = parse_args()
-    root = project_root()
+    try:
+        config = load_config()
 
-    project_json_path = root / "project.json"
-    if not project_json_path.is_file():
-        print(
-            "error: project.json is missing. Run: python tools/init.py first.",
-            file=sys.stderr,
-        )
+        project_name = str(config.get("project_name", "app"))
+        compiler = str(config.get("compiler", "g++"))
+        cpp_standard = str(config.get("cpp_standard", "c++26"))
+        target_type = str(config.get("target_type", "exe"))
+        output_dir = ROOT_DIR / str(config.get("output_dir", "build"))
+
+        sources = as_list(config.get("sources", config.get("source_file")), "sources")
+        include_dirs = as_list(config.get("include_dirs", ["ywlib"]), "include_dirs")
+        defines = as_list(config.get("defines"), "defines")
+        cflags = as_list(config.get("cflags"), "cflags")
+        ldflags = as_list(config.get("ldflags"), "ldflags")
+
+        if not sources:
+            raise ValueError("no source files configured")
+        if target_type != "exe":
+            raise ValueError(f"unsupported target_type: {target_type}")
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / output_name(project_name, target_type)
+
+        command = [compiler, f"-std={cpp_standard}"]
+        command.extend(cflags)
+        command.extend(f"-D{define}" for define in defines)
+        command.extend(f"-I{include_dir}" for include_dir in include_dirs)
+        command.extend(sources)
+        command.extend(["-o", str(output_path)])
+        command.extend(ldflags)
+
+        print(" ".join(command))
+        result = subprocess.run(command, cwd=ROOT_DIR)
+        return result.returncode
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        print(f"build.py: {error}", file=sys.stderr)
         return 1
-
-    cmake_lists_path = root / "CMakeLists.txt"
-    if not cmake_lists_path.is_file():
-        config = load_project_config(project_json_path)
-        ensure_file_from_template(
-            cmake_lists_path,
-            templates_dir() / "CMakeLists.txt.in",
-            project_template_values(config),
-            overwrite=False,
-        )
-
-    build_dir = root / "build"
-    build_type = "Debug" if args.debug else "Release"
-    cmake_configure(build_dir, build_type=build_type)
-
-    run(
-        [
-            "cmake",
-            "--build",
-            str(build_dir),
-        ],
-        cwd=root,
-    )
-
-    return 0
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except subprocess.CalledProcessError as e:
-        raise SystemExit(e.returncode)
-    except Exception as e:
-        print(f"error: {e}", file=sys.stderr)
-        raise SystemExit(1)
+    raise SystemExit(main())
