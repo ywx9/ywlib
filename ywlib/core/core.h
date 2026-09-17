@@ -24,8 +24,6 @@
 #define assert(condition) contract_assert(condition)
 #endif
 
-namespace yw {
-
 static_assert(std::endian::native == std::endian::little, "YWLIB requires a little-endian architecture.");
 
 #ifdef __cpp_lib_text_encoding
@@ -33,6 +31,13 @@ static_assert(std::endian::native == std::endian::little, "YWLIB requires a litt
 static_assert(
   std::text_encoding::literal() == std::text_encoding::id::UTF8, "YWLIB requires a UTF-8 execution character set.");
 #endif
+
+extern "C" {
+int fputs(const char*, FILE*);
+void abort();
+}
+
+namespace yw {
 
 using int8_t = std::int8_t;
 using int16_t = std::int16_t;
@@ -533,6 +538,24 @@ template<size_t I> inline constexpr auto get = []<typename T>(T&& a)           /
 template<typename T, size_t I> concept gettable = requires { yw::get<I>(declval<T>()); };
 template<typename T, size_t I> concept nt_gettable = gettable<T, I> && noexcept(yw::get<I>(declval<T>()));
 template<typename T, size_t I> requires gettable<T, I> using element_t = decltype(yw::get<I>(declval<T>()));
+
+inline constexpr void operator""_print_error(const char* msg, size_t) noexcept {
+  try {
+    ::fputs(msg, stderr);
+  } catch (...) {}
+}
+
+template<typename T> inline constexpr auto allocate = [](size_t n = 1) noexcept -> T* {
+  try {
+    return new T[n];
+  } catch (...) {
+    "failed to allocate memory"_print_error;
+    ::abort();
+    return nullptr;
+  }
+};
+
+inline constexpr auto deallocate = [](auto* p) noexcept { delete[] p; };
 } // namespace yw
 
 namespace std {

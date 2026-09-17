@@ -1,0 +1,1 @@
+- All text files are encoded in UTF-8.

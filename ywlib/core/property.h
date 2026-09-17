@@ -9,6 +9,9 @@ template<typename T, typename Class, invocable Callback = noop> class property {
   T value;
   Callback callback;
 
+  constexpr T& ref() noexcept { return value; }
+  constexpr const T& cref() const noexcept { return value; }
+
 public:
   constexpr property() noexcept = default;
   constexpr property(const T& v) noexcept : value(v) {}
@@ -54,6 +57,9 @@ template<typename T, typename Class, invocable Callback = noop> class const_prop
   constexpr const_property() noexcept = default;
   constexpr const_property& operator=(const T& v) noexcept { return value = v, callback(), *this; }
   constexpr const_property& operator=(T&& v) noexcept { return value = move(v), callback(), *this; }
+
+  constexpr T& ref() noexcept { return value; }
+  constexpr const T& cref() const noexcept { return value; }
 
 public:
   constexpr const_property(const T& v) noexcept : value(v) {}
