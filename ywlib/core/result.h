@@ -53,11 +53,7 @@ struct error {
   explicit constexpr operator bool() const noexcept { return has; }
 
   constexpr ~error() noexcept {
-    if (has && type != errors::ok) {
-      "unhandled error: "_print_error;
-      print();
-      ::abort();
-    }
+    if (has && type != errors::ok) print_and_abort("unhandled error: ");
   }
 
   constexpr error() noexcept = default;
@@ -68,11 +64,7 @@ struct error {
 
   constexpr error& operator=(error&& o) noexcept {
     if (this != &o) {
-      if (has && type != errors::ok) {
-        "unhandled error: "_print_error;
-        print();
-        ::abort();
-      }
+      if (has && type != errors::ok) print_and_abort("unhandled error: ");
       has = exchange(o.has.ref(), false);
     }
     return *this;
@@ -82,7 +74,7 @@ struct error {
     if (t == errors::ok) return;
     bool already_set = type != errors::ok;
     if (already_set) {
-      "error already set: "_print_error;
+      print_error("error already set: ");
       print();
       footprint.ref().clear();
     }
@@ -96,11 +88,7 @@ struct error {
     footprint.ref().append(":");
     footprint.ref().append(vtos<char>(sl.column()));
     has = true;
-    if (already_set) {
-      "new error: "_print_error;
-      print();
-      ::abort();
-    }
+    if (already_set) print_and_abort("new error: ");
   }
 
   constexpr error(string<char> m, std::source_location sl = here()) noexcept : error(errors::unknown, move(m), sl) {}
@@ -116,15 +104,20 @@ struct error {
     footprint.ref().append(vtos<char>(sl.column()));
   }
 
-  static constexpr void print() noexcept {
-    if (!std::is_constant_evaluated()) {
-      if (type != errors::ok) {
-        ::fputs(message().c_str(), stderr);
-        ::fputs("\n", stderr);
-        ::fputs(footprint().c_str(), stderr);
-        ::fputs("\n", stderr);
-      } else ::fputs("no error\n", stderr);
-    }
+  static constexpr void print(const char* msg = nullptr) noexcept {
+    if (std::is_constant_evaluated()) return;
+    if (type != errors::ok) {
+      if (msg) ::fputs(msg, stderr);
+      ::fputs(message().c_str(), stderr);
+      ::fputs("\n", stderr);
+      ::fputs(footprint().c_str(), stderr);
+      ::fputs("\n", stderr);
+    } else ::fputs("no error\n", stderr);
+  }
+
+  static constexpr void print_and_abort(const char* msg = "fatal error: ") noexcept {
+    print(msg);
+    ::abort();
   }
 
   constexpr void ignore() noexcept {
@@ -148,51 +141,107 @@ struct error {
 /// MARK: result
 
 template<typename T> class result {
-  union {
+  union _union {
+    none _none;
     T _value;
-    yw::error _error;
-  };
+    error _error;
+    constexpr ~_union() noexcept {}
+    constexpr _union() noexcept : _none() {}
+  } _union;
 
 public:
-  const_property<bool, result> _has_value = false;
-  const_property<bool, result> _has_error = false;
+  const_property<bool, result> has_value = false;
+  const_property<bool, result> has_error = false;
 
   constexpr ~result() noexcept {
-    if (_has_value()) { _value.~T(); }
+    if (has_value()) _union._value.~T();
+    if (has_error()) _union._error.~error();
+  }
+
+  constexpr result(result&& o) noexcept(nt_constructible<T, T> && nt_assignable<T, T>) {
+    if (o.has_value()) {
+      new (&_union._value) T(move(o._union._value));
+      has_value = true;
+      o.has_value = false;
+    } else if (o.has_error()) {
+      new (&_union._error) yw::error(move(o._union._error));
+      has_error = true;
+      o.has_error = false;
+    }
   }
 
   template<typename... As> requires constructible<T, As...>
   constexpr result(As&&... as) noexcept(nt_constructible<T, As...>) {
-    std::start_lifetime(&_value);
-    new (&_value) T(static_cast<As&&>(as)...);
-    _has_value = true;
+    new (&_union._value) T(static_cast<As&&>(as)...);
+    has_value = true;
   }
 
   template<typename... As> requires constructible<yw::error, As...> && (!constructible<T, As...>)constexpr result(
     As&&... as) noexcept(nt_constructible<yw::error, As...>) {
-    std::start_lifetime(&_error);
-    new (&_error) yw::error(static_cast<As&&>(as)...);
-    _has_error = true;
+    new (&_union._error) yw::error(static_cast<As&&>(as)...);
+    has_error = true;
   }
 
-  constexpr T* operator->() noexcept { return &_value; }
-  constexpr T& operator*() noexcept { return _value; }
+  constexpr T* operator->() & noexcept { return std::addressof(value()); }
+  constexpr const T* operator->() const& noexcept { return std::addressof(value()); }
 
-  explicit constexpr operator bool() const noexcept { return _has_value(); }
+  constexpr T& operator*() & noexcept { return value(); }
+  constexpr const T& operator*() const& noexcept { return value(); }
+  constexpr T&& operator*() && noexcept { return value(); }
+  constexpr const T&& operator*() const&& noexcept { return value(); }
 
-  constexpr T& value() & noexcept {
-    if (!_has_value()) {
+  explicit constexpr operator bool() const noexcept { return has_value(); }
 
+  template<typename Self> constexpr auto&& value(this Self&& self) noexcept {
+    if (!self.has_value()) {
+      if (self.has_error()) {
+        print_error("attempted to access value of result when it has error");
+        self._union._error.print_and_abort();
+      } else yw::error("attempted to access value of result when it has neither value nor error").print_and_abort();
     }
-    return _value;
+    return static_cast<copy_cvref<Self&&, T>>(self._union._value);
   }
-  constexpr const T& value() const & noexcept { return _value; }
-  constexpr T&& value() && noexcept { return static_cast<T&&>(_value); }
-  constexpr const T&& value() const && noexcept { return static_cast<const T&&>(_value); }
 
-  constexpr yw::error& error() & noexcept { return _error; }
-  constexpr const yw::error& error() const & noexcept { return _error; }
-  constexpr yw::error&& error() && noexcept { return static_cast<yw::error&&>(_error); }
-  constexpr const yw::error&& error() const && noexcept { return static_cast<const yw::error&&>(_error); }
+  template<typename Self> constexpr auto&& error(this Self&& self) noexcept {
+    if (!self.has_error()) yw::error("attempted to access error of result when it has no error").print_and_abort();
+    return static_cast<copy_cvref<Self&&, yw::error>>(self._union._error);
+  }
+};
+
+template<> class result<void> {
+  union _union {
+    none _none;
+    error _error;
+    constexpr ~_union() noexcept {}
+    constexpr _union() noexcept : _none() {}
+  } _union;
+
+public:
+  const_property<bool, result> has_error = false;
+
+  constexpr ~result() noexcept {
+    if (has_error()) _union._error.~error();
+  }
+
+  constexpr result(result&& o) noexcept {
+    if (o.has_error()) {
+      new (&_union._error) yw::error(move(o._union._error));
+      has_error = true;
+      o.has_error = false;
+    }
+  }
+
+  template<typename... As> requires constructible<yw::error, As...>
+  constexpr result(As&&... as) noexcept(nt_constructible<yw::error, As...>) {
+    new (&_union._error) yw::error(static_cast<As&&>(as)...);
+    has_error = true;
+  }
+
+  explicit constexpr operator bool() const noexcept { return false; }
+
+  template<typename Self> constexpr auto&& error(this Self&& self) noexcept {
+    if (!self.has_error()) yw::error("attempted to access error of result when it has no error").print_and_abort();
+    return static_cast<copy_cvref<Self&&, yw::error>>(self._union._error);
+  }
 };
 } // namespace yw

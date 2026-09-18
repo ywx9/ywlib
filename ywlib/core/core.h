@@ -539,18 +539,26 @@ template<typename T, size_t I> concept gettable = requires { yw::get<I>(declval<
 template<typename T, size_t I> concept nt_gettable = gettable<T, I> && noexcept(yw::get<I>(declval<T>()));
 template<typename T, size_t I> requires gettable<T, I> using element_t = decltype(yw::get<I>(declval<T>()));
 
-inline constexpr void operator""_print_error(const char* msg, size_t) noexcept {
+/// print an error message to stderr.
+/// \note In constant evaluation, this function will occur a compile-time error if called.
+inline constexpr void print_error(const char* msg) noexcept {
   try {
     ::fputs(msg, stderr);
   } catch (...) {}
+}
+
+/// print an error message to stderr and abort the program.
+/// \note In constant evaluation, this function will occur a compile-time error if called.
+[[noreturn]] inline constexpr void fatal_error(const char* msg) noexcept {
+  print_error(msg);
+  ::abort();
 }
 
 template<typename T> inline constexpr auto allocate = [](size_t n = 1) noexcept -> T* {
   try {
     return new T[n];
   } catch (...) {
-    "failed to allocate memory"_print_error;
-    ::abort();
+    fatal_error("failed to allocate memory");
     return nullptr;
   }
 };

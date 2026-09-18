@@ -4,132 +4,111 @@
 namespace yw {
 
 template<std::destructible T> requires same_as<T, remove_cvref<T>> && (!is_none<T>)class optional {
-  union storage {
+  union _union {
     none _none;
     T _value;
-    constexpr ~storage() {}
-    constexpr storage() noexcept : _none{} {}
-    constexpr storage(none) noexcept : _none{} {}
-    template<typename... As> requires constructible<T, As...>
-    constexpr storage(As&&... Args) noexcept(nt_constructible<T, As...>) : _value(static_cast<As&&>(Args)...) {}
-  } _data{};
-
-  bool _has_value = false;
-
-  template<typename... As> constexpr void _construct(As&&... Args) noexcept(nt_constructible<T, As...>)
-    requires constructible<T, As...> {
-    std::construct_at(std::addressof(_data._value), static_cast<As&&>(Args)...);
-    _has_value = true;
-  }
+    constexpr ~_union() {}
+    constexpr _union() noexcept : _none() {}
+  } _union{};
 
 public:
+  const_property<bool, optional> has_value = false;
+
+  constexpr ~optional() noexcept {
+    if (has_value()) _union._value.~T();
+  }
+
   constexpr optional() noexcept = default;
   constexpr optional(is_none auto) noexcept {}
 
-  constexpr optional(const optional& Other) requires constructible<T, const T&> {
-    if (Other) _construct(Other._data._value);
+  constexpr optional(const optional& o) requires constructible<T, const T&> {
+    if (o) new (&_union._value) T(o._union._value);
   }
-  constexpr optional(const optional&) requires(!constructible<T, const T&>) = delete;
 
-  constexpr optional(optional&& Other) noexcept(nt_constructible<T, T&&>) requires constructible<T, T&&> {
-    if (Other) _construct(static_cast<T&&>(Other._data._value));
+  constexpr optional(optional&& o) noexcept(nt_constructible<T, T&&>) requires constructible<T, T&&> {
+    if (o) new (&_union._value) T(static_cast<T&&>(o._union._value));
   }
-  constexpr optional(optional&&) requires(!constructible<T, T &&>) = delete;
 
-  template<typename U> requires (!same_as<remove_cvref<U>, optional, none>) && constructible<T, U>
-  constexpr optional(U&& Value) noexcept(nt_constructible<T, U>) : _data(static_cast<U&&>(Value)), _has_value(true) {}
-
-  template<typename... As> requires(sizeof...(As) != 1 && constructible<T, As...>)
-  constexpr optional(As&&... Args) noexcept(nt_constructible<T, As...>)
-    : _data(static_cast<As&&>(Args)...), _has_value(true) {}
-
-  constexpr ~optional() noexcept { reset(); }
+  template<typename... As> requires constructible<T, As...>
+  constexpr optional(As&&... as) noexcept(nt_constructible<T, As...>) {
+    new (&_union._value) T(static_cast<As&&>(as)...);
+    has_value = true;
+  }
 
   constexpr optional& operator=(is_none auto) noexcept {
-    reset();
+    if (has_value()) _union._value.~T();
+    has_value = false;
     return *this;
   }
 
-  constexpr optional& operator=(const optional& Other) requires constructible<T, const T&> && assignable<T&, const T&> {
-    if (this == &Other) return *this;
-    if (_has_value && Other._has_value) _data._value = Other._data._value;
-    else if (_has_value) reset();
-    else if (Other._has_value) _construct(Other._data._value);
+  constexpr optional& operator=(const optional& o) noexcept(
+    nt_constructible<T, const T&> && nt_assignable<T&, const T&>)
+    requires constructible<T, const T&> && assignable<T&, const T&> {
+    if (this == &o) return *this;
+    if (has_value() && o.has_value()) _union._value = o._union._value;
+    else if (has_value()) _union._value.~T();
+    else if (o.has_value()) new (&_union._value) T(o._union._value);
     return *this;
   }
-  constexpr optional& operator=(const optional& Other)
-    requires constructible<T, const T&> && (!assignable<T&, const T&>) {
-    if (this == &Other) return *this;
-    reset();
-    if (Other._has_value) _construct(Other._data._value);
-    return *this;
-  }
-  constexpr optional& operator=(const optional&) requires(!constructible<T, const T&>) = delete;
 
-  constexpr optional& operator=(optional&& Other) requires constructible<T, T&&> && assignable<T&, T&&> {
+  constexpr optional& operator=(optional&& Other) noexcept(nt_constructible<T, T> && nt_assignable<T&, T>)
+    requires constructible<T, T> && assignable<T&, T> {
     if (this == &Other) return *this;
-    if (_has_value && Other._has_value) _data._value = static_cast<T&&>(Other._data._value);
-    else if (_has_value) reset();
-    else if (Other._has_value) _construct(static_cast<T&&>(Other._data._value));
+    if (has_value() && Other.has_value()) _union._value = static_cast<T&&>(Other._union._value);
+    else if (has_value()) _union._value.~T();
+    else if (Other.has_value()) new (&_union._value) T(static_cast<T&&>(Other._union._value));
     return *this;
   }
-  constexpr optional& operator=(optional&& Other) requires constructible<T, T&&> && (!assignable<T&, T &&>) {
-    if (this == &Other) return *this;
-    reset();
-    if (Other._has_value) _construct(static_cast<T&&>(Other._data._value));
-    return *this;
-  }
-  constexpr optional& operator=(optional&&) requires(!constructible<T, T &&>) = delete;
 
-  template<typename U> requires (!same_as<remove_cvref<U>, optional, none>) && constructible<T, U>
-  constexpr optional& operator=(U&& Value) {
+  template<typename U> requires(!same_as<remove_cvref<U>, none>) && constructible<T, U> && assignable<T&, U>
+  constexpr optional& operator=(U&& Value) noexcept(nt_constructible<T, U> && nt_assignable<T&, U>) {
     if constexpr (assignable<T&, U>) {
-      if (_has_value) _data._value = static_cast<U&&>(Value);
-      else _construct(static_cast<U&&>(Value));
+      if (has_value()) _union._value = static_cast<U&&>(Value);
+      else new (&_union._value) T(static_cast<U&&>(Value));
     } else {
-      reset();
-      _construct(static_cast<U&&>(Value));
+      if (has_value()) _union._value.~T();
+      new (&_union._value) T(static_cast<U&&>(Value));
     }
     return *this;
   }
 
-  template<typename... As> requires constructible<T, As...> constexpr T& emplace(As&&... Args) {
-    reset();
-    _construct(static_cast<As&&>(Args)...);
-    return _data._value;
+  template<typename... As> requires constructible<T, As...>
+  constexpr T& emplace(As&&... as) noexcept(nt_constructible<T, As...>) {
+    if (has_value()) _union._value.~T();
+    new (&_union._value) T(static_cast<As&&>(as)...);
+    return _union._value;
   }
 
   constexpr void reset() noexcept {
-    if (!_has_value) return;
-    std::destroy_at(std::addressof(_data._value));
-    std::construct_at(std::addressof(_data._none));
-    _has_value = false;
+    if (!has_value()) return;
+    _union._value.~T();
+    has_value = false;
   }
 
-  constexpr bool has_value() const noexcept { return _has_value; }
-  constexpr bool empty() const noexcept { return !_has_value; }
-  explicit constexpr operator bool() const noexcept { return _has_value; }
+  explicit constexpr operator bool() const noexcept { return has_value(); }
 
-  constexpr auto get_if(this auto&& self) noexcept {
-    if (!self._has_value) return static_cast<copy_cv<remove_ref<decltype(self)>, T>*>(nullptr);
-    return std::addressof(static_cast<decltype(self)&&>(self)._data._value);
+  template<typename Self> constexpr auto get_if(this Self&& self) noexcept {
+    if (!self.has_value()) return static_cast<copy_cv<remove_ref<Self>, T>*>(nullptr);
+    return std::addressof(static_cast<Self&&>(self)._union._value);
   }
 
-  constexpr decltype(auto) value(this auto&& self) noexcept {
-    return static_cast<copy_cvref<decltype(self), T>>(static_cast<decltype(self)&&>(self)._data._value);
+  template<typename Self> constexpr auto&& value(this Self&& self) noexcept {
+    if (!self.has_value()) yw::error("attempted to access value of empty optional").print_and_abort();
+    return static_cast<copy_cvref<Self, T>>(static_cast<Self&&>(self)._union._value);
   }
 
-  constexpr auto value_or(this auto&& self, T Default) noexcept {
-    if (!self._has_value) return Default;
-    else return T(static_cast<copy_cvref<decltype(self), T>>(static_cast<decltype(self)&&>(self)._data._value));
+  template<typename Self> constexpr auto value_or(this Self&& self, T Default) noexcept {
+    if (!self.has_value()) return Default;
+    else return T(static_cast<copy_cvref<Self, T>>(static_cast<Self&&>(self)._union._value));
   }
 
-  constexpr auto operator*(this auto&& self) noexcept {
-    return static_cast<decltype(self)&&>(self).value();
-  }
+  constexpr T& operator*() & noexcept { return value(); }
+  constexpr const T& operator*() const & noexcept { return value(); }
+  constexpr T&& operator*() && noexcept { return value(); }
+  constexpr const T&& operator*() const && noexcept { return value(); }
 
-  constexpr auto operator->() noexcept { return std::addressof(_data._value); }
-  constexpr auto operator->() const noexcept { return std::addressof(_data._value); }
+  constexpr T* operator->() noexcept { return std::addressof(value()); }
+  constexpr const T* operator->() const noexcept { return std::addressof(value()); }
 };
 
 template<typename T> optional(T) -> optional<T>;
