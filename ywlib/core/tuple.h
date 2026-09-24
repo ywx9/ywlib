@@ -317,6 +317,24 @@ template<> struct tuple<> {
 };
 
 template<typename... Ts> tuple(Ts...) -> tuple<Ts...>;
+
+///--------------------------------------------------------------------------///
+/// MARK: projector
+
+template<is_reference Rf, typename Pj, variation_of<sequence<>> Sq> struct projector {
+  Rf ref;
+  Pj proj;
+  Sq seq;
+
+  template<castable_to<Rf> R, castable_to<Pj> P, is_sequence<size_t> S>
+  constexpr projector(R&& r, P&& p, S&& s) noexcept
+    : ref(static_cast<Rf>(static_cast<R&&>(r))), proj(static_cast<Pj>(static_cast<P&&>(p))),
+      seq(to_sequence<remove_cvref<S>, size_t>()) {}
+
+  template<castable_to<Rf> R, castable_to<Pj> P> requires tuple_like<R>
+  constexpr projector(R&& r, P&& p) noexcept
+    : ref(static_cast<Rf>(static_cast<R&&>(r))), proj(static_cast<Pj>(static_cast<P&&>(p))), seq(indices_for<R>()) {}
+};
 } // namespace yw
 
 namespace std {

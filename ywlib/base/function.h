@@ -91,7 +91,7 @@ public:
   }
 
   /// construct from a large function object (use heap allocation)
-  template<invocable_r<R, As...> F> requires(sizeof(F) > sizeof(_union) && !is_pointer<F>)
+  template<invocable_r<R, As...> F> requires(sizeof(F) > sizeof(_union) && !is_pointer<F> && !is_function<F>)
   constexpr function(F&& f) noexcept(nt_constructible<remove_cvref<F>, F>) {
     using G = remove_cvref<F>;
     using H = char[sizeof(G)];
@@ -122,9 +122,9 @@ public:
   }
 
   /// construct from a small function object
-  template<invocable_r<R, As...> F>
-  requires(sizeof(remove_cvref<F>) <= sizeof(_union) && alignof(remove_cvref<F>) <= alignof(_union) && !is_pointer<F>)
-  constexpr function(F&& f) noexcept(nt_constructible<remove_cvref<F>, F>) {
+  template<invocable_r<R, As...> F> requires(
+    sizeof(remove_cvref<F>) <= sizeof(_union) && alignof(remove_cvref<F>) <= alignof(_union) && !is_pointer<F> &&
+    !is_function<F>) constexpr function(F&& f) noexcept(nt_constructible<remove_cvref<F>, F>) {
     using G = remove_cvref<F>;
     struct traits : _traits {
       constexpr traits() noexcept {

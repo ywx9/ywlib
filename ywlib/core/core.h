@@ -49,9 +49,9 @@ int fputs(const char*, FILE*);
 void abort();
 }
 
-namespace __gnu_cxx {
-void __trap_terminate_handler() { __builtin_trap(); }
-} // namespace __gnu_cxx
+// namespace __gnu_cxx {
+// void __trap_terminate_handler() { __builtin_trap(); }
+// } // namespace __gnu_cxx
 
 namespace yw {
 
