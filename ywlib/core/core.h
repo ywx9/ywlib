@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <compare>
 #include <concepts>
@@ -19,11 +20,6 @@
 #include <type_traits>
 #include <utility>
 
-#ifdef assert
-#undef assert
-#define assert(condition) contract_assert(condition)
-#endif
-
 static_assert(std::endian::native == std::endian::little, "YWLIB requires a little-endian architecture.");
 
 #ifdef __cpp_lib_text_encoding
@@ -32,10 +28,30 @@ static_assert(
   std::text_encoding::literal() == std::text_encoding::id::UTF8, "YWLIB requires a UTF-8 execution character set.");
 #endif
 
+#ifdef __EXCEPTIONS
+#define ywlib_try try
+#define ywlib_catch(...) catch (__VA_ARGS__)
+#else
+#define ywlib_try if (true)
+#define ywlib_catch(...) if (false)
+#endif
+
+#ifdef __cpp_lib_contracts
+#define ywlib_pre(expr) pre(expr)
+#define ywlib_post(expr) post(expr)
+#else
+#define ywlib_pre(expr)
+#define ywlib_post(expr)
+#endif
+
 extern "C" {
 int fputs(const char*, FILE*);
 void abort();
 }
+
+namespace __gnu_cxx {
+void __trap_terminate_handler() { __builtin_trap(); }
+} // namespace __gnu_cxx
 
 namespace yw {
 
@@ -438,13 +454,15 @@ template<typename F, typename... As> requires invocable<F, As...>
 using invoke_result = decltype(invoke(declval<F>(), declval<As>()...));
 
 template<typename F, typename R, typename... As> concept invocable_r =
-  invocable<F, As...> && convertible_to<std::invoke_result_t<F, As...>, R>;
+  invocable<F, As...> && (is_void<R> || convertible_to<invoke_result<F, As...>, R>);
 template<typename F, typename R, typename... As> concept nt_invocable_r =
-  nt_invocable<F, As...> && nt_convertible_to<std::invoke_result_t<F, As...>, R>;
+  nt_invocable<F, As...> && nt_convertible_to<invoke_result<F, As...>, R>;
 
 template<typename R> inline constexpr auto invoke_r = []<typename F, typename... As>(F&& f, As&&... as) //
-  noexcept(nt_invocable_r<F, R, As...>) requires invocable_r<F, R, As...>
-{ return std::invoke_r<R>(static_cast<F&&>(f), static_cast<As&&>(as)...); };
+  noexcept(nt_invocable_r<F, R, As...>) -> R requires invocable_r<F, R, As...> {
+  if constexpr (is_void<R>) static_cast<void>(invoke(static_cast<F&&>(f), static_cast<As&&>(as)...));
+  else return static_cast<R>(invoke(static_cast<F&&>(f), static_cast<As&&>(as)...));
+};
 
 /// MARK: Range
 
@@ -542,9 +560,8 @@ template<typename T, size_t I> requires gettable<T, I> using element_t = decltyp
 /// print an error message to stderr.
 /// \note In constant evaluation, this function will occur a compile-time error if called.
 inline constexpr void print_error(const char* msg) noexcept {
-  try {
-    ::fputs(msg, stderr);
-  } catch (...) {}
+  ywlib_try { ::fputs(msg, stderr); }
+  ywlib_catch(...) {}
 }
 
 /// print an error message to stderr and abort the program.
@@ -554,16 +571,28 @@ inline constexpr void print_error(const char* msg) noexcept {
   ::abort();
 }
 
+namespace internal {
+template<typename T> union _allocate_union {
+  none _none;
+  T _t;
+  constexpr ~_allocate_union() noexcept {}
+  constexpr _allocate_union() noexcept : _none() {}
+};
+} // namespace internal
+
 template<typename T> inline constexpr auto allocate = [](size_t n = 1) noexcept -> T* {
-  try {
-    return new T[n];
-  } catch (...) {
+  ywlib_try {
+    auto p = new internal::_allocate_union<T>[n];
+    return &(p->_t);
+  }
+  ywlib_catch(...) {
     fatal_error("failed to allocate memory");
     return nullptr;
   }
 };
 
-inline constexpr auto deallocate = [](auto* p) noexcept { delete[] p; };
+inline constexpr auto deallocate = []<typename T>(
+                                     T* p) noexcept { delete[] reinterpret_cast<internal::_allocate_union<T>*>(p); };
 } // namespace yw
 
 namespace std {

@@ -42,6 +42,7 @@ inline constexpr error_type invalid_argument{};
 inline constexpr error_type invalid_operation{};
 inline constexpr error_type operation_failed{};
 inline constexpr error_type unreachable{};
+inline constexpr error_type contract_violation{};
 } // namespace errors
 
 struct error {
@@ -115,9 +116,14 @@ struct error {
     } else ::fputs("no error\n", stderr);
   }
 
-  static constexpr void print_and_abort(const char* msg = "fatal error: ") noexcept {
+  static constexpr void print_and_abort(const char* msg, std::source_location sl = here()) noexcept {
+    add_footprint(sl);
     print(msg);
     ::abort();
+  }
+
+  static constexpr void print_and_abort(std::source_location sl = here()) noexcept {
+    print_and_abort("fatal error: ", sl);
   }
 
   constexpr void ignore() noexcept {
@@ -231,13 +237,15 @@ public:
     }
   }
 
+  constexpr result(is_none auto) noexcept {}
+
   template<typename... As> requires constructible<yw::error, As...>
   constexpr result(As&&... as) noexcept(nt_constructible<yw::error, As...>) {
     new (&_union._error) yw::error(static_cast<As&&>(as)...);
     has_error = true;
   }
 
-  explicit constexpr operator bool() const noexcept { return false; }
+  explicit constexpr operator bool() const noexcept { return !has_error(); }
 
   template<typename Self> constexpr auto&& error(this Self&& self) noexcept {
     if (!self.has_error()) yw::error("attempted to access error of result when it has no error").print_and_abort();
@@ -245,3 +253,9 @@ public:
   }
 };
 } // namespace yw
+
+#ifdef __cpp_lib_contracts
+inline void handle_contract_violation(const std::contracts::contract_violation& v) {
+  yw::error(yw::errors::contract_violation, v.comment(), v.location()).print_and_abort("contract violation: ");
+}
+#endif

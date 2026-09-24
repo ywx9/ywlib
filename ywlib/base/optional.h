@@ -1,5 +1,7 @@
 #pragma once
 #include <core/core.h>
+#include <core/result.h>
+#include <core/property.h>
 
 namespace yw {
 

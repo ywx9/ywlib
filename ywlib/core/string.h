@@ -14,6 +14,11 @@ inline constexpr auto is_xdigit = []<char_type C>(C c) noexcept {
   return is_digit(c) || (('a' <= c && c <= 'f') || ('A' <= c && c <= 'F'));
 };
 
+template<char_type C> inline constexpr const C empty_string[]{0};
+
+///--------------------------------------------------------------------------///
+/// MARK: string_view
+
 template<char_type C> struct string_view {
   static_assert(same_as<C, remove_cv<C>>);
   using value_type = C;
@@ -29,9 +34,9 @@ template<char_type C> struct string_view {
 
   string_view(decltype(nullptr)) = delete;
 
-  constexpr string_view(const C* s) noexcept pre(s != nullptr) : data(s), size(std::char_traits<C>::length(s)) {}
+  constexpr string_view(const C* s) noexcept ywlib_pre(s != nullptr) : data(s), size(std::char_traits<C>::length(s)) {}
 
-  constexpr string_view(const C* s, size_t n) noexcept pre(s != nullptr) : data(s), size(n) {}
+  constexpr string_view(const C* s, size_t n) noexcept ywlib_pre(s != nullptr) : data(s), size(n) {}
 
   template<contiguous_iterator<C> It, sized_sentinel_for<It> S> //
   constexpr string_view(It i, S s) noexcept : data(std::to_address(i)), size(s - i) {}
@@ -40,28 +45,24 @@ template<char_type C> struct string_view {
   constexpr string_view(Rg&& r) noexcept : string_view(yw::data(r), yw::size(r)) {}
 
   constexpr bool empty() const noexcept { return size == 0; }
-  constexpr const C* c_str() const noexcept { return data; }
+  constexpr const C* c_str() const noexcept { return data() ? data() : empty_string<C>; }
   constexpr const C* begin() const noexcept { return data; }
   constexpr const C* end() const noexcept { return data + size; }
-  constexpr C operator[](size_t i) const noexcept pre(i < size) { return data[i]; }
-  constexpr C front() const noexcept pre(size > 0) { return data[0]; }
-  constexpr C back() const noexcept pre(size > 0) { return data[size - 1]; }
+  constexpr C operator[](size_t i) const noexcept ywlib_pre(i < size) { return data[i]; }
+  constexpr C front() const noexcept ywlib_pre(size > 0) { return data[0]; }
+  constexpr C back() const noexcept ywlib_pre(size > 0) { return data[size - 1]; }
 
-  constexpr void remove_prefix(size_t n) noexcept pre(n <= size) { data += n, size -= n; }
-  constexpr void remove_suffix(size_t n) noexcept pre(n <= size) { size -= n; }
+  constexpr void remove_prefix(size_t n) noexcept ywlib_pre(n <= size) { data += n, size -= n; }
+  constexpr void remove_suffix(size_t n) noexcept ywlib_pre(n <= size) { size -= n; }
   constexpr void swap(string_view& o) noexcept {
-    auto data_temp = data();
-    data = o.data();
-    o.data = data_temp;
-    auto size_temp = size();
-    size = o.size();
-    o.size = size_temp;
+    std::ranges::swap(data.ref(), o.data.ref());
+    std::ranges::swap(size.ref(), o.size.ref());
   }
 
-  constexpr string_view substr(size_t pos, size_t n = npos) const noexcept pre(pos <= size()) {
+  constexpr string_view substr(size_t pos, size_t n = npos) const noexcept ywlib_pre(pos <= size()) {
     return string_view(data() + pos, yw::min(n, size() - pos));
   }
-  constexpr string_view subview(size_t pos, size_t n = npos) const noexcept pre(pos <= size()) {
+  constexpr string_view subview(size_t pos, size_t n = npos) const noexcept ywlib_pre(pos <= size()) {
     return string_view(data() + pos, yw::min(n, size() - pos));
   }
 };
@@ -107,13 +108,14 @@ constexpr auto operator<=>(S&& a, const string_view<C>& b) noexcept {
   return string_view<C>(static_cast<S&&>(a)) <=> b;
 }
 
-template<char_type C> inline constexpr const C empty_string[]{0};
-
 namespace internal {
 inline constexpr size_t _string_preferred_capacity(size_t Size) noexcept {
   return yw::max(Size + 1, 2 * std::bit_ceil(Size), size_t(256));
 }
 } // namespace internal
+
+///--------------------------------------------------------------------------///
+/// MARK: string
 
 template<char_type C> class string {
   static_assert(same_as<C, remove_cv<C>>);
@@ -193,7 +195,7 @@ public:
   constexpr auto view() const noexcept { return string_view<C>{data(), size()}; }
 
   constexpr bool empty() const noexcept { return size() == 0; }
-  constexpr const C* c_str() const noexcept { return data(); }
+  constexpr const C* c_str() const noexcept { return data() ? data() : empty_string<C>; }
   constexpr C* begin() noexcept { return data(); }
   constexpr const C* begin() const noexcept { return data(); }
   constexpr C* end() noexcept { return data() + size(); }
@@ -233,11 +235,12 @@ public:
     if (data()) data.ref()[size()] = C();
   }
 
-  constexpr void push_back(C c) noexcept {
+  constexpr string& push_back(C c) noexcept {
     reserve(size() + 1);
     data()[size()] = c;
     size = size() + 1;
     data.ref()[size()] = C();
+    return *this;
   }
 
   constexpr string& append(stringable<C> auto&& s) noexcept {
@@ -324,6 +327,9 @@ constexpr auto operator<=>(S&& a, const string<C>& b) noexcept {
   return string_view<C>(static_cast<S&&>(a)) <=> string_view<C>(b);
 }
 
+///--------------------------------------------------------------------------///
+/// MARK: vtos
+
 namespace internal {
 inline constexpr size_t _bool_to_str_sufficient_buffer_size = 5;
 template<char_type C> constexpr C* _bool_to_str(bool b, C* o) noexcept {
@@ -344,8 +350,9 @@ template<char_type C> constexpr C* _uint_to_str(uint64_t u, C* o) noexcept {
 }
 inline constexpr size_t _int_to_str_sufficient_buffer_size = 20;
 template<char_type C> constexpr C* _int_to_str(int64_t i, C* o) noexcept {
-  if (i < 0) *o++ = '-', i = -i;
-  return _uint_to_str(static_cast<uint64_t>(i), o);
+  if (i >= 0) return _uint_to_str(static_cast<uint64_t>(i), o);
+  *o++ = '-';
+  return _uint_to_str(uint64_t(-(i + 1)) + 1, o);
 }
 inline constexpr size_t _float_to_str_sufficient_buffer_size = 32;
 template<char_type C> constexpr C* _float_to_str(long double f, C* o) noexcept {
@@ -399,17 +406,82 @@ template<char_type C> constexpr string<C> vtos(arithmetic auto v) noexcept {
   string<C> result;
   if constexpr (is_bool<T>) {
     result.resize(internal::_bool_to_str_sufficient_buffer_size);
-    internal::_bool_to_str(v, result.data());
+    result.resize(internal::_bool_to_str(v, result.data()) - result.data());
   } else if constexpr (float_type<T>) {
     result.resize(internal::_float_to_str_sufficient_buffer_size);
-    internal::_float_to_str(v, result.data());
+    result.resize(internal::_float_to_str(v, result.data()) - result.data());
   } else if constexpr (unsigned_integral<T>) {
     result.resize(internal::_uint_to_str_sufficient_buffer_size);
-    internal::_uint_to_str(v, result.data());
+    result.resize(internal::_uint_to_str(v, result.data()) - result.data());
   } else if constexpr (signed_integral<T>) {
     result.resize(internal::_int_to_str_sufficient_buffer_size);
-    internal::_int_to_str(v, result.data());
+    result.resize(internal::_int_to_str(v, result.data()) - result.data());
   } else static_assert(always_false<T>, "Unsupported arithmetic type for vtos.");
   return result;
 }
+
+///--------------------------------------------------------------------------///
+/// MARK: unicode
+
+namespace internal {
+inline constexpr char32_t _unicode_s8_to_c32(const auto*& s) noexcept {
+  const auto c = char32_t(*s);
+  const auto i = unsigned(c >= 0xc0) + unsigned(c >= 0xe0) + unsigned(c >= 0xf0);
+  const auto j = i + 1 + unsigned(i != 0);
+  char32_t uc = char32_t(-int(i == 3) & s[i < 3 ? i : 3] & 0x3f);
+  uc |= char32_t((-int(i >= 2) & s[i < 2 ? i : 2] & 0x3f)) << (6 * (i >= 2 ? i - 2 : 0));
+  uc |= char32_t((-int(i >= 1) & s[i < 1 ? i : 1] & 0x3f)) << (6 * (i >= 1 ? i - 1 : 0));
+  uc |= char32_t(char8_t(c << j) >> j) << (6 * i);
+  s += i + 1;
+  return uc;
+}
+inline constexpr char32_t _unicode_s16_to_c32(const auto*& s) noexcept {
+  const auto c = char32_t(*s);
+  const bool b = (c & 0xff00) == 0xd800;
+  const auto uc = c ^ (-int(b) & (c ^ (0x10000 | ((c - 0xd800) << 10 | char32_t(s[b] - 0xdc00)))));
+  s += 1 + b;
+  return uc;
+}
+template<char_type C> inline constexpr void _unicode_c32_to_s8(char32_t uc, C*& s) noexcept {
+  const auto i = unsigned(uc >= 0x80) + unsigned(uc >= 0x800) + unsigned(uc >= 0x10000);
+  s[i < 3 ? i : 3] = C(0x80 | (uc & 0x3f));
+  s[i < 2 ? i : 2] = C(0x80 | ((uc >> (6 * (i > 1 ? i - 2 : 0))) & 0x3f));
+  s[i < 1 ? i : 1] = C(0x80 | ((uc >> (6 * (i > 0 ? i - 1 : 0))) & 0x3f));
+  *s = C(uint32_t(((i + (i >> 1)) << 4) + (-i & 0xb0)) | ((uc >> (6 * i)) & (0x3f >> i | -int(i == 0))));
+  s += i + 1;
+}
+template<char_type C> inline constexpr void _unicode_c32_to_s16(char32_t uc, C*& s) noexcept {
+  const bool b = uc >= 0x10000;
+  s[b] = C(0xdc00 | (uc & 0x3ff));
+  *s = C(uc ^ ((uc ^ (0xd800 | (uc >> 10))) & -int(b)));
+  s += 1 + b;
+}
+template<char_type In, char_type Out> constexpr Out* _unicode(const In* i, size_t n, Out* o) {
+  for (auto s = i, end = i + n; s < end;) {
+    char32_t uc;
+    if constexpr (same_as<In, char8_t>) uc = _unicode_s8_to_c32(s);
+    else if constexpr (same_as<In, char16_t>) uc = _unicode_s16_to_c32(s);
+    else uc = char32_t(*s++);
+    if constexpr (same_as<Out, char8_t>) _unicode_c32_to_s8(uc, o);
+    else if constexpr (same_as<Out, char16_t>) _unicode_c32_to_s16(uc, o);
+    else *o++ = Out(uc);
+  }
+  return o;
+}
+} // namespace internal
+
+template<typename C> requires char_type<C> inline constexpr auto unicode = []<stringable S>(S&& s) -> string<C> {
+  using From = iter_value_t<S>;
+  if constexpr (same_as<S&&, string<C>&&>) return move(s);
+  if constexpr (same_as<From, C>) return string(string_view<C>(s));
+  const auto sv_original = string_view<From>(s);
+  if constexpr (sizeof(From) == sizeof(C)) return string(bitcast<string_view<C>>(sv_original));
+  using T = select_type<sizeof(From) / 2, char8_t, char16_t, char32_t>;
+  const auto sv = bitcast<string_view<T>>(sv_original);
+  constexpr auto scale = select<yw::max(int(sizeof(T)) - int(sizeof(C)), 0)>(1, 3, 2, 4);
+  auto r = string<C>(sv.size() * scale, C{});
+  auto out = internal::_unicode(sv.data(), sv.size(), r.data());
+  r.resize(out - r.data());
+  return r;
+};
 } // namespace yw
