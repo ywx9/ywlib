@@ -20,8 +20,8 @@ template<typename T, typename U = none> using to_sequence = internal::_to_sequen
 template<typename T, typename U = none> concept is_sequence = !is_void<to_sequence<T, U>>;
 
 namespace internal {
-template<typename Sq, size_t N> inline constexpr bool _indices_for{false};
-template<size_t... Is, size_t N> inline constexpr bool _indices_for<sequence<Is...>, N>{(sizeof...(Is) < N)};
+template<typename Sq, size_t N> inline constexpr bool _indices_for = false;
+template<size_t... Is, size_t N> inline constexpr bool _indices_for<sequence<Is...>, N> = ((Is < N) && ...);
 } // namespace internal
 
 template<typename Sq, typename Tp> concept indices_for = internal::_indices_for<to_sequence<Sq, size_t>, extent<Tp>>;
@@ -321,20 +321,56 @@ template<typename... Ts> tuple(Ts...) -> tuple<Ts...>;
 ///--------------------------------------------------------------------------///
 /// MARK: projector
 
-template<is_reference Rf, typename Pj, variation_of<sequence<>> Sq> struct projector {
+template<is_reference Rf, typename Pj, variation_of<sequence<>> Sq> struct projector;
+
+template<is_reference Rf, typename Pj, size_t... Is> //
+requires tuple_like<Rf> && indices_for<sequence<Is...>, Rf> struct projector<Rf, Pj, sequence<Is...>> {
   Rf ref;
   Pj proj;
-  Sq seq;
+  constexpr projector(Rf r, Pj p) noexcept(nt_constructible<Pj, Pj>) requires constructible<Pj, Pj>
+    : ref(static_cast<Rf>(r)), proj(static_cast<Pj>(p)) {}
+  template<indices_for<Rf> S> constexpr projector(Rf r, Pj p, S) noexcept(nt_constructible<Pj, Pj>)
+    requires constructible<Pj, Pj>
+    : ref(static_cast<Rf>(r)), proj(static_cast<Pj>(p)) {}
+  template<indices_for<Rf> S> requires constructible<Pj>
+  constexpr projector(Rf r, S) noexcept(nt_constructible<Pj>) : ref(static_cast<Rf>(r)), proj() {}
 
-  template<castable_to<Rf> R, castable_to<Pj> P, is_sequence<size_t> S>
-  constexpr projector(R&& r, P&& p, S&& s) noexcept
-    : ref(static_cast<Rf>(static_cast<R&&>(r))), proj(static_cast<Pj>(static_cast<P&&>(p))),
-      seq(to_sequence<remove_cvref<S>, size_t>()) {}
-
-  template<castable_to<Rf> R, castable_to<Pj> P> requires tuple_like<R>
-  constexpr projector(R&& r, P&& p) noexcept
-    : ref(static_cast<Rf>(static_cast<R&&>(r))), proj(static_cast<Pj>(static_cast<P&&>(p))), seq(indices_for<R>()) {}
+  template<size_t I, typename Self> requires(lt(I, sizeof...(Is)))
+  constexpr decltype(auto) get(this Self&& self) noexcept(nt_invocable<Pj&, element_t<Rf&, Is...[I]>>) {
+    return yw::invoke(self.proj, yw::get<Is...[I]>(static_cast<copy_ref_weak<Self&&, Rf>>(self.ref)));
+  }
 };
+
+template<tuple_like R, vapplyable<R> P, indices_for<R> S> //
+projector(R&&, P&&, S) -> projector<R&&, P&&, to_sequence<S, size_t>>;
+template<tuple_like R, vapplyable<R> P> requires(!is_sequence<P>)
+projector(R&&, P&&) -> projector<R&&, P&&, make_indices_for<R>>;
+template<tuple_like R, indices_for<R> S> projector(R&&, S) -> projector<R&&, pass, to_sequence<S, size_t>>;
+
+template<is_reference Rf, typename Pj, size_t... Is> requires(!tuple_like<Rf>)
+struct projector<Rf, Pj, sequence<Is...>> {
+  Rf ref;
+  Pj proj;
+  constexpr projector(Rf r, Pj p) noexcept(nt_constructible<Pj, Pj>) requires constructible<Pj, Pj>
+    : ref(static_cast<Rf>(r)), proj(static_cast<Pj>(p)) {}
+  template<is_sequence<size_t> S> constexpr projector(Rf r, Pj p, S) noexcept(nt_constructible<Pj, Pj>)
+    requires constructible<Pj, Pj>
+    : ref(static_cast<Rf>(r)), proj(static_cast<Pj>(p)) {}
+  template<is_sequence<size_t> S> constexpr projector(Rf r, S) noexcept(nt_constructible<Pj>) requires constructible<Pj>
+    : ref(static_cast<Rf>(r)), proj() {}
+
+  template<size_t I, typename Self> requires(lt(I, sizeof...(Is)))
+  constexpr decltype(auto) get(this Self&& self) noexcept(nt_invocable<Pj&, element_t<Rf&, Is...[I]>>) {
+    return yw::invoke(self.proj, static_cast<copy_ref_weak<Self&&, Rf>>(self.ref));
+  }
+};
+
+template<typename R, vapplyable<R> P, is_sequence<size_t> S> requires(!tuple_like<R>)
+projector(R&&, P&&, S) -> projector<R&&, P&&, to_sequence<S, size_t>>;
+template<typename R, vapplyable<R> P> requires(!tuple_like<R> && !is_sequence<P>)
+projector(R&&, P&&) -> projector<R&&, P&&, sequence<static_cast<size_t>(0)>>;
+template<typename R, is_sequence<size_t> S> requires(!tuple_like<R>)
+projector(R&&, S) -> projector<R&&, pass, to_sequence<S, size_t>>;
 } // namespace yw
 
 namespace std {
@@ -342,6 +378,8 @@ namespace std {
 template<auto... Ts> struct tuple_size<yw::sequence<Ts...>> : integral_constant<size_t, sizeof...(Ts)> {};
 template<typename... Ts> struct tuple_size<yw::typepack<Ts...>> : integral_constant<size_t, sizeof...(Ts)> {};
 template<typename... Ts> struct tuple_size<yw::tuple<Ts...>> : integral_constant<size_t, sizeof...(Ts)> {};
+template<typename R, typename P, size_t... Is> struct tuple_size<yw::projector<R, P, yw::sequence<Is...>>>
+  : integral_constant<size_t, sizeof...(Is)> {};
 
 template<size_t I, auto... Ts> struct tuple_element<I, yw::sequence<Ts...>>
   : type_identity<yw::select_type<I, decltype(Ts)...>> {};
@@ -349,4 +387,9 @@ template<size_t I, typename... Ts> struct tuple_element<I, yw::typepack<Ts...>>
   : type_identity<yw::select_type<I, Ts...>> {};
 template<size_t I, typename... Ts> struct tuple_element<I, yw::tuple<Ts...>>
   : type_identity<yw::select_type<I, Ts...>> {};
+template<size_t I, yw::tuple_like R, typename P, size_t... Is>
+struct tuple_element<I, yw::projector<R, P, yw::sequence<Is...>>>
+  : type_identity<yw::invoke_result<P&, yw::element_t<R, Is... [I]>>> {};
+template<size_t I, typename R, typename P, size_t... Is> requires(!yw::tuple_like<R>)
+struct tuple_element<I, yw::projector<R, P, yw::sequence<Is...>>> : type_identity<yw::invoke_result<P&, R>> {};
 } // namespace std

@@ -398,7 +398,8 @@ template<bool Max, arithmetic T, arithmetic U> constexpr auto _max(T a, U b) noe
   } else if constexpr (using V = decltype(a + b); float_type<V> || signed_integral<V>) return _max<Max>(V(a), V(b));
   else if constexpr (unsigned_integral<T> && unsigned_integral<U>) return _max<Max>(V(a), V(b));
   else if constexpr (Max) return _max<Max>(uint_cast(clamp_negative(a)), uint_cast(clamp_negative(b)));
-  else return _max<Max>(int_cast(clamp_positive(a)), int_cast(clamp_positive(b)));
+  else if constexpr (unsigned_integral<T>) return _max<Max>(int_cast(a & (T(-1) >> 1)), b);
+  else return _max<Max>(a, int_cast(b & (U(-1) >> 1)));
 }
 } // namespace internal
 
@@ -432,7 +433,9 @@ template<typename T, typename To> using copy_volatile =
 template<typename T, typename To> using copy_cv = copy_const<T, copy_volatile<T, To>>;
 template<typename T, typename To> using copy_ref =
   select_type<inspect(is_lvref<T>, is_rvref<T>), add_lvref<To>, add_rvref<To>, remove_ref<To>>;
+template<typename T, typename To> using copy_ref_weak = select_type<inspect(is_lvref<T>, is_rvref<T>), To&, To&&, To>;
 template<typename T, typename To> using copy_cvref = copy_ref<T, copy_cv<remove_ref<T>, remove_ref<To>>>;
+template<typename T, typename To> using copy_cvref_weak = copy_ref_weak<T, copy_cv<remove_ref<T>, remove_ref<To>>>;
 
 template<typename... Ts> using common_type = select_type<requires {
   typename std::common_reference<Ts...>::type;

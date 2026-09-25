@@ -401,8 +401,7 @@ template<char_type C> constexpr C* _float_to_str(long double f, C* o) noexcept {
 }
 } // namespace internal
 
-template<char_type C> constexpr string<C> vtos(arithmetic auto v) noexcept {
-  using T = decltype(v);
+template<char_type C> inline constexpr auto vtos = []<arithmetic T>(T v) noexcept -> string<C> {
   string<C> result;
   if constexpr (is_bool<T>) {
     result.resize(internal::_bool_to_str_sufficient_buffer_size);
@@ -418,7 +417,129 @@ template<char_type C> constexpr string<C> vtos(arithmetic auto v) noexcept {
     result.resize(internal::_int_to_str(v, result.data()) - result.data());
   } else static_assert(always_false<T>, "Unsupported arithmetic type for vtos.");
   return result;
+};
+
+///--------------------------------------------------------------------------///
+/// MARK: stov
+
+template<arithmetic T> struct stov_result {
+  T value;
+  size_t last; // position of the last character processed in the input string.
+  constexpr operator T() const noexcept { return value; }
+};
+
+namespace internal {
+constexpr stov_result<uint64_t> _stov_uint(string_view<char> sv, bool& ok) noexcept;
+constexpr stov_result<bool> _stov_bool(string_view<char> sv, bool& ok) noexcept {
+  if (sv.size() >= 4 && sv[0] == 't' && sv[1] == 'r' && sv[2] == 'u' && sv[3] == 'e') return {true, 4};
+  if (sv.size() >= 5 && sv[0] == 'f' && sv[1] == 'a' && sv[2] == 'l' && sv[3] == 's' && sv[4] == 'e') return {false, 5};
+  const auto result = _stov_uint(sv, ok);
+  return {result.value != 0, result.last};
 }
+constexpr stov_result<uint64_t> _stov_uint(string_view<char> sv, bool& ok) noexcept {
+  uint64_t value = 0;
+  size_t i = 0;
+  for (; i < sv.size() && is_digit(sv[i]); ++i) {
+    const auto digit = uint64_t(sv[i] - '0');
+    constexpr auto max = std::numeric_limits<uint64_t>::max();
+    if (value > max / 10 || (value == max / 10 && digit > max % 10)) value = max;
+    else value = value * 10 + digit;
+  }
+  ok = i != 0;
+  return {value, i};
+}
+constexpr stov_result<long double> _stov_float(string_view<char> sv, bool& ok) noexcept {
+  if (sv.size() >= 3 && sv[0] == 'n' && sv[1] == 'a' && sv[2] == 'n')
+    return {std::numeric_limits<long double>::quiet_NaN(), 3};
+  if (sv.size() >= 3 && sv[0] == 'i' && sv[1] == 'n' && sv[2] == 'f')
+    return {std::numeric_limits<long double>::infinity(), 3};
+
+  long double value = 0;
+  size_t i = 0;
+  bool has_digits = false;
+  for (; i < sv.size() && is_digit(sv[i]); ++i) {
+    has_digits = true;
+    value = value * 10 + (sv[i] - '0');
+  }
+  if (i < sv.size() && sv[i] == '.') {
+    long double scale = 1;
+    ++i;
+    for (; i < sv.size() && is_digit(sv[i]); ++i) {
+      has_digits = true;
+      scale *= 0.1L;
+      value += (sv[i] - '0') * scale;
+    }
+  }
+  if (!has_digits) {
+    ok = false;
+    return {};
+  }
+  if (i < sv.size() && (sv[i] == 'e' || sv[i] == 'E')) {
+    const auto exp_pos = i;
+    ++i;
+    const bool exp_negative = i < sv.size() && sv[i] == '-';
+    if (i < sv.size() && (sv[i] == '-' || sv[i] == '+')) ++i;
+    bool exp_ok = true;
+    const auto exp = _stov_uint({sv.data() + i, sv.size() - i}, exp_ok);
+    if (exp_ok) {
+      i += exp.last;
+      for (uint64_t n = exp.value; n > 0; --n) {
+        if (exp_negative) value *= 0.1L;
+        else value *= 10;
+      }
+    } else i = exp_pos;
+  }
+  return {value, i};
+}
+template<arithmetic T> constexpr stov_result<T> _stov(string_view<char> sv) noexcept {
+  bool ok = true;
+  if constexpr (is_bool<T>) {
+    const auto res = internal::_stov_bool(sv, ok);
+    if (!ok) return {.value = {}, .last = 0};
+    return res;
+  } else if constexpr (unsigned_integral<T>) {
+    const auto res = internal::_stov_uint(sv, ok);
+    if (!ok) return {.value = {}, .last = 0};
+    return {.value = static_cast<T>(yw::min(res.value, std::numeric_limits<T>::max())), .last = res.last};
+  } else {
+    const bool negative = sv.size() > 0 && sv[0] == '-';
+    if constexpr (signed_integral<T>) {
+      const auto body = negative ? string_view<char>(sv.data() + 1, sv.size() - 1) : sv;
+      const auto res = internal::_stov_uint(body, ok);
+      if (!ok) return {.value = {}, .last = 0};
+      if (negative) {
+        if (res.value > std::numeric_limits<T>::max())
+          return {.value = std::numeric_limits<T>::min(), .last = res.last + 1};
+        else return {.value = static_cast<T>(-static_cast<int64_t>(res.value)), .last = res.last + 1};
+      } else return {.value = static_cast<T>(yw::min(res.value, std::numeric_limits<T>::max())), .last = res.last};
+    } else {
+      const auto body = negative ? string_view<char>(sv.data() + 1, sv.size() - 1) : sv;
+      const auto res = internal::_stov_float(body, ok);
+      if (!ok) return {.value = {}, .last = 0};
+      if (negative) return {.value = -static_cast<T>(res.value), .last = res.last + 1};
+      else return {.value = static_cast<T>(res.value), .last = res.last};
+    }
+  }
+}
+} // namespace internal
+
+template<arithmetic T> constexpr auto stov = []<stringable S>(S&& s) -> stov_result<T> {
+  using C = iter_value_t<S>;
+  const auto sv = string_view<C>(s);
+  if constexpr (!same_as<C, char>) {
+    string<char> tmp(sv.size());
+    for (size_t i = 0; i < sv.size(); ++i) {
+      if (const auto c = sv[i]; c > 0x7f) {
+        tmp.resize(i);
+        return internal::_stov<T>(tmp);
+      } else tmp[i] = static_cast<char>(sv[i]);
+    }
+    return internal::_stov<T>(tmp);
+  } else return internal::_stov<T>(sv);
+};
+
+static_assert(stov<int>("-123").value == -123, "stov failed");
+static_assert(stov<int8_t>("-555").value == -128, "stov failed");
 
 ///--------------------------------------------------------------------------///
 /// MARK: unicode
