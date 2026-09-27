@@ -44,14 +44,27 @@ static_assert(
 #define ywlib_post(expr)
 #endif
 
-extern "C" {
-int fputs(const char*, FILE*);
-void abort();
-}
+extern "C" void abort();
+extern "C" int fputs(const char*, FILE*);
 
-// namespace __gnu_cxx {
-// void __trap_terminate_handler() { __builtin_trap(); }
-// } // namespace __gnu_cxx
+#ifdef _WIN32
+extern "C" int __stdcall WriteConsoleW(void*, const wchar_t*, unsigned long, unsigned long*, void*);
+extern "C" void* __stdcall GetStdHandle(unsigned long);
+namespace yw::internal {
+template<bool Error> inline void _print(const wchar_t* s, size_t n) {
+  if constexpr (Error) ::WriteConsoleW(::GetStdHandle((unsigned long)-12), s, unsigned(n), 0, 0);
+  else ::WriteConsoleW(::GetStdHandle((unsigned long)-11), s, unsigned(n), 0, 0);
+}
+} // namespace yw::internal
+#else
+extern "C" size_t fwrite(const void*, size_t, size_t, void*);
+namespace yw::internal {
+template<bool Error> inline void _print(const char* s, size_t n) {
+  if constexpr (Error) std::fwrite(s, 1, n, stderr);
+  else std::fwrite(s, 1, n, stdout);
+}
+} // namespace yw::internal
+#endif
 
 namespace yw {
 
@@ -330,8 +343,8 @@ template<typename T, typename U = T> concept exchangeable =
   constructible<remove_ref<T>, add_rvref<T>> && assignable<T&, add_rvref<U>>;
 template<typename T, typename U = T> concept nt_exchangeable =
   nt_constructible<remove_ref<T>, add_rvref<T>> && nt_assignable<T&, add_rvref<U>>;
-inline constexpr auto exchange = []<typename T, typename U = T>(T&& t, U&& u) //
-  noexcept(nt_exchangeable<T, U>) requires exchangeable<T, U> { auto tmp = move(t); t = move(u); return tmp; };
+inline constexpr auto exchange = []<typename T, typename U = T>(T& t, U&& u) //
+  noexcept(nt_exchangeable<T&, U>) requires exchangeable<T&, U> { auto tmp = move(t); t = move(u); return tmp; };
 
 // clang-format on
 
@@ -560,19 +573,9 @@ template<typename T, size_t I> concept gettable = requires { yw::get<I>(declval<
 template<typename T, size_t I> concept nt_gettable = gettable<T, I> && noexcept(yw::get<I>(declval<T>()));
 template<typename T, size_t I> requires gettable<T, I> using element_t = decltype(yw::get<I>(declval<T>()));
 
-/// print an error message to stderr.
-/// \note In constant evaluation, this function will occur a compile-time error if called.
-inline constexpr void print_error(const char* msg) noexcept {
-  ywlib_try { ::fputs(msg, stderr); }
-  ywlib_catch(...) {}
-}
-
 /// print an error message to stderr and abort the program.
 /// \note In constant evaluation, this function will occur a compile-time error if called.
-[[noreturn]] inline constexpr void fatal_error(const char* msg) noexcept {
-  print_error(msg);
-  ::abort();
-}
+[[noreturn]] inline constexpr void fatal_error(const char* msg) noexcept { ::fputs(msg, stderr), ::abort(); }
 
 namespace internal {
 template<typename T> union _allocate_union {
@@ -594,8 +597,8 @@ template<typename T> inline constexpr auto allocate = [](size_t n = 1) noexcept 
   }
 };
 
-inline constexpr auto deallocate = []<typename T>(
-                                     T* p) noexcept { delete[] reinterpret_cast<internal::_allocate_union<T>*>(p); };
+inline constexpr auto deallocate = []<typename T>(T* p) noexcept //
+{ delete[] reinterpret_cast<internal::_allocate_union<T>*>(p); };
 } // namespace yw
 
 namespace std {

@@ -50,7 +50,5 @@ ReferenceAlignment: Pointer
 BreakBeforeConceptDeclarations: Allowed
 BreakTemplateDeclarations: No
 SpaceAfterTemplateKeyword: false
-SplitEmptyFunction: true
-SplitEmptyRecord: true
 
 RequiresClausePosition: SingleLine

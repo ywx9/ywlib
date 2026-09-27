@@ -21,7 +21,8 @@ DEFAULT_PROJECT_CONFIG: dict[str, object] = {
     "sources": ["source.cpp"],
     "include_dirs": ["ywlib"],
     "target_type": "exe",
-    "cflags": ["-fcontracts", "-freflection"],
+    "cflags": ["-s", "-O2", "-fno-ident", "-fcontracts", "-freflection", "-ffunction-sections", "-fdata-sections"],
+    "ldflags": ["-Wl,--gc-sections"],
     "show_console": True,
 }
 

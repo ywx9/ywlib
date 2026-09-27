@@ -24,25 +24,20 @@ inline constexpr uint64_t unique_id(std::source_location loc = here()) noexcept 
 struct error;
 
 struct error_type {
-  static const error_type ok;
-  size_t value;
-  constexpr error_type(std::source_location sl = here()) noexcept : value(unique_id(sl)) {}
-  constexpr bool operator==(const error_type& o) const noexcept { return value == o.value; }
-
-private:
-  consteval error_type(size_t v) : value(v) {}
+  string_view<char> name;
+  constexpr operator string_view<char>() const noexcept { return name; }
+  explicit constexpr operator bool() const noexcept { return name.size() == 2 && name[0] == 'o' && name[1] == 'k'; }
+  constexpr bool operator==(const error_type& o) const noexcept { return name == o.name; }
 };
 
-inline constexpr error_type error_type::ok(size_t(0));
-
 namespace errors {
-inline constexpr const auto& ok = error_type::ok;
-inline constexpr error_type unknown{};
-inline constexpr error_type invalid_argument{};
-inline constexpr error_type invalid_operation{};
-inline constexpr error_type operation_failed{};
-inline constexpr error_type unreachable{};
-inline constexpr error_type contract_violation{};
+inline constexpr error_type ok{"ok"};
+inline constexpr error_type unknown{"unknown"};
+inline constexpr error_type invalid_argument{"invalid_argument"};
+inline constexpr error_type invalid_operation{"invalid_operation"};
+inline constexpr error_type operation_failed{"operation_failed"};
+inline constexpr error_type unreachable{"unreachable"};
+inline constexpr error_type contract_violation{"contract_violation"};
 } // namespace errors
 
 struct error {
@@ -75,7 +70,7 @@ struct error {
     if (t == errors::ok) return;
     bool already_set = type != errors::ok;
     if (already_set) {
-      print_error("error already set: ");
+      ::fputs("error already set: ", stderr);
       print();
       footprint.ref().clear();
     }
@@ -91,6 +86,8 @@ struct error {
     has = true;
     if (already_set) print_and_abort("new error: ");
   }
+
+  constexpr error(error_type t, std::source_location sl = here()) noexcept : error(t, {}, sl) {}
 
   constexpr error(string<char> m, std::source_location sl = here()) noexcept : error(errors::unknown, move(m), sl) {}
 
@@ -109,7 +106,8 @@ struct error {
     if (std::is_constant_evaluated()) return;
     if (type != errors::ok) {
       if (msg) ::fputs(msg, stderr);
-      ::fputs(message().c_str(), stderr);
+      if (message().empty()) ::fputs(type().name.c_str(), stderr);
+      else ::fputs(message().c_str(), stderr);
       ::fputs("\n", stderr);
       ::fputs(footprint().c_str(), stderr);
       ::fputs("\n", stderr);
@@ -201,7 +199,7 @@ public:
   template<typename Self> constexpr auto&& value(this Self&& self) noexcept {
     if (!self.has_value()) {
       if (self.has_error()) {
-        print_error("attempted to access value of result when it has error");
+        ::fputs("attempted to access value of result when it has error\n", stderr);
         self._union._error.print_and_abort();
       } else yw::error("attempted to access value of result when it has neither value nor error").print_and_abort();
     }
