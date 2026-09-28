@@ -4,12 +4,6 @@
 
 namespace yw {
 
-#ifdef _WIN32
-using preferred_char = wchar_t;
-#else
-using preferred_char = char;
-#endif
-
 namespace internal {
 constexpr auto hex_table = "0123456789abcdef";
 template<typename T, typename C> concept has_to_string_c = requires(T&& a) {

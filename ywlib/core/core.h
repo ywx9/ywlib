@@ -48,7 +48,7 @@ extern "C" void abort();
 extern "C" int fputs(const char*, FILE*);
 
 #ifdef _WIN32
-extern "C" int __stdcall WriteConsoleW(void*, const wchar_t*, unsigned long, unsigned long*, void*);
+extern "C" int __stdcall WriteConsoleW(void*, const void*, unsigned long, unsigned long*, void*);
 extern "C" void* __stdcall GetStdHandle(unsigned long);
 namespace yw::internal {
 template<bool Error> inline void _print(const wchar_t* s, size_t n) {

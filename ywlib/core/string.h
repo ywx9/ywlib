@@ -4,6 +4,12 @@
 
 namespace yw {
 
+#ifdef _WIN32
+using preferred_char = wchar_t;
+#else
+using preferred_char = char;
+#endif
+
 inline constexpr auto is_ascii = []<char_type C>(C c) noexcept { return 0x20 <= c && c < 0x7F; };
 inline constexpr auto is_digit = []<char_type C>(C c) noexcept { return '0' <= c && c <= '9'; };
 inline constexpr auto is_lower = []<char_type C>(C c) noexcept { return 'a' <= c && c <= 'z'; };
@@ -75,8 +81,8 @@ template<contiguous_range Rg> requires char_type<iter_value_t<Rg>> string_view(R
 
 template<typename S, typename C = iter_value_t<S>> concept stringable = requires {
   requires char_type<C>;
-  requires convertible_to<S, string_view<C>>;
-  requires constructible<string_view<C>, S>;
+  requires convertible_to<S&, string_view<C>>;
+  requires constructible<string_view<C>, S&>;
 };
 
 template<char_type C> constexpr bool operator==(const string_view<C>& a, const string_view<C>& b) noexcept {

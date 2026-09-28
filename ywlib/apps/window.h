@@ -1,151 +1,21 @@
 #pragma once
+#include <apps/directx.h>
+#include <apps/window_base.h>
 #include <base/color.h>
-#include <base/comptr.h>
-#include <base/slotset.h>
+#include <base/function.h>
 #include <base/optional.h>
+#include <base/slotset.h>
+#include <base/vector.h>
 #include <core/core.h>
 #include <core/property.h>
 
 #ifdef _WIN32
-
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#include <d2d1_3.h>
 
 #ifdef interface
 #undef interface
 #endif
 
 namespace yw {
-
-// clang-format off
-
-enum class key : uint8_t {
-  unknown = 0,
-
-  lbutton = VK_LBUTTON, rbutton = VK_RBUTTON, mbutton = VK_MBUTTON, xbutton1 = VK_XBUTTON1, xbutton2 = VK_XBUTTON2,
-
-  backspace = VK_BACK,
-  tab = VK_TAB,
-  enter = VK_RETURN,
-  shift = VK_SHIFT,
-  ctrl = VK_CONTROL,
-  alt = VK_MENU,
-  caps_lock = VK_CAPITAL,
-  escape = VK_ESCAPE,
-  space = VK_SPACE,
-  page_up = VK_PRIOR,
-  page_down = VK_NEXT,
-  end = VK_END,
-  home = VK_HOME,
-  left = VK_LEFT,
-  up = VK_UP,
-  right = VK_RIGHT,
-  down = VK_DOWN,
-  print_screen = VK_SNAPSHOT,
-  insert = VK_INSERT,
-  delete_ = VK_DELETE,
-  win = VK_LWIN,
-  menu = VK_APPS,
-  num_lock = VK_NUMLOCK,
-  scroll_lock = VK_SCROLL,
-
-  n0 = '0', n1 = '1', n2 = '2', n3 = '3', n4 = '4', n5 = '5', n6 = '6', n7 = '7', n8 = '8', n9 = '9',
-
-  a = 'A', b = 'B', c = 'C', d = 'D', e = 'E', f = 'F', g = 'G', h = 'H', i = 'I', j = 'J', k = 'K', l = 'L', m = 'M',
-  n = 'N', o = 'O', p = 'P', q = 'Q', r = 'R', s = 'S', t = 'T', u = 'U', v = 'V', w = 'W', x = 'X', y = 'Y', z = 'Z',
-
-  f1 = VK_F1, f2 = VK_F2, f3 = VK_F3, f4 = VK_F4, f5 = VK_F5, f6 = VK_F6,
-  f7 = VK_F7, f8 = VK_F8, f9 = VK_F9, f10 = VK_F10, f11 = VK_F11, f12 = VK_F12,
-
-  hiphen = VK_OEM_MINUS, semicolon = VK_OEM_1, comma = VK_OEM_COMMA, period = VK_OEM_PERIOD, slash = VK_OEM_2,
-};
-
-// clang-format on
-
-struct key_state {
-  bool down : 1;
-  bool shift : 1;
-  bool ctrl : 1;
-  bool alt : 1;
-  constexpr string<char> to_string() const {
-    auto s = string<char>("(down:0, shift:0, ctrl:0, alt:0)");
-    s[6] = char('0' + down);
-    s[15] = char('0' + shift);
-    s[23] = char('0' + ctrl);
-    s[30] = char('0' + alt);
-    return s;
-  }
-};
-
-namespace internal {
-constexpr string_view<char> _get_key_name(const key k) {
-#ifdef __cpp_lib_meta
-  template for (constexpr auto e : std::define_static_array(std::meta::numerators_of(^^key)))
-    if (k == [:e:]) return std::meta::identifier_of(e);
-#endif
-  return "unknown";
-}
-}
-
-struct button_event {
-  short2 pos;
-  key key;
-  key_state state;
-  constexpr string<char> to_string() const {
-    return format("button_event(pos:", pos, ", key:", internal::_get_key_name(key), ", state:", state, ")");
-  }
-};
-
-struct cursor_event {
-  short2 pos;
-  short2 delta;
-  constexpr string<char> to_string() const { return format("cursor_event(pos:", pos, ", delta:", delta, ")"); }
-};
-
-struct drag_event {
-  short2 delta;
-  key key;
-  key_state state;
-  constexpr string<char> to_string() const {
-    return format("drag_event(delta:", delta, ", key:", internal::_get_key_name(key), ", state:", state, ")");
-  }
-};
-
-struct focus_event {
-  bool focused;
-  constexpr string_view<char> to_string() const {
-    if (focused) return "focus_event(focused:1)";
-    else return "focus_event(focused:0)";
-  }
-};
-
-struct hover_event {
-  bool hovered;
-  constexpr string_view<char> to_string() const {
-    if (hovered) return "hover_event(hovered:1)";
-    else return "hover_event(hovered:0)";
-  }
-};
-
-struct key_event {
-  key key;
-  key_state state;
-  constexpr string<char> to_string() const {
-    return format("key_event(key:", internal::_get_key_name(key), ", state:", state, ")");
-  }
-};
-
-struct wheel_event {
-  short2 pos;
-  short2 delta;
-  key_state state;
-  constexpr string<char> to_string() const {
-    return format("wheel_event(pos:", pos, ", delta:", delta, ", state:", state, ")");
-  }
-};
-
 
 ///--------------------------------------------------------------------------///
 /// MARK: interface
@@ -185,18 +55,6 @@ protected:
 
 namespace ui {
 
-enum class alignment : unsigned char {
-  center = 0b0000,
-  left = 0b0001,
-  right = 0b0010,
-  top = 0b0100,
-  bottom = 0b1000,
-  left_top = 0b0101,
-  left_bottom = 0b1001,
-  right_top = 0b0110,
-  right_bottom = 0b1010,
-};
-
 enum class size_policy : unsigned char {
   fit,   // minimum size to show whole content
   free,  // any size so that at least whole content is visible
@@ -218,21 +76,19 @@ public:
 
     float4 margin = float4::fill(arbitrary_value);
     float4 padding = float4::fill(arbitrary_value);
-    float2 required_size;
-    float2 provided_pos;
+    optional<float> required_width;
+    optional<float> required_height;
+    float2 provided_origin;
     float2 provided_area;
     float2 pos;
     float2 size;
     float2 radius = float2::fill(arbitrary_value);
     float2 minimum_size = float2::fill(arbitrary_value);
-    ui::alignment align = ui::center;
-    vector2<ui::size_policy> policy{ui::free, ui::free};
+    alignment align = alignment::center;
+    bool2 grow = false;
     comptr<ID2D1Geometry> geometry;
 
     string<preferred_char> tooltip;
-    optional<color> background_color;
-    optional<color> border_color;
-    float border_thickness = 1.0f;
 
     function<bool, yw::button_event> button_event;
     function<bool, yw::cursor_event> cursor_event;
@@ -241,9 +97,160 @@ public:
     function<bool, yw::hover_event> hover_event;
     function<bool, yw::key_event> key_event;
     function<bool, yw::wheel_event> wheel_event;
+
     bool geometry_dirty = false;
+    bool visible = false;
+    bool enabled = false;
+
+    virtual bool focusable() const { return enabled && bool(focus_event); }
+    virtual bool interactive() const {
+      return enabled && visible && (button_event || cursor_event || drag_event || hover_event || wheel_event);
+    }
+
+    virtual float2 get_minimum_size() const { return minimum_size; }
+    virtual float2 get_content_size() const { return {}; }
+
+    virtual result<float2> get_necessary_size() const {
+      const auto inner = get_content_size() + padding.xy() + padding.zw();
+      const auto required_size = float2(required_width.value_or(inner.x()), required_height.value_or(inner.y()));
+      return vapply_r<float2>(yw::max, get_minimum_size(), required_size);
+    }
+
+    virtual result<void> draw_background(interface::slot*) { return {}; }
+    virtual result<void> draw_overlay(interface::slot*) { return {}; }
+    virtual result<void> draw_foreground(interface::slot*) { return {}; }
+
+    virtual slotid get_tabstop(slotid Current, bool Backward, bool& CurrentIsFound) const {
+      if (!focusable()) return {};
+      if (Current == id) CurrentIsFound = true;
+      else if (CurrentIsFound) return id;
+      return {};
+    }
+
+    virtual slotid hittest(float2 Pt) const {
+      if (!visible || !enabled || !geometry) return {};
+      BOOL contains = FALSE;
+      if (const auto hr = geometry->FillContainsPoint({Pt.x(), Pt.y()}, nullptr, &contains); FAILED(hr))
+        error(errors::operation_failed, "ID2D1Geometry::FillContainsPoint failed").consume();
+      return contains ? id : slotid{};
+    }
+
+    virtual result<void> redraw(interface::slot* Window) {
+      if (geometry_dirty) {
+        geometry_dirty = false;
+        if (auto res = relocate(); !res) return res.relay();
+      }
+      if (!visible) return {};
+      d2d::push_layer(geometry.get());
+      if (auto res = draw_background(Window); !res) return d2d::pop_layer(), res.relay();
+      d2d::pop_layer();
+      if (auto res = draw_overlay(Window); !res) return res.relay();
+      if (auto res = draw_foreground(Window); !res) return res.relay();
+      return {};
+    }
+
+    virtual result<void> relocate() {
+      if (auto res = update_geometry()) return {};
+      else res.relay();
+    }
+
+    virtual result<void> relocate(float2 Origin, float2 Area) {
+      provided_origin = Origin;
+      provided_area = Area;
+      if (auto res = update_geometry()) return {};
+      else res.relay();
+    }
+
+    virtual result<void> set_size_to_necessary() {
+      if (auto res = get_necessary_size()) size = *res;
+      else return res.relay();
+      return {};
+    }
+
+    result<float2> update_geometry() {
+      const auto max_size = provided_area - margin.xy() - margin.zw();
+      if (auto res = set_size_to_necessary(); !res) return res.relay();
+      const auto necessary_size = size;
+      if (grow.x()) size.x() = max_size.x();
+      if (grow.y()) size.y() = max_size.y();
+      constexpr float c[]{0.5f, 0.0f, 1.0f};
+      const float2 cc{c[unsigned(align) % 3], c[unsigned(align) / 4 % 3]};
+      pos = provided_origin + margin.xy() + (max_size - size) * cc;
+      ID2D1RoundedRectangleGeometry* geom = nullptr;
+      D2D1_ROUNDED_RECT rr{
+        D2D1::RectF(pos.x(), pos.y(), pos.x() + size.x(), pos.y() + size.y()), radius.x(), radius.y()};
+      const auto hr = d2d::factory()->CreateRoundedRectangleGeometry(&rr, &geom);
+      if (FAILED(hr)) return error(errors::operation_failed, "CreateRoundedRectangleGeometry failed");
+      geometry.reset(geom);
+      return size - necessary_size; // used by layout-like controls
+    }
+  };
+};
+
+///--------------------------------------------------------------------------///
+/// MARK: window
+
+class window : public interface {
+public:
+  struct custom_options {
+    string<preferred_char> title;
+    optional<int2> pos;
+    optional<int2> size;
+    DWORD style = WS_OVERLAPPEDWINDOW;
+    DWORD ex_style = WS_EX_ACCEPTFILES;
+    const string<preferred_char>& get_title() const noexcept { return title; }
+    DWORD get_style() const noexcept { return style; }
+    DWORD get_ex_style() const noexcept { return ex_style; }
+  };
+
+  struct options {
+    string<preferred_char> title;
+    optional<int2> pos;
+    optional<int2> size;
+    bool has_border = true;
+    bool has_caption = true;
+    bool resizable = true;
     bool visible = true;
     bool enabled = true;
+    bool topmost = false;
+    const string<preferred_char>& get_title() const noexcept { return title; }
+    DWORD get_style() const noexcept {
+      DWORD s = has_caption ? WS_CAPTION | WS_SYSMENU : WS_POPUP;
+      s |= WS_BORDER * has_border;
+      s |= WS_THICKFRAME * resizable;
+      s |= WS_VISIBLE * visible;
+      s |= WS_DISABLED * !enabled;
+      return s;
+    }
+    DWORD get_ex_style() const noexcept {
+      DWORD s = WS_EX_ACCEPTFILES;
+      s |= topmost ? WS_EX_TOPMOST : 0;
+      return s;
+    }
+  };
+
+  struct slot : interface::slot {
+    inline static std::vector<slotid> main_windows{};
+
+    slotid parent_id{};
+    HWND hwnd{};
+
+    int4 frame_thickness{};
+    DWORD style{}, exstyle{};
+
+    bitmap control_layer;
+    bitmap render_target;
+    comptr<IDXGISwapChain1> swap_chain;
+
+    yw::color_theme color_theme;
+
+    struct tooltip {
+      optional<yw::color> background_color;
+      optional<yw::color> text_color;
+      float4 padding{};
+      float2 offset{};
+    } tooltip;
+
 
   };
 };

@@ -91,7 +91,7 @@ struct error {
 
   constexpr error(string<char> m, std::source_location sl = here()) noexcept : error(errors::unknown, move(m), sl) {}
 
-  static constexpr void add_footprint(std::source_location sl = here()) noexcept {
+  constexpr error& add_footprint(std::source_location sl = here()) noexcept {
     if (type == errors::ok) return;
     footprint.ref().append("\n");
     footprint.ref().append("^ ");
@@ -100,9 +100,10 @@ struct error {
     footprint.ref().append(vtos<char>(sl.line()));
     footprint.ref().append(":");
     footprint.ref().append(vtos<char>(sl.column()));
+    return *this;
   }
 
-  static constexpr void print(const char* msg = nullptr) noexcept {
+  constexpr void print(const char* msg = nullptr) noexcept {
     if (std::is_constant_evaluated()) return;
     if (type != errors::ok) {
       if (msg) ::fputs(msg, stderr);
@@ -114,13 +115,13 @@ struct error {
     } else ::fputs("no error\n", stderr);
   }
 
-  static constexpr void print_and_abort(const char* msg, std::source_location sl = here()) noexcept {
+  constexpr void print_and_abort(const char* msg, std::source_location sl = here()) noexcept {
     add_footprint(sl);
     print(msg);
     ::abort();
   }
 
-  static constexpr void print_and_abort(std::source_location sl = here()) noexcept {
+  constexpr void print_and_abort(std::source_location sl = here()) noexcept {
     print_and_abort("fatal error: ", sl);
   }
 
@@ -210,6 +211,12 @@ public:
     if (!self.has_error()) yw::error("attempted to access error of result when it has no error").print_and_abort();
     return static_cast<copy_cvref<Self&&, yw::error>>(self._union._error);
   }
+
+  constexpr yw::error&& relay(const std::source_location& sl = here()) & {
+    if (!has_error()) yw::error("attempted to access error of result when it has no error").print_and_abort();
+    yw::error::add_footprint(sl);
+    return move(_union._error);
+  }
 };
 
 template<> class result<void> {
@@ -248,6 +255,12 @@ public:
   template<typename Self> constexpr auto&& error(this Self&& self) noexcept {
     if (!self.has_error()) yw::error("attempted to access error of result when it has no error").print_and_abort();
     return static_cast<copy_cvref<Self&&, yw::error>>(self._union._error);
+  }
+
+  constexpr yw::error&& relay(const std::source_location& sl = here()) & {
+    if (!has_error()) yw::error("attempted to access error of result when it has no error").print_and_abort();
+    yw::error::add_footprint(sl);
+    return move(_union._error);
   }
 };
 } // namespace yw

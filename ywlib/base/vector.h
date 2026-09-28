@@ -39,8 +39,8 @@ template<typename T, size_t N> requires arithmetic<T> || is_enum<T> struct vecto
   constexpr const T* begin() const noexcept { return data(); }
   constexpr T* end() noexcept { return data() + N; }
   constexpr const T* end() const noexcept { return data() + N; }
-  constexpr T& operator[](size_t i) noexcept pre(i < N) { return data()[i]; }
-  constexpr const T& operator[](size_t i) const noexcept pre(i < N) { return data()[i]; }
+  constexpr T& operator[](size_t i) noexcept ywlib_pre(i < N) { return data()[i]; }
+  constexpr const T& operator[](size_t i) const noexcept ywlib_pre(i < N) { return data()[i]; }
   constexpr T& front() noexcept requires(N > 0) { return data()[0]; }
   constexpr const T& front() const noexcept requires(N > 0) { return data()[0]; }
   constexpr T& back() noexcept requires(N > 0) { return data()[N - 1]; }
@@ -48,26 +48,23 @@ template<typename T, size_t N> requires arithmetic<T> || is_enum<T> struct vecto
 
   constexpr vector operator()() const noexcept { return *this; }
 
-  template<size_t I, typename Self> requires(I < N) constexpr auto&& get(this Self&& self) noexcept {
-    return static_cast<copy_cvref_weak<Self&&, T>>(self.data()[I]);
-  }
+  template<size_t I> requires(lt(I, N)) constexpr T& get() noexcept { return data()[I]; }
+  template<size_t I> requires(lt(I, N)) constexpr const T& get() const noexcept { return data()[I]; }
 
-  template<typename Self> requires(N > 0) constexpr auto&& x(this Self&& self) noexcept {
-    return static_cast<copy_cvref_weak<Self&&, T>>(self.data()[0]);
-  }
-  template<typename Self> requires(N > 1) constexpr auto&& y(this Self&& self) noexcept {
-    return static_cast<copy_cvref_weak<Self&&, T>>(self.data()[1]);
-  }
-  template<typename Self> requires(N > 2) constexpr auto&& z(this Self&& self) noexcept {
-    return static_cast<copy_cvref_weak<Self&&, T>>(self.data()[2]);
-  }
-  template<typename Self> requires(N > 3) constexpr auto&& w(this Self&& self) noexcept {
-    return static_cast<copy_cvref_weak<Self&&, T>>(self.data()[3]);
-  }
+  constexpr T& x() noexcept requires(N > 0) { return data()[0]; }
+  constexpr T& y() noexcept requires(N > 1) { return data()[1]; }
+  constexpr T& z() noexcept requires(N > 2) { return data()[2]; }
+  constexpr T& w() noexcept requires(N > 3) { return data()[3]; }
+
+  constexpr const T& x() const noexcept requires(N > 0) { return data()[0]; }
+  constexpr const T& y() const noexcept requires(N > 1) { return data()[1]; }
+  constexpr const T& z() const noexcept requires(N > 2) { return data()[2]; }
+  constexpr const T& w() const noexcept requires(N > 3) { return data()[3]; }
 
   constexpr vector<T, 2> xy() const noexcept requires(N > 1) { return {x(), y()}; }
   constexpr vector<T, 3> xyz() const noexcept requires(N > 2) { return {x(), y(), z()}; }
   constexpr vector<T, 4> xyzw() const noexcept requires(N > 3) { return {x(), y(), z(), w()}; }
+  constexpr vector<T, 2> zw() const noexcept requires(N > 3) { return {z(), w()}; }
 
   constexpr string<char> to_string() const { return to_string<char>(); }
   template<char_type C> constexpr string<C> to_string() const {
@@ -415,3 +412,10 @@ using double2 = vector<double, 2>;
 using double3 = vector<double, 3>;
 using double4 = vector<double, 4>;
 } // namespace yw
+
+namespace std {
+// tuple
+
+template<typename T, size_t N> struct tuple_size<yw::vector<T, N>> : std::integral_constant<size_t, N> {};
+template<typename T, size_t N, size_t I> struct tuple_element<I, yw::vector<T, N>> : type_identity<T> {};
+} // namespace std

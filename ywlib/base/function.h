@@ -27,6 +27,8 @@ template<typename R, typename... As> class function {
   } _traits{};
 
 public:
+  explicit constexpr operator bool() const noexcept { return _traits._invoke != nullptr; }
+
   constexpr ~function() noexcept {
     if (_traits._destroy) _traits._destroy(_union);
   }
