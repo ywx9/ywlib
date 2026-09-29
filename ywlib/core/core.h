@@ -576,29 +576,6 @@ template<typename T, size_t I> requires gettable<T, I> using element_t = decltyp
 /// print an error message to stderr and abort the program.
 /// \note In constant evaluation, this function will occur a compile-time error if called.
 [[noreturn]] inline constexpr void fatal_error(const char* msg) noexcept { ::fputs(msg, stderr), ::abort(); }
-
-namespace internal {
-template<typename T> union _allocate_union {
-  none _none;
-  T _t;
-  constexpr ~_allocate_union() noexcept {}
-  constexpr _allocate_union() noexcept : _none() {}
-};
-} // namespace internal
-
-template<typename T> inline constexpr auto allocate = [](size_t n = 1) noexcept -> T* {
-  ywlib_try {
-    auto p = new internal::_allocate_union<T>[n];
-    return &(p->_t);
-  }
-  ywlib_catch(...) {
-    fatal_error("failed to allocate memory");
-    return nullptr;
-  }
-};
-
-inline constexpr auto deallocate = []<typename T>(T* p) noexcept //
-{ delete[] reinterpret_cast<internal::_allocate_union<T>*>(p); };
 } // namespace yw
 
 namespace std {

@@ -20,7 +20,7 @@ public:
   using time_point = clock::time_point;
   using duration = clock::duration;
 
-  constexpr stopwatch() = default;
+  stopwatch() = default;
 
   void start() noexcept {
     if (_running) return;

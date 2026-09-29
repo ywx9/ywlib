@@ -1,7 +1,9 @@
 #pragma once
 #include <apps/directx.h>
+#include <core/array.h>
 #include <core/property.h>
 #include <core/result.h>
+#include <core/vector.h>
 
 #ifdef _WIN32
 
@@ -37,8 +39,8 @@ struct bgra {
 template<typename T> concept bitmap_like = convertible_to<T&, ID2D1Bitmap*> || convertible_to<T&, ID2D1Bitmap1*>;
 
 inline constexpr auto get_d2d_bitmap = []<bitmap_like T>(T& Bitmap) {
-  if constexpr (convertible_to<T&, ID2D1Bitmap1*>) return static_cast<ID2D1Bitmap1*>(&Bitmap);
-  else if constexpr (convertible_to<T&, ID2D1Bitmap*>) return static_cast<ID2D1Bitmap*>(&Bitmap);
+  if constexpr (castable_to<T&, ID2D1Bitmap1*>) return static_cast<ID2D1Bitmap1*>(Bitmap);
+  else if constexpr (castable_to<T&, ID2D1Bitmap*>) return static_cast<ID2D1Bitmap*>(Bitmap);
   else static_assert(always_false<T>, "unreachable");
 };
 
@@ -84,7 +86,7 @@ public:
   }
 
   result<void> close() {
-    if (!active()) return;
+    if (!active()) return {};
     if (const auto res = d2d::context()->EndDraw(); FAILED(res))
       return error(errors::operation_failed, "EndDraw failed");
     d2d::context()->SetTarget(nullptr);
@@ -318,8 +320,8 @@ inline result<void> save_bitmap_jpeg(bitmap_like auto&& bitmap, stringable auto&
 template<typename T>
 inline result<void> draw_bitmap(float2 Pos, float2 Size, bitmap_like auto&& Bitmap, float1 Opacity = 1.0f) {
   if (!drawing::target_exists()) return error(errors::invalid_operation, "drawing target not available");
-  D2D1_RECT_F rect(Pos.x, Pos.y, Pos.x + Size.x, Pos.y + Size.y);
-  d2d::context()->DrawBitmap(get_d2d_bitmap(Bitmap), &rect, Opacity.x);
+  D2D1_RECT_F rect(Pos.x(), Pos.y(), Pos.x() + Size.x(), Pos.y() + Size.y());
+  d2d::context()->DrawBitmap(get_d2d_bitmap(Bitmap), &rect, Opacity.x());
   return {};
 }
 
@@ -328,7 +330,7 @@ inline result<void> draw_bitmap(float2 Pos, bitmap_like auto&& Bitmap, float1 Op
   auto b = get_d2d_bitmap(Bitmap);
   const auto size = b->GetPixelSize();
   D2D1_RECT_F rect = D2D1::RectF(Pos.x(), Pos.y(), Pos.x() + size.width, Pos.y() + size.height);
-  d2d::context()->DrawBitmap(b, &rect, Opacity.x);
+  d2d::context()->DrawBitmap(b, &rect, Opacity.x());
   return {};
 }
 
@@ -464,25 +466,30 @@ inline result<void> fill_ellipse(float2 center, float2 radius, const color& Colo
 ///--------------------------------------------------------------------------///
 /// MARK: draw geometry
 
-inline result<void> stroke_geometry(ID2D1Geometry* geometry, float1 Thickness = 1.0f) {
+template<typename T> concept geometry_like = castable_to<T&, ID2D1Geometry*>;
+inline constexpr auto get_geometry = []<geometry_like T>(T&& geometry) noexcept(nt_castable_to<T&, ID2D1Geometry*>) {
+  return static_cast<ID2D1Geometry*>(geometry);
+};
+
+inline result<void> stroke_geometry(geometry_like auto&& geometry, float1 Thickness = 1.0f) {
   if (!drawing::target_exists()) return error(errors::invalid_operation, "drawing target not available");
-  d2d::context()->DrawGeometry(geometry, d2d::solid_color_brush(), Thickness.x(), d2d::stroke_style());
+  d2d::context()->DrawGeometry(get_geometry(geometry), d2d::solid_color_brush(), Thickness[0], d2d::stroke_style());
   return {};
 }
 
-inline result<void> stroke_geometry(ID2D1Geometry* geometry, const color& Color, float1 Thickness = 1.0f) {
+inline result<void> stroke_geometry(geometry_like auto&& geometry, const color& Color, float1 Thickness = 1.0f) {
   d2d::set_solid_color(Color);
   if (auto res = stroke_geometry(geometry, Thickness)) return {};
   else return res.relay();
 }
 
-inline result<void> fill_geometry(ID2D1Geometry* geometry) {
+inline result<void> fill_geometry(geometry_like auto&& geometry) {
   if (!drawing::target_exists()) return error(errors::invalid_operation, "drawing target not available");
-  d2d::context()->FillGeometry(geometry, d2d::solid_color_brush(), nullptr);
+  d2d::context()->FillGeometry(get_geometry(geometry), d2d::solid_color_brush(), nullptr);
   return {};
 }
 
-inline result<void> fill_geometry(ID2D1Geometry* geometry, const color& Color) {
+inline result<void> fill_geometry(geometry_like auto&& geometry, const color& Color) {
   d2d::set_solid_color(Color);
   if (auto res = fill_geometry(geometry)) return {};
   else return res.relay();

@@ -1,5 +1,6 @@
 #pragma once
 #include <core/core.h>
+#include <core/heap.h>
 #include <core/property.h>
 
 namespace yw {
@@ -125,49 +126,48 @@ inline constexpr size_t _string_preferred_capacity(size_t Size) noexcept {
 
 template<char_type C> class string {
   static_assert(same_as<C, remove_cv<C>>);
-  constexpr string(is_none auto, size_t Size) noexcept
-    : size(Size), capacity(internal::_string_preferred_capacity(Size)), data(yw::allocate<C>(capacity)) {}
-
 public:
   using value_type = C;
 
   const_property<size_t, string> size = 0;
   const_property<size_t, string> capacity = 0;
-  const_property<C*, string> data = nullptr;
 
-  constexpr ~string() noexcept { yw::deallocate(data()); }
+private:
+  uninitialized_heap<C[]> heap;
+
+  constexpr string(is_none auto, size_t Size)
+    : size(Size), capacity(internal::_string_preferred_capacity(Size)), heap(capacity()) {}
+
+public:
+  constexpr C* data() noexcept { return heap.get(); }
+  constexpr const C* data() const noexcept { return heap.get(); }
+
+  constexpr ~string() noexcept = default;
   constexpr string() noexcept = default;
 
-  constexpr string(const string& s) noexcept : string(s.data(), s.size()) {}
+  constexpr string(const string& s) : string(string_view<C>(s.data(), s.size())) {}
 
-  constexpr string& operator=(const string& s) noexcept {
+  constexpr string& operator=(const string& s) {
     if (this != &s) {
       const auto new_capacity = internal::_string_preferred_capacity(s.size());
-      auto new_data = yw::allocate<C>(new_capacity);
-      std::ranges::copy_n(s.data(), s.size(), new_data);
-      new_data[s.size()] = C();
-
-      yw::deallocate(data());
+      auto new_heap = uninitialized_heap<C[]>(new_capacity);
+      std::ranges::copy_n(s.data(), s.size(), new_heap.get());
+      new_heap[s.size()] = C();
       size = s.size();
       capacity = new_capacity;
-      data = new_data;
+      heap = move(new_heap);
     }
     return *this;
   }
 
-  constexpr string(string&& o) noexcept : data(o.data()), size(o.size()), capacity(o.capacity()) {
-    o.data = nullptr, o.size = 0, o.capacity = 0;
-  }
+  constexpr string(string&& o) noexcept
+    : size(exchange(o.size.ref(), {})), capacity(exchange(o.capacity.ref(), {})), heap(move(o.heap)) {}
 
   constexpr string& operator=(string&& o) noexcept {
     if (this != &o) {
-      yw::deallocate(data());
-      data = o.data();
-      size = o.size();
-      capacity = o.capacity();
-      o.data = nullptr;
-      o.size = 0;
-      o.capacity = 0;
+      size = exchange(o.size.ref(), {});
+      capacity = exchange(o.capacity.ref(), {});
+      heap = move(o.heap);
     }
     return *this;
   }
@@ -176,13 +176,13 @@ public:
 
   constexpr string(size_t n, C c) noexcept : string(none(), n) {
     std::ranges::fill_n(data(), size(), c);
-    data.ref()[size()] = C();
+    data()[size()] = C();
   }
 
   template<stringable<C> S> requires same_as<remove_cvref<S>, string_view<C>>
   constexpr string(S&& s) noexcept : string(none(), s.size()) {
     std::ranges::copy_n(s.data(), s.size(), data());
-    data.ref()[size()] = C();
+    data()[size()] = C();
   }
 
   template<stringable<C> S> requires(!same_as<remove_cvref<S>, string_view<C>>)
@@ -193,7 +193,7 @@ public:
     reserve(sv.size());
     std::ranges::copy_n(sv.data(), sv.size(), data());
     size = sv.size();
-    data.ref()[size()] = C();
+    data()[size()] = C();
     return *this;
   }
 
@@ -215,17 +215,17 @@ public:
 
   constexpr void clear() noexcept {
     size = 0;
-    if (data()) data.ref()[0] = C();
+    if (data()) data()[0] = C();
   }
 
   constexpr void reserve(size_t Capacity) noexcept {
     if (Capacity + 1 <= capacity()) return;
     const auto new_capacity = internal::_string_preferred_capacity(Capacity);
-    C* Data = yw::allocate<C>(new_capacity);
+    auto new_heap = uninitialized_heap<C[]>(new_capacity);
+    C* Data = new_heap.get();
     std::ranges::copy_n(data(), size(), Data);
     Data[size()] = C();
-    yw::deallocate(data());
-    data = Data;
+    heap = move(new_heap);
     capacity = new_capacity;
   }
 
@@ -233,19 +233,19 @@ public:
     reserve(n);
     if (size() < n) std::ranges::fill_n(data() + size(), n - size(), c);
     size = n;
-    data.ref()[size()] = C();
+    data()[size()] = C();
   }
 
   constexpr void pop_back() noexcept {
     if (size() > 0) size = size() - 1;
-    if (data()) data.ref()[size()] = C();
+    if (data()) data()[size()] = C();
   }
 
   constexpr string& push_back(C c) noexcept {
     reserve(size() + 1);
     data()[size()] = c;
     size = size() + 1;
-    data.ref()[size()] = C();
+    data()[size()] = C();
     return *this;
   }
 
@@ -257,18 +257,17 @@ public:
     const bool need_realloc = overlaps || new_size + 1 > capacity();
     if (need_realloc) {
       const auto new_capacity = internal::_string_preferred_capacity(new_size);
-      const auto new_data = yw::allocate<C>(new_capacity);
-      std::ranges::copy_n(data(), size(), new_data);
-      std::ranges::copy_n(sv.data(), sv.size(), new_data + size());
-      yw::deallocate(data());
-      data = new_data;
+      auto new_heap = uninitialized_heap<C[]>(new_capacity);
+      std::ranges::copy_n(data(), size(), new_heap.get());
+      std::ranges::copy_n(sv.data(), sv.size(), new_heap.get() + size());
+      heap = move(new_heap);
       size = new_size;
       capacity = new_capacity;
     } else {
       std::ranges::copy_n(sv.data(), sv.size(), data() + size());
       size = new_size;
     }
-    data.ref()[size()] = C();
+    data()[size()] = C();
     return *this;
   }
 
@@ -285,15 +284,13 @@ public:
   }
 
   constexpr void swap(string& other) noexcept {
-    auto tmp_data = data();
     auto tmp_size = size();
     auto tmp_capacity = capacity();
-    data = other.data;
     size = other.size;
     capacity = other.capacity;
-    other.data = tmp_data;
     other.size = tmp_size;
     other.capacity = tmp_capacity;
+    std::ranges::swap(heap, other.heap);
   }
 };
 

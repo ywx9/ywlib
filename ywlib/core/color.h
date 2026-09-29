@@ -5,7 +5,7 @@
 
 namespace yw {
 
-enum class colors : uint32_t {
+enum class color_name : uint32_t {
   black = 0x000000,
   dimgray = 0x696969,
   gray = 0x808080,
@@ -174,7 +174,7 @@ struct color {
 
   constexpr color(integral auto rrggbb) noexcept : color(rrggbb, 1.0f) {}
 
-  constexpr color(colors c) noexcept
+  constexpr color(color_name c) noexcept
     : r(float((uint32_t(c) >> 16) & 0xFF) / 255.0f), g(float((uint32_t(c) >> 8) & 0xFF) / 255.0f),
       b(float(uint32_t(c) & 0xFF) / 255.0f), a(1.0f - float((uint32_t(c) >> 24) & 0xFF) / 255.0f) {}
 

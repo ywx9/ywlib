@@ -1,5 +1,5 @@
 #pragma once
-#include <base/array.h>
+#include <core/array.h>
 #include <core/string.h>
 
 namespace yw {
@@ -25,16 +25,8 @@ template<typename T> requires constructible<T> class dict {
     bool found;
   };
 
-  static constexpr _block* _new_block() noexcept {
-    auto block = yw::allocate<_block>();
-    std::construct_at(block);
-    return block;
-  }
-
-  static constexpr void _delete_block(_block* block) noexcept {
-    std::destroy_at(block);
-    yw::deallocate(block);
-  }
+  static constexpr _block* _new_block() noexcept { return new _block(); }
+  static constexpr void _delete_block(_block* block) noexcept { delete block; }
 
   constexpr _location _locate(string_view<char> key) const noexcept {
     size_t first = 0, last = _blocks.size();
@@ -162,8 +154,7 @@ public:
     return _insert(key, [](T&) noexcept {}).value;
   }
 
-  template<typename U> requires assignable<T&, U&&>
-  constexpr T& insert(string_view<char> key, U&& value) {
+  template<typename U> requires assignable<T&, U&&> constexpr T& insert(string_view<char> key, U&& value) {
     if (auto* target = find(key)) {
       *target = static_cast<U&&>(value);
       return *target;
@@ -181,6 +172,5 @@ public:
     _blocks.swap(other._blocks);
     std::ranges::swap(size.ref(), other.size.ref());
   }
-
 };
 } // namespace yw

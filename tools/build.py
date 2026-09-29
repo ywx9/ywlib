@@ -9,6 +9,13 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT_DIR / "project.json"
 
+YWLIB_LAYERS = {"core": 0, "base": 1, "apps": 2}
+
+APPS_LDFLAGS = [
+    "-luser32", "-lgdi32", "-lole32", "-luuid",
+    "-ld3d11", "-ldxgi", "-ld2d1", "-ldwrite", "-lwindowscodecs", "-lxaudio2_9",
+]
+
 
 def as_list(value: object, name: str) -> list[str]:
     if value is None:
@@ -18,6 +25,16 @@ def as_list(value: object, name: str) -> list[str]:
     if isinstance(value, list) and all(isinstance(item, str) for item in value):
         return value
     raise ValueError(f"{name} must be a string or a list of strings")
+
+
+def ywlib_layer(value: object) -> tuple[str, int]:
+    if not isinstance(value, str) or value not in YWLIB_LAYERS:
+        choices = ", ".join(YWLIB_LAYERS)
+        raise ValueError(f"ywlib_layer must be one of: {choices}")
+    level = YWLIB_LAYERS[value]
+    if level >= YWLIB_LAYERS["apps"] and sys.platform != "win32":
+        raise ValueError("ywlib_layer 'apps' requires a Windows host")
+    return value, level
 
 
 def load_config() -> dict[str, object]:
@@ -51,6 +68,7 @@ def main() -> int:
         defines = as_list(config.get("defines"), "defines")
         cflags = as_list(config.get("cflags"), "cflags")
         ldflags = as_list(config.get("ldflags"), "ldflags")
+        layer, layer_level = ywlib_layer(config.get("ywlib_layer", "base"))
 
         if not sources:
             raise ValueError("no source files configured")
@@ -63,9 +81,12 @@ def main() -> int:
         command = [compiler, f"-std={cpp_standard}"]
         command.extend(cflags)
         command.extend(f"-D{define}" for define in defines)
+        command.append(f"-DYWLIB_LAYER={layer_level}")
         command.extend(f"-I{include_dir}" for include_dir in include_dirs)
         command.extend(sources)
         command.extend(["-o", str(output_path)])
+        if layer == "apps":
+            command.extend(APPS_LDFLAGS)
         command.extend(ldflags)
 
         print(" ".join(command))

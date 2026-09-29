@@ -1,7 +1,7 @@
 #pragma once
 #include <core/core.h>
-#include <core/result.h>
 #include <core/property.h>
+#include <core/result.h>
 
 namespace yw {
 
@@ -105,9 +105,9 @@ public:
   }
 
   constexpr T& operator*() & noexcept { return value(); }
-  constexpr const T& operator*() const & noexcept { return value(); }
+  constexpr const T& operator*() const& noexcept { return value(); }
   constexpr T&& operator*() && noexcept { return value(); }
-  constexpr const T&& operator*() const && noexcept { return value(); }
+  constexpr const T&& operator*() const&& noexcept { return value(); }
 
   constexpr T* operator->() noexcept { return std::addressof(value()); }
   constexpr const T* operator->() const noexcept { return std::addressof(value()); }

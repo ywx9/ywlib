@@ -101,12 +101,11 @@ public:
       constexpr traits() noexcept {
         _traits::_destroy = [](decltype(_union)& src) noexcept {
           static_cast<G*>(src._heap)->~G();
-          yw::deallocate(static_cast<H*>(src._heap));
+          delete static_cast<G*>(src._heap);
         };
         if constexpr (constructible<F, const F&>) {
           _traits::_copy_to = [](const decltype(_union)& src, decltype(_union)& dst) {
-            dst._heap = allocate<G>();
-            new (dst._heap) G(*static_cast<const G*>(src._heap));
+            dst._heap = new G(*static_cast<const G*>(src._heap));
           };
         }
         _traits::_move_to = [](decltype(_union)&& src, decltype(_union)& dst) {
@@ -118,8 +117,7 @@ public:
         };
       }
     };
-    _union._heap = allocate<G>();
-    new (_union._heap) G(static_cast<F&&>(f));
+    _union._heap = new G(static_cast<F&&>(f));
     new (&_traits) traits();
   }
 

@@ -1,5 +1,5 @@
 #pragma once
-#include <base/color.h>
+#include <core/color.h>
 #include <core/core.h>
 #include <core/property.h>
 #include <core/result.h>
@@ -12,6 +12,10 @@
 
 #ifndef NOMINMAX
 #define NOMINMAX
+#endif
+
+#ifndef UNICODE
+#define UNICODE
 #endif
 
 #include <windows.h>

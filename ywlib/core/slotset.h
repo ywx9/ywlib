@@ -1,5 +1,6 @@
 #pragma once
-#include <base/array.h>
+#include <core/array.h>
+#include <core/heap.h>
 #include <core/result.h>
 #include <core/tuple.h>
 
@@ -74,11 +75,7 @@ private:
 
 public:
   constexpr ~slotset() noexcept {
-    for (auto& s : _slots)
-      if (s.pointer) {
-        s.pointer->~T();
-        deallocate(s.pointer);
-      }
+    for (auto& s : _slots) delete s.pointer;
   }
 
   slotset(const slotset&) = delete;
@@ -98,8 +95,7 @@ public:
     if (!i) return {};
     if (i.index >= _slots.size()) return error(errors::invalid_slotid);
     if (auto& s = _slots[i.index]; s.generation == i.generation) {
-      s.pointer->~T();
-      deallocate(s.pointer);
+      delete s.pointer;
       s.pointer = nullptr;
       s.generation++;
       s.next_free = _free_head;
@@ -115,12 +111,12 @@ public:
       auto& s = _slots[i];
       _free_head = s.next_free;
       s.next_free = uint32_t(-1);
-      s.pointer = allocate<T>();
+      s.pointer = new T();
       new (s.pointer) T(static_cast<As&&>(as)...);
       return slotid{i, s.generation};
     } else {
       const auto i = uint32_t(_slots.size());
-      _slots.push_back(_slot{allocate<T>(), 1, uint32_t(-1)});
+      _slots.push_back(_slot{new T(), 1, uint32_t(-1)});
       new (_slots[i].pointer) T(static_cast<As&&>(as)...);
       return slotid{i, 1};
     }
@@ -130,11 +126,8 @@ public:
     _free_head = uint32_t(-1);
     for (auto i = uint32_t(_slots.size()); i-- > 0;) {
       auto& s = _slots[i];
-      if (s.pointer) {
-        s.pointer->~T();
-        deallocate(s.pointer);
-        s.pointer = nullptr;
-      }
+      delete s.pointer;
+      s.pointer = nullptr;
       s.generation++;
       s.next_free = _free_head;
       _free_head = i;

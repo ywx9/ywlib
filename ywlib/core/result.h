@@ -38,6 +38,7 @@ inline constexpr error_type invalid_operation{"invalid_operation"};
 inline constexpr error_type operation_failed{"operation_failed"};
 inline constexpr error_type unreachable{"unreachable"};
 inline constexpr error_type contract_violation{"contract_violation"};
+inline constexpr error_type not_initialized{"not_initialized"};
 } // namespace errors
 
 struct error {
@@ -92,7 +93,7 @@ struct error {
   constexpr error(string<char> m, std::source_location sl = here()) noexcept : error(errors::unknown, move(m), sl) {}
 
   constexpr error& add_footprint(std::source_location sl = here()) noexcept {
-    if (type == errors::ok) return;
+    if (type == errors::ok) return *this;
     footprint.ref().append("\n");
     footprint.ref().append("^ ");
     footprint.ref().append(sl.file_name());
@@ -121,9 +122,7 @@ struct error {
     ::abort();
   }
 
-  constexpr void print_and_abort(std::source_location sl = here()) noexcept {
-    print_and_abort("fatal error: ", sl);
-  }
+  constexpr void print_and_abort(std::source_location sl = here()) noexcept { print_and_abort("fatal error: ", sl); }
 
   constexpr void ignore() noexcept {
     if (!has) return;
@@ -214,7 +213,7 @@ public:
 
   constexpr yw::error&& relay(const std::source_location& sl = here()) & {
     if (!has_error()) yw::error("attempted to access error of result when it has no error").print_and_abort();
-    yw::error::add_footprint(sl);
+    _union._error.add_footprint(sl);
     return move(_union._error);
   }
 };
@@ -259,7 +258,7 @@ public:
 
   constexpr yw::error&& relay(const std::source_location& sl = here()) & {
     if (!has_error()) yw::error("attempted to access error of result when it has no error").print_and_abort();
-    yw::error::add_footprint(sl);
+    _union._error.add_footprint(sl);
     return move(_union._error);
   }
 };

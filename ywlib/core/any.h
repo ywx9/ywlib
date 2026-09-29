@@ -49,12 +49,11 @@ class any {
     constexpr _traits_large() noexcept {
       _traits::_destroy = [](decltype(_union)& src) noexcept {
         static_cast<T*>(src._heap)->~T();
-        yw::deallocate(static_cast<T*>(src._heap));
+        delete static_cast<T*>(src._heap);
       };
       if constexpr (constructible<T, const T&>) {
         _traits::_copy_to = [](const decltype(_union)& src, decltype(_union)& dst) {
-          dst._heap = allocate<T>();
-          new (dst._heap) T(*static_cast<const T*>(src._heap));
+          dst._heap = new T(*static_cast<const T*>(src._heap));
         };
       }
       _traits::_move_to = [](decltype(_union)&& src, decltype(_union)& dst) {
@@ -72,8 +71,7 @@ class any {
       new (_union._get_sbo()) G(static_cast<As&&>(as)...);
       new (&_traits) _traits_small<G>();
     } else {
-      _union._heap = allocate<G>();
-      new (_union._heap) G(static_cast<As&&>(as)...);
+      _union._heap = new G(static_cast<As&&>(as)...);
       new (&_traits) _traits_large<G>();
     }
   }
