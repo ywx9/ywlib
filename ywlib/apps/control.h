@@ -1,6 +1,8 @@
 #pragma once
-#include <apps/directx.h>
+#include <apps/bitmap.h>
 #include <apps/key.h>
+#include <apps/text.h>
+#include <core/array.h>
 #include <core/core.h>
 #include <core/format.h>
 #include <core/function.h>
@@ -131,7 +133,7 @@ struct wheel_event {
 ///--------------------------------------------------------------------------///
 /// MARK: control
 
-class control;
+
 } // namespace yw
 
 #endif

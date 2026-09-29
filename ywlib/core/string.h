@@ -145,7 +145,7 @@ public:
   constexpr ~string() noexcept = default;
   constexpr string() noexcept = default;
 
-  constexpr string(const string& s) : string(string_view<C>(s.data(), s.size())) {}
+  constexpr string(const string& s) : string(string_view<C>(s.c_str(), s.size())) {}
 
   constexpr string& operator=(const string& s) {
     if (this != &s) {

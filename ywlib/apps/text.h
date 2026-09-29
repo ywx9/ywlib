@@ -159,7 +159,7 @@ public:
 inline result<void> draw_text(float2 Pos, text_layout_like auto&& TextLayout) {
   if (!drawing::target_exists()) return error(errors::invalid_operation, "drawing target not available");
   if (auto tl = get_text_layout(TextLayout); !tl) return error(errors::not_initialized);
-  else d2d::context()->DrawTextLayout(Pos, tl, d2d::solid_color_brush());
+  else d2d::context()->DrawTextLayout(D2D1::Point2F(Pos.x(), Pos.y()), tl, d2d::solid_color_brush());
   return {};
 }
 

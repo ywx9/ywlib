@@ -238,7 +238,7 @@ public:
     if (auto res = drawing::create(d2d_bitmap.ref().get())) {
       d2d::context()->Clear(reinterpret_cast<const D2D1_COLOR_F*>(&ClearColor));
       return move(*res);
-    } else res.relay();
+    } else return res.relay();
   }
 
   result<void> copy_to_cpu(bgra* Out) const {
