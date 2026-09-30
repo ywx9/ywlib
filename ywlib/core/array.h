@@ -277,6 +277,26 @@ template<typename T> struct array<T, npos> {
     return *this;
   }
 
+  constexpr void erase(T* iter) {
+    if (iter < data() || iter >= data() + size()) return;
+    std::destroy_at(iter);
+    std::move(iter + 1, data() + size(), iter);
+    size = size() - 1;
+  }
+
+  constexpr void erase(size_t i) { erase(data() + i); }
+
+  constexpr void erase(T* first, T* last) {
+    if (first < data()) first = data();
+    if (last > data() + size()) last = data() + size();
+    if (first >= last) return;
+    std::destroy(first, last);
+    std::move(last, data() + size(), first);
+    size = size() - (last - first);
+  }
+
+  constexpr void erase(size_t first, size_t last) { erase(data() + first, data() + last); }
+
   constexpr operator array_view<T>() noexcept { return array_view<T>(data(), size()); }
   constexpr operator array_view<const T>() const noexcept { return array_view<const T>(data(), size()); }
   constexpr array_view<T> view() noexcept { return array_view<T>(data(), size()); }

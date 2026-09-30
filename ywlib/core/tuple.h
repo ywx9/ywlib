@@ -171,8 +171,74 @@ template<typename R> inline constexpr auto vapply_r = []<typename Fn, typename..
     }(make_indices_for<R>{}, fn, tps...);
   };
 
+///--------------------------------------------------------------------------///
+/// MARK: tuple
+
+namespace internal {
+template<typename... Ts> struct _tuple {};
+template<typename T> struct _tuple<T> {
+  T first;
+  template<size_t I, typename Self> constexpr decltype(auto) get(this Self&& self) noexcept {
+    return static_cast<copy_cvref_weak<Self&&, T>>(self.first);
+  }
+};
+template<typename T, typename U> struct _tuple<T, U> {
+  T first;
+  U second;
+  template<size_t I, typename Self> constexpr decltype(auto) get(this Self&& self) noexcept {
+    if constexpr (I == 0) return static_cast<copy_cvref_weak<Self&&, T>>(self.first);
+    else return static_cast<copy_cvref_weak<Self&&, U>>(self.second);
+  }
+};
+template<typename T, typename U, typename V> struct _tuple<T, U, V> {
+  T first;
+  U second;
+  V third;
+  template<size_t I, typename Self> constexpr decltype(auto) get(this Self&& self) noexcept {
+    if constexpr (I == 0) return static_cast<copy_cvref_weak<Self&&, T>>(self.first);
+    else if constexpr (I == 1) return static_cast<copy_cvref_weak<Self&&, U>>(self.second);
+    else return static_cast<copy_cvref_weak<Self&&, V>>(self.third);
+  }
+};
+template<typename... Ts> requires(sizeof...(Ts) > 3)
+struct _tuple<Ts...> : typepack<Ts...>::template fore<sizeof...(Ts) - 1>::template expand<_tuple> {
+  using base = typepack<Ts...>::template fore<sizeof...(Ts) - 1>::template expand<_tuple>;
+  Ts...[sizeof...(Ts) - 1] last;
+  template<size_t I, typename Self> constexpr decltype(auto) get(this Self&& self) noexcept {
+    constexpr size_t n = sizeof...(Ts);
+    if constexpr (I == n - 1) return static_cast<copy_cvref_weak<Self&&, Ts...[n - 1]>>(self.last);
+    else return base::template get<I>(static_cast<Self&&>(self));
+  }
+};
+} // namespace internal
+
 template<typename... Ts> struct tuple;
 template<typename... Ts> using tuple_base = typepack<Ts...>::template fore<sizeof...(Ts) - 1>::template expand<tuple>;
+
+template<typename T> struct tuple<T> {
+  static constexpr size_t count = 1;
+  using first_type = T;
+  first_type first;
+
+  template<size_t I> requires(I < 1) constexpr auto get() & noexcept -> T& { return first; }
+  template<size_t I> requires(I < 1) constexpr auto get() const& noexcept -> const T& { return first; }
+  template<size_t I> requires(I < 1) constexpr auto get() && noexcept -> T&& { return static_cast<T&&>(first); }
+  template<size_t I> requires(I < 1) constexpr auto get() const&& noexcept -> const T&& {
+    return static_cast<T&&>(first);
+  }
+  template<typename A> constexpr tuple& operator=(A&& Arg) & requires vassignable<tuple&, A> {
+    return vassign(*this, static_cast<A&&>(Arg)), *this;
+  }
+  template<typename A> constexpr const tuple& operator=(A&& Arg) const& requires vassignable<const tuple&, A> {
+    return vassign(*this, static_cast<A&&>(Arg)), *this;
+  }
+  template<typename A> constexpr tuple&& operator=(A&& Arg) && requires vassignable<tuple&&, A> {
+    return vassign(static_cast<tuple&&>(*this), static_cast<A&&>(Arg)), static_cast<tuple&&>(*this);
+  }
+  template<typename A> constexpr const tuple&& operator=(A&& Arg) const&& requires vassignable<const tuple&&, A> {
+    return vassign(static_cast<const tuple&&>(*this), static_cast<A&&>(Arg)), static_cast<const tuple&&>(*this);
+  }
+};
 
 namespace internal {
 template<typename T, typename U, typename V> struct _tuple_from_typepack;
@@ -283,30 +349,6 @@ template<typename T1, typename T2> struct tuple<T1, T2> : tuple<T1> {
   }
 };
 
-template<typename T> struct tuple<T> {
-  static constexpr size_t count{1};
-  using first_type = T;
-  first_type first;
-  template<size_t I> requires(I < 1) constexpr auto get() & noexcept -> T& { return first; }
-  template<size_t I> requires(I < 1) constexpr auto get() const& noexcept -> const T& { return first; }
-  template<size_t I> requires(I < 1) constexpr auto get() && noexcept -> T&& { return static_cast<T&&>(first); }
-  template<size_t I> requires(I < 1) constexpr auto get() const&& noexcept -> const T&& {
-    return static_cast<T&&>(first);
-  }
-  template<typename A> constexpr tuple& operator=(A&& Arg) & requires vassignable<tuple&, A> {
-    return vassign(*this, static_cast<A&&>(Arg)), *this;
-  }
-  template<typename A> constexpr const tuple& operator=(A&& Arg) const& requires vassignable<const tuple&, A> {
-    return vassign(*this, static_cast<A&&>(Arg)), *this;
-  }
-  template<typename A> constexpr tuple&& operator=(A&& Arg) && requires vassignable<tuple&&, A> {
-    return vassign(static_cast<tuple&&>(*this), static_cast<A&&>(Arg)), static_cast<tuple&&>(*this);
-  }
-  template<typename A> constexpr const tuple&& operator=(A&& Arg) const&& requires vassignable<const tuple&&, A> {
-    return vassign(static_cast<const tuple&&>(*this), static_cast<A&&>(Arg)), static_cast<const tuple&&>(*this);
-  }
-};
-
 template<> struct tuple<> {
   static constexpr size_t count = 0;
   template<typename... Ts> static constexpr auto asref(Ts&&... Args) noexcept {
@@ -316,7 +358,7 @@ template<> struct tuple<> {
     internal::_tuple_from_typepack<Tp, Qualifier, remove_cvref<Qualifier>>::type;
 };
 
-template<typename... Ts> tuple(Ts...) -> tuple<Ts...>;
+template<typename... Ts> tuple(Ts...) -> tuple<remove_cvref<Ts>...>;
 
 ///--------------------------------------------------------------------------///
 /// MARK: projector
