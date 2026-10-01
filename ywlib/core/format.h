@@ -21,12 +21,21 @@ template<char_type C, typename T> constexpr string<C> _format(T&& Arg) {
     string<C> s(sizeof(void*) * 2 + 2, C('0'));
     s[1] = C('x');
     if consteval {
+      return s; // always return 0x0...0
+    } else {
       auto u = reinterpret_cast<size_t>(Arg);
       for (auto p = s.data() + s.size(); u != 0; u /= 16) *--p = C(internal::hex_table[u % 16]);
       return s;
-    } else {
-      return s; // always return 0x0...0
     }
+  } else if constexpr (same_as<remove_cvref<T>, std::source_location>) {
+    auto s = unicode<C>(Arg.file_name());
+    s += unicode<C>(":");
+    s += unicode<C>(std::to_string(Arg.line()));
+    s += unicode<C>(":");
+    s += unicode<C>(std::to_string(Arg.column()));
+    s += unicode<C>(": ");
+    s += unicode<C>(Arg.function_name());
+    return s;
   } else if constexpr (internal::has_to_string_c<T, C>) return Arg.template to_string<C>();
   else if constexpr (internal::has_to_string<T>) return unicode<C>(Arg.to_string());
   else static_assert(always_false<T>, "Type does not have to_string<C> or to_string method");

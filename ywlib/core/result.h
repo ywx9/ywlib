@@ -93,7 +93,8 @@ struct error {
   constexpr error(string<char> m, std::source_location sl = here()) noexcept : error(errors::unknown, move(m), sl) {}
 
   constexpr error& add_footprint(std::source_location sl = here()) noexcept {
-    if (type == errors::ok) return *this;
+    // if (type == errors::ok) return *this;
+    if (!has) return *this;
     footprint.ref().append("\n");
     footprint.ref().append("^ ");
     footprint.ref().append(sl.file_name());
@@ -106,7 +107,8 @@ struct error {
 
   constexpr void print(const char* msg = nullptr) noexcept {
     if (std::is_constant_evaluated()) return;
-    if (type != errors::ok) {
+    // if (type != errors::ok) {
+    if (has) {
       if (msg) ::fputs(msg, stderr);
       if (message().empty()) ::fputs(type().name.c_str(), stderr);
       else ::fputs(message().c_str(), stderr);
@@ -233,6 +235,8 @@ public:
     if (has_error()) _union._error.~error();
   }
 
+  constexpr result() noexcept {}
+
   constexpr result(result&& o) noexcept {
     if (o.has_error()) {
       new (&_union._error) yw::error(move(o._union._error));
@@ -240,8 +244,6 @@ public:
       o.has_error = false;
     }
   }
-
-  constexpr result(is_none auto) noexcept {}
 
   template<typename... As> requires constructible<yw::error, As...>
   constexpr result(As&&... as) noexcept(nt_constructible<yw::error, As...>) {

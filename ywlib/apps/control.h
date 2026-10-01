@@ -133,6 +133,12 @@ struct wheel_event {
 ///--------------------------------------------------------------------------///
 /// MARK: control
 
+class control {
+  friend class window;
+  virtual result<uint2> _update_geometry(uint2 Area) { return {}; }
+
+public:
+};
 
 } // namespace yw
 

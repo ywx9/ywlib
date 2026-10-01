@@ -229,7 +229,7 @@ public:
     }
     {
       if (_device) return error(errors::invalid_operation, "D2D Device is already initialized");
-      const auto hr = dxgi::device()->QueryInterface(__uuidof(ID2D1Device), reinterpret_cast<void**>(&_device));
+      const auto hr = _factory->CreateDevice(dxgi::device(), &_device);
       if (FAILED(hr)) return error(errors::operation_failed, "QueryInterface for ID2D1Device failed");
     }
     {

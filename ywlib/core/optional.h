@@ -25,10 +25,12 @@ public:
 
   constexpr optional(const optional& o) requires constructible<T, const T&> {
     if (o) new (&_union._value) T(o._union._value);
+    has_value = o.has_value();
   }
 
   constexpr optional(optional&& o) noexcept(nt_constructible<T, T&&>) requires constructible<T, T&&> {
     if (o) new (&_union._value) T(static_cast<T&&>(o._union._value));
+    has_value = o.has_value();
   }
 
   template<typename... As> requires constructible<T, As...>
@@ -50,6 +52,7 @@ public:
     if (has_value() && o.has_value()) _union._value = o._union._value;
     else if (has_value()) _union._value.~T();
     else if (o.has_value()) new (&_union._value) T(o._union._value);
+    has_value = o.has_value();
     return *this;
   }
 
@@ -59,6 +62,7 @@ public:
     if (has_value() && Other.has_value()) _union._value = static_cast<T&&>(Other._union._value);
     else if (has_value()) _union._value.~T();
     else if (Other.has_value()) new (&_union._value) T(static_cast<T&&>(Other._union._value));
+    has_value = Other.has_value();
     return *this;
   }
 
@@ -71,6 +75,7 @@ public:
       if (has_value()) _union._value.~T();
       new (&_union._value) T(static_cast<U&&>(Value));
     }
+    has_value = true;
     return *this;
   }
 
@@ -78,6 +83,7 @@ public:
   constexpr T& emplace(As&&... as) noexcept(nt_constructible<T, As...>) {
     if (has_value()) _union._value.~T();
     new (&_union._value) T(static_cast<As&&>(as)...);
+    has_value = true;
     return _union._value;
   }
 
