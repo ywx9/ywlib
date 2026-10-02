@@ -36,7 +36,7 @@ struct bgra {
 ///--------------------------------------------------------------------------///
 /// MARK: bitmap_like
 
-template<typename T> concept bitmap_like = convertible_to<T&, ID2D1Bitmap*> || convertible_to<T&, ID2D1Bitmap1*>;
+template<typename T> concept bitmap_like = castable_to<T&, ID2D1Bitmap*> || castable_to<T&, ID2D1Bitmap1*>;
 
 inline constexpr auto get_d2d_bitmap = []<bitmap_like T>(T& Bitmap) {
   if constexpr (castable_to<T&, ID2D1Bitmap1*>) return static_cast<ID2D1Bitmap1*>(Bitmap);
@@ -231,7 +231,7 @@ public:
 
   result<drawing> begin_draw() {
     if (auto res = drawing::create(d2d_bitmap.ref().get())) return move(*res);
-    else res.relay();
+    else return res.relay();
   }
 
   result<drawing> begin_draw(const color& ClearColor) {

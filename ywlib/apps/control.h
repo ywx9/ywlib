@@ -6,6 +6,7 @@
 #include <core/core.h>
 #include <core/format.h>
 #include <core/function.h>
+#include <core/heap.h>
 #include <core/optional.h>
 #include <core/property.h>
 #include <core/slotset.h>
@@ -18,42 +19,6 @@
 #endif
 
 namespace yw {
-
-///--------------------------------------------------------------------------///
-/// MARK: interface
-
-class interface {
-public:
-  struct slot {
-    inline static slotset<slot> slots{};
-    slotset<slot>::slotid id;
-    virtual ~slot() noexcept = default;
-  };
-
-  using slotid = slotset<slot>::slotid;
-  const_property<slotid, interface> id;
-  explicit operator bool() const noexcept { return slot::slots.exists(id); }
-
-  virtual ~interface() noexcept { _destroy_slot(); }
-  interface() noexcept = default;
-  interface(const interface&) = delete;
-  interface& operator=(const interface&) = delete;
-  interface(interface&& o) noexcept : id(exchange(o.id.ref(), {})) {}
-  interface& operator=(interface&& o) noexcept {
-    if (this == &o) return *this;
-    _destroy_slot();
-    id = exchange(o.id.ref(), {});
-    return *this;
-  }
-
-protected:
-  explicit interface(slotid Id) : id(Id) {}
-  void _destroy_slot() noexcept {
-    if (const auto sp = slot::slots.get(id))
-      if (auto res = slot::slots.erase(id); !res) // 設計上、エラーを想定していない
-        res.error().print_and_abort("Failed to erase slot for interface");
-  }
-};
 
 ///--------------------------------------------------------------------------///
 /// MARK: alignment
@@ -71,6 +36,23 @@ enum class alignment : uint8_t {
 };
 
 ///--------------------------------------------------------------------------///
+/// MARK: color_theme
+
+struct color_theme {
+  color canvas = color(0xf0f0f0);        // ex) background of window
+  color surface = color(0xf8f8f8);       // ex) background of control
+  color surface_popup = color(0xffffff); // ex) background of tooltip
+  color outline = colors::black;         // ex) border of control
+  color part = colors::gray;             // ex) button of checkbox, thumb of scrollbar
+  color text = colors::black;            // ex) text, icon
+  color text_muted = colors::gray;       // ex) placeholder text
+  color accent = colors::dodgerblue;     // ex) focus, selection
+  color warning = colors::orange;
+  color error = colors::red;
+  color success = colors::green;
+};
+
+///--------------------------------------------------------------------------///
 /// MARK: events
 
 struct button_event {
@@ -78,7 +60,7 @@ struct button_event {
   key key;
   key_state state;
   constexpr string<char> to_string() const {
-    return format("button_event(pos:", pos, ", key:", internal::_get_key_name(key), ", state:", state, ")");
+    return format("button_event(pos:", pos, ", key:", key.to_string(), ", state:", state, ")");
   }
 };
 
@@ -93,7 +75,7 @@ struct drag_event {
   key key;
   key_state state;
   constexpr string<char> to_string() const {
-    return format("drag_event(delta:", delta, ", key:", internal::_get_key_name(key), ", state:", state, ")");
+    return format("drag_event(delta:", delta, ", key:", key.to_string(), ", state:", state, ")");
   }
 };
 
@@ -116,9 +98,7 @@ struct hover_event {
 struct key_event {
   key key;
   key_state state;
-  constexpr string<char> to_string() const {
-    return format("key_event(key:", internal::_get_key_name(key), ", state:", state, ")");
-  }
+  constexpr string<char> to_string() const { return format("key_event(key:", key.to_string(), ", state:", state, ")"); }
 };
 
 struct wheel_event {
@@ -131,15 +111,212 @@ struct wheel_event {
 };
 
 ///--------------------------------------------------------------------------///
+/// MARK: window system
+
+class window;
+class control;
+
+namespace window_system {
+inline slotset<control*> controls{};
+/// control_layerの再描画が必要な状態にする
+inline void make_dirty(HWND hwnd);
+/// control_layerのレイアウト再計算が必要な状態にする
+inline void make_messy(HWND hwnd);
+/// ウィンドウのcolor_themeを取得する
+inline const color_theme* get_color_theme(HWND hwnd);
+/// ウィンドウのルートコントロールとしてコントロールを設定する
+inline result<void> attach_control(control& c, window& w);
+} // namespace window_system
+
+///--------------------------------------------------------------------------///
 /// MARK: control
 
 class control {
   friend class window;
-  virtual result<uint2> _update_geometry(uint2 Area) { return {}; }
+  using slotid = slotset<control*>::slotid;
 
 public:
-};
+  static constexpr float arbitrary_value = 4.0f;
+  const_property<slotid, control> id = slotid{};
 
+protected:
+  HWND _window = nullptr;
+  comptr<ID2D1Geometry> _geometry;
+  float4 _margin = float4::fill(arbitrary_value);
+  float2 _served_origin;
+  float2 _served_area;
+  float2 _current_pos;
+  float2 _current_size;
+  float2 _desired_size;
+  /// サイズが指定されているか
+  bool2 _desired;
+  /// 空き領域がある場合に拡張するか
+  bool2 _grow = false;
+  /// 与えられた領域内での配置方法
+  yw::alignment _alignment = yw::alignment::center;
+  /// ジオメトリの再設定が必要か
+  bool _geometry_dirty = false;
+  /// 必要な最小サイズを計算する
+  virtual result<float2> _calculate_minimum_size() { return _desired_size * _desired; }
+  /// 必要な最小領域サイズを計算する
+  virtual result<float2> _calculate_minimum_area() {
+    if (auto res = _calculate_minimum_size()) return *res + _margin.xy() + _margin.zw();
+    else return res.relay();
+  }
+  /// 与えられた領域に基づいて配置を更新する
+  virtual result<void> _update_layout() {
+    const auto pos = _served_origin + _margin.xy();
+    const auto maximum_size = _served_area - _margin.xy() - _margin.zw();
+    float2 minimum_size = maximum_size * _grow;
+    if (auto res = _calculate_minimum_size()) minimum_size = vapply_r<float2>(yw::max, *res, minimum_size);
+    else return res.relay();
+    const auto difference = maximum_size - minimum_size;
+    constexpr float c[]{0.5f, 0.0f, 1.0f};
+    const auto a = uint8_t(_alignment);
+    const float2 cc{c[a % 3], c[a / 4 % 3]};
+    _current_pos = pos + difference * cc;
+    _current_size = minimum_size;
+    return {};
+  }
+  /// 新たに領域を設定して配置を更新する
+  virtual result<void> _update_layout(float2 Origin, float2 Area) {
+    _served_origin = Origin;
+    _served_area = Area;
+    if (auto res = _update_layout()) return {};
+    else return res.relay();
+  }
+  /// 現在の配置でジオメトリを更新する
+  virtual result<void> _update_geometry() {
+    ID2D1RectangleGeometry* geometry = nullptr;
+    const auto left_top = _current_pos;
+    const auto right_bottom = _current_pos + _current_size;
+    D2D1_RECT_F rect{left_top.x(), left_top.y(), right_bottom.x(), right_bottom.y()};
+    if (const auto hr = d2d::factory()->CreateRectangleGeometry(&rect, &geometry); FAILED(hr))
+      return error(errors::operation_failed, "CreateRectangleGeometry failed");
+    _geometry.reset(geometry);
+    _geometry_dirty = false;
+    return {};
+  }
+  /// 描画する
+  virtual result<void> _draw() {
+    if (_geometry_dirty) {
+      if (auto res = _update_layout(); !res) return res.relay();
+      if (auto res = _update_geometry(); !res) return res.relay();
+      _geometry_dirty = false;
+    }
+    return {};
+  }
+
+  control() noexcept : id(window_system::controls.emplace(this)) {}
+
+  void _clear() noexcept {
+    window_system::make_dirty(_window);
+    if (const auto sp = window_system::controls.get(id)) window_system::controls.erase(id);
+  }
+
+  void _move_from(control&& o) noexcept {
+    _window = exchange(o._window, {});
+    id = exchange(o.id.ref(), {});
+    if (const auto sp = window_system::controls.get(id)) *sp = this;
+    _geometry = move(o._geometry);
+    _served_origin = o._served_origin;
+    _served_area = o._served_area;
+    _margin = o._margin;
+    _current_pos = o._current_pos;
+    _current_size = o._current_size;
+    _desired_size = o._desired_size;
+    _desired = o._desired;
+    _grow = o._grow;
+    _alignment = o._alignment;
+    _geometry_dirty = o._geometry_dirty;
+  }
+
+  result<void> _attach(control&) {
+    return error(errors::invalid_operation, "This control cannot accept other controls");
+  }
+
+public:
+  virtual ~control() { _clear(); }
+  control(const control&) = delete;
+  control& operator=(const control&) = delete;
+  control(control&& o) noexcept { _move_from(move(o)); }
+  control& operator=(control&& o) noexcept {
+    if (this == &o) return *this;
+    _clear();
+    _move_from(move(o));
+    return *this;
+  }
+
+  virtual result<void> attach_to(window& w);
+  virtual result<void> attach_to(control& c) {
+    if (auto res = c._attach(*this); !res) return res.relay();
+    _window = c._window;
+    return {};
+  }
+
+  float4 margin() const noexcept { return _margin; }
+  result<void> margin(float4 Margin) {
+    _margin = Margin;
+    window_system::make_messy(_window);
+    return {};
+  }
+
+  float2 pos() const noexcept { return _current_pos; }
+
+  float2 size() const noexcept { return _current_size; }
+  result<void> size(float2 Size) {
+    _desired_size = Size;
+    _desired = bool2(true, true);
+    window_system::make_messy(_window);
+    return {};
+  }
+  result<void> size(is_none auto) {
+    _desired = bool2(false, false);
+    window_system::make_messy(_window);
+    return {};
+  }
+
+  float width() const noexcept { return _current_size.x(); }
+  result<void> width(float1 Width) {
+    _desired_size.x() = Width.x();
+    _desired.x() = true;
+    window_system::make_messy(_window);
+    return {};
+  }
+  result<void> width(is_none auto) {
+    _desired.x() = false;
+    window_system::make_messy(_window);
+    return {};
+  }
+
+  float height() const noexcept { return _current_size.y(); }
+  result<void> height(float1 Height) {
+    _desired_size.y() = Height.x();
+    _desired.y() = true;
+    window_system::make_messy(_window);
+    return {};
+  }
+  result<void> height(is_none auto) {
+    _desired.y() = false;
+    window_system::make_messy(_window);
+    return {};
+  }
+
+  bool2 grow() const noexcept { return _grow; }
+  result<void> grow(bool2 Grow) {
+    _grow = Grow;
+    window_system::make_messy(_window);
+    return {};
+  }
+
+  yw::alignment alignment() const noexcept { return _alignment; }
+  result<void> alignment(yw::alignment Alignment) {
+    _alignment = Alignment;
+    _geometry_dirty = true;
+    window_system::make_dirty(_window);
+    return {};
+  }
+};
 } // namespace yw
 
 #endif

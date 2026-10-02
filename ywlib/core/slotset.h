@@ -86,9 +86,11 @@ public:
   constexpr bool exists(const slotid i) const noexcept { return get(i) != nullptr; }
 
   template<typename Self> constexpr auto get(this Self& self, const slotid i) noexcept {
+    constexpr auto null_ptr = add_pointer<copy_cv<remove_ref<Self>, T>>{};
+    if (i.index >= self._slots.size()) return null_ptr;
     auto& s = self._slots[i.index];
     const bool b = i.index < self._slots.size() && s.generation == i.generation;
-    return b ? s.pointer : add_pointer<copy_cv<remove_ref<Self>, T>>{};
+    return b ? s.pointer : null_ptr;
   }
 
   constexpr result<void> erase(const slotid i) noexcept {

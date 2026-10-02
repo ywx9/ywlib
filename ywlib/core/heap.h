@@ -11,6 +11,9 @@ namespace yw {
 /// the default-constructed object without running its destructor.
 /// Use that path only when skipping that destructor is semantically harmless.
 
+///--------------------------------------------------------------------------///
+/// MARK: uninitialized_heap
+
 template<is_object T> class uninitialized_heap {
   T* _ptr = nullptr;
 
@@ -57,6 +60,9 @@ public:
   constexpr void reset() noexcept { _reset(), _ptr = nullptr; }
 };
 
+///--------------------------------------------------------------------------///
+/// MARK: uninitialized_heap<T[]>
+
 template<is_object T> class uninitialized_heap<T[]> {
   T* _ptr = nullptr;
 
@@ -102,6 +108,9 @@ public:
   constexpr void reset() noexcept { _reset(), _ptr = nullptr; }
 };
 
+///--------------------------------------------------------------------------///
+/// MARK: heap
+
 template<is_object T> requires(!is_unbounded_array<T>) class heap {
   uninitialized_heap<T> _heap;
 
@@ -118,7 +127,6 @@ public:
   constexpr value_type& operator*() const noexcept { return *_heap; }
 
   constexpr ~heap() noexcept { _reset(); }
-  constexpr heap() = default;
   heap(const heap&) = delete;
   heap& operator=(const heap&) = delete;
   constexpr heap(heap&&) noexcept = default;
@@ -133,14 +141,5 @@ public:
   constexpr explicit heap(As&&... as) noexcept(nt_constructible<T, As...>) : _heap(none()) {
     new (_heap.get()) T(static_cast<As&&>(as)...);
   }
-
-  template<typename... As> requires constructible<T, As...>
-  constexpr void emplace(As&&... as) noexcept(nt_constructible<T, As...>) {
-    if (_heap) _heap.get()->~T();
-    else _heap = uninitialized_heap<T>(none());
-    new (_heap.get()) T(static_cast<As&&>(as)...);
-  }
-
-  constexpr void reset() noexcept { _reset(); }
 };
 } // namespace yw

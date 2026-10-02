@@ -116,6 +116,13 @@ constexpr auto operator<=>(const vector<T, N>& a, const vector<U, N>& b) noexcep
   return std::compare_three_way_result_t<T, U>::equivalent;
 }
 
+template<typename T, size_t N> requires requires(T a) { !a; }
+constexpr auto operator!(const vector<T, N>& a) noexcept(noexcept(!T())) {
+  vector<decltype(!T()), N> result;
+  for (size_t i = 0; i < N; ++i) result[i] = !a[i];
+  return result;
+}
+
 template<typename T, size_t N> constexpr auto operator+(const vector<T, N>& a) noexcept { return a; }
 template<typename T, size_t N> requires requires(T a) {
   { -a } -> convertible_to<T>;

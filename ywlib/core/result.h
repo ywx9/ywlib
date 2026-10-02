@@ -176,6 +176,23 @@ public:
     }
   }
 
+  constexpr result& operator=(result&& o) noexcept(nt_constructible<T, T> && nt_assignable<T, T>) {
+    if (this != &o) {
+      if (has_value()) _union._value.~T(), has_value = false;
+      if (has_error()) _union._error.~error(), has_error = false;
+      if (o.has_value()) {
+        new (&_union._value) T(move(o._union._value));
+        has_value = true;
+        o.has_value = false;
+      } else if (o.has_error()) {
+        new (&_union._error) yw::error(move(o._union._error));
+        has_error = true;
+        o.has_error = false;
+      }
+    }
+    return *this;
+  }
+
   template<typename... As> requires constructible<T, As...>
   constexpr result(As&&... as) noexcept(nt_constructible<T, As...>) {
     new (&_union._value) T(static_cast<As&&>(as)...);

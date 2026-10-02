@@ -95,6 +95,14 @@ public:
     else res.error().add_footprint().print_and_abort(sl);
   }
 
+  template<stringable S> static result<text> create(S&& String) {
+    return create(font_config{}, static_cast<S&&>(String));
+  }
+  template<stringable S> text(S&& String, const std::source_location& sl = here()) {
+    if (auto res = create(static_cast<S&&>(String))) *this = move(*res);
+    else res.error().add_footprint().print_and_abort(sl);
+  }
+
   struct hit_test_result {
     float2 pos{};     // position(x, y) of character/text that is hit
     float2 size{};    // size(w, h) of character/text that is hit
