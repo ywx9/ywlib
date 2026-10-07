@@ -114,26 +114,33 @@ public:
 template<is_object T> requires(!is_unbounded_array<T>) class heap {
   uninitialized_heap<T> _heap;
 
-  constexpr void _reset() noexcept {
-    if (_heap) _heap.get()->~T(), _heap.reset();
+  struct _make_empty {};
+  constexpr explicit heap(_make_empty) noexcept : _heap() {}
+
+  constexpr void _clear() noexcept {
+    if !consteval {
+      if (_heap) _heap.get()->~T();
+    }
   }
 
 public:
   using value_type = T;
 
-  explicit constexpr operator bool() const noexcept { return _heap; }
+  explicit constexpr operator bool() const noexcept { return bool(_heap); }
   constexpr value_type* get() const noexcept { return _heap.get(); }
   constexpr value_type* operator->() const noexcept { return _heap.get(); }
   constexpr value_type& operator*() const noexcept { return *_heap; }
 
-  constexpr ~heap() noexcept { _reset(); }
+  constexpr ~heap() noexcept { _clear(); }
+
   heap(const heap&) = delete;
   heap& operator=(const heap&) = delete;
   constexpr heap(heap&&) noexcept = default;
+
   constexpr heap& operator=(heap&& o) noexcept {
     if (this == &o) return *this;
-    _reset();
-    _heap = exchange(o._heap, {});
+    _clear();
+    _heap = move(o._heap);
     return *this;
   }
 
@@ -141,5 +148,7 @@ public:
   constexpr explicit heap(As&&... as) noexcept(nt_constructible<T, As...>) : _heap(none()) {
     new (_heap.get()) T(static_cast<As&&>(as)...);
   }
+
+  static constexpr heap make_empty() noexcept { return heap(_make_empty{}); }
 };
 } // namespace yw

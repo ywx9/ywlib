@@ -115,6 +115,12 @@ public:
   const_property<bitmap, window> overlay_layer;
   const_property<bitmap, window> underlay_layer;
 
+  property<function<bool, yw::button_event>, window> button_event;
+  property<function<bool, yw::drag_event>, window> drag_event;
+  property<function<bool, yw::hover_event>, window> hover_event;
+  property<function<bool, yw::key_event>, window> key_event;
+  property<function<bool, yw::wheel_event>, window> wheel_event;
+
   result<drawing> begin_draw_overlay() {
     if (auto res = overlay_layer.ref().begin_draw(colors::transparent)) {
       _overlay_has_been_drawn = true;
@@ -178,7 +184,7 @@ public:
     if (!hwnd()) return {};
     for (auto c : window_system::controls)
       if (c && c->_window == hwnd()) c->_window = nullptr;
-    _root_control = {};
+    _root_control_id = {};
     if (auto res = window_system::destroy(hwnd()); !res) return res.relay();
     hwnd = nullptr;
     _back_buffer = bitmap();
@@ -187,6 +193,19 @@ public:
     underlay_layer = bitmap();
     swap_chain.ref().release();
     return {};
+  }
+
+  /// returns the position of the client area of the window.
+  result<int2> pos() {
+    if (RECT rect; ::GetWindowRect(hwnd(), &rect)) return int2(rect.left, rect.top) + frame_thickness().xy();
+    else return error(errors::operation_failed, "GetWindowRect failed");
+  }
+
+  /// sets the position of the client area of the window.
+  result<void> pos(int2 Pos) {
+    const auto pos = Pos - frame_thickness().xy();
+    if (::SetWindowPos(hwnd(), nullptr, pos.x(), pos.y(), 0, 0, SWP_NOSIZE | SWP_NOZORDER)) return {};
+    else return error(errors::operation_failed, "SetWindowPos failed");
   }
 
   /// returns the size of the client area of the window.
@@ -224,10 +243,14 @@ private:
 
   yw::color_theme _color_theme;
   bitmap _back_buffer;
-  control::slotid _root_control{};
-  int2 _desired_size{};                    // 指定されたウィンドウサイズ
-  int2 _current_size{};                    // 更新はWM_SIZEでのみ行われる
-  bool2 _desired{};                        // ウィンドウサイズが指定されているか
+  control::slotid _root_control_id{};
+
+  TRACKMOUSEEVENT _track_mouse_event{sizeof(TRACKMOUSEEVENT), TME_LEAVE};
+  int2 _previous_cursor_pos{};
+
+  int2 _desired_size{};                  // 指定されたウィンドウサイズ
+  int2 _current_size{};                  // 更新はWM_SIZEでのみ行われる
+  bool2 _desired{};                      // ウィンドウサイズが指定されているか
   bool _dirty = false;                   // control_layerが再描画される必要があるか
   bool _messy = false;                   // control_layerのレイアウト再計算が必要な状態か
   bool _overlay_has_been_drawn = false;  // overlay_layerがユーザーによって描画済みか
@@ -236,7 +259,7 @@ private:
   /// _dirty/_messyフラグがあるならクリアする。
   result<void> _clean() {
     control* root = nullptr;
-    if (const auto sp = window_system::controls.get(_root_control)) root = *sp;
+    if (const auto sp = window_system::controls.get(_root_control_id)) root = *sp;
     int2 area;
     if (auto res = size()) area = *res;
     else return res.relay();
@@ -339,7 +362,7 @@ private:
     underlay_layer = move(o.underlay_layer);
 
     _color_theme = o._color_theme;
-    _root_control = exchange(o._root_control, {});
+    _root_control_id = exchange(o._root_control_id, {});
     _desired_size = o._desired_size;
     _current_size = o._current_size;
     _desired = o._desired;
@@ -347,6 +370,196 @@ private:
     _messy = o._messy;
     _overlay_has_been_drawn = o._overlay_has_been_drawn;
     _underlay_has_been_drawn = o._underlay_has_been_drawn;
+  }
+
+  control::slotid _focused_control_id{};
+  control::slotid _hovered_control_id{};
+  control::slotid _captured_control_id{};
+  int _captured_button = 0;
+  bool _window_captured = false;
+  bool _window_resizing = false;
+
+  result<bool> _handle_button_event(yw::button_event e) {
+    bool handled = false;
+    if (const auto capture_cp = window_system::get_control(_captured_control_id)) {
+      const auto hit_cid = _get_hit_control_id(e.pos);
+      const auto old_captured_control_id = _captured_control_id;
+      _captured_control_id = {};
+      _window_captured = false;
+      if (e.state.down) { // 長押し中に別のボタンが押された->キャプチャ無効化
+        _captured_button |= 1 << int(e.key.code);
+        if (const auto hit_cp = window_system::get_control(hit_cid)) {
+          const auto focus_cid = (hit_cp && hit_cp->focusable()) ? hit_cid : control::slotid();
+          if (auto res = _focus_changed(_focused_control_id, focus_cid); !res) return res.relay();
+          if (auto res = hit_cp->_handle_button_event(this, e)) handled = *res;
+          else return res.relay();
+        }
+      } else { // キャプチャ中のボタンが解放された
+        _captured_button &= ~(1 << int(e.key.code));
+        if (auto res = capture_cp->_handle_button_event(this, e)) handled = *res;
+        else return res.relay();
+        if (hit_cid == old_captured_control_id) {
+          if (auto res = capture_cp->_handle_click_event(this, e)) handled |= *res;
+          else return res.relay();
+        }
+        if (_captured_button == 0) ::ReleaseCapture();
+      }
+      _dirty = true;
+    } else if (_captured_button != 0) { // キャプチャ無効化中
+      const auto hit_cid = _get_hit_control_id(e.pos);
+      _captured_control_id = {};
+      _window_captured = false;
+      if (e.state.down) {
+        _captured_button |= 1 << int(e.key.code);
+        if (const auto hit_cp = window_system::get_control(hit_cid)) {
+          const auto focus_cid = (hit_cp && hit_cp->focusable()) ? hit_cid : control::slotid();
+          if (auto res = _focus_changed(_focused_control_id, focus_cid); !res) return res.relay();
+          if (auto res = hit_cp->_handle_button_event(this, e)) handled = *res;
+          else return res.relay();
+        }
+      } else {
+        _captured_button &= ~(1 << int(e.key.code));
+        if (const auto hit_cp = window_system::get_control(hit_cid)) {
+          const auto focus_cid = (hit_cp && hit_cp->focusable()) ? hit_cid : control::slotid();
+          if (auto res = _focus_changed(_focused_control_id, focus_cid); !res) return res.relay();
+          if (auto res = hit_cp->_handle_button_event(this, e)) handled = *res;
+          else return res.relay();
+        }
+        if (_captured_button == 0) ::ReleaseCapture();
+      }
+    } else if (e.state.down) { // 新しくキャプチャされる場合
+      _captured_button |= 1 << int(e.key.code);
+      const auto hit_cid = _get_hit_control_id(e.pos);
+      if (const auto hit_cp = window_system::get_control(hit_cid)) {
+        _captured_control_id = hit_cid;
+        if (auto res = hit_cp->_handle_button_event(this, e)) handled = *res;
+        else return res.relay();
+      } else _window_captured = true;
+      ::SetCapture(hwnd);
+      _dirty = true;
+    }
+    if (!handled && button_event()) return button_event.ref()(e);
+    return handled;
+  }
+
+  result<bool> _handle_char_event(wchar_t c) {
+    if (const auto focus_cp = window_system::get_control(_focused_control_id)) {
+      if (auto res = focus_cp->_handle_char_event(this, c)) return *res;
+      else return res.relay();
+    } else return false;
+  }
+
+  result<bool> _handle_double_click_event(yw::button_event e) {
+    if (const auto root_cp = window_system::get_control(_root_control_id)) {
+      const auto hit_cid = root_cp->_hit_test(e.pos);
+      if (const auto hit_cp = window_system::get_control(hit_cid)) {
+        if (auto res = hit_cp->_handle_double_click_event(this, e); !res) return res.relay();
+        else return *res;
+      } else return false;
+    } else return false;
+  }
+
+  result<bool> _handle_drag_event(yw::drag_event e) {
+    bool handled = false;
+    if (const auto capture_cp = window_system::get_control(_captured_control_id)) {
+      if (auto res = capture_cp->_handle_drag_event(this, e); !res) return res.relay();
+      else handled = *res;
+    }
+    if (!handled && drag_event()) return drag_event.ref()(e);
+    return handled;
+  }
+
+  result<bool> _handle_hover_event(yw::hover_event e) {
+    const auto hit_cid = _get_hit_control_id(e.pos);
+    if (hit_cid == _hovered_control_id) {
+      bool handled = false;
+      if (const auto hit_cp = window_system::get_control(hit_cid)) {
+        if (auto res = hit_cp->_handle_hover_event(this, {e.pos, hover_event::hover})) handled = *res;
+        else return res.relay();
+      }
+      if (!handled && hover_event()) return hover_event.ref()({e.pos, hover_event::hover});
+      return handled;
+    }
+    bool leave_handled = false, enter_handled = false;
+    if (const auto old_hover_cp = window_system::get_control(_hovered_control_id)) {
+      if (auto res = old_hover_cp->_handle_hover_event(this, {e.pos, hover_event::leave})) leave_handled = *res;
+      else return res.relay();
+    }
+    if (const auto hit_cp = window_system::get_control(hit_cid)) {
+      _hovered_control_id = hit_cid;
+      if (auto res = hit_cp->_handle_hover_event(this, {e.pos, hover_event::enter})) enter_handled = *res;
+      else return res.relay();
+    } else _hovered_control_id = {};
+    if (leave_handled) {
+      if (!enter_handled && hover_event()) hover_event.ref()({e.pos, hover_event::enter});
+      return true;
+    }
+    if (enter_handled) {
+      if (hover_event()) hover_event.ref()({e.pos, hover_event::leave});
+      return true;
+    }
+    if (hover_event()) return hover_event.ref()({e.pos, hover_event::hover});
+    return false;
+  }
+
+  result<bool> _handle_key_event(yw::key_event e) {
+    bool handled = false;
+    if (const auto root_cp = window_system::get_control(_root_control_id)) {
+      if (e.state.down && e.key == keys::tab && !e.state.ctrl && !e.state.alt) {
+        if (auto res = _tab_pressed(e.state.shift); !res) return res.relay();
+        return true;
+      } else if (e.state.down && e.key == keys::escape && !e.state.ctrl && !e.state.alt) {
+        if (auto rse = _focus_changed(_focused_control_id, {}); !rse) return rse.relay();
+        return true;
+      } else if (const auto focus_cp = window_system::get_control(_focused_control_id)) {
+        if (auto res = focus_cp->_handle_key_event(this, e); !res) return res.relay();
+        else handled = *res;
+      }
+    }
+    if (!handled && key_event()) return key_event.ref()(e);
+    return handled;
+  }
+
+  result<bool> _handle_wheel_event(yw::wheel_event e) {
+    bool handled = false;
+    const auto hit_cid = _get_hit_control_id(e.pos);
+    if (const auto hover_cp = window_system::get_control(hit_cid)) {
+      if (auto res = hover_cp->_handle_wheel_event(this, e); !res) return res.relay();
+      else handled = *res;
+    }
+    if (!handled && wheel_event()) return wheel_event.ref()(e);
+    return handled;
+  }
+
+  result<void> _focus_changed(control::slotid Old, control::slotid New) {
+    if (Old == New) return {};
+    if (const auto old_cp = window_system::get_control(Old))
+      if (auto res = old_cp->_handle_focus_event(this, {false}); !res) return res.relay();
+    if (const auto new_cp = window_system::get_control(New))
+      if (auto res = new_cp->_handle_focus_event(this, {true}); !res) return res.relay();
+    _focused_control_id = New;
+    return {};
+  }
+
+  control::slotid _get_hit_control_id(float2 Pt) const {
+    if (const auto root_cp = window_system::get_control(_root_control_id)) return root_cp->_hit_test(Pt);
+    return {};
+  }
+
+  result<void> _tab_pressed(bool Shift) {
+    const auto root_cp = window_system::get_control(_root_control_id);
+    if (!root_cp) return {};
+    bool found = !bool(window_system::get_control(_focused_control_id));
+    const auto next_cid = root_cp->_find_tab_stop(_focused_control_id, Shift, found);
+    if (auto res = _focus_changed(_focused_control_id, next_cid); !res) return res.relay();
+    return {};
+  }
+
+  result<int2> _get_minimum_size() {
+    if (const auto root_cp = window_system::get_control(_root_control_id)) {
+      if (auto res = root_cp->_calculate_minimum_area(); res) return *res;
+      else return res.relay();
+    } else return {};
   }
 };
 
@@ -356,8 +569,8 @@ private:
 inline result<void> control::attach_to(window& w) {
   if (auto res = window_system::attach_control(*this, w); !res) return res.relay();
   if (_window != w.hwnd()) {
-    if (const auto old = window_system::get_window_pointer(_window); old && old->_root_control == id()) {
-      old->_root_control = {};
+    if (const auto old = window_system::get_window_pointer(_window); old && old->_root_control_id == id()) {
+      old->_root_control_id = {};
       old->_dirty = true;
     }
   }
@@ -379,67 +592,8 @@ inline const color_theme* window_system::get_color_theme(HWND hwnd) {
 }
 
 inline result<void> window_system::attach_control(control& c, window& w) {
-  if (const auto win = get_window_pointer(w.hwnd())) win->_root_control = c.id(), win->_messy = true;
+  if (const auto win = get_window_pointer(w.hwnd())) win->_root_control_id = c.id(), win->_messy = true;
   else return error(errors::operation_failed, "Window not found");
   return {};
 }
-
-///--------------------------------------------------------------------------///
-/// MARK: wndproc
-
-LRESULT CALLBACK wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-  const auto win = window_system::get_window_pointer(hwnd);
-  if (!win) {
-    if (msg == WM_DESTROY && window_system::windows.empty()) return ::PostQuitMessage(0), 0;
-    else return ::DefWindowProcW(hwnd, msg, wp, lp);
-  }
-  switch (msg) {
-  case WM_SIZE:
-    win->_current_size = uint2(LOWORD(lp), HIWORD(lp));
-    win->_messy = true;
-    break;
-  case WM_CLOSE: win->close(); return 0;
-  }
-  return ::DefWindowProcW(hwnd, msg, wp, lp);
-}
-
-///--------------------------------------------------------------------------///
-/// MARK: mainloop
-
-class mainloop {
-  inline static uint64_t _frame_count = 0;
-  inline static double _last_elapsed = 0.0;
-
-public:
-  inline static const_property<yw::stopwatch, mainloop> stopwatch = {};
-  inline static const_property<bool, mainloop> running = false;
-  explicit operator bool() const noexcept { return running(); }
-  inline static const_property<double, mainloop> spf = 0.0;
-  static double fps() noexcept { return spf() > 0.0 ? 1.0 / spf() : 0.0; }
-
-  mainloop() {
-    if (window_system::windows.empty()) {
-      running = false;
-      return;
-    }
-    if (!running) {
-      stopwatch.ref().restart();
-      _frame_count = 0;
-      _last_elapsed = 0.0;
-      spf = 0.0;
-    }
-    const auto now = stopwatch().elapsed();
-    spf = now - _last_elapsed, _last_elapsed = now;
-    for (MSG msg; ::PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);)
-      if (msg.message == WM_QUIT) {
-        running = false;
-        return;
-      } else ::TranslateMessage(&msg), ::DispatchMessageW(&msg);
-    for (auto hwnd : window_system::windows)
-      if (const auto win = window_system::get_window_pointer(hwnd); win)
-        if (auto res = win->update(); !res) res.error().print_and_abort();
-    ++_frame_count;
-    running = true;
-  }
-};
 } // namespace yw

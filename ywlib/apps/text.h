@@ -8,7 +8,7 @@ namespace yw {
 /// MARK: font_config
 
 struct font_config {
-  string<wchar_t> name = L"";
+  string<wchar_t> name{};
   float size = 16.0f;
   DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_NORMAL;
   DWRITE_FONT_STYLE style = DWRITE_FONT_STYLE_NORMAL;
@@ -43,14 +43,14 @@ inline constexpr auto get_text_format = []<text_format_like T>(T&& TextFormat) /
 /// MARK: text
 
 class text {
-  font_config _font;
+  yw::font_config _font;
   yw::string<wchar_t> _string;
   comptr<IDWriteTextLayout> _dwrite_text_layout;
   float2 _size;
 
 public:
-  const font_config& font() const noexcept { return _font; }
-  result<void> font(const font_config& Font) {
+  const yw::font_config& font() const noexcept { return _font; }
+  result<void> font(const yw::font_config& Font) {
     if (auto res = create(Font, _string)) *this = move(*res);
     else return res.relay();
     return {};
@@ -70,7 +70,7 @@ public:
 
   text() = default;
 
-  template<stringable S> static result<text> create(font_config Font, S&& String) {
+  template<stringable S> static result<text> create(yw::font_config Font, S&& String) {
     text result;
     result._font = move(Font);
     auto tf = create_text_format(result._font);
@@ -90,7 +90,7 @@ public:
     return result;
   }
 
-  template<stringable S> text(font_config Font, S&& String, const std::source_location& sl = here()) {
+  template<stringable S> text(yw::font_config Font, S&& String, const std::source_location& sl = here()) {
     if (auto res = create(move(Font), static_cast<S&&>(String))) *this = move(*res);
     else res.error().add_footprint().print_and_abort(sl);
   }

@@ -88,10 +88,20 @@ struct focus_event {
 };
 
 struct hover_event {
-  bool hovered;
+  enum class state : uint8_t {
+    leave = 0,
+    enter = 1,
+    hover = 3,
+  };
+  using enum state;
+  short2 pos;
+  state state;
   constexpr string_view<char> to_string() const {
-    if (hovered) return "hover_event(hovered:1)";
-    else return "hover_event(hovered:0)";
+    constexpr auto n = 5;
+    auto s = format("hover_event(pos:", pos, ", state:leave)");
+    if (state == enter) std::ranges::copy_n("enter", n, s.end() - n - 1);
+    if (state == hover) std::ranges::copy_n("hover", n, s.end() - n - 1);
+    return s;
   }
 };
 
@@ -118,6 +128,11 @@ class control;
 
 namespace window_system {
 inline slotset<control*> controls{};
+/// slotidからcontrol*を取得する
+inline control* get_control(slotset<control*>::slotid id) {
+  if (const auto cpp = controls.get(id)) return *cpp;
+  return nullptr;
+}
 /// control_layerの再描画が必要な状態にする
 inline void make_dirty(HWND hwnd);
 /// control_layerのレイアウト再計算が必要な状態にする
@@ -206,6 +221,16 @@ protected:
     }
     return {};
   }
+  /// イベント処理用の仮想関数
+  virtual result<bool> _handle_button_event(window*, button_event) { return false; }
+  virtual result<bool> _handle_char_event(window*, wchar_t) { return false; }
+  virtual result<bool> _handle_click_event(window*, button_event) { return false; }
+  virtual result<bool> _handle_double_click_event(window*, button_event) { return false; }
+  virtual result<bool> _handle_drag_event(window*, drag_event) { return false; }
+  virtual result<bool> _handle_focus_event(window*, focus_event) { return false; }
+  virtual result<bool> _handle_hover_event(window*, hover_event) { return false; }
+  virtual result<bool> _handle_key_event(window*, key_event) { return false; }
+  virtual result<bool> _handle_wheel_event(window*, wheel_event) { return false; }
 
   control() noexcept : id(window_system::controls.emplace(this)) {}
 
@@ -233,6 +258,21 @@ protected:
 
   result<void> _attach(control&) {
     return error(errors::invalid_operation, "This control cannot accept other controls");
+  }
+
+  /// ウィンドウ座標がこのコントロールの領域内に含まれているかを判定する
+  virtual slotid _hit_test(float2 Pt) const {
+    if (!_geometry) return {};
+    BOOL contains = FALSE;
+    if (const auto hr = _geometry->FillContainsPoint({Pt.x(), Pt.y()}, nullptr, &contains); FAILED(hr)) return {};
+    return contains ? id() : slotid{};
+  }
+  /// タブストップを探索する
+  virtual slotid _find_tab_stop(slotid Current, bool Backward, bool& Found) const {
+    if (!focusable()) return {};
+    if (Current = id()) Found = true;
+    else if (Found) return id();
+    return {};
   }
 
 public:
@@ -316,6 +356,8 @@ public:
     window_system::make_dirty(_window);
     return {};
   }
+
+  virtual bool focusable() const { return false; }
 };
 } // namespace yw
 

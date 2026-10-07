@@ -52,7 +52,7 @@ template<typename T, typename Class> class const_property {
   constexpr const T& cref() const noexcept { return _; }
 
 public:
-  T _;
+  T _{};
   constexpr const_property(const T& v) noexcept(nt_constructible<T, const T&>) requires constructible<T, const T&> : _(v) {}
   constexpr const_property(T&& v) noexcept(nt_constructible<T, T>) requires constructible<T, T> : _(move(v)) {}
   constexpr operator const T&() const noexcept { return _; }

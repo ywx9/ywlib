@@ -13,6 +13,7 @@ protected:
   float4 _padding = float4::fill(arbitrary_value);
   float2 _radius = float2::fill(arbitrary_value);
   float _border_thickness = 1.0f;
+
   /// 内容の描画に必要な最小サイズを計算する (paddingを除く)
   virtual result<float2> _calculate_content_size() { return float2(); }
   /// 必要な最小サイズを計算する
@@ -56,8 +57,40 @@ protected:
     if (auto res = _draw_foreground(); !res) return res.relay();
     return {};
   }
+  /// イベントを処理する
+  virtual result<bool> _handle_button_event(window*, yw::button_event e) override {
+    if (button_event.ref()) return button_event.ref()(e);
+    return false;
+  }
+  virtual result<bool> _handle_drag_event(window*, yw::drag_event e) override {
+    if (drag_event.ref()) return drag_event.ref()(e);
+    return false;
+  }
+  virtual result<bool> _handle_focus_event(window*, yw::focus_event e) override {
+    if (focus_event.ref()) return focus_event.ref()(e);
+    return false;
+  }
+  virtual result<bool> _handle_hover_event(window*, yw::hover_event e) override {
+    if (hover_event.ref()) return hover_event.ref()(e);
+    return false;
+  }
+  virtual result<bool> _handle_key_event(window*, yw::key_event e) override {
+    if (key_event.ref()) return key_event.ref()(e);
+    return false;
+  }
+  virtual result<bool> _handle_wheel_event(window*, yw::wheel_event e) override {
+    if (wheel_event.ref()) return wheel_event.ref()(e);
+    return false;
+  }
 
 public:
+  property<function<bool, yw::button_event>, frame> button_event;
+  property<function<bool, yw::drag_event>, frame> drag_event;
+  property<function<bool, yw::focus_event>, frame> focus_event;
+  property<function<bool, yw::hover_event>, frame> hover_event;
+  property<function<bool, yw::key_event>, frame> key_event;
+  property<function<bool, yw::wheel_event>, frame> wheel_event;
+
   ~frame() noexcept = default;
   frame() noexcept = default;
   frame(frame&& f) noexcept = default;
@@ -116,5 +149,7 @@ public:
     window_system::make_dirty(_window);
     return {};
   }
+
+  virtual bool focusable() const override { return bool(focus_event()) || bool(key_event()); }
 };
 } // namespace yw::ui

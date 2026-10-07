@@ -16,7 +16,7 @@ namespace yw {
 
 template<typename T> class slotset {
   struct _slot {
-    T* pointer{};
+    yw::heap<T> heap = yw::heap<T>::make_empty();
     uint32_t generation = 1, next_free = uint32_t(-1);
   };
 
@@ -30,7 +30,7 @@ public:
     constexpr _iterator(_owner_type owner, const uint32_t index) noexcept : _p(owner), _i(index) { _skip_empty(); }
     constexpr void _skip_empty() noexcept {
       if (!_p) return;
-      while (_i < _p->_slots.size() && !_p->_slots[_i].pointer) _i++;
+      while (_i < _p->_slots.size() && !_p->_slots[_i].heap) _i++;
     }
 
   public:
@@ -42,15 +42,15 @@ public:
     constexpr _iterator() = default;
     template<bool C = Const> constexpr _iterator(const _iterator<false>& it) noexcept requires(C)
       : _p(it._p), _i(it._i) {}
-    constexpr reference operator*() const noexcept { return *_p->_slots[_i].pointer; }
-    constexpr pointer operator->() const noexcept { return _p->_slots[_i].pointer; }
+    constexpr reference operator*() const noexcept { return *_p->_slots[_i].heap; }
+    constexpr pointer operator->() const noexcept { return _p->_slots[_i].heap.get(); }
     constexpr _iterator& operator++() noexcept { return _i++, _skip_empty(), *this; }
     constexpr _iterator operator++(int) noexcept {
       const auto old = *this;
       return ++(*this), old;
     }
-    template<bool A, bool B> friend bool operator==(const _iterator<A>& a, const _iterator<B>& b) noexcept {
-      return a._p == b._p && a._i == b._i;
+    template<bool C> constexpr bool operator==(const _iterator<C>& other) const noexcept {
+      return _p == other._p && _i == other._i;
     }
   };
 
@@ -74,9 +74,7 @@ private:
   uint32_t _free_head = uint32_t(-1);
 
 public:
-  constexpr ~slotset() noexcept {
-    for (auto& s : _slots) delete s.pointer;
-  }
+  constexpr ~slotset() noexcept = default;
 
   slotset(const slotset&) = delete;
   slotset& operator=(const slotset&) = delete;
@@ -90,15 +88,14 @@ public:
     if (i.index >= self._slots.size()) return null_ptr;
     auto& s = self._slots[i.index];
     const bool b = i.index < self._slots.size() && s.generation == i.generation;
-    return b ? s.pointer : null_ptr;
+    return b ? s.heap.get() : null_ptr;
   }
 
   constexpr result<void> erase(const slotid i) noexcept {
     if (!i) return {};
     if (i.index >= _slots.size()) return error(errors::invalid_slotid);
     if (auto& s = _slots[i.index]; s.generation == i.generation) {
-      delete s.pointer;
-      s.pointer = nullptr;
+      s.heap = yw::heap<T>::make_empty();
       s.generation++;
       s.next_free = _free_head;
       _free_head = i.index;
@@ -113,13 +110,11 @@ public:
       auto& s = _slots[i];
       _free_head = s.next_free;
       s.next_free = uint32_t(-1);
-      s.pointer = new T();
-      new (s.pointer) T(static_cast<As&&>(as)...);
+      s.heap = yw::heap<T>(static_cast<As&&>(as)...);
       return slotid{i, s.generation};
     } else {
       const auto i = uint32_t(_slots.size());
-      _slots.push_back(_slot{new T(), 1, uint32_t(-1)});
-      new (_slots[i].pointer) T(static_cast<As&&>(as)...);
+      _slots.push_back(_slot{yw::heap<T>(static_cast<As&&>(as)...), 1, uint32_t(-1)});
       return slotid{i, 1};
     }
   }
@@ -128,8 +123,7 @@ public:
     _free_head = uint32_t(-1);
     for (auto i = uint32_t(_slots.size()); i-- > 0;) {
       auto& s = _slots[i];
-      delete s.pointer;
-      s.pointer = nullptr;
+      s.heap = yw::heap<T>::make_empty();
       s.generation++;
       s.next_free = _free_head;
       _free_head = i;

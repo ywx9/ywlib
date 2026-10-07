@@ -126,6 +126,7 @@ inline constexpr size_t _string_preferred_capacity(size_t Size) noexcept {
 
 template<char_type C> class string {
   static_assert(same_as<C, remove_cv<C>>);
+
 public:
   using value_type = C;
 
@@ -181,11 +182,13 @@ public:
 
   template<stringable<C> S> requires same_as<remove_cvref<S>, string_view<C>>
   constexpr string(S&& s) noexcept : string(none(), s.size()) {
-    std::ranges::copy_n(s.data(), s.size(), data());
+    const auto sv = string_view<C>(s);
+    // std::printf("%llu\n", sv.size());
+    std::ranges::copy_n(sv.data(), sv.size(), data());
     data()[size()] = C();
   }
 
-  template<stringable<C> S> requires(!same_as<remove_cvref<S>, string_view<C>>)
+  template<stringable<C> S> requires (!same_as<remove_cvref<S>, string_view<C>>)
   constexpr string(S&& s) noexcept : string(string_view<C>(s)) {}
 
   template<stringable<C> S> constexpr string& operator=(S&& s) noexcept {
@@ -526,7 +529,7 @@ template<arithmetic T> constexpr stov_result<T> _stov(string_view<char> sv) noex
 }
 } // namespace internal
 
-template<arithmetic T> constexpr auto stov = []<stringable S>(S&& s) -> stov_result<T> {
+template<arithmetic T> inline constexpr auto stov = []<stringable S>(S&& s) -> stov_result<T> {
   using C = iter_value_t<S>;
   const auto sv = string_view<C>(s);
   if constexpr (!same_as<C, char>) {

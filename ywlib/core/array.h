@@ -121,7 +121,10 @@ template<typename T> struct array<T, npos> {
   const_property<size_t, array> capacity;
   const_property<uninitialized_heap<T[]>, array> heap;
 
-  constexpr ~array() noexcept { std::destroy_n(data(), size()); }
+  constexpr ~array() noexcept {
+    for (size_t i = 0; i < size(); ++i) _destroy(heap.ref()[i]);
+  }
+
   constexpr array() = default;
 
   constexpr array(const array& o) noexcept
@@ -135,7 +138,7 @@ template<typename T> struct array<T, npos> {
       const auto new_capacity = internal::_array_preferred_capacity(o.size());
       uninitialized_heap<T[]> new_heap(new_capacity);
       std::uninitialized_copy_n(o.data(), o.size(), new_heap.get());
-      std::destroy_n(data(), size());
+      for (size_t i = 0; i < size(); ++i) _destroy(heap.ref()[i]);
       capacity = new_capacity;
       heap = move(new_heap);
     } else if (size() < o.size()) {
@@ -143,7 +146,7 @@ template<typename T> struct array<T, npos> {
       std::uninitialized_copy_n(o.data() + size(), o.size() - size(), data() + size());
     } else {
       std::ranges::copy_n(o.data(), o.size(), data());
-      std::destroy_n(data() + o.size(), size() - o.size());
+      for (size_t i = o.size(); i < size(); ++i) _destroy(heap.ref()[i]);
     }
     size = o.size();
     return *this;
@@ -154,7 +157,7 @@ template<typename T> struct array<T, npos> {
 
   constexpr array& operator=(array&& o) noexcept {
     if (this == &o) return *this;
-    std::destroy_n(data(), size());
+    for (size_t i = 0; i < size(); ++i) _destroy(heap.ref()[i]);
     size = exchange(o.size.ref(), {});
     capacity = exchange(o.capacity.ref(), {});
     heap = exchange(o.heap.ref(), {});
@@ -200,7 +203,7 @@ template<typename T> struct array<T, npos> {
   constexpr const T& back() const noexcept { return data()[size() - 1]; }
 
   constexpr void clear() noexcept {
-    std::destroy_n(data(), size());
+    for (size_t i = 0; i < size(); ++i) _destroy(heap.ref()[i]);
     size = 0;
   }
 
@@ -210,15 +213,15 @@ template<typename T> struct array<T, npos> {
     auto new_heap = uninitialized_heap<T[]>(new_capacity);
     T* new_data = new_heap.get();
     std::uninitialized_move_n(data(), size(), new_data);
-    std::destroy_n(data(), size());
+    for (size_t i = 0; i < size(); ++i) _destroy(heap.ref()[i]);
     capacity = new_capacity;
     heap = move(new_heap);
   }
 
-  constexpr void resize(size_t n) noexcept {
+  constexpr void resize(size_t n) noexcept requires constructible<T> {
     const auto old_size = size();
     if (n < old_size) {
-      std::destroy_n(data() + n, old_size - n);
+      for (size_t i = n; i < old_size; ++i) _destroy(heap.ref()[i]);
       size = n;
       return;
     }
@@ -229,7 +232,7 @@ template<typename T> struct array<T, npos> {
 
   constexpr void pop_back() noexcept {
     if (size() > 0) {
-      std::destroy_at(data() + size() - 1);
+      _destroy(heap.ref()[size() - 1]);
       size = size() - 1;
     }
   }
@@ -266,7 +269,7 @@ template<typename T> struct array<T, npos> {
       T* new_data = new_heap.get();
       std::uninitialized_copy_n(data(), size(), new_data);
       std::uninitialized_copy_n(av.data(), av.size(), new_data + size());
-      std::destroy_n(data(), size());
+      for (size_t i = 0; i < size(); ++i) _destroy(heap.ref()[i]);
       heap = move(new_heap);
       size = new_size;
       capacity = new_capacity;
@@ -290,7 +293,7 @@ template<typename T> struct array<T, npos> {
     if (first < data()) first = data();
     if (last > data() + size()) last = data() + size();
     if (first >= last) return;
-    std::destroy(first, last);
+    for (T* p = first; p != last; ++p) _destroy(*p);
     std::move(last, data() + size(), first);
     size = size() - (last - first);
   }
@@ -306,6 +309,16 @@ template<typename T> struct array<T, npos> {
     std::ranges::swap(size.ref(), other.size.ref());
     std::ranges::swap(capacity.ref(), other.capacity.ref());
     std::ranges::swap(heap.ref(), other.heap.ref());
+  }
+
+private:
+  constexpr void _destroy(T& ref) noexcept {
+    if consteval {
+      ref.~T();
+      new (&ref) T();
+    } else {
+      ref.~T();
+    }
   }
 };
 

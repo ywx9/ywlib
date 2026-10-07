@@ -76,13 +76,15 @@ inline constexpr struct {
 inline constexpr struct {
   static void operator()() { internal::_print<false>(internal::_newline, 1); }
   template<typename... As> static void operator()(As&&... as) {
-    auto s = format<preferred_char>(static_cast<As&&>(as)..., internal::_newline);
+    auto s = format<preferred_char>(static_cast<As&&>(as)...);
     internal::_print<false>(s.c_str(), s.size());
+    internal::_print<false>(internal::_newline, 1);
   }
   static void err() { internal::_print<true>(internal::_newline, 1); }
   template<typename... As> static void err(As&&... as) {
-    auto s = format<preferred_char>(static_cast<As&&>(as)..., internal::_newline);
+    auto s = format<preferred_char>(static_cast<As&&>(as)...);
     internal::_print<true>(s.c_str(), s.size());
+    internal::_print<true>(internal::_newline, 1);
   }
 } print;
 } // namespace yw

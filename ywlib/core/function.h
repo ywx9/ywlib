@@ -147,7 +147,7 @@ public:
     new (&_traits) traits();
   }
 
-  constexpr R operator()(As&&... as) {
+  constexpr R operator()(As... as) {
     if (!_traits._invoke) error("uninitialized function").print_and_abort();
     if constexpr (is_void<R>) _traits._invoke(_union, static_cast<As&&>(as)...);
     else return _traits._invoke(_union, static_cast<As&&>(as)...);
