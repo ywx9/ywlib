@@ -10,17 +10,26 @@ protected:
   yw::text _text;
   optional<color> _text_color;
   yw::alignment _text_alignment;
+  /// テキストの原点を計算する (コントロール左上基準)
+  float2 _calculate_text_origin() {
+    constexpr float c[]{0.5f, 0.0f, 1.0f};
+    const auto a = uint8_t(_text_alignment);
+    const float2 cc{c[a % 3], c[a / 4 % 3]};
+    const auto difference = _current_size - (_padding.xy() + _padding.zw() + _text.size());
+    return cc * difference + _padding.xy();
+  }
   /// 内容の描画に必要な最小サイズを計算する
   virtual result<float2> _calculate_content_size() override { return _text.size(); }
   /// 内容を描画する
-  virtual result<void> _draw_content() override {
+  virtual result<void> _draw_content(window& win) override {
+    // オーバーレイを文字より先に描画
+    if (auto res = frame::_draw_content(win); !res) return res.relay();
+    // 文字を描画
     if (const auto& tc = text_color(); tc.a <= 0.0f) return {};
     else {
-      constexpr float c[]{0.5f, 0.0f, 1.0f};
-      const auto a = uint8_t(_text_alignment);
-      const float2 cc{c[a % 3], c[a / 4 % 3]};
-      const auto difference = _current_size - _text.size();
-      if (auto res = draw_text(_current_pos + cc * difference, _text, text_color()); !res) return res.relay();
+      const auto text_origin = _calculate_text_origin();
+      const auto text_color = _enabled ? tc : _get_disabled_color(win, tc);
+      if (auto res = draw_text(_current_pos + text_origin, _text, text_color); !res) return res.relay();
     }
     return {};
   }
@@ -40,8 +49,7 @@ public:
 
   const yw::string<wchar_t>& string() const { return _text.string(); }
   result<void> string(stringable auto&& s) {
-    if (auto res = yw::text::create(unicode<char>(s))) _text = move(*res);
-    else return res.relay();
+    if (auto res = _text.string(unicode<wchar_t>(s)); !res) return res.relay();
     window_system::make_messy(_window);
     return {};
   }

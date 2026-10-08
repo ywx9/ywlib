@@ -188,7 +188,7 @@ public:
     data()[size()] = C();
   }
 
-  template<stringable<C> S> requires (!same_as<remove_cvref<S>, string_view<C>>)
+  template<stringable<C> S> requires(!same_as<remove_cvref<S>, string_view<C>>)
   constexpr string(S&& s) noexcept : string(string_view<C>(s)) {}
 
   template<stringable<C> S> constexpr string& operator=(S&& s) noexcept {
@@ -529,7 +529,7 @@ template<arithmetic T> constexpr stov_result<T> _stov(string_view<char> sv) noex
 }
 } // namespace internal
 
-template<arithmetic T> inline constexpr auto stov = []<stringable S>(S&& s) -> stov_result<T> {
+template<arithmetic T> inline constexpr auto stov = []<stringable S>(S&& s) {
   using C = iter_value_t<S>;
   const auto sv = string_view<C>(s);
   if constexpr (!same_as<C, char>) {
@@ -564,12 +564,13 @@ inline constexpr char32_t _unicode_s8_to_c32(const auto*& s) noexcept {
 }
 inline constexpr char32_t _unicode_s16_to_c32(const auto*& s) noexcept {
   const auto c = char32_t(*s);
-  const bool b = (c & 0xff00) == 0xd800;
-  const auto uc = c ^ (-int(b) & (c ^ (0x10000 | ((c - 0xd800) << 10 | char32_t(s[b] - 0xdc00)))));
+  const bool b = (c & 0xfc00) == 0xd800;
+  const auto uc = c ^ (-int(b) & (c ^ (0x10000 + ((c - 0xd800) << 10 | char32_t(s[b] - 0xdc00)))));
   s += 1 + b;
   return uc;
 }
 template<char_type C> inline constexpr void _unicode_c32_to_s8(char32_t uc, C*& s) noexcept {
+  // printf("%u\n", uint32_t(uc));
   const auto i = unsigned(uc >= 0x80) + unsigned(uc >= 0x800) + unsigned(uc >= 0x10000);
   s[i < 3 ? i : 3] = C(0x80 | (uc & 0x3f));
   s[i < 2 ? i : 2] = C(0x80 | ((uc >> (6 * (i > 1 ? i - 2 : 0))) & 0x3f));
@@ -580,7 +581,7 @@ template<char_type C> inline constexpr void _unicode_c32_to_s8(char32_t uc, C*& 
 template<char_type C> inline constexpr void _unicode_c32_to_s16(char32_t uc, C*& s) noexcept {
   const bool b = uc >= 0x10000;
   s[b] = C(0xdc00 | (uc & 0x3ff));
-  *s = C(uc ^ ((uc ^ (0xd800 | (uc >> 10))) & -int(b)));
+  *s = C(uc ^ ((uc ^ (0xd800 | ((uc - 0x10000) >> 10))) & -int(b)));
   s += 1 + b;
 }
 template<char_type In, char_type Out> constexpr Out* _unicode(const In* i, size_t n, Out* o) {
@@ -589,15 +590,16 @@ template<char_type In, char_type Out> constexpr Out* _unicode(const In* i, size_
     if constexpr (same_as<In, char8_t>) uc = _unicode_s8_to_c32(s);
     else if constexpr (same_as<In, char16_t>) uc = _unicode_s16_to_c32(s);
     else uc = char32_t(*s++);
-    if constexpr (same_as<Out, char8_t>) _unicode_c32_to_s8(uc, o);
-    else if constexpr (same_as<Out, char16_t>) _unicode_c32_to_s16(uc, o);
+    // printf("%u\n", uint32_t(uc));
+    if constexpr (sizeof(Out) == 1) _unicode_c32_to_s8(uc, o);
+    else if constexpr (sizeof(Out) == 2) _unicode_c32_to_s16(uc, o);
     else *o++ = Out(uc);
   }
   return o;
 }
 } // namespace internal
 
-template<typename C> requires char_type<C> inline constexpr auto unicode = []<stringable S>(S&& s) -> string<C> {
+template<typename C> requires char_type<C> inline constexpr auto unicode = []<stringable S>(S&& s) {
   using From = iter_value_t<S>;
   if constexpr (same_as<S&&, string<C>&&>) return move(s);
   if constexpr (same_as<From, C>) return string(string_view<C>(s));

@@ -30,7 +30,7 @@ LRESULT CALLBACK wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     const auto cursor_delta = current_cursor_pos - previous_cursor_pos;
     win->_previous_cursor_pos = current_cursor_pos;
     if (cursor_delta != int2()) {
-      if ((win->_captured_control_id || win->_window_captured) &&
+      if ((win->_pressed_control_id || win->_window_pressed) &&
           (wp & (MK_LBUTTON | MK_RBUTTON | MK_MBUTTON | MK_XBUTTON1 | MK_XBUTTON2))) {
         yw::drag_event e;
         e.delta = cursor_delta;
@@ -42,7 +42,7 @@ LRESULT CALLBACK wclass::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         else if (wp & MK_XBUTTON2) e.key = keys::xbutton2;
         if (auto res = win->_handle_drag_event(e); !res) res.error().print_and_abort();
       }
-      yw::hover_event e{current_cursor_pos};
+      yw::hover_event e{current_cursor_pos, hover_event::hover};
       if (auto res = win->_handle_hover_event(e); !res) res.error().print_and_abort();
     }
     if (!win->_track_mouse_event.hwndTrack) {

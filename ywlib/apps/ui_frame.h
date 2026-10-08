@@ -1,7 +1,5 @@
 #pragma once
-#include <apps/bitmap.h>
-#include <apps/control.h>
-#include <core/optional.h>
+#include <apps/window.h>
 
 namespace yw::ui {
 
@@ -36,49 +34,85 @@ protected:
     return {};
   }
   /// 背景を描画する
-  virtual result<void> _draw_background() {
-    if (const auto& bgc = background_color(); bgc.a <= 0.0f) return {};
-    else if (auto res = fill_geometry(_geometry, bgc); !res) return res.relay();
+  virtual result<void> _draw_background(window& win) {
+    if (const auto& c = background_color(); c.a <= 0.0f) return {};
+    else if (auto res = fill_geometry(_geometry, _enabled ? c : _get_disabled_color(win, c)); !res) return res.relay();
     return {};
   }
-  /// 内容を描画する
-  virtual result<void> _draw_content() { return {}; }
+  /// 強調オーバーレイを描画する
+  virtual result<void> _draw_accent(window& win, color accent_color) {
+    if (accent_color.a *= float(_focused(win) + _hovered(win) + _pressed(win)); accent_color.a <= 0.0f) return {};
+    if (auto res = fill_geometry(_geometry, accent_color); !res) return res.relay();
+    return {};
+  }
+  /// 内容を描画する (flame::はオーバーレイのみ描画)
+  virtual result<void> _draw_content(window& win) {
+    if (!_enabled) return {};
+    if (auto res = _draw_accent(win, color(win.color_theme().accent, win.overlay_opacity())); !res) return res.relay();
+    return {};
+  }
   /// 前景を描画する
-  virtual result<void> _draw_foreground() {
-    if (const auto& bc = border_color(); bc.a <= 0.0f || _border_thickness <= 0.0f) return {};
-    else if (auto res = stroke_geometry(_geometry, bc, _border_thickness); !res) return res.relay();
+  virtual result<void> _draw_foreground(window& win) {
+    if (const auto& c = border_color(); c.a <= 0.0f || _border_thickness <= 0.0f) return {};
+    else if (auto res = stroke_geometry(_geometry, _enabled ? c : _get_disabled_color(win, c), _border_thickness); !res)
+      return res.relay();
     return {};
   }
   /// 描画する
-  virtual result<void> _draw() override {
-    if (auto res = control::_draw(); !res) return res.relay();
-    if (auto res = _draw_background(); !res) return res.relay();
-    if (auto res = _draw_content(); !res) return res.relay();
-    if (auto res = _draw_foreground(); !res) return res.relay();
+  virtual result<void> _draw(window& win) override {
+    if (!_visible) return {};
+    if (auto res = control::_draw(win); !res) return res.relay();
+    if (auto res = _draw_background(win); !res) return res.relay();
+    if (auto res = _draw_content(win); !res) return res.relay();
+    if (auto res = _draw_foreground(win); !res) return res.relay();
     return {};
   }
   /// イベントを処理する
-  virtual result<bool> _handle_button_event(window*, yw::button_event e) override {
+  virtual result<bool> _handle_button_event(window& win, yw::button_event e) override {
+    if (!_visible || !_enabled) {
+      _clear_state(win);
+      return false;
+    }
     if (button_event.ref()) return button_event.ref()(e);
     return false;
   }
-  virtual result<bool> _handle_drag_event(window*, yw::drag_event e) override {
+  virtual result<bool> _handle_drag_event(window& win, yw::drag_event e) override {
+    if (!_visible || !_enabled) {
+      _clear_state(win);
+      return false;
+    }
     if (drag_event.ref()) return drag_event.ref()(e);
     return false;
   }
-  virtual result<bool> _handle_focus_event(window*, yw::focus_event e) override {
+  virtual result<bool> _handle_focus_event(window& win, yw::focus_event e) override {
+    if (!_visible || !_enabled) {
+      _clear_state(win);
+      return false;
+    }
     if (focus_event.ref()) return focus_event.ref()(e);
     return false;
   }
-  virtual result<bool> _handle_hover_event(window*, yw::hover_event e) override {
+  virtual result<bool> _handle_hover_event(window& win, yw::hover_event e) override {
+    if (!_visible || !_enabled) {
+      _clear_state(win);
+      return false;
+    }
     if (hover_event.ref()) return hover_event.ref()(e);
     return false;
   }
-  virtual result<bool> _handle_key_event(window*, yw::key_event e) override {
+  virtual result<bool> _handle_key_event(window& win, yw::key_event e) override {
+    if (!_visible || !_enabled) {
+      _clear_state(win);
+      return false;
+    }
     if (key_event.ref()) return key_event.ref()(e);
     return false;
   }
-  virtual result<bool> _handle_wheel_event(window*, yw::wheel_event e) override {
+  virtual result<bool> _handle_wheel_event(window& win, yw::wheel_event e) override {
+    if (!_visible || !_enabled) {
+      _clear_state(win);
+      return false;
+    }
     if (wheel_event.ref()) return wheel_event.ref()(e);
     return false;
   }
@@ -151,5 +185,8 @@ public:
   }
 
   virtual bool focusable() const override { return bool(focus_event()) || bool(key_event()); }
+  virtual bool interactive() const override {
+    return bool(button_event()) || bool(drag_event()) || bool(hover_event());
+  }
 };
 } // namespace yw::ui

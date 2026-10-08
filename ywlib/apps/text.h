@@ -57,8 +57,8 @@ public:
   }
 
   const yw::string<wchar_t>& string() const noexcept { return _string; }
-  result<void> string(const yw::string<wchar_t>& String) {
-    if (auto res = create(_font, String)) *this = move(*res);
+  template<stringable S> result<void> string(S&& String) {
+    if (auto res = create(_font, static_cast<S&&>(String))) *this = move(*res);
     else return res.relay();
     return {};
   }

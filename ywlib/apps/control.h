@@ -64,12 +64,6 @@ struct button_event {
   }
 };
 
-struct cursor_event {
-  short2 pos;
-  short2 delta;
-  constexpr string<char> to_string() const { return format("cursor_event(pos:", pos, ", delta:", delta, ")"); }
-};
-
 struct drag_event {
   short2 delta;
   key key;
@@ -171,10 +165,13 @@ protected:
   yw::alignment _alignment = yw::alignment::center;
   /// ジオメトリの再設定が必要か
   bool _geometry_dirty = false;
+  bool _visible = true;
+  bool _enabled = true;
   /// 必要な最小サイズを計算する
   virtual result<float2> _calculate_minimum_size() { return _desired_size * _desired; }
   /// 必要な最小領域サイズを計算する
   virtual result<float2> _calculate_minimum_area() {
+    if (!_visible) return float2{};
     if (auto res = _calculate_minimum_size()) return *res + _margin.xy() + _margin.zw();
     else return res.relay();
   }
@@ -213,7 +210,7 @@ protected:
     return {};
   }
   /// 描画する
-  virtual result<void> _draw() {
+  virtual result<void> _draw(window&) {
     if (_geometry_dirty) {
       if (auto res = _update_layout(); !res) return res.relay();
       if (auto res = _update_geometry(); !res) return res.relay();
@@ -222,22 +219,20 @@ protected:
     return {};
   }
   /// イベント処理用の仮想関数
-  virtual result<bool> _handle_button_event(window*, button_event) { return false; }
-  virtual result<bool> _handle_char_event(window*, wchar_t) { return false; }
-  virtual result<bool> _handle_click_event(window*, button_event) { return false; }
-  virtual result<bool> _handle_double_click_event(window*, button_event) { return false; }
-  virtual result<bool> _handle_drag_event(window*, drag_event) { return false; }
-  virtual result<bool> _handle_focus_event(window*, focus_event) { return false; }
-  virtual result<bool> _handle_hover_event(window*, hover_event) { return false; }
-  virtual result<bool> _handle_key_event(window*, key_event) { return false; }
-  virtual result<bool> _handle_wheel_event(window*, wheel_event) { return false; }
+  virtual result<bool> _handle_button_event(window&, button_event) { return false; }
+  virtual result<bool> _handle_char_event(window&, wchar_t) { return false; }
+  virtual result<bool> _handle_click_event(window&, button_event) { return false; }
+  virtual result<bool> _handle_double_click_event(window&, button_event) { return false; }
+  virtual result<bool> _handle_drag_event(window&, drag_event) { return false; }
+  virtual result<bool> _handle_focus_event(window&, focus_event) { return false; }
+  virtual result<bool> _handle_hover_event(window&, hover_event) { return false; }
+  virtual result<bool> _handle_key_event(window&, key_event) { return false; }
+  virtual result<bool> _handle_wheel_event(window&, wheel_event) { return false; }
 
   control() noexcept : id(window_system::controls.emplace(this)) {}
 
-  void _clear() noexcept {
-    window_system::make_dirty(_window);
-    if (const auto sp = window_system::controls.get(id)) window_system::controls.erase(id);
-  }
+  void _clear() noexcept;
+  virtual void _clear_state(window& win) noexcept;
 
   void _move_from(control&& o) noexcept {
     _window = exchange(o._window, {});
@@ -254,6 +249,8 @@ protected:
     _grow = o._grow;
     _alignment = o._alignment;
     _geometry_dirty = o._geometry_dirty;
+    _visible = o._visible;
+    _enabled = o._enabled;
   }
 
   result<void> _attach(control&) {
@@ -262,18 +259,24 @@ protected:
 
   /// ウィンドウ座標がこのコントロールの領域内に含まれているかを判定する
   virtual slotid _hit_test(float2 Pt) const {
-    if (!_geometry) return {};
+    if (!_visible || !_geometry) return {};
     BOOL contains = FALSE;
     if (const auto hr = _geometry->FillContainsPoint({Pt.x(), Pt.y()}, nullptr, &contains); FAILED(hr)) return {};
     return contains ? id() : slotid{};
   }
   /// タブストップを探索する
   virtual slotid _find_tab_stop(slotid Current, bool Backward, bool& Found) const {
-    if (!focusable()) return {};
-    if (Current = id()) Found = true;
+    if (!_visible || !_enabled || !focusable()) return {};
+    if (Current == id()) Found = true;
     else if (Found) return id();
     return {};
   }
+
+  /// ウィンドウに対する状態を取得する。実装はwindow.hに。
+  bool _focused(window& win) const;
+  bool _hovered(window& win) const;
+  bool _pressed(window& win) const;
+  static color _get_disabled_color(window& win, const color& c);
 
 public:
   virtual ~control() { _clear(); }
@@ -288,11 +291,14 @@ public:
   }
 
   virtual result<void> attach_to(window& w);
-  virtual result<void> attach_to(control& c) {
-    if (auto res = c._attach(*this); !res) return res.relay();
-    _window = c._window;
-    return {};
-  }
+  virtual result<void> attach_to(control& c);
+
+  result<bool> focus();
+
+  bool visible() const noexcept { return _visible; }
+  result<void> visible(bool value);
+  bool enabled() const noexcept { return _enabled; }
+  result<void> enabled(bool value);
 
   float4 margin() const noexcept { return _margin; }
   result<void> margin(float4 Margin) {
@@ -358,6 +364,7 @@ public:
   }
 
   virtual bool focusable() const { return false; }
+  virtual bool interactive() const { return false; }
 };
 } // namespace yw
 

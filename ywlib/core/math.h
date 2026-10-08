@@ -245,4 +245,16 @@ inline constexpr auto acos = [](arithmetic auto x) noexcept {
   const auto t = max(0.0, 1.0 - xx * xx);
   return result_type(atan2(sqrt(t), xx));
 };
+
+///--------------------------------------------------------------------------///
+/// MARK: lerp
+
+inline constexpr auto lerp = [](arithmetic auto a, arithmetic auto b, arithmetic auto t) noexcept {
+  using result_type = math_type<decltype(a), decltype(b), decltype(t)>;
+  if consteval {
+    return result_type(a + (b - a) * t);
+  } else {
+    return result_type(std::lerp(a, b, t));
+  }
+};
 } // namespace yw

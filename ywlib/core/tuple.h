@@ -344,7 +344,7 @@ struct projector<Rf, Pj, sequence<Is...>> {
     : ref(static_cast<Rf>(r)), proj() {}
 
   template<size_t I, typename Self> requires(lt(I, sizeof...(Is)))
-  constexpr decltype(auto) get(this Self&& self) noexcept(nt_invocable<Pj&, element_t<Rf&, Is...[I]>>) {
+  constexpr decltype(auto) get(this Self&& self) noexcept(nt_invocable<Pj&, copy_ref_weak<Self&&, Rf>>) {
     return yw::invoke(self.proj, static_cast<copy_ref_weak<Self&&, Rf>>(self.ref));
   }
 };
