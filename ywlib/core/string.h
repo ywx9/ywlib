@@ -1,6 +1,5 @@
 #pragma once
 #include <core/core.h>
-#include <core/heap.h>
 #include <core/property.h>
 
 namespace yw {
@@ -119,6 +118,13 @@ namespace internal {
 inline constexpr size_t _string_preferred_capacity(size_t Size) noexcept {
   return yw::max(Size + 1, 2 * std::bit_ceil(Size), size_t(256));
 }
+template<char_type C> constexpr C* _string_allocate(size_t Capacity) noexcept {
+  try {
+    return new C[Capacity];
+  } catch (...) {
+    return nullptr;
+  }
+}
 } // namespace internal
 
 ///--------------------------------------------------------------------------///
@@ -134,16 +140,18 @@ public:
   const_property<size_t, string> capacity = 0;
 
 private:
-  uninitialized_heap<C[]> heap;
+  C* heap = nullptr;
 
   constexpr string(is_none auto, size_t Size)
-    : size(Size), capacity(internal::_string_preferred_capacity(Size)), heap(capacity()) {}
+    : size(Size), capacity(internal::_string_preferred_capacity(Size)), heap(internal::_string_allocate<C>(capacity())) {
+    ywlib_assert(heap != nullptr);
+  }
 
 public:
-  constexpr C* data() noexcept { return heap.get(); }
-  constexpr const C* data() const noexcept { return heap.get(); }
+  constexpr C* data() noexcept { return heap; }
+  constexpr const C* data() const noexcept { return heap; }
 
-  constexpr ~string() noexcept = default;
+  constexpr ~string() noexcept { delete[] heap; }
   constexpr string() noexcept = default;
 
   constexpr string(const string& s) : string(string_view<C>(s.c_str(), s.size())) {}
@@ -151,24 +159,27 @@ public:
   constexpr string& operator=(const string& s) {
     if (this != &s) {
       const auto new_capacity = internal::_string_preferred_capacity(s.size());
-      auto new_heap = uninitialized_heap<C[]>(new_capacity);
-      std::ranges::copy_n(s.data(), s.size(), new_heap.get());
+      auto new_heap = internal::_string_allocate<C>(new_capacity);
+      ywlib_assert(new_heap != nullptr);
+      std::ranges::copy_n(s.data(), s.size(), new_heap);
       new_heap[s.size()] = C();
       size = s.size();
       capacity = new_capacity;
-      heap = move(new_heap);
+      delete[] heap;
+      heap = new_heap;
     }
     return *this;
   }
 
   constexpr string(string&& o) noexcept
-    : size(exchange(o.size.ref(), {})), capacity(exchange(o.capacity.ref(), {})), heap(move(o.heap)) {}
+    : size(exchange(o.size.ref(), {})), capacity(exchange(o.capacity.ref(), {})), heap(exchange(o.heap, nullptr)) {}
 
   constexpr string& operator=(string&& o) noexcept {
     if (this != &o) {
       size = exchange(o.size.ref(), {});
       capacity = exchange(o.capacity.ref(), {});
-      heap = move(o.heap);
+      delete[] heap;
+      heap = exchange(o.heap, nullptr);
     }
     return *this;
   }
@@ -224,11 +235,13 @@ public:
   constexpr void reserve(size_t Capacity) noexcept {
     if (Capacity + 1 <= capacity()) return;
     const auto new_capacity = internal::_string_preferred_capacity(Capacity);
-    auto new_heap = uninitialized_heap<C[]>(new_capacity);
-    C* Data = new_heap.get();
+    auto new_heap = internal::_string_allocate<C>(new_capacity);
+    ywlib_assert(new_heap != nullptr);
+    C* Data = new_heap;
     std::ranges::copy_n(data(), size(), Data);
     Data[size()] = C();
-    heap = move(new_heap);
+    delete[] heap;
+    heap = new_heap;
     capacity = new_capacity;
   }
 
@@ -260,10 +273,12 @@ public:
     const bool need_realloc = overlaps || new_size + 1 > capacity();
     if (need_realloc) {
       const auto new_capacity = internal::_string_preferred_capacity(new_size);
-      auto new_heap = uninitialized_heap<C[]>(new_capacity);
-      std::ranges::copy_n(data(), size(), new_heap.get());
-      std::ranges::copy_n(sv.data(), sv.size(), new_heap.get() + size());
-      heap = move(new_heap);
+      auto new_heap = internal::_string_allocate<C>(new_capacity);
+      ywlib_assert(new_heap != nullptr);
+      std::ranges::copy_n(data(), size(), new_heap);
+      std::ranges::copy_n(sv.data(), sv.size(), new_heap + size());
+      delete[] heap;
+      heap = new_heap;
       size = new_size;
       capacity = new_capacity;
     } else {

@@ -16,7 +16,7 @@ namespace yw {
 
 template<typename T> class slotset {
   struct _slot {
-    yw::heap<T> heap = yw::heap<T>::make_empty();
+    yw::heap<T> heap{};
     uint32_t generation = 1, next_free = uint32_t(-1);
   };
 
@@ -42,8 +42,8 @@ public:
     constexpr _iterator() = default;
     template<bool C = Const> constexpr _iterator(const _iterator<false>& it) noexcept requires(C)
       : _p(it._p), _i(it._i) {}
-    constexpr reference operator*() const noexcept { return *_p->_slots[_i].heap; }
-    constexpr pointer operator->() const noexcept { return _p->_slots[_i].heap.get(); }
+    constexpr pointer operator->() const noexcept { return _p->_slots[_i].heap.operator->(); }
+    constexpr reference operator*() const noexcept { return _p->_slots[_i].heap.operator*(); }
     constexpr _iterator& operator++() noexcept { return _i++, _skip_empty(), *this; }
     constexpr _iterator operator++(int) noexcept {
       const auto old = *this;
@@ -95,7 +95,7 @@ public:
     if (!i) return {};
     if (i.index >= _slots.size()) return error(errors::invalid_slotid);
     if (auto& s = _slots[i.index]; s.generation == i.generation) {
-      s.heap = yw::heap<T>::make_empty();
+      s.heap = {};
       s.generation++;
       s.next_free = _free_head;
       _free_head = i.index;
@@ -123,7 +123,7 @@ public:
     _free_head = uint32_t(-1);
     for (auto i = uint32_t(_slots.size()); i-- > 0;) {
       auto& s = _slots[i];
-      s.heap = yw::heap<T>::make_empty();
+      s.heap = {};
       s.generation++;
       s.next_free = _free_head;
       _free_head = i;

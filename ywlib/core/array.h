@@ -5,6 +5,9 @@
 
 namespace yw {
 
+///--------------------------------------------------------------------------///
+/// MARK: array_view
+
 template<typename T> struct array_view {
   const_property<T*, array_view> data = nullptr;
   const_property<size_t, array_view> size = 0;
@@ -49,8 +52,9 @@ template<typename T> struct array_view {
 };
 
 template<typename T> array_view(T*, size_t) -> array_view<T>;
-template<contiguous_iterator It, sized_sentinel_for<It> Se> array_view(It, Se) -> array_view<iter_value_t<It>>;
-template<contiguous_range Rg> array_view(Rg&&) -> array_view<iter_value_t<Rg>>;
+template<contiguous_iterator It, sized_sentinel_for<It> Se> array_view(It, Se)
+  -> array_view<remove_ref<iter_reference_t<It>>>;
+template<contiguous_range Rg> array_view(Rg&&) -> array_view<remove_ref<iter_reference_t<Rg>>>;
 
 ///--------------------------------------------------------------------------///
 /// MARK: array<T, 0>
@@ -117,93 +121,91 @@ inline constexpr size_t _array_preferred_capacity(size_t Size) noexcept {
 } // namespace internal
 
 template<typename T> struct array<T, npos> {
+public:
   const_property<size_t, array> size;
-  const_property<size_t, array> capacity;
   const_property<uninitialized_heap<T[]>, array> heap;
 
-  constexpr ~array() noexcept {
-    for (size_t i = 0; i < size(); ++i) _destroy(heap.ref()[i]);
-  }
+protected:
+  constexpr array(is_none auto, size_t n)
+    : heap(internal::_array_preferred_capacity(n)) {}
+
+public:
+  constexpr ~array() noexcept { std::destroy_n(heap.ref().get(), size()); }
 
   constexpr array() = default;
-
-  constexpr array(const array& o) noexcept
-    : size(o.size()), capacity(internal::_array_preferred_capacity(o.size())), heap(capacity()) {
-    std::uninitialized_copy_n(o.data(), o.size(), data());
-  }
-
-  constexpr array& operator=(const array& o) noexcept {
-    if (this == &o) return *this;
-    if (capacity() < o.size()) {
-      const auto new_capacity = internal::_array_preferred_capacity(o.size());
-      uninitialized_heap<T[]> new_heap(new_capacity);
-      std::uninitialized_copy_n(o.data(), o.size(), new_heap.get());
-      for (size_t i = 0; i < size(); ++i) _destroy(heap.ref()[i]);
-      capacity = new_capacity;
-      heap = move(new_heap);
-    } else if (size() < o.size()) {
-      std::ranges::copy_n(o.data(), size(), data());
-      std::uninitialized_copy_n(o.data() + size(), o.size() - size(), data() + size());
-    } else {
-      std::ranges::copy_n(o.data(), o.size(), data());
-      for (size_t i = o.size(); i < size(); ++i) _destroy(heap.ref()[i]);
-    }
-    size = o.size();
-    return *this;
-  }
-
   constexpr array(array&& o) noexcept
-    : size(exchange(o.size.ref(), {})), capacity(exchange(o.capacity.ref(), {})), heap(exchange(o.heap.ref(), {})) {}
+    : size(exchange(o.size.ref(), 0)), heap(move(o.heap.ref())) {}
 
   constexpr array& operator=(array&& o) noexcept {
     if (this == &o) return *this;
-    for (size_t i = 0; i < size(); ++i) _destroy(heap.ref()[i]);
+    std::destroy_n(heap.ref().get(), size());
     size = exchange(o.size.ref(), {});
-    capacity = exchange(o.capacity.ref(), {});
-    heap = exchange(o.heap.ref(), {});
+    heap = move(o.heap.ref());
     return *this;
   }
 
-  constexpr array(size_t n) noexcept : size(n), capacity(internal::_array_preferred_capacity(n)), heap(capacity()) {
-    std::uninitialized_default_construct_n(data(), size());
+  constexpr array(const array& o) noexcept(nt_constructible<T, const T&>) : array(none(), o.size()) {
+    std::uninitialized_copy_n(o.data(), o.size(), heap.ref().get());
+    size = o.size();
   }
 
-  constexpr array(size_t n, const T& v) noexcept
-    : size(n), capacity(internal::_array_preferred_capacity(n)), heap(capacity()) {
-    std::uninitialized_fill_n(data(), n, v);
-  }
-
-  template<input_iterator I, sized_sentinel_for<I> S> constexpr array(I i, S s) noexcept ywlib_pre(s - i >= 0)
-    : size(size_t(s - i)), capacity(internal::_array_preferred_capacity(size())), heap(capacity()) {
-    std::uninitialized_copy_n(i, size(), data());
-  }
-
-  template<sized_range R> requires std::ranges::input_range<R> //
-  constexpr array(R&& r) noexcept : array(std::ranges::begin(r), std::ranges::end(r)) {}
-
-  template<sized_range R> requires std::ranges::input_range<R> //
-  constexpr array& operator=(R&& r) noexcept {
-    array copy(static_cast<R&&>(r));
-    swap(copy);
+  constexpr array& operator=(const array& o) noexcept(nt_constructible<T, const T&>) {
+    if (this == &o) return *this;
+    std::destroy_n(heap.ref().get(), size());
+    const auto n = o.size();
+    size = 0;
+    if (capacity() < n) {
+      heap.ref().allocate(internal::_array_preferred_capacity(n));
+    }
+    std::uninitialized_copy_n(o.data(), n, heap.ref().get());
+    size = n;
     return *this;
+  }
+
+  constexpr array(size_t n) noexcept(nt_constructible<T>) : array(none(), n) {
+    std::uninitialized_default_construct_n(heap.ref().get(), n);
+    size = n;
+  }
+
+  constexpr array(size_t n, const T& v) noexcept(nt_constructible<T, const T&>) : array(none(), n) {
+    std::uninitialized_fill_n(heap.ref().get(), n, v);
+    size = n;
+  }
+
+  template<input_iterator I, sized_sentinel_for<I> S> requires constructible<T, iter_value_t<I>>
+  constexpr array(I i, S s) noexcept(nt_constructible<T, iter_value_t<I>>) ywlib_pre(s - i >= 0)
+    : array(none(), s - i) {
+    const auto n = size_t(s - i);
+    std::ranges::uninitialized_copy(i, s, data(), data() + n);
+    size = n;
+  }
+
+  template<sized_range R> requires std::ranges::input_range<R> && constructible<T, iter_value_t<R>>
+  constexpr array(R&& r) noexcept(nt_constructible<T, iter_value_t<R>>)
+    : array(std::ranges::begin(r), std::ranges::end(r)) {}
+
+  template<sized_range R> requires std::ranges::input_range<R> && constructible<T, iter_value_t<R>>
+  constexpr array& operator=(R&& r) noexcept(nt_constructible<T, iter_value_t<R>>) {
+    return *this = array<T>(static_cast<R&&>(r));
   }
 
   constexpr bool empty() const noexcept { return size() == 0; }
+  constexpr size_t capacity() const noexcept { return heap.cref().size(); }
   constexpr T* data() noexcept { return heap.ref().get(); }
   constexpr const T* data() const noexcept { return heap.cref().get(); }
   constexpr T* begin() noexcept { return data(); }
   constexpr const T* begin() const noexcept { return data(); }
   constexpr T* end() noexcept { return data() + size(); }
   constexpr const T* end() const noexcept { return data() + size(); }
-  constexpr T& operator[](size_t i) noexcept { return data()[i]; }
-  constexpr const T& operator[](size_t i) const noexcept { return data()[i]; }
-  constexpr T& front() noexcept { return data()[0]; }
-  constexpr const T& front() const noexcept { return data()[0]; }
-  constexpr T& back() noexcept { return data()[size() - 1]; }
-  constexpr const T& back() const noexcept { return data()[size() - 1]; }
+  constexpr T& operator[](size_t i) noexcept ywlib_pre(i < size.cref()) { return heap.ref()[i]; }
+  constexpr const T& operator[](size_t i) const noexcept ywlib_pre(i < size()) { return heap.cref()[i]; }
+  constexpr T& front() noexcept ywlib_pre(size() != 0) { return data()[0]; }
+  constexpr const T& front() const noexcept ywlib_pre(size() != 0) { return data()[0]; }
+  constexpr T& back() noexcept ywlib_pre(size() != 0) { return data()[size() - 1]; }
+  constexpr const T& back() const noexcept ywlib_pre(size() != 0) { return data()[size() - 1]; }
 
   constexpr void clear() noexcept {
-    for (size_t i = 0; i < size(); ++i) _destroy(heap.ref()[i]);
+    for (size_t i = 0; i < size(); ++i) heap.ref()[i].~T();
     size = 0;
   }
 
@@ -211,80 +213,46 @@ template<typename T> struct array<T, npos> {
     if (n <= capacity()) return;
     const auto new_capacity = internal::_array_preferred_capacity(n);
     auto new_heap = uninitialized_heap<T[]>(new_capacity);
-    T* new_data = new_heap.get();
-    std::uninitialized_move_n(data(), size(), new_data);
-    for (size_t i = 0; i < size(); ++i) _destroy(heap.ref()[i]);
-    capacity = new_capacity;
+    std::uninitialized_move_n(heap.ref().get(), size(), new_heap.get());
+    std::destroy_n(heap.ref().get(), size());
     heap = move(new_heap);
   }
 
   constexpr void resize(size_t n) noexcept requires constructible<T> {
-    const auto old_size = size();
-    if (n < old_size) {
-      for (size_t i = n; i < old_size; ++i) _destroy(heap.ref()[i]);
-      size = n;
-      return;
-    }
     reserve(n);
-    std::uninitialized_default_construct_n(data() + old_size, n - old_size);
+    if (n > size()) std::uninitialized_value_construct_n(heap.ref().get() + size(), n - size());
+    else if (n < size()) std::destroy_n(heap.ref().get() + n, size() - n);
     size = n;
   }
 
   constexpr void pop_back() noexcept {
-    if (size() > 0) {
-      _destroy(heap.ref()[size() - 1]);
-      size = size() - 1;
-    }
+    if (size() == 0) return;
+    const auto new_size = size() - 1;
+    std::destroy_at(heap.ref().get() + new_size);
+    size = new_size;
   }
 
-  constexpr array& push_back(const T& v) noexcept {
+  constexpr void push_back(const T& v) noexcept {
     reserve(size() + 1);
-    std::construct_at(data() + size(), v);
+    new (&heap.ref()[size()]) T(v);
     size = size() + 1;
-    return *this;
   }
-  constexpr array& push_back(T&& v) noexcept {
+  constexpr void push_back(T&& v) noexcept {
     reserve(size() + 1);
-    std::construct_at(data() + size(), move(v));
+    new (&heap.ref()[size()]) T(move(v));
     size = size() + 1;
-    return *this;
   }
 
   template<typename... As> requires constructible<T, As...>
-  constexpr T& emplace_back(As&&... as) noexcept(nt_constructible<T, As...>) {
+  constexpr void emplace_back(As&&... as) noexcept(nt_constructible<T, As...>) {
     reserve(size() + 1);
-    std::construct_at(data() + size(), static_cast<As&&>(as)...);
+    new (&heap.ref()[size()]) T(static_cast<As&&>(as)...);
     size = size() + 1;
-    return data()[size() - 1];
-  }
-
-  constexpr array& append(array_view<T> av) {
-    if (av.empty()) return *this;
-    const bool overlaps = data() && av.data() < data() + size() && data() < av.data() + av.size();
-    const auto new_size = size() + av.size();
-    const bool need_realloc = overlaps || new_size > capacity();
-    if (need_realloc) {
-      const auto new_capacity = internal::_array_preferred_capacity(new_size);
-      auto new_heap = uninitialized_heap<T[]>(new_capacity);
-      T* new_data = new_heap.get();
-      std::uninitialized_copy_n(data(), size(), new_data);
-      std::uninitialized_copy_n(av.data(), av.size(), new_data + size());
-      for (size_t i = 0; i < size(); ++i) _destroy(heap.ref()[i]);
-      heap = move(new_heap);
-      size = new_size;
-      capacity = new_capacity;
-    } else {
-      std::uninitialized_copy_n(av.data(), av.size(), data() + size());
-      size = new_size;
-    }
-    return *this;
   }
 
   constexpr void erase(T* iter) {
     if (iter < data() || iter >= data() + size()) return;
-    std::destroy_at(iter);
-    std::move(iter + 1, data() + size(), iter);
-    size = size() - 1;
+    erase(iter, iter + 1);
   }
 
   constexpr void erase(size_t i) { erase(data() + i); }
@@ -293,9 +261,19 @@ template<typename T> struct array<T, npos> {
     if (first < data()) first = data();
     if (last > data() + size()) last = data() + size();
     if (first >= last) return;
-    for (T* p = first; p != last; ++p) _destroy(*p);
-    std::move(last, data() + size(), first);
-    size = size() - (last - first);
+    const auto count = size_t(last - first);
+    for (T* p = first; p != last; ++p) p->~T();
+    for (T *p = last, *q = end(); p != q; ++p, ++first) {
+      try {
+        new (first) T(move(*p));
+      } catch (...) {
+        std::destroy(p, q);
+        size = size_t(first - data());
+        throw;
+      }
+      p->~T();
+    }
+    size = size() - count;
   }
 
   constexpr void erase(size_t first, size_t last) { erase(data() + first, data() + last); }
@@ -307,18 +285,7 @@ template<typename T> struct array<T, npos> {
 
   constexpr void swap(array& other) noexcept {
     std::ranges::swap(size.ref(), other.size.ref());
-    std::ranges::swap(capacity.ref(), other.capacity.ref());
     std::ranges::swap(heap.ref(), other.heap.ref());
-  }
-
-private:
-  constexpr void _destroy(T& ref) noexcept {
-    if consteval {
-      ref.~T();
-      new (&ref) T();
-    } else {
-      ref.~T();
-    }
   }
 };
 

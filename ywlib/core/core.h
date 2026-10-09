@@ -40,9 +40,11 @@ static_assert(
 #ifdef __cpp_lib_contracts
 #define ywlib_pre(expr) pre(expr)
 #define ywlib_post(expr) post(expr)
+#define ywlib_assert(expr) contract_assert(expr)
 #else
 #define ywlib_pre(expr)
 #define ywlib_post(expr)
+#define ywlib_assert(expr)
 #endif
 
 extern "C" void abort();
