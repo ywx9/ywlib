@@ -1,6 +1,7 @@
 #pragma once
 #include <core/core.h>
 #include <core/property.h>
+#include <core/result.h>
 #include <core/tuple.h>
 
 namespace yw {
@@ -90,7 +91,8 @@ public:
     return *this;
   }
 
-  constexpr uninitialized_heap(size_t n) noexcept ywlib_post(this->get.cref() != nullptr) : get(_allocate(n)), size(n) {}
+  constexpr uninitialized_heap(size_t n) noexcept ywlib_post(this->get.cref() != nullptr)
+    : get(_allocate(n)), size(n) {}
 
   constexpr void allocate(size_t n) noexcept ywlib_post(get() != nullptr) {
     if (get() != nullptr) {

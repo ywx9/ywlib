@@ -23,11 +23,10 @@ template<typename T> class rolling_stack {
 
 public:
   const_property<size_t, rolling_stack> size;
-  const_property<size_t, rolling_stack> capacity;
 
   constexpr rolling_stack() = default;
   explicit constexpr rolling_stack(size_t n) noexcept
-    : _heap(n ? uninitialized_heap<T[]>(n) : uninitialized_heap<T[]>()), capacity(n) {}
+    : _heap(n ? uninitialized_heap<T[]>(n) : uninitialized_heap<T[]>()) {}
   constexpr ~rolling_stack() noexcept { clear(); }
 
   constexpr rolling_stack(const rolling_stack& o) noexcept requires constructible<T, const T&>
@@ -45,7 +44,7 @@ public:
 
   constexpr rolling_stack(rolling_stack&& o) noexcept
     : _heap(move(o._heap)), _first(exchange(o._first, 0)),
-      size(exchange(o.size.ref(), 0)), capacity(exchange(o.capacity.ref(), 0)) {}
+      size(exchange(o.size.ref(), 0)) {}
 
   constexpr rolling_stack& operator=(rolling_stack&& o) noexcept {
     if (this == &o) return *this;
@@ -53,11 +52,11 @@ public:
     _heap = move(o._heap);
     _first = exchange(o._first, 0);
     size = exchange(o.size.ref(), 0);
-    capacity = exchange(o.capacity.ref(), 0);
     return *this;
   }
 
   constexpr bool empty() const noexcept { return size() == 0; }
+  constexpr size_t capacity() const noexcept { return _heap.size(); }
   constexpr T& operator[](size_t i) noexcept ywlib_pre(i < this->size()) { return _heap[_index(i)]; }
   constexpr const T& operator[](size_t i) const noexcept ywlib_pre(i < this->size()) { return _heap[_index(i)]; }
   constexpr T& front() noexcept ywlib_pre(this->size() > 0) { return (*this)[0]; }
@@ -76,8 +75,7 @@ public:
     if (n == capacity()) return;
     if (n == 0) {
       clear();
-      _heap.reset();
-      capacity = 0;
+      _heap.deallocate();
       return;
     }
     uninitialized_heap<T[]> new_heap(n);
@@ -87,7 +85,6 @@ public:
       std::construct_at(new_heap.get() + i, std::move_if_noexcept((*this)[skipped + i]));
     clear();
     _heap = move(new_heap);
-    capacity = n;
     size = kept;
   }
 
@@ -99,7 +96,7 @@ public:
   }
 
   template<typename... As> requires constructible<T, As...>
-  constexpr T& emplace(As&&... as) noexcept ywlib_pre(this->capacity._ > 0) {
+  constexpr T& emplace(As&&... as) noexcept ywlib_pre(this->capacity() > 0) {
     if (size() == capacity()) {
       // Construct first so arguments may refer to the element being evicted.
       T value(static_cast<As&&>(as)...);
@@ -120,7 +117,6 @@ public:
     std::ranges::swap(_heap, o._heap);
     std::ranges::swap(_first, o._first);
     std::ranges::swap(size.ref(), o.size.ref());
-    std::ranges::swap(capacity.ref(), o.capacity.ref());
   }
 };
 } // namespace yw

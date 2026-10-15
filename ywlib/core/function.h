@@ -100,8 +100,8 @@ public:
     struct traits : _traits {
       constexpr traits() noexcept {
         _traits::_destroy = [](decltype(_union)& src) noexcept {
-          static_cast<G*>(src._heap)->~G();
           delete static_cast<G*>(src._heap);
+          src._heap = nullptr;
         };
         if constexpr (constructible<F, const F&>) {
           _traits::_copy_to = [](const decltype(_union)& src, decltype(_union)& dst) {
